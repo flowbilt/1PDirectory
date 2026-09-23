@@ -1,0 +1,15 @@
+{
+  "name": "lobby-directory",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Lobby tenant directory for Raspberry Pi screens, hosted on Netlify.",
+  "scripts": {
+    "test": "node --import ./tests/register-stub.mjs tests/run-tests.mjs",
+    "dev": "netlify dev"
+  },
+  "dependencies": {
+    "@netlify/blobs": ">=8.1.0"
+  },
+  "engines": { "node": ">=18" }
+}
