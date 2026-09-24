@@ -148,6 +148,7 @@
       visibility: parseInt($("bg-vis").value, 10) || 15,
       position: parseInt($("bg-pos").value, 10),
       size: parseInt($("bg-size").value, 10) || 190,
+      offset: parseInt($("bg-offset").value, 10) || 0,
     };
     $("bg-vis-val").textContent = `${draft.background.visibility}%`;
     draft.tenants = [...$("tenant-rows").querySelectorAll(".tenant-row")].map((row) => ({
@@ -279,8 +280,9 @@
     $("bg-preview").style.backgroundImage = has ? `url("${bg.image}")` : "";
     $("bg-preview").style.backgroundPosition = `${bg.position ?? 50}% top`;
     $("bg-preview").innerHTML = has ? "" : "<span>No photo</span>";
-    for (const id of ["bg-remove", "bg-on-row", "bg-vis-row", "bg-size-row", "bg-pos-row"]) $(id).hidden = !has;
+    for (const id of ["bg-remove", "bg-on-row", "bg-vis-row", "bg-size-row", "bg-offset-row", "bg-pos-row"]) $(id).hidden = !has;
     $("bg-size").value = bg.size ?? 190;
+    $("bg-offset").value = bg.offset ?? 0;
     $("bg-on").checked = !!bg.enabled;
     $("bg-vis").value = bg.visibility ?? 15;
     $("bg-pos").value = bg.position ?? 50;
@@ -309,7 +311,7 @@
     if (!file) return;
     try {
       readForm();
-      draft.background = { ...(draft.background || {}), image: await shrinkPhoto(file), enabled: true, visibility: draft.background?.visibility || 15, position: 50, size: 190 };
+      draft.background = { ...(draft.background || {}), image: await shrinkPhoto(file), enabled: true, visibility: draft.background?.visibility || 15, position: 50, size: 190, offset: 0 };
       renderBg();
       setDirty(true);
       pushPreview();
@@ -323,7 +325,7 @@
   });
 
   // Sliders move the preview live
-  for (const id of ["bg-vis", "bg-pos", "bg-size"]) $(id).addEventListener("input", () => { readForm(); renderBg(); pushPreview(); });
+  for (const id of ["bg-vis", "bg-pos", "bg-size", "bg-offset"]) $(id).addEventListener("input", () => { readForm(); renderBg(); pushPreview(); });
 
   // ── Preview ──
   function scalePreview() {

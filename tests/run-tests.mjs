@@ -136,9 +136,13 @@ test("background photo settings are validated and kept", async () => {
   const put = (b) => directory(req("/api/directory?site=bg-test", { method: "PUT", body: { propertyName: "X", tenants: [], ...b }, pw: "correct horse" }));
   const photo = "data:image/jpeg;base64,/9j/4AAQSkZJRg==";
   const ok = await (await put({ background: { image: photo, enabled: true, visibility: 99, position: 30 } })).json();
-  assert.deepEqual(ok.background, { enabled: true, image: photo, visibility: 15, position: 30, size: 190 }, "out-of-range strength reset to default");
+  assert.deepEqual(ok.background, { enabled: true, image: photo, visibility: 15, position: 30, size: 190, offset: 0 }, "out-of-range strength reset to default");
   const off = await (await put({ background: { enabled: true } })).json();
   assert.equal(off.background.enabled, false, "can't enable without a photo");
+  const moved = await (await put({ background: { image: photo, enabled: true, offset: 25 } })).json();
+  assert.equal(moved.background.offset, 25);
+  const tooFar = await (await put({ background: { image: photo, enabled: true, offset: 500 } })).json();
+  assert.equal(tooFar.background.offset, 0, "out-of-range move reset");
   assert.equal((await put({ background: { image: "data:image/svg+xml;base64,PHN2Zz4=" } })).status, 400, "SVG rejected as a photo");
   assert.equal((await put({ background: { image: "data:image/jpeg;base64," + "A".repeat(1_400_001) } })).status, 400, "oversized photo rejected");
 });

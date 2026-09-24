@@ -89,6 +89,7 @@ export function validateSite(body) {
       visibility: num(body.background?.visibility, 5, 40, 15), // % of the photo showing through the navy
       position: num(body.background?.position, 0, 100, 50),   // slides the photo left/right
       size: num(body.background?.size, 100, 400, 190),        // photo width as % of screen width
+      offset: num(body.background?.offset, -20, 60, 0),       // moves the photo down (+) or up (-), % of screen height
     },
     updatedAt: null,
   };

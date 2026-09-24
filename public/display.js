@@ -172,6 +172,8 @@
     const left = (W - width) * (Math.min(100, Math.max(0, Number(bg.position ?? 50))) / 100);
     stage.style.setProperty("--bg-width", `${width}px`);
     stage.style.setProperty("--bg-left", `${left}px`);
+    const H = parseFloat(getComputedStyle(document.documentElement).getPropertyValue("--H")) || window.innerHeight;
+    stage.style.setProperty("--bg-top", `${H * (Math.min(60, Math.max(-20, Number(bg.offset) || 0)) / 100)}px`);
   }
 
   async function loadDirectory() {

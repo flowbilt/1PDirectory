@@ -37,11 +37,11 @@ body { font-family: "Instrument Sans", "Segoe UI", Arial, sans-serif; color: var
 /* The photo is pinned to the top and scaled by width (--bg-size), so a building photo shows whole behind
    the header and tenant list; the street falls behind the news panel, and the bottom fades to navy. */
 .bg-photo {
-  position: absolute; top: 0; left: var(--bg-left, 0px);
+  position: absolute; top: var(--bg-top, 0px); left: var(--bg-left, 0px);
   width: var(--bg-width, 100%); height: auto; max-width: none;
   filter: grayscale(0.35) blur(calc(var(--u) * 0.2));
-  -webkit-mask-image: linear-gradient(to bottom, #000 72%, transparent 100%);
-          mask-image: linear-gradient(to bottom, #000 72%, transparent 100%);
+  -webkit-mask-image: linear-gradient(to bottom, transparent 0%, #000 7%, #000 72%, transparent 100%);
+          mask-image: linear-gradient(to bottom, transparent 0%, #000 7%, #000 72%, transparent 100%);
 }
 .bg-tint {
   position: absolute; inset: 0;
