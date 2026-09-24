@@ -151,8 +151,6 @@ data = {
        "lat": 33.4663, "lon": -86.8080, "directories": build(PPI, "PPI")},
       {"key": "perimeter-park-two", "name": "Perimeter Park Two", "address": "", "footer": BARBER_FOOTER,
        "lat": 33.4663, "lon": -86.8080, "directories": build(PPII, "PPII")},
-    ]},
-    {"key": "cadence", "name": "Cadence Place (owner to confirm)", "kind": "owner", "properties": [
       {"key": "cadence-place", "name": "Cadence Place", "address": "", "footer": "",
        "lat": 33.5186, "lon": -86.8104, "directories": build(CADENCE, "Cadence")},
     ]},

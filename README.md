@@ -1,101 +1,60 @@
 # Lobby Directory
 
-Tenant directory for lobby screens. Replaces Yodeck and the Wix pages. Hosted on Netlify; each screen is a Raspberry Pi 4 running Chromium full screen.
+Tenant directories for lobby screens, replacing Yodeck and Wix. Hosted on Netlify, with accounts and data in Supabase. Each screen is a Raspberry Pi 4 running Chromium full screen.
 
-First building: **The Landmark Center** (`landmark-center`), 55" screen in portrait.
+## Pages
 
-- Screen address: `https://YOUR-SITE.netlify.app/?site=landmark-center`
-- Editor: `https://YOUR-SITE.netlify.app/admin.html`
-
-## What's on the screen
-
-Property name, clock and date, a small weather reading, the tenant list (name, suite, optional arrow), rotating news headlines with photos, Managed By and Leased By contacts, and a welcome line.
-
-The tenant list sizes itself. With few tenants the type is large. As the list grows it shrinks the type, then drops the news panel to make room, then switches to two columns. Tested up to 45 tenants on a portrait screen.
-
-## Deploy to Netlify (one time)
-
-Drag-and-drop deploys don't work for this project because the server functions need a package installed. Use Git (recommended) or the Netlify CLI.
-
-**With GitHub**
-
-1. Create a private GitHub repo and upload the contents of this folder (not the folder itself).
-2. In Netlify: Add new site → Import an existing project → pick the repo. Netlify reads `netlify.toml`; leave the build settings as they are.
-3. Before the first deploy finishes, go to Site configuration → Environment variables and add the variables below. Then Deploys → Trigger deploy.
-
-**With the Netlify CLI**
-
-```
-npm install
-npx netlify login
-npx netlify init        # create the site
-npx netlify env:set ADMIN_PASSWORD "choose-a-strong-password"
-npx netlify env:set NWS_CONTACT "you@1pointusa.com"
-npx netlify deploy --prod
-```
-
-### Environment variables
-
-| Name | Required | Purpose |
+| Address | Who | What |
 |---|---|---|
-| `ADMIN_PASSWORD` | Yes | Password for the editor. Changing it signs everyone out. |
-| `NWS_CONTACT` | Yes | An email address. The National Weather Service asks every app to identify itself. |
-| `NEWS_FEEDS` | No | Comma-separated RSS feed addresses. Defaults to BBC US & Canada and NPR. |
-| `NEWS_BLOCKLIST` | No | Comma-separated whole words. Headlines containing any of them are skipped. Replaces the built-in list (killed, shooting, murder and similar). |
-| `DEFAULT_SITE` | No | Building shown when the screen address has no `?site=`. Defaults to `landmark-center`. |
+| `/login.html` | everyone | Sign in, forgotten password, and setting a password from an invitation or reset email |
+| `/console.html` | signed in | Screens (status, search, layout), Buildings, People, and Accounts (1Point only) |
+| `/edit.html?d=…` | signed in | Edit one directory's tenants, plus its building's shared settings, with a live preview |
+| `/?screen=ppi-2s` | lobby screens | What a screen shows. Older screens use `?site=landmark-center`, which still works |
 
-Tenant data is stored in Netlify Blobs, which is built into every Netlify site. There's no database to set up.
+What each person sees is enforced by the database (see `supabase/01-schema.sql`):
 
-### Check the deploy
+- **1Point admin:** everything. Creates accounts, buildings, directories and screens, and invites anyone.
+- **Account admin:** edits their own buildings, and invites or removes their own people.
+- **Editor:** edits their own buildings only.
 
-Open `/api/directory?site=landmark-center`, `/api/weather?lat=33.5186&lon=-86.8104` and `/api/news` on your site. Each should return data, not an error. Then open the screen address in a browser.
+## Netlify environment variables
 
-## Set up a Raspberry Pi 4
+| Name | Secret | Purpose |
+|---|---|---|
+| `SUPABASE_URL` | No | Supabase project URL |
+| `SUPABASE_ANON_KEY` | No | Supabase publishable (or legacy anon) key |
+| `SUPABASE_SERVICE_KEY` | **Yes**, Production + Functions only | Supabase secret (or legacy service_role) key |
+| `NWS_CONTACT` | No | Email address for the National Weather Service |
+| `NEWS_FEEDS`, `NEWS_BLOCKLIST` | No | Optional news settings |
 
-You need Raspberry Pi OS **with desktop**, 64-bit (Bookworm or newer), flashed with Raspberry Pi Imager. In Imager's settings, set the username, Wi-Fi if needed (wired Ethernet is better) and turn on SSH.
+`ADMIN_PASSWORD` is no longer used and can be deleted once everyone signs in with their own login.
 
-1. Boot the Pi connected to the screen. Copy `pi/setup-kiosk.sh` onto it, or download it from your repo.
-2. Run it:
-   ```
-   sudo bash setup-kiosk.sh --url "https://YOUR-SITE.netlify.app/?site=landmark-center"
-   ```
-3. `sudo reboot`. The directory comes up full screen in portrait.
+## Setting up a screen
 
-Options: `--rotate 270` if the picture is upside down (default is 90), `--reboot 03:30` or `--reboot off` for the nightly restart, `--tz America/New_York` for another time zone, `--connect` to install Raspberry Pi Connect for remote screen viewing.
+1. In the console, open **Screens → Settings** and note the screen address (for example `ppi-3n`), or add a new screen.
+2. On the Pi: `sudo bash setup-kiosk.sh --url "https://1pdirectory.netlify.app/?screen=ppi-3n"` (see `pi/`).
+3. The screen shows as **Online** in the console within 5 minutes.
 
-What the script does: desktop auto-login, screen blanking off, SSH on, time zone set, output forced to 1080p (a Pi 4 is slow at 4K and the layout scales so it looks the same), Chromium in kiosk mode that restarts itself if it closes, and a nightly reboot.
-
-If the screen can't rotate on its own, add `&rotate=90` to the screen address in `~/kiosk/kiosk.conf` and run setup with `--rotate 0`. The page will rotate itself instead.
-
-## Everyday use
-
-**Change tenants:** open the editor, sign in, edit the list, and click Publish to screens. The preview on the right updates as you type. Screens pick up changes within a minute.
-
-**Add a building:** click Add building, enter the property name, and use the screen address it shows when setting up that building's Pi.
-
-**Is the screen online?** The editor's top bar shows when the selected building's screen last checked in. It checks in every 5 minutes, so more than 15 minutes means look into it.
-
-**If the internet drops:** the screen keeps showing the last directory it received, including after a reboot, with a small "Reconnecting" note in the corner. Weather hides itself after 3 hours without an update.
-
-**Weather location:** set the building's latitude and longitude in the editor. In Google Maps, right-click the building; the numbers at the top of the menu are its coordinates.
+The layout (portrait, landscape, or automatic) is set per screen in the console. If it doesn't match how the TV is being driven, the page turns itself to fit.
 
 ## Tests
 
 ```
 npm install
-npm test
+npm test                      # server functions, against a fake Supabase
+node --import ./tests/register-stub.mjs tests/test-server.mjs   # the whole site locally, with sample logins
 ```
 
-Runs the server functions against an in-memory store and sample feeds. No Netlify account or internet needed.
+Local sample logins: `scot@1pointusa.com / admin-pass`, `leighann@barber.test / owner-pass`, `editor@barber.test / editor-pass`.
 
 ## Files
 
 ```
-public/            screen (index.html, display.*), editor (admin.*), offline support (sw.js), fonts
-netlify/functions/ directory, sites, heartbeat, weather, news
-netlify/lib/       shared code, starting data for The Landmark Center, RSS reader
-pi/                setup-kiosk.sh
-tests/             npm test, plus a local test server
+public/             screen (index.html, display.*), sign-in, console, editor, shared auth.js
+netlify/functions/  screen, heartbeat, users, migrate, config, weather, news
+netlify/lib/        Supabase client, RSS reader, shared helpers
+supabase/           database schema, starting data, setup guide
+migration/          the Yodeck/Wix transcription the starting data was built from
+pi/                 setup-kiosk.sh
+tests/              function tests, fake Supabase, local test server
 ```
-
-Fonts are Instrument Sans and Lora under the SIL Open Font License (licence files in `public/fonts`). They're served from the site itself, so screens don't depend on Google Fonts.

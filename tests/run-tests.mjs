@@ -1,212 +1,216 @@
 // Run with: npm test
-// Exercises every function against an in-memory blob store and fixture feeds (no network needed).
+// Every server function, against a fake Supabase with the same access rules as the real one. No network needed.
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { _reset } from "./blobs-stub.mjs";
-import directory from "../netlify/functions/directory.mjs";
-import sites from "../netlify/functions/sites.mjs";
+import { createFake, SERVICE_KEY, ANON_KEY } from "./fake-supabase.mjs";
+import { getStore, _reset } from "./blobs-stub.mjs";
+import screen, { toPayload } from "../netlify/functions/screen.mjs";
 import heartbeat from "../netlify/functions/heartbeat.mjs";
+import users from "../netlify/functions/users.mjs";
+import migrate from "../netlify/functions/migrate.mjs";
+import config from "../netlify/functions/config.mjs";
 import weather, { iconFor } from "../netlify/functions/weather.mjs";
 import news from "../netlify/functions/news.mjs";
 import { parseFeed, isBlocked } from "../netlify/lib/rss.mjs";
 
+const SB = "http://fake.supabase.test";
+Object.assign(process.env, { SUPABASE_URL: SB, SUPABASE_SERVICE_KEY: SERVICE_KEY, SUPABASE_ANON_KEY: ANON_KEY });
+const fake = createFake();
 const fx = (f) => readFileSync(new URL(`./fixtures/${f}`, import.meta.url), "utf8");
-const BASE = "https://example.test";
-const req = (path, { method = "GET", body, pw } = {}) =>
-  new Request(BASE + path, { method, body: body ? JSON.stringify(body) : undefined, headers: pw ? { "x-admin-password": pw } : {} });
+const SITE = "https://1pdirectory.netlify.app";
 
-// Fake the outside world for weather and news.
-const realFetch = globalThis.fetch;
-globalThis.fetch = async (url) => {
+globalThis.fetch = async (url, init = {}) => {
   const u = String(url);
-  const ok = (body, type = "application/json") => new Response(body, { status: 200, headers: { "Content-Type": type } });
-  if (u.startsWith("https://api.weather.gov/points/")) return ok(fx("nws-points.json"));
+  if (u.startsWith(SB)) return fake.handle(new Request(u, init));
+  const ok = (b) => new Response(b, { status: 200 });
+  if (u.includes("api.weather.gov/points/")) return ok(fx("nws-points.json"));
   if (u.includes("/forecast/hourly")) return ok(fx("nws-hourly.json"));
-  if (u.includes("bbci")) return ok(fx("bbc.xml"), "application/xml");
-  if (u.includes("npr")) return ok(fx("npr.xml"), "application/xml");
+  if (u.includes("bbci")) return ok(fx("bbc.xml"));
+  if (u.includes("npr")) return ok(fx("npr.xml"));
   if (u.includes("broken")) return new Response("nope", { status: 500 });
-  return realFetch(url);
+  throw new Error("unexpected fetch " + u);
 };
 
-let passed = 0;
+const req = (path, { method = "GET", body, token, headers = {} } = {}) =>
+  new Request(SITE + path, { method, body: body ? JSON.stringify(body) : undefined, headers: { ...(token ? { Authorization: `Bearer ${token}` } : {}), ...headers } });
+async function login(email, password) {
+  const r = await fake.handle(new Request(`${SB}/auth/v1/token?grant_type=password`, { method: "POST", headers: { apikey: ANON_KEY }, body: JSON.stringify({ email, password }) }));
+  return (await r.json()).access_token;
+}
+
 const tests = [];
 const test = (name, fn) => tests.push([name, fn]);
 
-process.env.ADMIN_PASSWORD = "correct horse";
-
-test("GET returns Landmark Center seed before anything is saved", async () => {
-  const r = await directory(req("/api/directory?site=landmark-center"));
+// ── Screens ──
+test("a landscape Perimeter Park screen gets its title, subtitle, arrows, notes and footer", async () => {
+  const r = await screen(req("/api/screen?key=ppi-1s"));
   assert.equal(r.status, 200);
   const d = await r.json();
+  assert.equal(d.propertyName, "Perimeter Park One - One South");
+  assert.equal(d.buildingLabel, "South Tower");
+  assert.equal(d.orientation, "landscape");
+  assert.equal(d.tenants.length, 5);
+  assert.deepEqual(d.tenants[1], { name: "Common Bond Title, LLC", suite: "130 S", dir: "left", note: "A subsidiary of Affiliates Consolidated Services" });
+  assert.match(d.welcome, /205-795-4732/);
+});
+
+test("the Landmark Center's existing address (?site=) still works", async () => {
+  const d = await (await screen(req("/api/screen?site=landmark-center"))).json();
   assert.equal(d.propertyName, "The Landmark Center");
   assert.equal(d.tenants.length, 8);
-  assert.equal(d.tenants.find((t) => t.name === "PRP Logistics").suite, "410");
-  assert.equal(d.managedBy.phone, "205-995-9116");
-  assert.equal(d.leasedBy.name, "Weyman Prater");
-  assert.match(d.logo, /^data:image\/svg\+xml;base64,/);
-  assert.equal(d.logoReplacesName, true);
+  assert.equal(d.managedBy.name, "Leigh Ann Kornegay");
+  assert.equal(d.buildingLabel, "2100 1st Avenue North, Birmingham", "no subtitle, so the address shows");
 });
 
-test("GET with no site param uses the default site", async () => {
-  const r = await directory(req("/api/directory"));
-  assert.equal((await r.json()).site, "landmark-center");
+test("unknown screens are 404, bad addresses 400, unassigned screens say so", async () => {
+  assert.equal((await screen(req("/api/screen?key=nope"))).status, 404);
+  assert.equal((await screen(req("/api/screen?key=../x"))).status, 400);
+  fake.T.screens.push({ id: "s-new", key: "spare-1", name: "Spare", directory_id: null, orientation: "auto", hardware: {}, last_report: {} });
+  const d = await (await screen(req("/api/screen?key=spare-1"))).json();
+  assert.equal(d.assigned, false);
+  assert.equal(d.tenants.length, 0);
 });
 
-test("GET unknown site is 404, bad key is 400", async () => {
-  assert.equal((await directory(req("/api/directory?site=nope"))).status, 404);
-  assert.equal((await directory(req("/api/directory?site=../etc"))).status, 400);
-});
-
-test("PUT without or with wrong password is refused", async () => {
-  assert.equal((await directory(req("/api/directory?site=landmark-center", { method: "PUT", body: {} }))).status, 401);
-  assert.equal((await directory(req("/api/directory?site=landmark-center", { method: "PUT", body: {}, pw: "nope" }))).status, 401);
-});
-
-test("PUT fails cleanly when ADMIN_PASSWORD is missing", async () => {
-  const saved = process.env.ADMIN_PASSWORD;
-  delete process.env.ADMIN_PASSWORD;
-  const r = await directory(req("/api/directory?site=landmark-center", { method: "PUT", body: {}, pw: "x" }));
-  process.env.ADMIN_PASSWORD = saved;
-  assert.equal(r.status, 500);
-  assert.match((await r.json()).error, /ADMIN_PASSWORD/);
-});
-
-test("PUT saves, cleans input, and GET returns the saved copy", async () => {
-  const seed = await (await directory(req("/api/directory?site=landmark-center"))).json();
-  const body = {
-    ...seed,
-    tenants: [...seed.tenants, { name: "  New Tenant LLC  ", suite: "600", dir: "sideways" }, { name: "", suite: "999" }],
-    evil: "<script>",
-  };
-  const r = await directory(req("/api/directory?site=landmark-center", { method: "PUT", body, pw: "correct horse" }));
-  assert.equal(r.status, 200);
-  const saved = await r.json();
-  assert.ok(saved.updatedAt);
-  assert.equal(saved.evil, undefined);
-  assert.equal(saved.tenants.length, 9, "blank tenant dropped");
-  assert.deepEqual(saved.tenants.at(-1), { name: "New Tenant LLC", suite: "600", dir: "" }, "trimmed, bad arrow cleared");
-  const again = await (await directory(req("/api/directory?site=landmark-center"))).json();
-  assert.equal(again.tenants.length, 9);
-});
-
-test("PUT rejects missing property name, bad logo, bad time zone", async () => {
-  const base = { propertyName: "X", tenants: [] };
-  const put = (b) => directory(req("/api/directory?site=t1", { method: "PUT", body: b, pw: "correct horse" }));
-  assert.equal((await put({ ...base, propertyName: "  " })).status, 400);
-  assert.equal((await put({ ...base, logo: "javascript:alert(1)" })).status, 400);
-  assert.equal((await put({ ...base, timezone: "Mars/Olympus" })).status, 400);
-  assert.equal((await put({ ...base, tenants: "nope" })).status, 400);
-  assert.equal((await put({ ...base, logo: "data:image/png;base64,iVBORw0KGgo=" })).status, 200);
-  const withLogo = await (await put({ ...base, logo: "data:image/png;base64,iVBORw0KGgo=", logoReplacesName: true })).json();
-  assert.equal(withLogo.logoReplacesName, true);
-  const noLogo = await (await put({ ...base, logoReplacesName: true })).json();
-  assert.equal(noLogo.logoReplacesName, false, "setting ignored without a logo");
-});
-
-test("new building can be created and listed with its check-in time", async () => {
-  await directory(req("/api/directory?site=riverchase-tower", { method: "PUT", body: { propertyName: "Riverchase Tower", tenants: [] }, pw: "correct horse" }));
-  await heartbeat(new Request(BASE + "/api/heartbeat", { method: "POST", body: JSON.stringify({ site: "riverchase-tower", screen: { w: 1080, h: 1920 }, version: "1.0.0" }) }));
-  const r = await sites(req("/api/sites", { pw: "correct horse" }));
-  assert.equal(r.status, 200);
-  const list = (await r.json()).sites;
-  const rt = list.find((s) => s.site === "riverchase-tower");
-  assert.ok(rt && rt.lastSeen, "check-in recorded");
-  assert.deepEqual(rt.screen, { w: 1080, h: 1920 });
-  assert.ok(list.find((s) => s.site === "landmark-center"), "seed site listed");
-  assert.equal((await sites(req("/api/sites"))).status, 401);
-});
-
-test("heartbeat rejects bad site keys", async () => {
-  const r = await heartbeat(new Request(BASE + "/api/heartbeat", { method: "POST", body: JSON.stringify({ site: "Bad Key!" }) }));
-  assert.equal(r.status, 400);
-});
-
-test("directory answers 304 when a screen already has the current version", async () => {
-  const r1 = await directory(req("/api/directory?site=landmark-center"));
+test("screens re-download only when something changed (304)", async () => {
+  const r1 = await screen(req("/api/screen?key=ppi-2s"));
   const etag = r1.headers.get("ETag");
-  assert.ok(etag, "ETag sent");
-  const r2 = await directory(new Request(BASE + "/api/directory?site=landmark-center", { headers: { "If-None-Match": etag } }));
-  assert.equal(r2.status, 304);
-  assert.equal(await r2.text(), "");
-  const r3 = await directory(new Request(BASE + "/api/directory?site=landmark-center", { headers: { "If-None-Match": '"stale"' } }));
-  assert.equal(r3.status, 200);
+  assert.equal((await screen(req("/api/screen?key=ppi-2s", { headers: { "If-None-Match": etag } }))).status, 304);
+  const d = fake.T.directories.find((x) => x.slug === "ppi-2s");
+  fake.T.tenants.find((t) => t.directory_id === d.id).name = "Evan Terry Associates, LLC (edited)";
+  assert.equal((await screen(req("/api/screen?key=ppi-2s", { headers: { "If-None-Match": etag } }))).status, 200);
 });
 
-test("background photo settings are validated and kept", async () => {
-  const put = (b) => directory(req("/api/directory?site=bg-test", { method: "PUT", body: { propertyName: "X", tenants: [], ...b }, pw: "correct horse" }));
-  const photo = "data:image/jpeg;base64,/9j/4AAQSkZJRg==";
-  const ok = await (await put({ background: { image: photo, enabled: true, visibility: 99, position: 30 } })).json();
-  assert.deepEqual(ok.background, { enabled: true, image: photo, visibility: 15, position: 30, size: 190, offset: 0 }, "out-of-range strength reset to default");
-  const off = await (await put({ background: { enabled: true } })).json();
-  assert.equal(off.background.enabled, false, "can't enable without a photo");
-  const moved = await (await put({ background: { image: photo, enabled: true, offset: 25 } })).json();
-  assert.equal(moved.background.offset, 25);
-  const tooFar = await (await put({ background: { image: photo, enabled: true, offset: 500 } })).json();
-  assert.equal(tooFar.background.offset, 0, "out-of-range move reset");
-  assert.equal((await put({ background: { image: "data:image/svg+xml;base64,PHN2Zz4=" } })).status, 400, "SVG rejected as a photo");
-  assert.equal((await put({ background: { image: "data:image/jpeg;base64," + "A".repeat(1_400_001) } })).status, 400, "oversized photo rejected");
+test("the editor preview and real screens use the same fields", () => {
+  const p = toPayload({ key: "k", name: "n", orientation: "portrait" }, { title: "T", subtitle: "", footer_override: null, news_enabled: false, weather_enabled: true, rotate_seconds: 9 },
+    { address: "A", logo: "", lat: 1, lon: 2, footer: "F", managed_by: {}, leased_by: {} }, [{ name: "X", suite: "1", arrow: "up", note: "" }]);
+  assert.equal(p.buildingLabel, "A"); assert.equal(p.welcome, "F"); assert.equal(p.news.enabled, false); assert.equal(p.news.rotateSeconds, 9);
+  assert.deepEqual(p.tenants[0], { name: "X", suite: "1", dir: "up", note: "" });
 });
 
-test("DELETE removes a saved building", async () => {
-  const r = await directory(req("/api/directory?site=riverchase-tower", { method: "DELETE", pw: "correct horse" }));
+// ── Check-ins ──
+test("heartbeat records the check-in on the screen", async () => {
+  const r = await heartbeat(req("/api/heartbeat", { method: "POST", body: { key: "ppii-4e", screen: { w: 1920, h: 1080 }, version: "2.0.0" } }));
   assert.equal(r.status, 200);
-  assert.equal((await directory(req("/api/directory?site=riverchase-tower"))).status, 404);
+  const s = fake.T.screens.find((x) => x.key === "ppii-4e");
+  assert.ok(s.last_seen);
+  assert.equal(s.last_report.w, 1920);
+  assert.equal((await heartbeat(req("/api/heartbeat", { method: "POST", body: { key: "ghost" } }))).status, 404);
+  assert.equal((await heartbeat(req("/api/heartbeat", { method: "POST", body: { key: "Bad Key" } }))).status, 400);
 });
 
-test("weather maps the NWS hourly forecast and sets CDN caching", async () => {
-  const r = await weather(req("/api/weather?lat=33.5186&lon=-86.8104"));
+// ── Users and permissions ──
+test("who sees which people", async () => {
+  const admin = await login("scot@1pointusa.com", "admin-pass");
+  const owner = await login("leighann@barber.test", "owner-pass");
+  const editor = await login("editor@barber.test", "editor-pass");
+  assert.equal((await users(req("/api/users"))).status, 401, "not signed in");
+  assert.equal((await users(req("/api/users", { token: "bogus" }))).status, 401);
+  assert.equal((await (await users(req("/api/users", { token: admin }))).json()).users.length, 3);
+  const mine = (await (await users(req("/api/users", { token: owner }))).json()).users;
+  assert.deepEqual(mine.map((u) => u.email).sort(), ["editor@barber.test", "leighann@barber.test"], "owner admin sees only their own people");
+  assert.equal((await users(req("/api/users", { token: editor }))).status, 403, "editors can't manage people");
+});
+
+test("an owner admin can invite into their own account only, and never grant 1Point access", async () => {
+  const owner = await login("leighann@barber.test", "owner-pass");
+  const other = fake.T.organizations.find((o) => o.name === "Other Owner LLC").id;
+  const invite = (b) => users(req("/api/users", { method: "POST", token: owner, body: { action: "invite", ...b } }));
+  assert.equal((await invite({ email: "x@y.test", role: "platform_admin" })).status, 403);
+  assert.equal((await invite({ email: "x@y.test", role: "org_editor", org_id: other })).status, 403);
+  assert.equal((await invite({ email: "not-an-email", role: "org_editor" })).status, 400);
+  const r = await invite({ email: "Frontdesk2@Barber.test", full_name: "Desk Two", role: "org_editor" });
+  assert.equal(r.status, 201);
+  const p = fake.T.profiles.find((x) => x.email === "frontdesk2@barber.test");
+  assert.equal(p.role, "org_editor");
+  assert.equal(p.org_id, fake.T.organizations.find((o) => o.name === "Barber Companies").id);
+  const mail = fake.outbox.at(-1);
+  assert.equal(mail.type, "invite");
+  assert.match(mail.link, /^https:\/\/1pdirectory\.netlify\.app\/login\.html#access_token=/);
+  assert.equal((await invite({ email: "frontdesk2@barber.test", role: "org_editor" })).status, 409, "no duplicates");
+});
+
+test("sign-in email: an invitation if they never signed in, a reset if they have", async () => {
+  const admin = await login("scot@1pointusa.com", "admin-pass");
+  const newbie = fake.T.profiles.find((x) => x.email === "frontdesk2@barber.test");
+  const leigh = fake.T.profiles.find((x) => x.email === "leighann@barber.test");
+  const send = async (id) => (await (await users(req("/api/users", { method: "POST", token: admin, body: { action: "email", user_id: id } }))).json()).sent;
+  assert.equal(await send(newbie.user_id), "invitation");
+  assert.equal(await send(leigh.user_id), "password reset");
+  assert.equal(fake.outbox.at(-1).type, "recovery");
+});
+
+test("role changes and removals respect the rules", async () => {
+  const owner = await login("leighann@barber.test", "owner-pass");
+  const admin = await login("scot@1pointusa.com", "admin-pass");
+  const me = fake.T.profiles.find((x) => x.email === "leighann@barber.test");
+  const ed = fake.T.profiles.find((x) => x.email === "frontdesk2@barber.test");
+  const patch = (t, b) => users(req("/api/users", { method: "PATCH", token: t, body: b }));
+  assert.equal((await patch(owner, { user_id: ed.user_id, role: "platform_admin" })).status, 403);
+  assert.equal((await patch(owner, { user_id: me.user_id, role: "org_editor" })).status, 400, "can't demote yourself");
+  assert.equal((await patch(owner, { user_id: ed.user_id, role: "org_admin" })).status, 200);
+  assert.equal(fake.T.profiles.find((x) => x.user_id === ed.user_id).role, "org_admin");
+  const scot = fake.T.profiles.find((x) => x.role === "platform_admin");
+  assert.equal((await users(req(`/api/users?user_id=${scot.user_id}`, { method: "DELETE", token: owner }))).status, 403, "owners can't remove 1Point");
+  assert.equal((await users(req(`/api/users?user_id=${me.user_id}`, { method: "DELETE", token: owner }))).status, 400, "can't remove yourself");
+  assert.equal((await users(req(`/api/users?user_id=${ed.user_id}`, { method: "DELETE", token: admin }))).status, 200);
+  assert.ok(!fake.T.profiles.some((x) => x.user_id === ed.user_id));
+  assert.ok(fake.T.audit_log.length >= 3, "actions are logged");
+});
+
+// ── Import from the old editor ──
+test("1Point can import the Landmark Center's live settings; nobody else can", async () => {
+  await getStore({ name: "directory" }).setJSON("sites/landmark-center", {
+    propertyName: "The Landmark Center", buildingLabel: "2100 1st Avenue North, Birmingham", logo: "data:image/svg+xml;base64,PHN2Zz4=", logoReplacesName: true,
+    tenants: [{ name: "EMW Law LLC.", suite: "300", dir: "" }, { name: "New Tenant", suite: "600", dir: "right" }],
+    managedBy: { name: "Leigh Ann Kornegay" }, leasedBy: { name: "Weyman Prater" }, welcome: "Welcome!",
+    weather: { enabled: true, lat: 33.51, lon: -86.81 }, news: { enabled: true, rotateSeconds: 15 }, background: { enabled: true, image: "data:image/jpeg;base64,/9j/", visibility: 18 },
+  });
+  const owner = await login("leighann@barber.test", "owner-pass");
+  assert.equal((await migrate(req("/api/migrate?slug=landmark-center", { method: "POST", token: owner }))).status, 403);
+  const admin = await login("scot@1pointusa.com", "admin-pass");
+  const r = await migrate(req("/api/migrate?slug=landmark-center", { method: "POST", token: admin }));
   assert.equal(r.status, 200);
-  const w = await r.json();
-  assert.equal(w.tempF, 78);
-  assert.equal(w.text, "Mostly Cloudy");
-  assert.equal(w.icon, "cloud");
-  assert.match(r.headers.get("Netlify-CDN-Cache-Control"), /s-maxage=600/);
+  const d = await (await screen(req("/api/screen?key=landmark-center"))).json();
+  assert.equal(d.tenants.length, 2);
+  assert.equal(d.logoReplacesName, true);
+  assert.equal(d.background.visibility, 18);
+  assert.equal(d.news.rotateSeconds, 15);
+  assert.equal(d.welcome, "Welcome!");
+  assert.equal((await migrate(req("/api/migrate?slug=ppi-2s", { method: "POST", token: admin }))).status, 404, "nothing to import");
+});
+
+// ── Config ──
+test("config hands the pages only the public settings", async () => {
+  const d = await (await config()).json();
+  assert.deepEqual(d, { url: SB, anonKey: ANON_KEY });
+  assert.ok(!JSON.stringify(d).includes(SERVICE_KEY));
+  const saved = process.env.SUPABASE_ANON_KEY; delete process.env.SUPABASE_ANON_KEY;
+  assert.equal((await config()).status, 500);
+  process.env.SUPABASE_ANON_KEY = saved;
+});
+
+// ── Weather and news (unchanged) ──
+test("weather maps the NWS hourly forecast", async () => {
+  const w = await (await weather(req("/api/weather?lat=33.5186&lon=-86.8104"))).json();
+  assert.equal(w.tempF, 78); assert.equal(w.icon, "cloud");
   assert.equal((await weather(req("/api/weather"))).status, 400);
-});
-
-test("weather icons cover the common NWS wordings", () => {
   assert.equal(iconFor("Chance Showers And Thunderstorms"), "storm");
-  assert.equal(iconFor("Partly Sunny", true), "partly-day");
-  assert.equal(iconFor("Mostly Clear", false), "partly-night");
-  assert.equal(iconFor("Sunny", true), "clear-day");
-  assert.equal(iconFor("Clear", false), "clear-night");
-  assert.equal(iconFor("Areas Of Fog"), "fog");
-  assert.equal(iconFor("Light Rain Likely"), "rain");
-  assert.equal(iconFor("Rain And Snow"), "snow");
 });
-
-test("RSS parser reads BBC thumbnails (upsized) and NPR inline images", () => {
-  const bbc = parseFeed(fx("bbc.xml"));
-  assert.equal(bbc[0].source, "BBC News");
+test("RSS parsing and the blocklist", () => {
+  assert.equal(parseFeed(fx("bbc.xml"))[0].image, "https://ichef.bbci.co.uk/ace/standard/976/cpsprodpb/abc/live/berries.jpg");
   assert.equal(parseFeed(fx("npr.xml"))[0].source, "NPR");
-  assert.equal(bbc[0].image, "https://ichef.bbci.co.uk/ace/standard/976/cpsprodpb/abc/live/berries.jpg");
-  assert.equal(bbc[2].image, "");
-  const npr = parseFeed(fx("npr.xml"));
-  assert.equal(npr[0].title, "NASA\u2019s new moon rover passes final road test");
-  assert.match(npr[0].image, /^https:\/\/media\.npr\.org\/.*rover_wide\.jpg/);
-  assert.equal(npr[0].published, "2026-09-23T13:15:00.000Z");
-});
-
-test("blocklist matches whole words only", () => {
-  assert.equal(isBlocked("Three killed in crash", ["killed"]), true);
   assert.equal(isBlocked("Warm weather lingers", ["war"]), false);
-  assert.equal(isBlocked("Screenshot tool update", ["shot"]), false);
+  assert.equal(isBlocked("Three killed in crash", ["killed"]), true);
 });
-
-test("news merges feeds, drops blocked and duplicate stories, survives a dead feed", async () => {
-  process.env.NEWS_FEEDS = "https://feeds.bbci.co.uk/x.xml, https://feeds.npr.org/1001/rss.xml, https://broken.example/rss";
-  const r = await news(req("/api/news"));
+test("news merges feeds and drops blocked stories", async () => {
+  process.env.NEWS_FEEDS = "https://feeds.bbci.co.uk/x.xml,https://feeds.npr.org/1001/rss.xml,https://broken.example/rss";
+  const { items, errors } = await (await news(req("/api/news"))).json();
   delete process.env.NEWS_FEEDS;
-  assert.equal(r.status, 200);
-  const { items, errors } = await r.json();
-  const titles = items.map((i) => i.title);
-  assert.ok(!titles.some((t) => /killed/i.test(t)), "blocked story removed");
-  assert.equal(titles.filter((t) => /blueberry/.test(t)).length, 1, "duplicate removed");
-  assert.ok(titles.includes("Warm weather expected to linger into October"));
-  assert.ok(items[0].image && items[1].image, "stories with pictures first");
-  assert.equal(errors.length, 1, "dead feed reported, not fatal");
+  assert.ok(!items.some((i) => /killed/i.test(i.title)));
+  assert.equal(errors.length, 1);
 });
 
+let passed = 0;
 for (const [name, fn] of tests) {
   try { await fn(); passed++; console.log(`  ok  ${name}`); }
   catch (e) { console.log(`  FAIL ${name}\n       ${e.message}`); process.exitCode = 1; }

@@ -1,6 +1,6 @@
 // Network first, cache as fallback. Keeps the display up if the building's internet drops,
 // including after a reboot. Only same-origin GET requests are handled.
-const CACHE = "directory-v2";
+const CACHE = "directory-v3";
 const SHELL = ["/", "/index.html", "/display.css", "/display.js", "/fonts/InstrumentSans-Regular.ttf", "/fonts/InstrumentSans-Bold.ttf", "/fonts/Lora-Bold.ttf"];
 
 self.addEventListener("install", (e) => {
@@ -16,7 +16,7 @@ self.addEventListener("activate", (e) => {
 self.addEventListener("fetch", (e) => {
   const url = new URL(e.request.url);
   if (e.request.method !== "GET" || url.origin !== location.origin) return;
-  const cacheable = SHELL.includes(url.pathname) || ["/api/directory", "/api/weather", "/api/news"].includes(url.pathname);
+  const cacheable = SHELL.includes(url.pathname) || ["/api/screen", "/api/weather", "/api/news"].includes(url.pathname);
   if (!cacheable || e.request.headers.has("x-admin-password")) return;
   e.respondWith(
     fetch(e.request)

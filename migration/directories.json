@@ -849,14 +849,7 @@
               }
             }
           ]
-        }
-      ]
-    },
-    {
-      "key": "cadence",
-      "name": "Cadence Place (owner to confirm)",
-      "kind": "owner",
-      "properties": [
+        },
         {
           "key": "cadence-place",
           "name": "Cadence Place",

@@ -27,8 +27,21 @@
   [headers.values]
     Cache-Control = "public, max-age=31536000, immutable"
 
+# Signed-in pages: never framed by other sites, never cached.
 [[headers]]
-  for = "/admin.html"
+  for = "/console.html"
+  [headers.values]
+    X-Frame-Options = "DENY"
+    Cache-Control = "no-store"
+
+[[headers]]
+  for = "/edit.html"
+  [headers.values]
+    X-Frame-Options = "DENY"
+    Cache-Control = "no-store"
+
+[[headers]]
+  for = "/login.html"
   [headers.values]
     X-Frame-Options = "DENY"
     Cache-Control = "no-store"

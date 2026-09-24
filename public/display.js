@@ -1,15 +1,15 @@
 /* Directory display.
    URL options:
-     ?site=landmark-center   which directory to show (default: landmark-center)
-     ?rotate=90 | 270        rotate in software if the Pi can't rotate the screen itself
-     ?preview=1              used by the admin page; skips heartbeat and service worker
+     ?screen=ppi-2s          which screen this is (older screens use ?site=landmark-center; same thing)
+     ?rotate=90 | 270        force software rotation; otherwise the screen's orientation setting decides
+     ?preview=1              used by the editor; skips heartbeat and service worker
 */
 (() => {
   "use strict";
-  const VERSION = "1.0.0";
+  const VERSION = "2.0.0";
   const q = new URLSearchParams(location.search);
-  const SITE = (q.get("site") || "landmark-center").toLowerCase();
-  const ROTATE = ["90", "270"].includes(q.get("rotate")) ? Number(q.get("rotate")) : 0;
+  const SITE = (q.get("screen") || q.get("key") || q.get("site") || "landmark-center").toLowerCase();
+  const URL_ROTATE = ["90", "270"].includes(q.get("rotate")) ? Number(q.get("rotate")) : null;
   const PREVIEW = q.get("preview") === "1";
 
   const POLL_DIRECTORY_MS = 60 * 1000;
@@ -36,17 +36,25 @@
 
   const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 
-  // ── Stage sizing and optional software rotation ──
+  // ── Stage sizing, orientation and software rotation ──
+  // The screen's orientation (set in the console) decides the layout. If it doesn't match the way the
+  // TV is being driven, the page rotates itself 90 degrees. ?rotate= in the address overrides that.
   function sizeStage() {
     const vw = window.innerWidth, vh = window.innerHeight;
-    const W = ROTATE ? vh : vw, H = ROTATE ? vw : vh;
+    const wanted = data?.orientation || "auto";
+    const viewportPortrait = vh > vw;
+    let rotate = URL_ROTATE;
+    if (rotate === null) rotate = (wanted === "portrait" && !viewportPortrait) || (wanted === "landscape" && viewportPortrait) ? 90 : 0;
+    const W = rotate ? vh : vw, H = rotate ? vw : vh;
+    const landscape = W > H;
     const root = document.documentElement.style;
     root.setProperty("--W", `${W}px`);
     root.setProperty("--H", `${H}px`);
-    // Size from whichever dimension is tighter, so a wide or short window never squeezes out the tenant list.
-    // On a 1080x1920 portrait screen both give 10.8px, so the portrait design is unchanged.
-    root.setProperty("--u", `${Math.min(W / 100, H / 177.78)}px`);
-    stage.style.transform = ROTATE === 90 ? `translateX(${vw}px) rotate(90deg)` : ROTATE === 270 ? `translateY(${vh}px) rotate(-90deg)` : "";
+    // One unit (--u) sizes everything. It comes from whichever dimension is tighter, so a wide or short
+    // window never squeezes out the tenant list. 10.8px on both a 1080x1920 portrait and a 1920x1080 landscape screen.
+    root.setProperty("--u", `${landscape ? Math.min(W / 177.78, H / 100) : Math.min(W / 100, H / 177.78)}px`);
+    stage.classList.toggle("landscape", landscape);
+    stage.style.transform = rotate === 90 ? `translateX(${vw}px) rotate(90deg)` : rotate === 270 ? `translateY(${vh}px) rotate(-90deg)` : "";
   }
 
   // ── Tenant list layout ──
@@ -75,11 +83,20 @@
     const max = u * 5.2;
     const attempt = (min, twoCol, showNews) => {
       newsEl.hidden = !showNews;
+      stage.classList.toggle("no-news", !showNews);
       list.classList.toggle("two-col", twoCol);
       document.querySelector(".listing").classList.toggle("two-col-head", twoCol);
       return fitSize(min, max);
     };
-    if (newsWanted() && attempt(u * 2.5, false, true)) return;
+    const size = () => parseFloat($("tenants").style.getPropertyValue("--tf")) || 0;
+    if (newsWanted() && attempt(u * 2.5, false, true)) {
+      // In landscape the news takes a whole column. Move it aside only if that makes names clearly bigger.
+      if (!stage.classList.contains("landscape")) return;
+      const withNews = size();
+      if (attempt(u * 2.3, false, false) && size() > withNews * 1.15) return;
+      attempt(u * 2.5, false, true);
+      return;
+    }
     if (attempt(u * 2.3, false, false)) return;
     if (attempt(u * 1.9, true, false)) return;
     attempt(u * 1.9, true, false); // over capacity: smallest two-column size, overflow clipped
@@ -123,8 +140,8 @@
     const anyArrow = tenants.some((t) => ARROWS[t.dir]);
     list.classList.toggle("no-arrows", !anyArrow);
     list.innerHTML = tenants.length
-      ? tenants.map((t) => `<li class="tenant"><span class="tenant-name">${esc(t.name)}</span><span class="tenant-suite">${esc(t.suite)}</span><span class="tenant-dir">${arrowSvg(t.dir)}</span></li>`).join("")
-      : `<li class="empty">Directory is being updated.</li>`;
+      ? tenants.map((t) => `<li class="tenant"><span class="tenant-name">${esc(t.name)}${t.note ? `<span class="tenant-note">${esc(t.note)}</span>` : ""}</span><span class="tenant-suite">${esc(t.suite)}</span><span class="tenant-dir">${arrowSvg(t.dir)}</span></li>`).join("")
+      : `<li class="empty">${data.assigned === false ? `This screen (${esc(SITE)}) isn't assigned to a directory yet.` : "Directory is being updated."}</li>`;
 
     const m = contactHtml("Managed by", data.managedBy), l = contactHtml("Leased by", data.leasedBy);
     $("managed").innerHTML = m; $("managed").hidden = !m;
@@ -179,7 +196,7 @@
   async function loadDirectory() {
     if (draftMode) return;
     try {
-      const res = await fetch(`/api/directory?site=${encodeURIComponent(SITE)}`, { cache: "no-cache" });
+      const res = await fetch(`/api/screen?key=${encodeURIComponent(SITE)}`, { cache: "no-cache" });
       if (!res.ok) throw new Error(`directory ${res.status}`);
       const d = await res.json();
       const fromCache = res.headers.get("X-Served-From") === "offline-cache";
@@ -197,8 +214,10 @@
     const sig = JSON.stringify(d);
     if (sig === dataSig) return;
     const coordsChanged = !data || data.weather?.lat !== d.weather?.lat || data.weather?.lon !== d.weather?.lon;
+    const orientationChanged = !data || data.orientation !== d.orientation;
     dataSig = sig;
     data = d;
+    if (orientationChanged) sizeStage();
     render();
     if (coordsChanged) loadWeather();
   }
@@ -322,7 +341,7 @@
     fetch("/api/heartbeat", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ site: SITE, screen: { w: screen.width, h: screen.height }, version: VERSION }),
+      body: JSON.stringify({ key: SITE, screen: { w: screen.width, h: screen.height }, version: VERSION }),
     }).catch(() => {});
   }
 

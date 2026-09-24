@@ -17,6 +17,7 @@
 }
 
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+[hidden] { display: none !important; }
 html, body { width: 100%; height: 100%; overflow: hidden; background: var(--navy); cursor: none; }
 body { font-family: "Instrument Sans", "Segoe UI", Arial, sans-serif; color: var(--ink); -webkit-font-smoothing: antialiased; }
 
@@ -100,8 +101,9 @@ body { font-family: "Instrument Sans", "Segoe UI", Arial, sans-serif; color: var
   font-size: var(--tf); font-weight: 700; line-height: 1.14;
 }
 .tenant-name { min-width: 0; text-wrap: pretty; }
+.tenant-note { display: block; margin-top: 0.12em; font-size: 0.56em; font-weight: 400; font-style: italic; color: var(--muted); line-height: 1.2; }
 .tenant-suite { font-variant-numeric: tabular-nums; min-width: 3.1ch; text-align: right; }
-.tenant-dir { width: 0.9em; align-self: center; display: flex; }
+.tenant-dir { width: 0.9em; align-self: start; margin-top: 0.14em; display: flex; }
 .tenant-dir svg { width: 100%; height: auto; }
 .tenants.no-arrows .tenant { grid-template-columns: 1fr auto; }
 .tenants.no-arrows .tenant-dir { display: none; }
@@ -152,3 +154,21 @@ body { font-family: "Instrument Sans", "Segoe UI", Arial, sans-serif; color: var
 }
 
 @media (prefers-reduced-motion: reduce) { .slide, #stage { transition: none; } }
+
+/* ── Landscape ──────────────────────────────
+   Header across the top, tenants on the left, news on the right, contacts across the bottom.
+   When the list needs the room, the news steps aside and the list takes the full width. */
+#stage.landscape {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) calc(var(--u) * 64);
+  grid-template-rows: auto minmax(0, 1fr) auto auto;
+}
+#stage.landscape .masthead { grid-column: 1 / -1; }
+#stage.landscape .property { font-size: calc(var(--u) * 6); }
+#stage.landscape .listing { grid-column: 1; grid-row: 2; }
+#stage.landscape.no-news .listing { grid-column: 1 / -1; }
+#stage.landscape .news { grid-column: 2; grid-row: 2; display: flex; padding: calc(var(--u) * 3.6) var(--pad) calc(var(--u) * 2) 0; }
+#stage.landscape .news-slides { flex: 1; height: auto; }
+#stage.landscape .slide.text-only .slide-headline { font-size: calc(var(--u) * 3.8); }
+#stage.landscape .contacts, #stage.landscape .welcome { grid-column: 1 / -1; }
+#stage.landscape .contact { padding-top: calc(var(--u) * 2.2); padding-bottom: calc(var(--u) * 2.4); }

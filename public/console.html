@@ -1,0 +1,110 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>Directory console</title>
+<link rel="stylesheet" href="/admin.css">
+</head>
+<body>
+<header class="topbar">
+  <div class="topbar-left">
+    <strong class="brand">Directory console</strong>
+    <span id="who" class="checkin"></span>
+  </div>
+  <div class="topbar-right">
+    <button type="button" id="sign-out" class="ghost">Sign out</button>
+  </div>
+</header>
+
+<nav class="tabs" role="tablist" aria-label="Sections">
+  <button role="tab" data-tab="screens" aria-selected="true">Screens</button>
+  <button role="tab" data-tab="buildings" aria-selected="false">Buildings</button>
+  <button role="tab" data-tab="people" aria-selected="false" id="tab-people">People</button>
+  <button role="tab" data-tab="accounts" aria-selected="false" id="tab-accounts" hidden>Accounts</button>
+</nav>
+
+<main class="console">
+  <p id="load-error" class="error" hidden></p>
+
+  <!-- Screens -->
+  <section id="panel-screens" class="tabpanel">
+    <div class="toolbar">
+      <div class="summary" id="screen-summary"></div>
+      <div class="toolbar-controls">
+        <input id="screen-search" type="search" placeholder="Search screens, buildings, tenants" aria-label="Search screens">
+        <select id="screen-owner" aria-label="Filter by account" hidden></select>
+        <select id="screen-status" aria-label="Filter by status">
+          <option value="">All statuses</option><option value="online">Online</option><option value="offline">Offline</option><option value="never">Never checked in</option>
+        </select>
+        <button type="button" id="add-screen" class="primary admin-only">Add screen</button>
+      </div>
+    </div>
+    <div class="table-wrap">
+      <table class="grid">
+        <thead><tr><th>Status</th><th>Screen</th><th>Shows</th><th>Layout</th><th>Last check-in</th><th><span class="sr-only">Actions</span></th></tr></thead>
+        <tbody id="screen-rows"></tbody>
+      </table>
+    </div>
+    <div class="pager" id="screen-pager"></div>
+  </section>
+
+  <!-- Buildings -->
+  <section id="panel-buildings" class="tabpanel" hidden>
+    <div class="toolbar">
+      <div class="summary" id="building-summary"></div>
+      <div class="toolbar-controls">
+        <input id="building-search" type="search" placeholder="Search buildings" aria-label="Search buildings">
+        <button type="button" id="add-building" class="primary admin-only">Add building</button>
+      </div>
+    </div>
+    <div id="building-cards" class="cards"></div>
+  </section>
+
+  <!-- People -->
+  <section id="panel-people" class="tabpanel" hidden>
+    <div class="toolbar">
+      <div class="summary" id="people-summary"></div>
+      <div class="toolbar-controls"><button type="button" id="invite" class="primary">Invite someone</button></div>
+    </div>
+    <div class="table-wrap">
+      <table class="grid">
+        <thead><tr><th>Person</th><th>Role</th><th class="admin-only">Account</th><th>Last sign-in</th><th><span class="sr-only">Actions</span></th></tr></thead>
+        <tbody id="people-rows"></tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- Accounts (1Point only) -->
+  <section id="panel-accounts" class="tabpanel" hidden>
+    <div class="toolbar">
+      <div class="summary" id="account-summary"></div>
+      <div class="toolbar-controls"><button type="button" id="add-account" class="primary">Add account</button></div>
+    </div>
+    <div class="table-wrap">
+      <table class="grid">
+        <thead><tr><th>Account</th><th>Type</th><th>Buildings</th><th>Screens</th><th>People</th><th><span class="sr-only">Actions</span></th></tr></thead>
+        <tbody id="account-rows"></tbody>
+      </table>
+    </div>
+  </section>
+</main>
+
+<!-- One reusable dialog; each action fills in its own fields -->
+<dialog id="dlg">
+  <form id="dlg-form" method="dialog" novalidate>
+    <h2 id="dlg-title"></h2>
+    <div id="dlg-body"></div>
+    <p id="dlg-error" class="error" role="alert" hidden></p>
+    <div class="dialog-actions">
+      <button value="cancel" class="ghost" formnovalidate>Cancel</button>
+      <button value="ok" id="dlg-ok" class="primary">Save</button>
+    </div>
+  </form>
+</dialog>
+
+<script src="/auth.js"></script>
+<script src="/console.js"></script>
+</body>
+</html>
