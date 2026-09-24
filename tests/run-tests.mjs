@@ -14,6 +14,8 @@ import news from "../netlify/functions/news.mjs";
 import agent from "../netlify/functions/agent.mjs";
 import devices from "../netlify/functions/devices.mjs";
 import { runAlerts, evaluate } from "../netlify/functions/alerts.mjs";
+import { computeSummary } from "../netlify/functions/devices.mjs";
+import { centralDay } from "../netlify/functions/agent.mjs";
 import { parseFeed, isBlocked } from "../netlify/lib/rss.mjs";
 
 const SB = "http://fake.supabase.test";
@@ -244,18 +246,64 @@ test("commands older than an hour are dropped, not run late", async () => {
   assert.equal(fake.T.device_commands.find((c) => c.id === 999).status, "expired");
 });
 
-test("Barber users see their own Pis and can reload, but can't reboot", async () => {
+test("Pi health is 1Point-only: owner users and editors are refused everything", async () => {
   const owner = await login("leighann@barber.test", "owner-pass");
-  const list = (await (await devApi(owner)).json()).devices;
-  assert.ok(list.length >= 15 && list.every((d) => d.screen_key), "their screens' Pis only");
-  assert.ok(!list.some((d) => d.serial === "10000000ffff0001"), "unassigned Pis are 1Point's business");
+  const editor = await login("editor@barber.test", "editor-pass");
+  const dev = fake.T.devices.find((x) => x.serial === PPI2S_SERIAL);
+  for (const t of [owner, editor]) {
+    assert.equal((await devApi(t)).status, 403);
+    assert.equal((await devApi(t, { qs: "?summary=1" })).status, 403);
+    assert.equal((await devApi(t, { qs: `?screenshot=${dev.id}` })).status, 403);
+    assert.equal((await devApi(t, { method: "POST", body: { action: "command", device_id: dev.id, command: "reload" } })).status, 403);
+    assert.equal((await devApi(t, { method: "POST", body: { action: "identify", screen_id: dev.screen_id } })).status, 403);
+  }
+  const admin = await login("scot@1pointusa.com", "admin-pass");
+  const list = (await (await devApi(admin)).json()).devices;
+  assert.ok(list.length >= 16);
   assert.ok(!("key_hash" in list[0]), "keys never leave the server");
-  const dev = list.find((d) => d.serial === PPI2S_SERIAL);
-  assert.equal((await devApi(owner, { method: "POST", body: { action: "command", device_id: dev.id, command: "reload" } })).status, 200);
-  assert.equal((await devApi(owner, { method: "POST", body: { action: "command", device_id: dev.id, command: "reboot" } })).status, 403);
-  assert.equal((await devApi(owner, { method: "POST", body: { action: "assign", device_id: dev.id, screen_id: null } })).status, 403);
-  const shot = await devApi(owner, { qs: `?screenshot=${dev.id}` });
-  assert.equal(shot.headers.get("content-type"), "image/jpeg");
+});
+
+test("every check-in adds to the Pi's daily summary", async () => {
+  const dev = fake.T.devices.find((x) => x.serial === PPI2S_SERIAL);
+  const before = fake.T.device_daily.find((r) => r.device_id === dev.id && r.day === centralDay())?.checkins || 0;
+  await checkin({ health: { temp_c: 61.5, under_voltage_now: true, browser_running: false } });
+  await checkin({ health: { temp_c: 58, under_voltage_now: false, browser_running: true } });
+  const row = fake.T.device_daily.find((r) => r.device_id === dev.id && r.day === centralDay());
+  assert.equal(row.checkins, before + 2);
+  assert.ok(row.power_dips >= 1); assert.ok(row.browser_down >= 1);
+  assert.ok(row.max_temp_c >= 61.5, "keeps the day's peak");
+  assert.equal(fake.T.device_daily.filter((r) => r.device_id === dev.id && r.day === centralDay()).length, 1, "one row per day");
+});
+
+test("uptime math: full days, today so far, and new Pis aren't penalized for days before they existed", () => {
+  const now = Date.parse("2026-09-24T17:00:00Z"); // noon Central -> 720 minutes into today
+  const d = (day, checkins, extra = {}) => ({ device_id: "A", day, checkins, power_dips: 0, browser_down: 0, max_temp_c: 55, ...extra });
+  const daily = [d("2026-09-22", 1440), d("2026-09-23", 720, { power_dips: 3, max_temp_c: 71 }), d("2026-09-24", 720)];
+  const devices = [{ id: "A", serial: "10000000aaaaaaaa", screen_id: "S", status: "active", last_seen: new Date(now - 60000).toISOString(), last_health: { temp_c: 50 } },
+                   { id: "B", serial: "10000000bbbbbbbb", screen_id: null, status: "active", last_seen: null, last_health: {} }];
+  const r = computeSummary({ devices, daily, screens: [{ id: "S", name: "Lobby", key: "lobby", directory_id: "D" }], dirs: [{ id: "D", property_id: "P" }], props: [{ id: "P", name: "Tower", org_id: "O" }], orgs: [{ id: "O", name: "Barber Companies" }], now });
+  const a = r.devices.find((x) => x.id === "A");
+  assert.equal(a.uptime.d1, 100, "720 of 720 minutes today");
+  assert.equal(a.uptime.d7, Math.round((1440 + 720 + 720) / (1440 + 1440 + 720) * 1000) / 10, "only counted from its first day");
+  assert.equal(a.dips.d7, 3); assert.equal(a.max_temp_7d, 71);
+  assert.deepEqual(a.problems, ["power dips this week"]);
+  assert.equal(a.account, "Barber Companies"); assert.equal(a.building, "Tower");
+  const b = r.devices.find((x) => x.id === "B");
+  assert.equal(b.uptime.d30, null, "no history yet: no uptime rather than 0%");
+  // A Pi installed at 11:50 Central today with 10 check-ins since: ~100%, not 10 out of 720 minutes
+  const c = computeSummary({ devices: [{ id: "C", serial: "10000000cccccccc", screen_id: null, status: "active", last_seen: new Date(now).toISOString(), last_health: {} }],
+    daily: [{ device_id: "C", day: "2026-09-24", checkins: 10, power_dips: 0, browser_down: 0, max_temp_c: 50, first_at: "2026-09-24T16:50:00Z" }], screens: [], dirs: [], props: [], orgs: [], now });
+  assert.equal(c.devices[0].uptime.d1, 100, "counted from its first check-in");
+  assert.equal(r.fleet.never, 1); assert.equal(r.fleet.online, 1);
+});
+
+test("the summary endpoint returns every Pi for 1Point", async () => {
+  const admin = await login("scot@1pointusa.com", "admin-pass");
+  const r = await (await devApi(admin, { qs: "?summary=1" })).json();
+  assert.ok(r.devices.length >= 16);
+  const p = r.devices.find((x) => x.serial === PPI2S_SERIAL);
+  assert.equal(p.screen.key, "ppi-2s"); assert.equal(p.account, "Barber Companies");
+  assert.ok(p.uptime.d1 > 0);
 });
 
 test("identify flashes a screen; 1Point can assign a new Pi and reset keys", async () => {

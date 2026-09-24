@@ -171,3 +171,15 @@ td.thumb { width: 96px; padding: 6px 8px; }
 .dev-actions { display: flex; flex-wrap: wrap; gap: 8px; margin: 8px 0 14px; }
 .dev-panel h3 { font-size: 14px; margin: 6px 0; }
 .dev-cmds { list-style: none; margin: 0; padding: 0; display: grid; gap: 4px; font-size: 13px; }
+
+/* ── Health tab ── */
+.health-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 12px; margin-bottom: 16px; }
+.hcard { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 14px 16px; }
+.hcard .hval { font-size: 28px; font-weight: 700; line-height: 1.1; }
+.hcard .hlabel { color: var(--muted); font-size: 13px; margin-top: 4px; }
+.hcard.good .hval, .good { color: var(--ok); }
+.hcard.bad .hval { color: var(--danger); }
+.health-grid td.nums { white-space: nowrap; font-variant-numeric: tabular-nums; }
+.health-grid tr.has-problem td:first-child { box-shadow: inset 3px 0 0 var(--danger); }
+.check.inline { padding: 0; font-weight: 400; }
+.toolbar-controls input[type=checkbox] { min-width: 0; width: auto; }

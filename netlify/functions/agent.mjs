@@ -14,6 +14,33 @@ export const SERIAL_RE = /^[0-9a-f]{8,32}$/;
 export const COMMANDS = ["reboot", "reload", "screenshot", "update_agent"];
 const MAX_SHOT = 400_000; // ~300 KB JPEG
 const sha = (s) => createHash("sha256").update(s).digest("hex");
+/** Today's date in Central time, e.g. "2026-09-24": the daily summary's day. */
+export const centralDay = (d = new Date()) => new Intl.DateTimeFormat("en-CA", { timeZone: "America/Chicago" }).format(d);
+
+/** Adds this check-in to the Pi's summary for the day. Never blocks the check-in itself. */
+export async function recordDaily(deviceId, health, nowIso) {
+  try {
+    const day = centralDay(new Date(nowIso));
+    const [row] = await db(`device_daily?device_id=eq.${deviceId}&day=eq.${day}&select=id,checkins,power_dips,browser_down,max_temp_c`);
+    const temp = typeof health.temp_c === "number" ? health.temp_c : null;
+    if (row) {
+      await db(`device_daily?id=eq.${row.id}`, { method: "PATCH", prefer: "return=minimal", body: {
+        checkins: row.checkins + 1,
+        power_dips: row.power_dips + (health.under_voltage_now ? 1 : 0),
+        browser_down: row.browser_down + (health.browser_running === false ? 1 : 0),
+        max_temp_c: temp === null ? row.max_temp_c : Math.max(row.max_temp_c ?? temp, temp),
+        last_at: nowIso,
+      } });
+    } else {
+      await db("device_daily", { method: "POST", prefer: "return=minimal", body: {
+        device_id: deviceId, day, checkins: 1, power_dips: health.under_voltage_now ? 1 : 0,
+        browser_down: health.browser_running === false ? 1 : 0, max_temp_c: temp, first_at: nowIso, last_at: nowIso,
+      } });
+    }
+  } catch (e) {
+    console.log("daily summary not recorded:", e.message);
+  }
+}
 const clip = (v, n) => String(v ?? "").slice(0, n);
 
 // Keep only the health fields we understand, as numbers/booleans/short strings.
@@ -59,6 +86,7 @@ export default async (req) => {
       patch.screenshot = shot; patch.screenshot_at = now;
     }
     await db(`devices?id=eq.${dev.id}`, { method: "PATCH", prefer: "return=minimal", body: patch });
+    await recordDaily(dev.id, patch.last_health, now);
 
     // Results of commands this Pi ran
     for (const r of Array.isArray(body.results) ? body.results.slice(0, 20) : []) {

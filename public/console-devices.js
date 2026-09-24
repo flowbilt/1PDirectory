@@ -14,12 +14,14 @@ window.ConsoleDevices = (() => {
 
   async function load(isAdmin) {
     admin = isAdmin;
+    if (!admin) { devices = []; return; }          // Pi health is a 1Point tool; owners never load it
     try { devices = (await Auth.api("/api/devices")).devices; } catch { devices = []; }
     renderNew();
   }
 
   /** Extra status line under a screen's status: what its Pi says. */
   function statusNote(screen) {
+    if (!admin) return "";
     const d = forScreen(screen.id);
     if (!d) return `<div class="sub">No agent</div>`;
     const h = d.last_health || {};
@@ -34,8 +36,8 @@ window.ConsoleDevices = (() => {
 
   function thumbCell(screen) {
     const d = forScreen(screen.id);
-    if (!d || !d.screenshot_at) return `<td class="thumb"></td>`;
-    return `<td class="thumb"><button type="button" class="thumb-btn" data-device="${d.id}" aria-label="Screenshot of ${esc(screen.name)}"><img data-shot="${d.id}" alt=""></button></td>`;
+    if (!d || !d.screenshot_at) return `<td class="thumb admin-only"></td>`;
+    return `<td class="thumb admin-only"><button type="button" class="thumb-btn" data-device="${d.id}" aria-label="Screenshot of ${esc(screen.name)}"><img data-shot="${d.id}" alt=""></button></td>`;
   }
 
   function actionButton(screen) {
@@ -148,5 +150,55 @@ window.ConsoleDevices = (() => {
     if (b) panel(b.dataset.device);
   });
 
-  return { load, statusNote, thumbCell, actionButton, fillThumbs, renderNew, list: () => devices };
+  // ── Health tab: every Pi at a glance, with uptime history ──
+  let health = null;
+  const fmtPct = (v) => (v === null || v === undefined ? "–" : `${v}%`);
+  const pctClass = (v) => (v === null || v === undefined ? "sub" : v >= 99 ? "good" : v >= 95 ? "" : "warn");
+  async function loadHealth() {
+    try { health = await Auth.api("/api/devices?summary=1"); } catch (ex) { toast(ex.message, true); return; }
+    const accounts = [...new Set(health.devices.map((d) => d.account).filter(Boolean))].sort();
+    const sel = $("health-account"), keep = sel.value;
+    sel.innerHTML = `<option value="">All accounts</option>` + accounts.map((a) => `<option${a === keep ? " selected" : ""}>${esc(a)}</option>`).join("");
+    renderHealth();
+  }
+  function healthRows() {
+    const q = $("health-search").value.trim().toLowerCase(), acct = $("health-account").value, probs = $("health-problems").checked;
+    return health.devices
+      .filter((d) => (!acct || d.account === acct) && (!probs || d.problems.length))
+      .filter((d) => !q || [d.screen?.name, d.screen?.key, d.building, d.account, d.serial, d.ip].join(" ").toLowerCase().includes(q))
+      .sort((a, b) => b.problems.length - a.problems.length || String(a.screen?.name || "~").localeCompare(String(b.screen?.name || "~")));
+  }
+  function renderHealth() {
+    if (!health) return;
+    const f = health.fleet;
+    $("health-cards").innerHTML = [
+      ["Online", f.online, "good"], ["Offline", f.offline, f.offline ? "bad" : ""], ["Not checked in yet", f.never, ""],
+      ["Need attention", f.with_problems, f.with_problems ? "bad" : "good"], ["Fleet uptime, 30 days", fmtPct(f.uptime_30d), pctClass(f.uptime_30d)],
+    ].map(([label, v, cls]) => `<div class="hcard ${cls}"><div class="hval">${v}</div><div class="hlabel">${label}</div></div>`).join("");
+    $("health-note").textContent = `${f.devices} Pis · updated ${new Date(health.generated_at).toLocaleTimeString()}`;
+    const rows = healthRows();
+    $("health-rows").innerHTML = rows.length ? rows.map((d) => `<tr class="${d.problems.length ? "has-problem" : ""}">
+      <td><span class="dot ${d.online ? "online" : d.last_seen ? "offline" : "never"}"></span>${d.online ? "Online" : d.last_seen ? "Offline" : "Not yet"}
+        ${d.problems.length ? `<div class="dev-note warn">${d.problems.map(esc).join(" · ")}</div>` : ""}</td>
+      <td>${d.screen ? `<strong>${esc(d.screen.name)}</strong><div class="sub">${esc(d.building || "")}${d.account ? ` · ${esc(d.account)}` : ""}</div>` : `<span class="warn">Not assigned</span>`}</td>
+      <td class="nums"><span class="${pctClass(d.uptime.d1)}">${fmtPct(d.uptime.d1)}</span> · <span class="${pctClass(d.uptime.d7)}">${fmtPct(d.uptime.d7)}</span> · <span class="${pctClass(d.uptime.d30)}">${fmtPct(d.uptime.d30)}</span>
+        ${d.history_from ? `<div class="sub">since ${esc(d.history_from)}</div>` : ""}</td>
+      <td class="nums">${d.power_now ? `<span class="warn">Low</span>` : d.last_seen ? "OK" : "–"} · ${d.dips.d7} · ${d.dips.d30}</td>
+      <td class="nums">${d.temp_now !== null ? `<span class="${d.temp_now >= 80 ? "warn" : ""}">${Math.round(d.temp_now)}°C</span>` : "–"} · ${d.max_temp_7d !== null ? `${Math.round(d.max_temp_7d)}°C` : "–"}</td>
+      <td class="nums">${d.browser_down_7d ? `<span class="warn">${d.browser_down_7d} min</span>` : d.last_seen ? "0 min" : "–"}</td>
+      <td><button type="button" class="linkish" data-device="${d.id}">${esc(d.serial)}</button><div class="sub">${esc(d.ip || "")}${d.agent_version ? ` · agent ${esc(d.agent_version)}` : ""}</div></td>
+      <td>${since(d.last_seen)}</td></tr>`).join("") : `<tr><td colspan="8" class="empty-rows">No devices match.</td></tr>`;
+  }
+  ["health-search", "health-account", "health-problems"].forEach((id) => document.addEventListener("input", (e) => { if (e.target.id === id) renderHealth(); }));
+  document.addEventListener("click", (e) => {
+    if (e.target.id !== "health-csv" || !health) return;
+    const cols = ["Screen", "Screen address", "Building", "Account", "Pi serial", "Status", "Uptime today %", "Uptime 7 days %", "Uptime 30 days %", "Power now", "Power dips 7 days", "Power dips 30 days", "Temp now C", "Peak temp 7 days C", "Browser down 7 days (min)", "IP", "Agent", "Last check-in", "History since", "Problems"];
+    const q = (v) => `"${String(v ?? "").replace(/"/g, '""')}"`;
+    const lines = [cols.map(q).join(",")].concat(healthRows().map((d) => [d.screen?.name, d.screen?.key, d.building, d.account, d.serial, d.online ? "Online" : d.last_seen ? "Offline" : "Not yet",
+      d.uptime.d1, d.uptime.d7, d.uptime.d30, d.power_now ? "Low" : "OK", d.dips.d7, d.dips.d30, d.temp_now, d.max_temp_7d, d.browser_down_7d, d.ip, d.agent_version, d.last_seen, d.history_from, d.problems.join("; ")].map(q).join(",")));
+    const a = Object.assign(document.createElement("a"), { href: URL.createObjectURL(new Blob([lines.join("\r\n")], { type: "text/csv" })), download: `pi-health-${new Date().toISOString().slice(0, 10)}.csv` });
+    a.click();
+  });
+
+  return { load, statusNote, thumbCell, actionButton, fillThumbs, renderNew, loadHealth, list: () => devices };
 })();

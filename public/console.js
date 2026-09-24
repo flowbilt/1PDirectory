@@ -42,6 +42,7 @@
     document.querySelectorAll(".tabpanel").forEach((p) => (p.hidden = p.id !== `panel-${name}`));
     if (location.hash.slice(1) !== name) history.replaceState(null, "", `#${name}`);
     if (name === "people") renderPeople();
+    if (name === "health") Dev.loadHealth();
   }
 
   // ── Screens ──
@@ -346,12 +347,13 @@
       S.admin = S.me.role === "platform_admin";
       document.body.classList.toggle("is-admin", S.admin);
       $("tab-accounts").hidden = !S.admin;
+      $("tab-health").hidden = !S.admin;
       $("tab-people").hidden = S.me.role === "org_editor";
       await refresh();
       $("who").textContent = `${S.me.full_name || S.me.email} · ${S.admin ? "1Point" : org(S.me.org_id)?.name || ""} · ${roleName(S.me.role)}`;
       if (S.admin) { $("screen-owner").hidden = false; $("screen-owner").innerHTML = `<option value="">All accounts</option>` + orgOptions(); }
       const tab = location.hash.slice(1);
-      showTab(["screens", "buildings", "people", "accounts"].includes(tab) && !document.querySelector(`[data-tab=${tab}]`).hidden ? tab : "screens");
+      showTab(["screens", "buildings", "people", "health", "accounts"].includes(tab) && !document.querySelector(`[data-tab=${tab}]`).hidden ? tab : "screens");
       setInterval(async () => {
         if (document.querySelector("dialog[open]")) return; // don't redraw under an open panel
         try { S.screens = await Auth.db("screens?select=*&order=name.asc"); await Dev.load(S.admin); Dev.renderNew(S.screens); renderScreens(); } catch { /* keep last */ }

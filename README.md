@@ -58,13 +58,19 @@ Each Pi runs a small agent (`public/pi/agent.py`) that checks in every minute ov
 - whether the browser is running
 - a small screenshot every 5 minutes
 
-In the console, the **Pi** button on each screen offers these actions:
+Pi health is a 1Point service tool. Owner users see only each screen's Online/Offline dot. The server refuses them all device information, not just the console.
 
-| Action | Who |
-|---|---|
-| Identify, Reload screen, Take screenshot | Anyone who can see the screen |
-| Reboot Pi, Update agent | 1Point |
-| Reset device key, Switch off, Assign or unassign | 1Point |
+In the console, the **Pi** button on each screen offers Identify, Reload screen, Take screenshot, Reboot Pi and Update agent. Under **More** are Reset device key, Switch off, and Unassign.
+
+**Health tab:** every Pi on one page, with problems sorted to the top. It shows:
+
+- uptime today, over 7 days and over 30 days
+- power dips, current and peak temperature, and browser outages
+- IP address, agent version, and last check-in
+
+It filters by account and exports a CSV, for customer service reports.
+
+Uptime comes from a daily summary for each Pi (`device_daily`), kept for 400 days. A new Pi's uptime counts from its first check-in, so it isn't penalized for time before it was installed.
 
 Only those fixed actions exist, and the agent can't run anything else. Actions not picked up within an hour are dropped rather than run late.
 

@@ -22,6 +22,7 @@
   <button role="tab" data-tab="screens" aria-selected="true">Screens</button>
   <button role="tab" data-tab="buildings" aria-selected="false">Buildings</button>
   <button role="tab" data-tab="people" aria-selected="false" id="tab-people">People</button>
+  <button role="tab" data-tab="health" aria-selected="false" id="tab-health" hidden>Health</button>
   <button role="tab" data-tab="accounts" aria-selected="false" id="tab-accounts" hidden>Accounts</button>
 </nav>
 
@@ -47,7 +48,7 @@
     </section>
     <div class="table-wrap">
       <table class="grid">
-        <thead><tr><th>Status</th><th><span class="sr-only">Screenshot</span></th><th>Screen</th><th>Shows</th><th>Layout</th><th>Last check-in</th><th><span class="sr-only">Actions</span></th></tr></thead>
+        <thead><tr><th>Status</th><th class="admin-only"><span class="sr-only">Screenshot</span></th><th>Screen</th><th>Shows</th><th>Layout</th><th>Last check-in</th><th><span class="sr-only">Actions</span></th></tr></thead>
         <tbody id="screen-rows"></tbody>
       </table>
     </div>
@@ -76,6 +77,26 @@
       <table class="grid">
         <thead><tr><th>Person</th><th>Role</th><th class="admin-only">Account</th><th>Last sign-in</th><th><span class="sr-only">Actions</span></th></tr></thead>
         <tbody id="people-rows"></tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- Health (1Point only) -->
+  <section id="panel-health" class="tabpanel" hidden>
+    <div class="health-cards" id="health-cards"></div>
+    <div class="toolbar">
+      <div class="summary" id="health-note"></div>
+      <div class="toolbar-controls">
+        <input id="health-search" type="search" placeholder="Search screens, buildings, serials" aria-label="Search devices">
+        <select id="health-account" aria-label="Filter by account"></select>
+        <label class="check inline"><input type="checkbox" id="health-problems"> Problems only</label>
+        <button type="button" id="health-csv" class="ghost">Export CSV</button>
+      </div>
+    </div>
+    <div class="table-wrap">
+      <table class="grid health-grid">
+        <thead><tr><th>Status</th><th>Screen</th><th>Uptime<br><span class="sub">today · 7 · 30 days</span></th><th>Power<br><span class="sub">now · dips 7d · 30d</span></th><th>Temperature<br><span class="sub">now · peak 7d</span></th><th>Browser<br><span class="sub">down 7d</span></th><th>Pi</th><th>Last check-in</th></tr></thead>
+        <tbody id="health-rows"></tbody>
       </table>
     </div>
   </section>

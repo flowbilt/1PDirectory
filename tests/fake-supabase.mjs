@@ -7,8 +7,8 @@ export const SERVICE_KEY = "test-service-key";
 export const ANON_KEY = "test-anon-key";
 
 export function createFake() {
-  const T = { organizations: [], profiles: [], properties: [], directories: [], tenants: [], screens: [], audit_log: [], devices: [], device_commands: [] };
-  const SERVICE_ONLY = new Set(["devices", "device_commands"]); // row-level security on, no policies: server key only
+  const T = { organizations: [], profiles: [], properties: [], directories: [], tenants: [], screens: [], audit_log: [], devices: [], device_commands: [], device_daily: [] };
+  const SERVICE_ONLY = new Set(["devices", "device_commands", "device_daily"]); // row-level security on, no policies: server key only
   const users = new Map(); // id -> {id,email,password,last_sign_in_at,invited_at,user_metadata}
   const tokens = new Map(); // token -> user id
   const outbox = [];
@@ -144,6 +144,7 @@ export function createFake() {
     profiles: () => ({ full_name: "", created_at: now() }),
     audit_log: () => ({ id: T.audit_log.length + 1, at: now(), detail: {} }),
     devices: () => ({ id: randomUUID(), screen_id: null, key_hash: null, status: "active", model: "", hostname: "", agent_version: "", last_seen: null, last_health: {}, screenshot: "", screenshot_at: null, alert_state: {}, created_at: now() }),
+    device_daily: () => ({ id: (T.device_daily.at(-1)?.id || 0) + 1, checkins: 0, power_dips: 0, browser_down: 0, max_temp_c: null }),
     device_commands: () => ({ id: (T.device_commands.at(-1)?.id || 0) + 1, status: "pending", result: "", created_at: now(), sent_at: null, done_at: null }),
   };
   const touchDir = (did, uid) => { const d = T.directories.find((x) => x.id === did); if (d) { d.updated_at = now(); d.updated_by = uid || null; } };

@@ -66,6 +66,11 @@ async function sendEmail(lines) {
 
 export default async () => {
   try { await runAlerts(); } catch (e) { console.log("alert check failed:", e.message); }
+  // Keep 400 days of daily health history (checked each run; deletes nothing most of the time)
+  try {
+    const cutoff = new Date(Date.now() - 400 * 86400_000).toISOString().slice(0, 10);
+    await db(`device_daily?day=lt.${cutoff}`, { method: "DELETE", prefer: "return=minimal" });
+  } catch (e) { console.log("history trim failed:", e.message); }
 };
 
 export const config = { schedule: "*/10 * * * *" };
