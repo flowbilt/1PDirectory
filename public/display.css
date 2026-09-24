@@ -30,6 +30,31 @@ body { font-family: "Instrument Sans", "Segoe UI", Arial, sans-serif; color: var
 }
 #stage.is-loading { opacity: 0; }
 
+/* ── Background photo (optional) ─────────────
+   The photo sits behind everything under a navy tint. --bg-show is how much of it shows through.
+   The tint is heavier behind the tenant list, where legibility matters most. */
+.bg { position: absolute; inset: 0; z-index: 0; overflow: hidden; }
+/* The photo is pinned to the top and scaled by width (--bg-size), so a building photo shows whole behind
+   the header and tenant list; the street falls behind the news panel, and the bottom fades to navy. */
+.bg-photo {
+  position: absolute; top: 0; left: var(--bg-left, 0px);
+  width: var(--bg-width, 100%); height: auto; max-width: none;
+  filter: grayscale(0.35) blur(calc(var(--u) * 0.2));
+  -webkit-mask-image: linear-gradient(to bottom, #000 72%, transparent 100%);
+          mask-image: linear-gradient(to bottom, #000 72%, transparent 100%);
+}
+.bg-tint {
+  position: absolute; inset: 0;
+  background: linear-gradient(to bottom,
+    rgba(13, 27, 46, calc(1 - var(--bg-show) * 1.6)) 0%,
+    rgba(13, 27, 46, calc(1 - var(--bg-show))) 16%,
+    rgba(13, 27, 46, calc(1 - var(--bg-show))) 100%);
+}
+#stage > :not(.bg):not(.offline) { position: relative; z-index: 1; }
+.offline { z-index: 2; }
+#stage.has-bg { background: #0d1b2e; }
+#stage.has-bg .contacts, #stage.has-bg .welcome { background: rgba(8, 19, 34, 0.82); }
+
 /* ── Masthead ───────────────────────────────── */
 .masthead {
   display: flex; justify-content: space-between; align-items: flex-end; gap: calc(var(--u) * 4);

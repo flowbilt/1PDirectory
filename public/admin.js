@@ -127,6 +127,7 @@
     if (![...$("timezone").options].some((o) => o.value === tz)) $("timezone").add(new Option(tz, tz));
     $("timezone").value = tz;
     renderLogo();
+    renderBg();
     renderTenants();
   }
 
@@ -140,6 +141,15 @@
     draft.weather = { enabled: $("weather-on").checked, lat: parseFloat($("lat").value), lon: parseFloat($("lon").value) };
     draft.news = { enabled: $("news-on").checked, rotateSeconds: parseInt($("rotate").value, 10) || 12 };
     draft.timezone = $("timezone").value;
+    const bg = draft.background || {};
+    draft.background = {
+      image: bg.image || "",
+      enabled: !!bg.image && $("bg-on").checked,
+      visibility: parseInt($("bg-vis").value, 10) || 15,
+      position: parseInt($("bg-pos").value, 10),
+      size: parseInt($("bg-size").value, 10) || 190,
+    };
+    $("bg-vis-val").textContent = `${draft.background.visibility}%`;
     draft.tenants = [...$("tenant-rows").querySelectorAll(".tenant-row")].map((row) => ({
       name: row.querySelector(".t-name").value.trim(),
       suite: row.querySelector(".t-suite").value.trim(),
@@ -261,6 +271,59 @@
     if (out.length > 880_000) throw new Error("That logo is still too large after resizing. Try a simpler image.");
     return out;
   }
+
+  // ── Background photo ──
+  function renderBg() {
+    const bg = draft.background || {};
+    const has = !!bg.image;
+    $("bg-preview").style.backgroundImage = has ? `url("${bg.image}")` : "";
+    $("bg-preview").style.backgroundPosition = `${bg.position ?? 50}% top`;
+    $("bg-preview").innerHTML = has ? "" : "<span>No photo</span>";
+    for (const id of ["bg-remove", "bg-on-row", "bg-vis-row", "bg-size-row", "bg-pos-row"]) $(id).hidden = !has;
+    $("bg-size").value = bg.size ?? 190;
+    $("bg-on").checked = !!bg.enabled;
+    $("bg-vis").value = bg.visibility ?? 15;
+    $("bg-pos").value = bg.position ?? 50;
+    $("bg-vis-val").textContent = `${bg.visibility ?? 15}%`;
+  }
+
+  // Photos are scaled so the short side is at most 1080px and saved as JPEG, which keeps them near 150-400 KB.
+  async function shrinkPhoto(file) {
+    const src = await readAsDataURL(file);
+    const img = await new Promise((res, rej) => { const i = new Image(); i.onload = () => res(i); i.onerror = () => rej(new Error("That file isn't a photo this browser can open.")); i.src = src; });
+    const scale = Math.min(1, 1080 / Math.min(img.naturalWidth, img.naturalHeight));
+    const c = document.createElement("canvas");
+    c.width = Math.round(img.naturalWidth * scale);
+    c.height = Math.round(img.naturalHeight * scale);
+    c.getContext("2d").drawImage(img, 0, 0, c.width, c.height);
+    for (const q of [0.82, 0.7, 0.55]) {
+      const out = c.toDataURL("image/jpeg", q);
+      if (out.length <= 1_350_000) return out;
+    }
+    throw new Error("That photo is too large even after compressing. Try a smaller one.");
+  }
+
+  $("bg-file").addEventListener("change", async (e) => {
+    const file = e.target.files[0];
+    e.target.value = "";
+    if (!file) return;
+    try {
+      readForm();
+      draft.background = { ...(draft.background || {}), image: await shrinkPhoto(file), enabled: true, visibility: draft.background?.visibility || 15, position: 50, size: 190 };
+      renderBg();
+      setDirty(true);
+      pushPreview();
+    } catch (err) { toast(err.message, true); }
+  });
+
+  $("bg-remove").addEventListener("click", () => {
+    readForm();
+    draft.background = { ...draft.background, image: "", enabled: false };
+    renderBg(); setDirty(true); pushPreview();
+  });
+
+  // Sliders move the preview live
+  for (const id of ["bg-vis", "bg-pos", "bg-size"]) $(id).addEventListener("input", () => { readForm(); renderBg(); pushPreview(); });
 
   // ── Preview ──
   function scalePreview() {

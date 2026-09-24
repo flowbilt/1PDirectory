@@ -63,6 +63,12 @@ legend { font-weight: 700; padding: 0 6px; }
 .logo-preview img { max-width: 90%; max-height: 80%; object-fit: contain; }
 .logo-actions { display: flex; gap: 8px; }
 
+/* Background photo */
+.bg-row { display: flex; gap: 18px; align-items: flex-start; flex-wrap: wrap; }
+.bg-preview { width: 120px; aspect-ratio: 9 / 16; border-radius: 8px; background: var(--navy) center / cover no-repeat; display: grid; place-items: center; color: var(--steel); font-size: 13px; flex-shrink: 0; }
+.bg-controls { flex: 1; min-width: 240px; display: grid; gap: 12px; }
+.bg-controls input[type=range] { padding: 0; border: 0; }
+
 /* Tenant rows */
 .tenant-head, .tenant-row { display: grid; grid-template-columns: minmax(0, 1fr) 90px 110px 190px; gap: 8px; align-items: center; }
 .tenant-head { font-size: 13px; color: var(--muted); font-weight: 700; padding: 0 2px; }

@@ -121,6 +121,28 @@ test("heartbeat rejects bad site keys", async () => {
   assert.equal(r.status, 400);
 });
 
+test("directory answers 304 when a screen already has the current version", async () => {
+  const r1 = await directory(req("/api/directory?site=landmark-center"));
+  const etag = r1.headers.get("ETag");
+  assert.ok(etag, "ETag sent");
+  const r2 = await directory(new Request(BASE + "/api/directory?site=landmark-center", { headers: { "If-None-Match": etag } }));
+  assert.equal(r2.status, 304);
+  assert.equal(await r2.text(), "");
+  const r3 = await directory(new Request(BASE + "/api/directory?site=landmark-center", { headers: { "If-None-Match": '"stale"' } }));
+  assert.equal(r3.status, 200);
+});
+
+test("background photo settings are validated and kept", async () => {
+  const put = (b) => directory(req("/api/directory?site=bg-test", { method: "PUT", body: { propertyName: "X", tenants: [], ...b }, pw: "correct horse" }));
+  const photo = "data:image/jpeg;base64,/9j/4AAQSkZJRg==";
+  const ok = await (await put({ background: { image: photo, enabled: true, visibility: 99, position: 30 } })).json();
+  assert.deepEqual(ok.background, { enabled: true, image: photo, visibility: 15, position: 30, size: 190 }, "out-of-range strength reset to default");
+  const off = await (await put({ background: { enabled: true } })).json();
+  assert.equal(off.background.enabled, false, "can't enable without a photo");
+  assert.equal((await put({ background: { image: "data:image/svg+xml;base64,PHN2Zz4=" } })).status, 400, "SVG rejected as a photo");
+  assert.equal((await put({ background: { image: "data:image/jpeg;base64," + "A".repeat(1_400_001) } })).status, 400, "oversized photo rejected");
+});
+
 test("DELETE removes a saved building", async () => {
   const r = await directory(req("/api/directory?site=riverchase-tower", { method: "DELETE", pw: "correct horse" }));
   assert.equal(r.status, 200);

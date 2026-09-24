@@ -1,6 +1,7 @@
 // GET    /api/directory?site=landmark-center  -> the directory (public; screens poll this)
 // PUT    /api/directory?site=...              -> save (needs x-admin-password)
 // DELETE /api/directory?site=...              -> remove a saved site (needs x-admin-password)
+import { createHash } from "node:crypto";
 import { SEED } from "../lib/seed.mjs";
 import { checkAuth, json, siteFrom, store, validateSite } from "../lib/common.mjs";
 
@@ -14,7 +15,13 @@ export default async (req) => {
     const saved = await store().get(key, { type: "json" });
     const data = saved || SEED[site];
     if (!data) return json({ error: `No directory named "${site}".` }, 404);
-    return json({ site, ...data });
+    // Screens poll every minute. The ETag lets them skip the download when nothing changed,
+    // which matters once a directory carries a logo or background photo.
+    const body = JSON.stringify({ site, ...data });
+    const etag = `"${createHash("sha1").update(body).digest("base64url")}"`;
+    const headers = { "Content-Type": "application/json; charset=utf-8", "Cache-Control": "no-cache", ETag: etag };
+    if ((req.headers.get("if-none-match") || "").split(/\s*,\s*/).includes(etag)) return new Response(null, { status: 304, headers });
+    return new Response(body, { status: 200, headers });
   }
 
   const auth = checkAuth(req);

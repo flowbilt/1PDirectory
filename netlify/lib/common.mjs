@@ -4,6 +4,7 @@ import { getStore } from "@netlify/blobs";
 export const SITE_RE = /^[a-z0-9][a-z0-9-]{0,47}$/;
 export const DIRS = new Set(["", "left", "right", "up", "down"]);
 const MAX_LOGO_CHARS = 900_000; // ~650 KB image as a data URL
+const MAX_BG_CHARS = 1_400_000; // ~1 MB photo as a data URL
 
 export function store() {
   return getStore({ name: "directory", consistency: "strong" });
@@ -57,6 +58,12 @@ export function validateSite(body) {
     if (logo.length > MAX_LOGO_CHARS) throw bad("Logo is too large. Use an image under 600 KB.");
   }
 
+  let bgImage = typeof body.background?.image === "string" ? body.background.image : "";
+  if (bgImage) {
+    if (!/^data:image\/(png|jpeg|webp);base64,[A-Za-z0-9+/=]+$/.test(bgImage)) throw bad("Background must be a JPEG, PNG or WebP photo.");
+    if (bgImage.length > MAX_BG_CHARS) throw bad("Background photo is too large. Use a photo under 1 MB.");
+  }
+
   let timezone = str(body.timezone, 64) || "America/Chicago";
   try { new Intl.DateTimeFormat("en-US", { timeZone: timezone }); } catch { throw bad(`Unknown time zone: ${timezone}`); }
 
@@ -76,6 +83,13 @@ export function validateSite(body) {
     },
     timezone,
     news: { enabled: body.news?.enabled !== false, rotateSeconds: num(body.news?.rotateSeconds, 5, 120, 12) },
+    background: {
+      enabled: !!bgImage && body.background?.enabled === true,
+      image: bgImage,
+      visibility: num(body.background?.visibility, 5, 40, 15), // % of the photo showing through the navy
+      position: num(body.background?.position, 0, 100, 50),   // slides the photo left/right
+      size: num(body.background?.size, 100, 400, 190),        // photo width as % of screen width
+    },
     updatedAt: null,
   };
 }

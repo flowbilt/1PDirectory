@@ -55,6 +55,23 @@
       </section>
 
       <section class="panel">
+        <h2>Background photo <span class="hint">experimental</span></h2>
+        <div class="bg-row">
+          <div id="bg-preview" class="bg-preview"><span>No photo</span></div>
+          <div class="bg-controls">
+            <div class="logo-actions">
+              <label class="ghost file-btn">Upload photo<input id="bg-file" type="file" accept="image/*"></label>
+              <button type="button" id="bg-remove" class="ghost">Remove</button>
+            </div>
+            <label class="check" id="bg-on-row"><input type="checkbox" id="bg-on"> Show photo behind the directory</label>
+            <div class="field" id="bg-vis-row"><label for="bg-vis">Photo strength <span class="hint" id="bg-vis-val"></span></label><input id="bg-vis" type="range" min="5" max="40" step="1"></div>
+            <div class="field" id="bg-size-row"><label for="bg-size">Photo size <span class="hint">larger shows less of the surroundings</span></label><input id="bg-size" type="range" min="100" max="400" step="5"></div>
+            <div class="field" id="bg-pos-row"><label for="bg-pos">Photo position <span class="hint">slide to center the building</span></label><input id="bg-pos" type="range" min="0" max="100" step="1"></div>
+          </div>
+        </div>
+      </section>
+
+      <section class="panel">
         <div class="panel-head">
           <h2>Tenants <span id="tenant-count" class="count"></span></h2>
           <div class="panel-actions">

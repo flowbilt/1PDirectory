@@ -132,6 +132,8 @@
     document.querySelector(".contacts").classList.toggle("single", !(m && l));
     document.querySelector(".contacts").hidden = !(m || l);
 
+    renderBackground();
+
     const w = $("welcome");
     w.textContent = data.welcome || "";
     w.hidden = !data.welcome;
@@ -145,10 +147,37 @@
 
   let draftMode = false; // admin preview: show unsaved edits instead of polling
 
+  function renderBackground() {
+    const bg = data.background || {};
+    const el = $("bg");
+    const on = !!(bg.enabled && bg.image);
+    el.hidden = !on;
+    stage.classList.toggle("has-bg", on);
+    if (!on) { el.innerHTML = ""; return; }
+    let photo = el.querySelector(".bg-photo");
+    if (!photo) {
+      el.innerHTML = '<img class="bg-photo" alt=""><div class="bg-tint"></div>';
+      photo = el.querySelector(".bg-photo");
+    }
+    if (photo.getAttribute("src") !== bg.image) photo.src = bg.image;
+    stage.style.setProperty("--bg-show", String(Math.min(40, Math.max(5, Number(bg.visibility) || 15)) / 100));
+    placeBackground();
+  }
+
+  // Width is a % of the screen width; position slides the photo left/right to center the subject.
+  function placeBackground() {
+    const bg = data?.background || {};
+    const W = parseFloat(getComputedStyle(document.documentElement).getPropertyValue("--W")) || window.innerWidth;
+    const width = W * (Math.min(400, Math.max(100, Number(bg.size) || 190)) / 100);
+    const left = (W - width) * (Math.min(100, Math.max(0, Number(bg.position ?? 50))) / 100);
+    stage.style.setProperty("--bg-width", `${width}px`);
+    stage.style.setProperty("--bg-left", `${left}px`);
+  }
+
   async function loadDirectory() {
     if (draftMode) return;
     try {
-      const res = await fetch(`/api/directory?site=${encodeURIComponent(SITE)}`, { cache: "no-store" });
+      const res = await fetch(`/api/directory?site=${encodeURIComponent(SITE)}`, { cache: "no-cache" });
       if (!res.ok) throw new Error(`directory ${res.status}`);
       const d = await res.json();
       const fromCache = res.headers.get("X-Served-From") === "offline-cache";
@@ -305,7 +334,7 @@
 
   // ── Boot ──
   sizeStage();
-  window.addEventListener("resize", () => { sizeStage(); fitTenants(); });
+  window.addEventListener("resize", () => { sizeStage(); fitTenants(); if (data) placeBackground(); });
   const cached = cache.get("directory");
   if (cached) apply(cached);
   loadDirectory().then(() => { loadNews(); if (!data) setTimeout(() => location.reload(), 30000); });
