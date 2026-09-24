@@ -36,8 +36,11 @@ body { font-family: "Instrument Sans", "Segoe UI", Arial, sans-serif; color: var
   padding: calc(var(--u) * 5) var(--pad) calc(var(--u) * 3.4);
   border-bottom: 2px solid var(--steel);
 }
-.masthead-id { min-width: 0; }
+.masthead-id { min-width: 0; flex: 1 1 auto; }
 .logo { display: block; max-height: calc(var(--u) * 8); max-width: calc(var(--u) * 40); object-fit: contain; object-position: left center; margin-bottom: calc(var(--u) * 2.6); }
+/* Logo standing in for the property name: larger, and no gap below it */
+#stage.wordmark .logo { width: 100%; max-width: calc(var(--u) * 58); height: auto; max-height: calc(var(--u) * 11); margin-bottom: 0; }
+#stage.wordmark .label { margin-top: calc(var(--u) * 1.6); }
 .property {
   font-family: "Lora", Georgia, serif; font-weight: 700;
   font-size: calc(var(--u) * 7.2); line-height: 1.02; letter-spacing: -0.01em;

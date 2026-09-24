@@ -64,6 +64,7 @@ export function validateSite(body) {
     propertyName,
     buildingLabel: str(body.buildingLabel, 80),
     logo,
+    logoReplacesName: !!logo && body.logoReplacesName === true,
     tenants,
     managedBy: contact(body.managedBy),
     leasedBy: contact(body.leasedBy),

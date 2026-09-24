@@ -43,6 +43,8 @@ test("GET returns Landmark Center seed before anything is saved", async () => {
   assert.equal(d.tenants.find((t) => t.name === "PRP Logistics").suite, "410");
   assert.equal(d.managedBy.phone, "205-995-9116");
   assert.equal(d.leasedBy.name, "Weyman Prater");
+  assert.match(d.logo, /^data:image\/svg\+xml;base64,/);
+  assert.equal(d.logoReplacesName, true);
 });
 
 test("GET with no site param uses the default site", async () => {
@@ -95,6 +97,10 @@ test("PUT rejects missing property name, bad logo, bad time zone", async () => {
   assert.equal((await put({ ...base, timezone: "Mars/Olympus" })).status, 400);
   assert.equal((await put({ ...base, tenants: "nope" })).status, 400);
   assert.equal((await put({ ...base, logo: "data:image/png;base64,iVBORw0KGgo=" })).status, 200);
+  const withLogo = await (await put({ ...base, logo: "data:image/png;base64,iVBORw0KGgo=", logoReplacesName: true })).json();
+  assert.equal(withLogo.logoReplacesName, true);
+  const noLogo = await (await put({ ...base, logoReplacesName: true })).json();
+  assert.equal(noLogo.logoReplacesName, false, "setting ignored without a logo");
 });
 
 test("new building can be created and listed with its check-in time", async () => {

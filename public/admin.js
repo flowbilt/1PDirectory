@@ -133,6 +133,7 @@
   function readForm() {
     draft.propertyName = $("propertyName").value.trim();
     draft.buildingLabel = $("buildingLabel").value.trim();
+    draft.logoReplacesName = !!draft.logo && $("logo-replaces-name").checked;
     draft.managedBy = { name: $("m-name").value.trim(), company: $("m-company").value.trim(), phone: $("m-phone").value.trim() };
     draft.leasedBy = { name: $("l-name").value.trim(), company: $("l-company").value.trim(), phone: $("l-phone").value.trim() };
     draft.welcome = $("welcome").value.trim();
@@ -220,6 +221,8 @@
   function renderLogo() {
     $("logo-preview").innerHTML = draft.logo ? `<img src="${draft.logo}" alt="Current logo">` : "<span>No logo</span>";
     $("logo-remove").hidden = !draft.logo;
+    $("logo-name-row").hidden = !draft.logo;
+    $("logo-replaces-name").checked = !!draft.logoReplacesName;
   }
 
   $("logo-file").addEventListener("change", async (e) => {

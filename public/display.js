@@ -43,7 +43,9 @@
     const root = document.documentElement.style;
     root.setProperty("--W", `${W}px`);
     root.setProperty("--H", `${H}px`);
-    root.setProperty("--u", `${W / 100}px`);
+    // Size from whichever dimension is tighter, so a wide or short window never squeezes out the tenant list.
+    // On a 1080x1920 portrait screen both give 10.8px, so the portrait design is unchanged.
+    root.setProperty("--u", `${Math.min(W / 100, H / 177.78)}px`);
     stage.style.transform = ROTATE === 90 ? `translateX(${vw}px) rotate(90deg)` : ROTATE === 270 ? `translateY(${vh}px) rotate(-90deg)` : "";
   }
 
@@ -110,8 +112,11 @@
     label.hidden = !data.buildingLabel;
 
     const logo = $("logo");
-    if (data.logo) { if (logo.src !== data.logo) logo.src = data.logo; logo.hidden = false; }
+    const wordmark = !!(data.logo && data.logoReplacesName);
+    if (data.logo) { if (logo.src !== data.logo) logo.src = data.logo; logo.hidden = false; logo.alt = wordmark ? data.propertyName : ""; }
     else { logo.hidden = true; logo.removeAttribute("src"); }
+    stage.classList.toggle("wordmark", wordmark);
+    $("property").hidden = wordmark;
 
     const list = $("tenants");
     const tenants = data.tenants || [];
