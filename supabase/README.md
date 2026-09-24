@@ -12,6 +12,7 @@ Do these once. The current site keeps running as it is until the new build is de
 1. Open **SQL Editor → New query**.
 2. Paste all of `01-schema.sql` and click **Run**. It should finish with "Success. No rows returned."
 3. New query again: paste all of `02-seed.sql` and click **Run**. This loads the 16 directories and 83 tenants from Yodeck, Wix and the Landmark Center.
+4. For remote management of the Pis: new query, paste all of `03-agent.sql`, and click **Run**. This adds the device tables and pre-registers the 15 Yodeck Pis by serial number.
 
 If either one shows an error, copy the message (it includes a line number) and send it to Claude.
 

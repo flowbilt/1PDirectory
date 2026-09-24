@@ -41,9 +41,13 @@
         <button type="button" id="add-screen" class="primary admin-only">Add screen</button>
       </div>
     </div>
+    <section id="new-devices" class="new-devices" hidden>
+      <h2>New devices <span class="sub">Pis that have checked in but aren't assigned to a screen yet</span></h2>
+      <div class="table-wrap"><table class="grid"><thead><tr><th>Pi</th><th>First seen</th><th>Last check-in</th><th>Assign to screen</th></tr></thead><tbody id="new-device-rows"></tbody></table></div>
+    </section>
     <div class="table-wrap">
       <table class="grid">
-        <thead><tr><th>Status</th><th>Screen</th><th>Shows</th><th>Layout</th><th>Last check-in</th><th><span class="sr-only">Actions</span></th></tr></thead>
+        <thead><tr><th>Status</th><th><span class="sr-only">Screenshot</span></th><th>Screen</th><th>Shows</th><th>Layout</th><th>Last check-in</th><th><span class="sr-only">Actions</span></th></tr></thead>
         <tbody id="screen-rows"></tbody>
       </table>
     </div>
@@ -105,6 +109,7 @@
 </dialog>
 
 <script src="/auth.js"></script>
+<script src="/console-devices.js"></script>
 <script src="/console.js"></script>
 </body>
 </html>

@@ -1,6 +1,7 @@
 /* Directory display.
    URL options:
      ?screen=ppi-2s          which screen this is (older screens use ?site=landmark-center; same thing)
+     ?device=<serial>        set by the agent's setup: the console decides which screen this Pi shows
      ?rotate=90 | 270        force software rotation; otherwise the screen's orientation setting decides
      ?preview=1              used by the editor; skips heartbeat and service worker
 */
@@ -8,7 +9,9 @@
   "use strict";
   const VERSION = "2.0.0";
   const q = new URLSearchParams(location.search);
-  const SITE = (q.get("screen") || q.get("key") || q.get("site") || "landmark-center").toLowerCase();
+  const DEVICE = (q.get("device") || "").toLowerCase();
+  const SITE = DEVICE ? `device-${DEVICE}` : (q.get("screen") || q.get("key") || q.get("site") || "landmark-center").toLowerCase();
+  const SCREEN_URL = DEVICE ? `/api/screen?device=${encodeURIComponent(DEVICE)}` : `/api/screen?key=${encodeURIComponent(SITE)}`;
   const URL_ROTATE = ["90", "270"].includes(q.get("rotate")) ? Number(q.get("rotate")) : null;
   const PREVIEW = q.get("preview") === "1";
 
@@ -141,7 +144,7 @@
     list.classList.toggle("no-arrows", !anyArrow);
     list.innerHTML = tenants.length
       ? tenants.map((t) => `<li class="tenant"><span class="tenant-name">${esc(t.name)}${t.note ? `<span class="tenant-note">${esc(t.note)}</span>` : ""}</span><span class="tenant-suite">${esc(t.suite)}</span><span class="tenant-dir">${arrowSvg(t.dir)}</span></li>`).join("")
-      : `<li class="empty">${data.assigned === false ? `This screen (${esc(SITE)}) isn't assigned to a directory yet.` : "Directory is being updated."}</li>`;
+      : `<li class="empty">${data.newDevice ? `New display, serial ${esc(DEVICE)}.<br>Assign it to a screen in the console.` : data.assigned === false ? `This screen (${esc(data.key || SITE)}) isn't assigned to a directory yet.` : "Directory is being updated."}</li>`;
 
     const m = contactHtml("Managed by", data.managedBy), l = contactHtml("Leased by", data.leasedBy);
     $("managed").innerHTML = m; $("managed").hidden = !m;
@@ -196,7 +199,7 @@
   async function loadDirectory() {
     if (draftMode) return;
     try {
-      const res = await fetch(`/api/screen?key=${encodeURIComponent(SITE)}`, { cache: "no-cache" });
+      const res = await fetch(SCREEN_URL, { cache: "no-cache" });
       if (!res.ok) throw new Error(`directory ${res.status}`);
       const d = await res.json();
       const fromCache = res.headers.get("X-Served-From") === "offline-cache";
@@ -222,8 +225,18 @@
     if (coordsChanged) loadWeather();
   }
 
+  // ── Identify: the console flashes this screen's name so a tech knows which one they're standing at ──
+  function showIdentify() {
+    const until = Date.parse(data?.identifyUntil || "");
+    const on = Number.isFinite(until) && until > Date.now();
+    const el = $("identify");
+    if (on && el.hidden) el.innerHTML = `<div class="identify-name">${esc(data.screenName || data.key || "")}</div><div class="identify-key">${esc(data.key || "")}${DEVICE ? ` · Pi ${esc(DEVICE)}` : ""}</div>`;
+    el.hidden = !on;
+  }
+
   // ── Clock ──
   function tick() {
+    showIdentify();
     const tz = data?.timezone || "America/Chicago";
     const now = new Date();
     let timeParts;
@@ -337,11 +350,11 @@
 
   // ── Heartbeat so the admin page shows when this screen last checked in ──
   function heartbeat() {
-    if (PREVIEW) return;
+    if (PREVIEW || (DEVICE && !data?.key)) return;
     fetch("/api/heartbeat", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ key: SITE, screen: { w: screen.width, h: screen.height }, version: VERSION }),
+      body: JSON.stringify({ key: data?.key || SITE, screen: { w: screen.width, h: screen.height }, version: VERSION }),
     }).catch(() => {});
   }
 

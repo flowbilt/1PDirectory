@@ -7,7 +7,8 @@ export const SERVICE_KEY = "test-service-key";
 export const ANON_KEY = "test-anon-key";
 
 export function createFake() {
-  const T = { organizations: [], profiles: [], properties: [], directories: [], tenants: [], screens: [], audit_log: [] };
+  const T = { organizations: [], profiles: [], properties: [], directories: [], tenants: [], screens: [], audit_log: [], devices: [], device_commands: [] };
+  const SERVICE_ONLY = new Set(["devices", "device_commands"]); // row-level security on, no policies: server key only
   const users = new Map(); // id -> {id,email,password,last_sign_in_at,invited_at,user_metadata}
   const tokens = new Map(); // token -> user id
   const outbox = [];
@@ -38,6 +39,10 @@ export function createFake() {
     T.tenants.push({ id: randomUUID(), directory_id: od, sort: 0, name: "Secret Tenant Inc.", suite: "100", arrow: "", note: "" });
     T.screens.push({ id: randomUUID(), directory_id: od, key: "other-tower", name: "Other Tower Lobby", location_note: "", orientation: "landscape", hardware: {}, last_seen: null, last_report: {}, created_at: now() });
 
+    for (const sc of T.screens) {
+      const serial = String(sc.hardware?.serial || "").toLowerCase();
+      if (/^[0-9a-f]{8,32}$/.test(serial)) T.devices.push({ ...defaults.devices(), serial, screen_id: sc.id, model: sc.hardware.model || "" });
+    }
     const barber = T.organizations.find((o) => o.name === "Barber Companies").id;
     addUser("scot@1pointusa.com", "admin-pass", "platform_admin", null, "Scot");
     addUser("leighann@barber.test", "owner-pass", "org_admin", barber, "Leigh Ann");
@@ -55,6 +60,7 @@ export function createFake() {
   const dirOrg = (did) => { const d = T.directories.find((x) => x.id === did); const p = d && T.properties.find((x) => x.id === d.property_id); return p?.org_id; };
   function canSee(table, row, who) {
     if (who.service) return true;
+    if (SERVICE_ONLY.has(table)) return false;
     const me = who.profile; if (!me) return false;
     if (me.role === "platform_admin") return true;
     switch (table) {
@@ -69,6 +75,7 @@ export function createFake() {
   }
   function canWrite(table, op, row, who) {
     if (who.service) return true;
+    if (SERVICE_ONLY.has(table)) return false;
     const me = who.profile; if (!me) return false;
     if (me.role === "platform_admin") return table !== "profiles" && table !== "audit_log";
     if (table === "tenants") return dirOrg(row.directory_id) === me.org_id;
@@ -106,12 +113,16 @@ export function createFake() {
     const f = [];
     for (const [k, v] of params) {
       if (["select", "order", "limit", "offset", "on_conflict"].includes(k)) continue;
-      const m = v.match(/^(not\.)?(eq|neq|in|is|ilike)\.(.*)$/s);
+      const m = v.match(/^(not\.)?(eq|neq|in|is|ilike|lt|gt|lte|gte)\.(.*)$/s);
       if (!m) continue;
       const [, neg, op, raw] = m;
       let test;
       if (op === "eq") test = (x) => String(x) === raw;
       else if (op === "neq") test = (x) => String(x) !== raw;
+      else if (op === "lt") test = (x) => x != null && String(x) < raw;
+      else if (op === "gt") test = (x) => x != null && String(x) > raw;
+      else if (op === "lte") test = (x) => x != null && String(x) <= raw;
+      else if (op === "gte") test = (x) => x != null && String(x) >= raw;
       else if (op === "is") test = (x) => (raw === "null" ? x == null : String(x) === raw);
       else if (op === "ilike") { const re = new RegExp("^" + raw.replace(/[.+?^${}()|[\]\\]/g, "\\$&").replace(/\*/g, ".*") + "$", "i"); test = (x) => re.test(String(x ?? "")); }
       else { const list = raw.replace(/^\(|\)$/g, "").split(",").map((s) => s.replace(/^"|"$/g, "")); test = (x) => list.includes(String(x)); }
@@ -132,6 +143,8 @@ export function createFake() {
     screens: () => ({ id: randomUUID(), directory_id: null, location_note: "", orientation: "auto", hardware: {}, last_seen: null, last_report: {}, created_at: now() }),
     profiles: () => ({ full_name: "", created_at: now() }),
     audit_log: () => ({ id: T.audit_log.length + 1, at: now(), detail: {} }),
+    devices: () => ({ id: randomUUID(), screen_id: null, key_hash: null, status: "active", model: "", hostname: "", agent_version: "", last_seen: null, last_health: {}, screenshot: "", screenshot_at: null, alert_state: {}, created_at: now() }),
+    device_commands: () => ({ id: (T.device_commands.at(-1)?.id || 0) + 1, status: "pending", result: "", created_at: now(), sent_at: null, done_at: null }),
   };
   const touchDir = (did, uid) => { const d = T.directories.find((x) => x.id === did); if (d) { d.updated_at = now(); d.updated_by = uid || null; } };
   function checkRow(table, row) {

@@ -11,6 +11,9 @@ import migrate from "../netlify/functions/migrate.mjs";
 import config from "../netlify/functions/config.mjs";
 import weather, { iconFor } from "../netlify/functions/weather.mjs";
 import news from "../netlify/functions/news.mjs";
+import agent from "../netlify/functions/agent.mjs";
+import devices from "../netlify/functions/devices.mjs";
+import { runAlerts, evaluate } from "../netlify/functions/alerts.mjs";
 import { parseFeed, isBlocked } from "../netlify/lib/rss.mjs";
 
 const SB = "http://fake.supabase.test";
@@ -177,6 +180,116 @@ test("1Point can import the Landmark Center's live settings; nobody else can", a
   assert.equal(d.news.rotateSeconds, 15);
   assert.equal(d.welcome, "Welcome!");
   assert.equal((await migrate(req("/api/migrate?slug=ppi-2s", { method: "POST", token: admin }))).status, 404, "nothing to import");
+});
+
+// ── Agent and devices ──
+const PPI2S_SERIAL = "100000008294ba46";
+const KEY = "k".repeat(43);
+const checkin = (body, key = KEY) => agent(new Request(SITE + "/api/agent", { method: "POST", headers: { Authorization: `Bearer ${key}` }, body: JSON.stringify({ serial: PPI2S_SERIAL, model: "Raspberry Pi 4 Model B Rev 1.5", hostname: "ppi-2s", version: "1.0.0", ...body }) }));
+const devApi = (token, { method = "GET", body, qs = "" } = {}) => devices(req(`/api/devices${qs}`, { method, token, body }));
+
+test("a Yodeck Pi enrolls on first check-in and finds its own screen by serial", async () => {
+  const r = await checkin({ health: { temp_c: 51.2, under_voltage_now: false, ip: "192.168.44.21", bogus: "dropped" } });
+  assert.equal(r.status, 200);
+  const d = await r.json();
+  assert.equal(d.screen, "ppi-2s", "matched by the serial from the Yodeck report");
+  const dev = fake.T.devices.find((x) => x.serial === PPI2S_SERIAL);
+  assert.ok(dev.key_hash && dev.key_hash !== KEY, "key stored hashed");
+  assert.equal(dev.last_health.temp_c, 51.2);
+  assert.equal(dev.last_health.bogus, undefined, "unknown fields dropped");
+});
+
+test("a different key for an enrolled Pi is refused", async () => {
+  assert.equal((await checkin({}, "x".repeat(43))).status, 401);
+  assert.equal((await checkin({}, "short")).status, 401);
+  const bad = await agent(new Request(SITE + "/api/agent", { method: "POST", headers: { Authorization: `Bearer ${KEY}` }, body: JSON.stringify({ serial: "not-a-serial" }) }));
+  assert.equal(bad.status, 400);
+});
+
+test("a brand-new Pi appears as an unassigned device, and its screen says so", async () => {
+  const r = await agent(new Request(SITE + "/api/agent", { method: "POST", headers: { Authorization: `Bearer ${"n".repeat(43)}` }, body: JSON.stringify({ serial: "10000000ffff0001" }) }));
+  assert.equal((await r.json()).screen, null);
+  const shown = await (await screen(req("/api/screen?device=10000000ffff0001"))).json();
+  assert.equal(shown.newDevice, true);
+  const assigned = await (await screen(req(`/api/screen?device=${PPI2S_SERIAL}`))).json();
+  assert.equal(assigned.propertyName, "Perimeter Park One - Two South", "an assigned Pi shows its screen");
+});
+
+test("screenshots are stored only if they're a sensible JPEG", async () => {
+  await checkin({ screenshot: "data:image/jpeg;base64,/9j/4AAQ" });
+  const dev = fake.T.devices.find((x) => x.serial === PPI2S_SERIAL);
+  assert.equal(dev.screenshot, "data:image/jpeg;base64,/9j/4AAQ");
+  await checkin({ screenshot: "data:text/html;base64,PHNjcmlwdD4=" });
+  assert.equal(dev.screenshot, "data:image/jpeg;base64,/9j/4AAQ", "non-JPEG ignored");
+});
+
+test("1Point queues a reboot; the Pi gets it once and reports back", async () => {
+  const admin = await login("scot@1pointusa.com", "admin-pass");
+  const dev = fake.T.devices.find((x) => x.serial === PPI2S_SERIAL);
+  const q = await devApi(admin, { method: "POST", body: { action: "command", device_id: dev.id, command: "reboot" } });
+  assert.equal(q.status, 200);
+  const first = await (await checkin({})).json();
+  assert.deepEqual(first.commands.map((c) => c.command), ["reboot"]);
+  assert.deepEqual((await (await checkin({})).json()).commands, [], "not delivered twice");
+  await checkin({ results: [{ id: first.commands[0].id, status: "done", result: "Rebooting." }] });
+  const cmd = fake.T.device_commands.find((c) => c.id === first.commands[0].id);
+  assert.equal(cmd.status, "done"); assert.equal(cmd.result, "Rebooting.");
+});
+
+test("commands older than an hour are dropped, not run late", async () => {
+  const dev = fake.T.devices.find((x) => x.serial === PPI2S_SERIAL);
+  fake.T.device_commands.push({ id: 999, device_id: dev.id, command: "reboot", status: "pending", result: "", created_at: new Date(Date.now() - 2 * 3600_000).toISOString() });
+  const r = await (await checkin({})).json();
+  assert.ok(!r.commands.some((c) => c.id === 999));
+  assert.equal(fake.T.device_commands.find((c) => c.id === 999).status, "expired");
+});
+
+test("Barber users see their own Pis and can reload, but can't reboot", async () => {
+  const owner = await login("leighann@barber.test", "owner-pass");
+  const list = (await (await devApi(owner)).json()).devices;
+  assert.ok(list.length >= 15 && list.every((d) => d.screen_key), "their screens' Pis only");
+  assert.ok(!list.some((d) => d.serial === "10000000ffff0001"), "unassigned Pis are 1Point's business");
+  assert.ok(!("key_hash" in list[0]), "keys never leave the server");
+  const dev = list.find((d) => d.serial === PPI2S_SERIAL);
+  assert.equal((await devApi(owner, { method: "POST", body: { action: "command", device_id: dev.id, command: "reload" } })).status, 200);
+  assert.equal((await devApi(owner, { method: "POST", body: { action: "command", device_id: dev.id, command: "reboot" } })).status, 403);
+  assert.equal((await devApi(owner, { method: "POST", body: { action: "assign", device_id: dev.id, screen_id: null } })).status, 403);
+  const shot = await devApi(owner, { qs: `?screenshot=${dev.id}` });
+  assert.equal(shot.headers.get("content-type"), "image/jpeg");
+});
+
+test("identify flashes a screen; 1Point can assign a new Pi and reset keys", async () => {
+  const admin = await login("scot@1pointusa.com", "admin-pass");
+  const cad = fake.T.screens.find((x) => x.key === "cadence-place");
+  await devApi(admin, { method: "POST", body: { action: "identify", screen_id: cad.id } });
+  const shown = await (await screen(req("/api/screen?key=cadence-place"))).json();
+  assert.ok(Date.parse(shown.identifyUntil) > Date.now());
+  const newbie = fake.T.devices.find((x) => x.serial === "10000000ffff0001");
+  const old = fake.T.devices.find((x) => x.screen_id === cad.id);
+  assert.equal((await devApi(admin, { method: "POST", body: { action: "assign", device_id: newbie.id, screen_id: cad.id } })).status, 200);
+  assert.equal(newbie.screen_id, cad.id);
+  assert.equal(old.screen_id, null, "one Pi per screen: the old one is unassigned");
+  await devApi(admin, { method: "POST", body: { action: "reset_key", device_id: newbie.id } });
+  assert.equal(newbie.key_hash, null, "next check-in enrolls again");
+});
+
+test("alerts email once when a Pi goes offline, and once when it's back", async () => {
+  const dev = fake.T.devices.find((x) => x.serial === PPI2S_SERIAL);
+  const sent = [];
+  const send = async (lines) => sent.push(...lines);
+  dev.last_seen = new Date(Date.now() - 30 * 60000).toISOString();
+  dev.last_health = { temp_c: 50, under_voltage_now: true };
+  await runAlerts({ send });
+  assert.ok(sent.some((l) => /went offline/.test(l.text) && l.problem));
+  assert.ok(sent.some((l) => /under-voltage/.test(l.text)));
+  sent.length = 0;
+  await runAlerts({ send });
+  assert.equal(sent.length, 0, "not repeated every 10 minutes");
+  await checkin({ health: { temp_c: 50, under_voltage_now: false } });
+  await runAlerts({ send });
+  assert.ok(sent.some((l) => /back online/.test(l.text) && !l.problem));
+  assert.ok(sent.some((l) => /power is normal/.test(l.text)));
+  assert.deepEqual(evaluate({ last_seen: null, last_health: {} }), { offline: false, power: false, hot: false }, "never-seen Pis aren't 'offline'");
 });
 
 // ── Config ──

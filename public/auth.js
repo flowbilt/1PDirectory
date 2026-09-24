@@ -92,6 +92,14 @@ window.Auth = (() => {
     return d;
   }
 
+  /** An image from our server functions (e.g. a screenshot), as an object URL for <img src>. */
+  async function blob(path) {
+    const s = await requireSession();
+    const r = await fetch(path, { headers: { Authorization: `Bearer ${s.access_token}` } });
+    if (!r.ok) return null;
+    return URL.createObjectURL(await r.blob());
+  }
+
   function friendly(msg) {
     if (!msg) return "";
     if (/row-level security|permission denied/i.test(msg)) return "You don't have permission to make that change.";
@@ -123,7 +131,7 @@ window.Auth = (() => {
 
   const sendReset = (email) => gotrue(`/recover?redirect_to=${encodeURIComponent(location.origin + "/login.html")}`, { body: { email: email.trim().toLowerCase() } });
 
-  return { config, signIn, signOut, session, requireSession, db, api, me, linkFromAddress, setPassword, sendReset };
+  return { config, signIn, signOut, session, requireSession, db, api, blob, me, linkFromAddress, setPassword, sendReset };
 })();
 
 /* Small shared helpers for the signed-in pages */

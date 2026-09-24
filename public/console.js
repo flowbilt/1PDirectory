@@ -6,6 +6,8 @@
   const ONLINE_MIN = 15;
 
   const S = { me: null, admin: false, orgs: [], props: [], dirs: [], screens: [], tenantCount: {}, tenantText: {}, people: [], page: 0 };
+  window.ConsoleState = S;
+  const Dev = window.ConsoleDevices;
 
   // ── Load ──
   async function load() {
@@ -51,7 +53,8 @@
       if (ownerF && p?.org_id !== ownerF) return false;
       if (statusF && status(s) !== statusF) return false;
       if (!q) return true;
-      return [s.name, s.key, s.location_note, d?.title, d?.subtitle, p?.name, S.tenantText[s.directory_id]].join(" ").toLowerCase().includes(q);
+      const pi = Dev.list().find((x) => x.screen_id === s.id);
+      return [s.name, s.key, s.location_note, d?.title, d?.subtitle, p?.name, S.tenantText[s.directory_id], pi?.serial, pi?.last_health?.ip].join(" ").toLowerCase().includes(q);
     });
     const counts = { online: 0, offline: 0, never: 0 };
     S.screens.forEach((s) => counts[status(s)]++);
@@ -64,7 +67,8 @@
       const d = dir(s.directory_id), p = d && prop(d.property_id), st = status(s);
       const rep = s.last_report || {};
       return `<tr>
-        <td><span class="dot ${st}"></span>${{ online: "Online", offline: "Offline", never: "Not yet" }[st]}</td>
+        <td><span class="dot ${st}"></span>${{ online: "Online", offline: "Offline", never: "Not yet" }[st]}${Dev.statusNote(s)}</td>
+        ${Dev.thumbCell(s)}
         <td><strong>${esc(s.name)}</strong><div class="sub">${esc(s.key)}${s.location_note ? ` · ${esc(s.location_note)}` : ""}</div></td>
         <td>${d ? `${esc(d.title)}${d.subtitle ? ` · ${esc(d.subtitle)}` : ""}<div class="sub">${esc(p?.name || "")} · ${S.tenantCount[d.id] || 0} tenants</div>` : `<span class="warn">Not assigned</span>`}</td>
         <td>${esc({ auto: "Automatic", portrait: "Portrait", landscape: "Landscape" }[s.orientation] || s.orientation)}${rep.w ? `<div class="sub">${rep.w}×${rep.h}</div>` : ""}</td>
@@ -72,9 +76,11 @@
         <td class="actions">
           ${d ? `<a class="ghost" href="/edit.html?d=${d.id}">Edit tenants</a>` : ""}
           <a class="ghost" href="/?screen=${encodeURIComponent(s.key)}" target="_blank" rel="noopener">View</a>
+          ${Dev.actionButton(s)}
           ${S.admin ? `<button type="button" class="ghost" data-screen="${s.id}">Settings</button>` : ""}
         </td></tr>`;
-    }).join("") : `<tr><td colspan="6" class="empty-rows">No screens match.</td></tr>`;
+    }).join("") : `<tr><td colspan="7" class="empty-rows">No screens match.</td></tr>`;
+    Dev.fillThumbs($("screen-rows"));
     $("screen-pager").innerHTML = pages > 1
       ? Array.from({ length: pages }, (_, i) => `<button type="button" class="ghost${i === S.page ? " current" : ""}" data-page="${i}">${i + 1}</button>`).join("")
       : "";
@@ -326,8 +332,11 @@
   // ── Boot ──
   async function refresh() {
     await load();
+    await Dev.load(S.admin);
+    Dev.renderNew(S.screens);
     renderScreens(); renderBuildings(); renderAccounts();
   }
+  window.ConsoleRefresh = refresh;
   $("sign-out").addEventListener("click", () => Auth.signOut());
 
   (async () => {
@@ -343,7 +352,10 @@
       if (S.admin) { $("screen-owner").hidden = false; $("screen-owner").innerHTML = `<option value="">All accounts</option>` + orgOptions(); }
       const tab = location.hash.slice(1);
       showTab(["screens", "buildings", "people", "accounts"].includes(tab) && !document.querySelector(`[data-tab=${tab}]`).hidden ? tab : "screens");
-      setInterval(async () => { try { S.screens = await Auth.db("screens?select=*&order=name.asc"); renderScreens(); } catch { /* keep last */ } }, 60000);
+      setInterval(async () => {
+        if (document.querySelector("dialog[open]")) return; // don't redraw under an open panel
+        try { S.screens = await Auth.db("screens?select=*&order=name.asc"); await Dev.load(S.admin); Dev.renderNew(S.screens); renderScreens(); } catch { /* keep last */ }
+      }, 60000);
     } catch (ex) {
       if (ex.message !== "Signing in…") { $("load-error").textContent = ex.message; $("load-error").hidden = false; }
     }

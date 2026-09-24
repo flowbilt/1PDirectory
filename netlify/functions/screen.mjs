@@ -1,5 +1,6 @@
 // GET /api/screen?key=ppi-2s  -> everything one lobby screen needs, in one response.
 // Older screens use ?site=landmark-center; that works too.
+// Pis set up with the agent use ?device=<serial>: the screen is whatever the console has assigned that Pi to.
 // Public (screens don't sign in), read with the service key, and limited to display content.
 import { createHash } from "node:crypto";
 import { SITE_RE } from "../lib/common.mjs";
@@ -33,17 +34,26 @@ export function toPayload(screen, dir, prop, tenants) {
     news: { enabled: dir ? dir.news_enabled !== false : false, rotateSeconds: dir?.rotate_seconds || 12 },
     background: prop?.background || {},
     assigned: !!dir,
+    identifyUntil: screen.identify_until || null,
     updatedAt: updated,
   };
 }
 
 export default async (req) => {
   const url = new URL(req.url);
-  const key = (url.searchParams.get("key") || url.searchParams.get("screen") || url.searchParams.get("site") || "").trim().toLowerCase();
-  if (!SITE_RE.test(key)) return reply(req, { error: "Screen address may use lowercase letters, numbers and dashes only." }, 400);
+  const device = (url.searchParams.get("device") || "").trim().toLowerCase();
+  let key = (url.searchParams.get("key") || url.searchParams.get("screen") || url.searchParams.get("site") || "").trim().toLowerCase();
+  if (device && !/^[0-9a-f]{8,32}$/.test(device)) return reply(req, { error: "Bad device serial." }, 400);
+  if (!device && !SITE_RE.test(key)) return reply(req, { error: "Screen address may use lowercase letters, numbers and dashes only." }, 400);
 
   try {
-    const [screen] = await db(`screens?key=eq.${enc(key)}&select=key,name,orientation,directory_id`);
+    if (device) {
+      const [d] = await db(`devices?serial=eq.${enc(device)}&select=screen_id`);
+      const [s] = d?.screen_id ? await db(`screens?id=eq.${enc(d.screen_id)}&select=key`) : [];
+      if (!s) return reply(req, { key: null, device, assigned: false, newDevice: true, orientation: "auto", propertyName: "New display", buildingLabel: "", tenants: [], managedBy: {}, leasedBy: {}, welcome: "", weather: { enabled: false }, news: { enabled: false }, background: {}, logo: "", timezone: "America/Chicago" });
+      key = s.key;
+    }
+    const [screen] = await db(`screens?key=eq.${enc(key)}&select=key,name,orientation,directory_id,identify_until`);
     if (!screen) return reply(req, { error: `No screen named "${key}".` }, 404);
     if (!screen.directory_id) return reply(req, toPayload(screen, null, null, []));
 

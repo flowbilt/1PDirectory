@@ -9,7 +9,8 @@ Tenant directories for lobby screens, replacing Yodeck and Wix. Hosted on Netlif
 | `/login.html` | everyone | Sign in, forgotten password, and setting a password from an invitation or reset email |
 | `/console.html` | signed in | Screens (status, search, layout), Buildings, People, and Accounts (1Point only) |
 | `/edit.html?d=…` | signed in | Edit one directory's tenants, plus its building's shared settings, with a live preview |
-| `/?screen=ppi-2s` | lobby screens | What a screen shows. Older screens use `?site=landmark-center`, which still works |
+| `/?device=<serial>` | lobby screens | What a Pi shows: whichever screen the console assigns it to |
+| `/?screen=ppi-2s` | lobby screens | A fixed screen. Older screens use `?site=landmark-center`, which still works |
 
 What each person sees is enforced by the database (see `supabase/01-schema.sql`):
 
@@ -26,16 +27,50 @@ What each person sees is enforced by the database (see `supabase/01-schema.sql`)
 | `SUPABASE_SERVICE_KEY` | **Yes**, Production + Functions only | Supabase secret (or legacy service_role) key |
 | `NWS_CONTACT` | No | Email address for the National Weather Service |
 | `NEWS_FEEDS`, `NEWS_BLOCKLIST` | No | Optional news settings |
+| `RESEND_API_KEY` | **Yes** | For alert emails (Resend). Without it, alerts are only logged |
+| `ALERT_EMAIL_TO` | No | Who gets alerts, comma-separated |
+| `ALERT_EMAIL_FROM` | No | Sender, e.g. `Directory <alerts@1pointusa.com>` (must be a verified Resend domain) |
 
 `ADMIN_PASSWORD` is no longer used and can be deleted once everyone signs in with their own login.
 
-## Setting up a screen
+## Setting up a screen (Raspberry Pi)
 
-1. In the console, open **Screens → Settings** and note the screen address (for example `ppi-3n`), or add a new screen.
-2. On the Pi: `sudo bash setup-kiosk.sh --url "https://1pdirectory.netlify.app/?screen=ppi-3n"` (see `pi/`).
-3. The screen shows as **Online** in the console within 5 minutes.
+On a freshly flashed Pi (Raspberry Pi OS with desktop, 64-bit), open Terminal and run:
 
-The layout (portrait, landscape, or automatic) is set per screen in the console. If it doesn't match how the TV is being driven, the page turns itself to fit.
+```
+curl -fsSLO https://1pdirectory.netlify.app/pi/setup-kiosk.sh
+sudo bash setup-kiosk.sh
+sudo reboot
+```
+
+The Pi opens `/?device=<its serial number>` and installs the agent. Then:
+
+- **A Pi from the Yodeck report** recognizes itself by serial and shows its screen straight away.
+- **A new Pi** shows "New display" with its serial, and appears under **Screens → New devices** in the console. Pick its screen there and it switches within a minute.
+
+Options: `--rotate 270` if the picture is upside down, `--connect` for Raspberry Pi Connect, `--no-agent` to skip the agent, and `--url` to pin a fixed screen address the old way.
+
+## Remote management (the agent)
+
+Each Pi runs a small agent (`public/pi/agent.py`) that checks in every minute over HTTPS. The Pi always makes the connection, so no ports are opened. It reports:
+
+- temperature, power (under-voltage), uptime, storage and IP address
+- whether the browser is running
+- a small screenshot every 5 minutes
+
+In the console, the **Pi** button on each screen offers these actions:
+
+| Action | Who |
+|---|---|
+| Identify, Reload screen, Take screenshot | Anyone who can see the screen |
+| Reboot Pi, Update agent | 1Point |
+| Reset device key, Switch off, Assign or unassign | 1Point |
+
+Only those fixed actions exist, and the agent can't run anything else. Actions not picked up within an hour are dropped rather than run late.
+
+**Alerts:** every 10 minutes the site checks each Pi. It sends one email when a Pi goes offline, reports under-voltage, or runs at 80°C or hotter, and another when that clears.
+
+**Reflashed a Pi?** If its log says the key doesn't match, use **Reset device key** in the console. It re-enrolls on its next check-in.
 
 ## Tests
 
@@ -50,11 +85,11 @@ Local sample logins: `scot@1pointusa.com / admin-pass`, `leighann@barber.test / 
 ## Files
 
 ```
-public/             screen (index.html, display.*), sign-in, console, editor, shared auth.js
-netlify/functions/  screen, heartbeat, users, migrate, config, weather, news
+public/             screen (index.html, display.*), sign-in, console (+ console-devices.js), editor, shared auth.js
+netlify/functions/  screen, heartbeat, users, migrate, config, weather, news, agent, devices, alerts
 netlify/lib/        Supabase client, RSS reader, shared helpers
 supabase/           database schema, starting data, setup guide
 migration/          the Yodeck/Wix transcription the starting data was built from
-pi/                 setup-kiosk.sh
+public/pi/          setup-kiosk.sh and agent.py (served by the site so Pis can download them)
 tests/              function tests, fake Supabase, local test server
 ```
