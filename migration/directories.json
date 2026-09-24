@@ -1,0 +1,939 @@
+{
+  "organizations": [
+    {
+      "key": "barber",
+      "name": "Barber Companies",
+      "kind": "manager",
+      "properties": [
+        {
+          "key": "landmark-center",
+          "name": "The Landmark Center",
+          "address": "2100 1st Avenue North, Birmingham",
+          "footer": "Welcome to The Landmark Center. Have a great day.",
+          "managed_by": {
+            "name": "Leigh Ann Kornegay",
+            "company": "Barber Companies",
+            "phone": "205-995-9116"
+          },
+          "leased_by": {
+            "name": "Weyman Prater",
+            "company": "Barber Companies",
+            "phone": "205-995-9119"
+          },
+          "lat": 33.5186,
+          "lon": -86.8104,
+          "directories": [
+            {
+              "slug": "landmark-center",
+              "title": "The Landmark Center",
+              "subtitle": "",
+              "tenants": [
+                {
+                  "name": "EMW Law LLC.",
+                  "suite": "300",
+                  "arrow": "",
+                  "note": ""
+                },
+                {
+                  "name": "Life Key",
+                  "suite": "251",
+                  "arrow": "",
+                  "note": ""
+                },
+                {
+                  "name": "Martin Law Firm, LLC.",
+                  "suite": "220",
+                  "arrow": "",
+                  "note": ""
+                },
+                {
+                  "name": "PRP Logistics",
+                  "suite": "410",
+                  "arrow": "",
+                  "note": ""
+                },
+                {
+                  "name": "Red Mountain Law Group",
+                  "suite": "500",
+                  "arrow": "",
+                  "note": ""
+                },
+                {
+                  "name": "Roy M. West d/b/a Manly & Manly, Attorney",
+                  "suite": "210",
+                  "arrow": "",
+                  "note": ""
+                },
+                {
+                  "name": "The Alabama Messenger",
+                  "suite": "240",
+                  "arrow": "",
+                  "note": ""
+                },
+                {
+                  "name": "Vogtle Howell Companies",
+                  "suite": "571",
+                  "arrow": "",
+                  "note": ""
+                }
+              ],
+              "screen": {
+                "key": "landmark-center",
+                "name": "The Landmark Center",
+                "orientation": "portrait",
+                "hardware": {}
+              }
+            }
+          ]
+        },
+        {
+          "key": "perimeter-park-one",
+          "name": "Perimeter Park One",
+          "address": "",
+          "footer": "Barber Companies - For leasing information call 205-795-4732",
+          "lat": 33.4663,
+          "lon": -86.808,
+          "directories": [
+            {
+              "slug": "ppi-1s",
+              "title": "Perimeter Park One - One South",
+              "subtitle": "South Tower",
+              "tenants": [
+                {
+                  "name": "Veracity Wealth Management LLC",
+                  "suite": "123 S",
+                  "arrow": "left",
+                  "note": ""
+                },
+                {
+                  "name": "Common Bond Title, LLC",
+                  "suite": "130 S",
+                  "arrow": "left",
+                  "note": "A subsidiary of Affiliates Consolidated Services"
+                },
+                {
+                  "name": "Perpetual Lifestyle Planning, LLC",
+                  "suite": "140 S",
+                  "arrow": "left",
+                  "note": ""
+                },
+                {
+                  "name": "Hyde Roofing",
+                  "suite": "145 S",
+                  "arrow": "left",
+                  "note": ""
+                },
+                {
+                  "name": "Fitness Room",
+                  "suite": "120 S",
+                  "arrow": "left",
+                  "note": ""
+                }
+              ],
+              "screen": {
+                "key": "ppi-1s",
+                "name": "TBC - PPI - 1 S - NEW",
+                "orientation": "landscape",
+                "hardware": {
+                  "yodeck_id": "375320",
+                  "model": "Raspberry Pi 4 Model B Rev 1.5",
+                  "serial": "100000005c3650c4",
+                  "ethernet_mac": "d8:3a:dd:f9:2d:f5",
+                  "ethernet_ip": "UNKNOWN",
+                  "wifi_mac": "d8:3a:dd:f9:2d:f6",
+                  "resolution": "3840x2160",
+                  "power_supply": "UNDER",
+                  "cpu_temp_c": "49.7",
+                  "orientation": "landscape"
+                }
+              }
+            },
+            {
+              "slug": "ppi-2s",
+              "title": "Perimeter Park One - Two South",
+              "subtitle": "South Tower",
+              "tenants": [
+                {
+                  "name": "Evan Terry Associates, LLC",
+                  "suite": "200 S",
+                  "arrow": "right",
+                  "note": ""
+                },
+                {
+                  "name": "MortgageRight",
+                  "suite": "230 S",
+                  "arrow": "left",
+                  "note": ""
+                }
+              ],
+              "screen": {
+                "key": "ppi-2s",
+                "name": "TBC - PPI - 2 S - 194242",
+                "orientation": "landscape",
+                "hardware": {
+                  "yodeck_id": "194292",
+                  "model": "Raspberry Pi 4 Model B Rev 1.5",
+                  "serial": "100000008294ba46",
+                  "ethernet_mac": "e4:5f:01:f0:c5:ae",
+                  "ethernet_ip": "192.168.44.70",
+                  "wifi_mac": "e4:5f:01:f0:c5:af",
+                  "resolution": "1920x1080",
+                  "power_supply": "OK",
+                  "cpu_temp_c": "42.4",
+                  "orientation": "landscape"
+                }
+              }
+            },
+            {
+              "slug": "ppi-3n",
+              "title": "Perimeter Park One - Three North",
+              "subtitle": "North Tower",
+              "tenants": [
+                {
+                  "name": "Jacobs Engineering Group, Inc.",
+                  "suite": "315 N",
+                  "arrow": "right",
+                  "note": ""
+                },
+                {
+                  "name": "Alliance Wealth Management Group, LLC",
+                  "suite": "318 N",
+                  "arrow": "right",
+                  "note": ""
+                },
+                {
+                  "name": "American Financial Education Alliance",
+                  "suite": "318 N",
+                  "arrow": "right",
+                  "note": ""
+                },
+                {
+                  "name": "Broom Financial Services, LLC",
+                  "suite": "325 N",
+                  "arrow": "left",
+                  "note": ""
+                },
+                {
+                  "name": "MicroPulse Technologies",
+                  "suite": "330 N",
+                  "arrow": "left",
+                  "note": ""
+                },
+                {
+                  "name": "First Command",
+                  "suite": "340 N",
+                  "arrow": "left",
+                  "note": ""
+                },
+                {
+                  "name": "USI Insurance Services, LLC",
+                  "suite": "344 N",
+                  "arrow": "left",
+                  "note": ""
+                }
+              ],
+              "screen": {
+                "key": "ppi-3n",
+                "name": "TBC - PPI - 3 N - 194293",
+                "orientation": "landscape",
+                "hardware": {
+                  "yodeck_id": "194293",
+                  "model": "Raspberry Pi 4 Model B Rev 1.5",
+                  "serial": "10000000335b04b3",
+                  "ethernet_mac": "e4:5f:01:f0:c6:50",
+                  "ethernet_ip": "192.168.44.16",
+                  "wifi_mac": "e4:5f:01:f0:c6:51",
+                  "resolution": "1920x1080",
+                  "power_supply": "OK",
+                  "cpu_temp_c": "43.8",
+                  "orientation": "landscape"
+                }
+              }
+            },
+            {
+              "slug": "ppi-3s",
+              "title": "Perimeter Park One - Three South",
+              "subtitle": "South Tower",
+              "tenants": [
+                {
+                  "name": "Fairvoy Private Wealth, LLC",
+                  "suite": "300 S",
+                  "arrow": "right",
+                  "note": ""
+                },
+                {
+                  "name": "Conference Room",
+                  "suite": "310 S",
+                  "arrow": "left",
+                  "note": ""
+                },
+                {
+                  "name": "Gelch & Associates, P.A.",
+                  "suite": "312 S",
+                  "arrow": "right",
+                  "note": ""
+                },
+                {
+                  "name": "Naderpour & Associates, P.A.",
+                  "suite": "315 S",
+                  "arrow": "left",
+                  "note": ""
+                },
+                {
+                  "name": "Progress Residential Property Mgr, LLC",
+                  "suite": "320 S",
+                  "arrow": "left",
+                  "note": ""
+                },
+                {
+                  "name": "AFRY USA, LLC",
+                  "suite": "360 S",
+                  "arrow": "left",
+                  "note": ""
+                }
+              ],
+              "screen": {
+                "key": "ppi-3s",
+                "name": "TBC - PPI - 3 S - 194294",
+                "orientation": "landscape",
+                "hardware": {
+                  "yodeck_id": "194294",
+                  "model": "Raspberry Pi 4 Model B Rev 1.5",
+                  "serial": "10000000da6fdb50",
+                  "ethernet_mac": "e4:5f:01:f0:c5:ff",
+                  "ethernet_ip": "192.168.44.53",
+                  "wifi_mac": "e4:5f:01:f0:c6:00",
+                  "resolution": "1920x1080",
+                  "power_supply": "OK",
+                  "cpu_temp_c": "40.9",
+                  "orientation": "landscape"
+                }
+              }
+            },
+            {
+              "slug": "ppi-4n",
+              "title": "Perimeter Park One - Four North",
+              "subtitle": "North Tower",
+              "tenants": [
+                {
+                  "name": "Spina & Lavelle, P.C.",
+                  "suite": "400 N",
+                  "arrow": "right",
+                  "note": ""
+                },
+                {
+                  "name": "Waggoner Engineering, Inc.",
+                  "suite": "450 N",
+                  "arrow": "left",
+                  "note": ""
+                },
+                {
+                  "name": "Insight Therapeutic Services",
+                  "suite": "486 N",
+                  "arrow": "left",
+                  "note": ""
+                },
+                {
+                  "name": "Alabama Wellness & Aesthetics",
+                  "suite": "410 N",
+                  "arrow": "left",
+                  "note": ""
+                },
+                {
+                  "name": "Alvis Law Firm, LLC",
+                  "suite": "475 N",
+                  "arrow": "left",
+                  "note": ""
+                }
+              ],
+              "screen": {
+                "key": "ppi-4n",
+                "name": "TBC - PPI - 4 N - 194295",
+                "orientation": "landscape",
+                "hardware": {
+                  "yodeck_id": "194295",
+                  "model": "Raspberry Pi 4 Model B Rev 1.5",
+                  "serial": "1000000025b7d4d6",
+                  "ethernet_mac": "e4:5f:01:f0:c5:30",
+                  "ethernet_ip": "192.168.44.42",
+                  "wifi_mac": "e4:5f:01:f0:c5:31",
+                  "resolution": "1920x1080",
+                  "power_supply": "OK",
+                  "cpu_temp_c": "43.3",
+                  "orientation": "landscape"
+                }
+              }
+            },
+            {
+              "slug": "ppi-4s",
+              "title": "Perimeter Park One - Four South",
+              "subtitle": "South Tower",
+              "tenants": [
+                {
+                  "name": "STONE Financial Group",
+                  "suite": "400 S",
+                  "arrow": "left",
+                  "note": ""
+                },
+                {
+                  "name": "Project Consulting Services, Inc.",
+                  "suite": "425 S",
+                  "arrow": "left",
+                  "note": ""
+                },
+                {
+                  "name": "Statewide Title Services, Inc.",
+                  "suite": "440 S",
+                  "arrow": "left",
+                  "note": ""
+                },
+                {
+                  "name": "Roger King Fuston",
+                  "suite": "430 S",
+                  "arrow": "left",
+                  "note": ""
+                },
+                {
+                  "name": "TTURNER & Associates, LLC",
+                  "suite": "465 S",
+                  "arrow": "left",
+                  "note": ""
+                }
+              ],
+              "screen": {
+                "key": "ppi-4s",
+                "name": "TBC - PPI - 4 S - 194296",
+                "orientation": "landscape",
+                "hardware": {
+                  "yodeck_id": "194296",
+                  "model": "Raspberry Pi 4 Model B Rev 1.5",
+                  "serial": "100000005d2454ef",
+                  "ethernet_mac": "e4:5f:01:f0:c5:fc",
+                  "ethernet_ip": "192.168.44.50",
+                  "wifi_mac": "e4:5f:01:f0:c5:fd",
+                  "resolution": "1920x1080",
+                  "power_supply": "OK",
+                  "cpu_temp_c": "42.8",
+                  "orientation": "landscape"
+                }
+              }
+            }
+          ]
+        },
+        {
+          "key": "perimeter-park-two",
+          "name": "Perimeter Park Two",
+          "address": "",
+          "footer": "Barber Companies - For leasing information call 205-795-4732",
+          "lat": 33.4663,
+          "lon": -86.808,
+          "directories": [
+            {
+              "slug": "ppii-1e",
+              "title": "PPII - 1 East",
+              "subtitle": "",
+              "tenants": [
+                {
+                  "name": "Colliers Valuation & Advisory",
+                  "suite": "130 E",
+                  "arrow": "",
+                  "note": ""
+                },
+                {
+                  "name": "Assurance Scientific Laboratories",
+                  "suite": "172 E",
+                  "arrow": "",
+                  "note": ""
+                },
+                {
+                  "name": "Fitness Room",
+                  "suite": "140 E",
+                  "arrow": "",
+                  "note": ""
+                },
+                {
+                  "name": "Hickcox, Robertson & Stunda, LLC",
+                  "suite": "100 E",
+                  "arrow": "",
+                  "note": ""
+                },
+                {
+                  "name": "Headwater Asset Management LLC",
+                  "suite": "140 E",
+                  "arrow": "",
+                  "note": ""
+                }
+              ],
+              "screen": {
+                "key": "ppii-1e",
+                "name": "PPII - 1-East",
+                "orientation": "landscape",
+                "hardware": {
+                  "yodeck_id": "197675",
+                  "model": "Raspberry Pi 4 Model B Rev 1.5",
+                  "serial": "1000000023c89c7c",
+                  "ethernet_mac": "e4:5f:01:fd:88:b4",
+                  "ethernet_ip": "192.168.44.3",
+                  "wifi_mac": "e4:5f:01:fd:88:b5",
+                  "resolution": "1920x1080",
+                  "power_supply": "UNDER",
+                  "cpu_temp_c": "44.3",
+                  "orientation": "landscape"
+                }
+              }
+            },
+            {
+              "slug": "ppii-2e",
+              "title": "PPII - 2 East",
+              "subtitle": "",
+              "tenants": [
+                {
+                  "name": "IAT Insurance Group",
+                  "suite": "228 E",
+                  "arrow": "",
+                  "note": ""
+                },
+                {
+                  "name": "Summit Family Law P.C.",
+                  "suite": "230 E",
+                  "arrow": "",
+                  "note": ""
+                },
+                {
+                  "name": "Birmingham Capital Management",
+                  "suite": "235 E",
+                  "arrow": "",
+                  "note": ""
+                },
+                {
+                  "name": "ContinuumRX of Central Alabama",
+                  "suite": "250 E",
+                  "arrow": "",
+                  "note": ""
+                },
+                {
+                  "name": "ContinuumRX Services",
+                  "suite": "260 E",
+                  "arrow": "",
+                  "note": ""
+                },
+                {
+                  "name": "76 FENCE Iron City",
+                  "suite": "229 E",
+                  "arrow": "",
+                  "note": ""
+                }
+              ],
+              "screen": {
+                "key": "ppii-2e",
+                "name": "PPII - 2-East",
+                "orientation": "landscape",
+                "hardware": {
+                  "yodeck_id": "344518",
+                  "model": "Raspberry Pi 4 Model B Rev 1.5",
+                  "serial": "100000006a459f35",
+                  "ethernet_mac": "2c:cf:67:01:cf:db",
+                  "ethernet_ip": "192.168.44.7",
+                  "wifi_mac": "2c:cf:67:01:cf:dd",
+                  "resolution": "1920x1080",
+                  "power_supply": "OK",
+                  "cpu_temp_c": "44.8",
+                  "orientation": "landscape"
+                }
+              }
+            },
+            {
+              "slug": "ppii-3e",
+              "title": "PPII - 3 East",
+              "subtitle": "",
+              "tenants": [
+                {
+                  "name": "PharmaPoint",
+                  "suite": "300 E",
+                  "arrow": "",
+                  "note": ""
+                },
+                {
+                  "name": "Prometheus Group, LLC",
+                  "suite": "305 E",
+                  "arrow": "",
+                  "note": ""
+                },
+                {
+                  "name": "ContinuumRx Services",
+                  "suite": "370 E",
+                  "arrow": "",
+                  "note": ""
+                },
+                {
+                  "name": "Conference Room",
+                  "suite": "318 E",
+                  "arrow": "",
+                  "note": ""
+                },
+                {
+                  "name": "Law Offices of Stevan Goozee, P.C.",
+                  "suite": "364 E",
+                  "arrow": "",
+                  "note": ""
+                }
+              ],
+              "screen": {
+                "key": "ppii-3e",
+                "name": "PPII - 3-East",
+                "orientation": "landscape",
+                "hardware": {
+                  "yodeck_id": "344519",
+                  "model": "Raspberry Pi 4 Model B Rev 1.5",
+                  "serial": "100000007d156a62",
+                  "ethernet_mac": "2c:cf:67:01:d2:b6",
+                  "ethernet_ip": "192.168.44.6",
+                  "wifi_mac": "2c:cf:67:01:d2:b7",
+                  "resolution": "1920x1080",
+                  "power_supply": "OK",
+                  "cpu_temp_c": "43.8",
+                  "orientation": "landscape"
+                }
+              }
+            },
+            {
+              "slug": "ppii-4e",
+              "title": "PPII - 4 East",
+              "subtitle": "",
+              "tenants": [
+                {
+                  "name": "Iris Health",
+                  "suite": "404 E",
+                  "arrow": "",
+                  "note": ""
+                },
+                {
+                  "name": "Valmont Newmark, Inc.",
+                  "suite": "405 E",
+                  "arrow": "",
+                  "note": ""
+                },
+                {
+                  "name": "King Forstman Law LLC",
+                  "suite": "410 E",
+                  "arrow": "",
+                  "note": ""
+                },
+                {
+                  "name": "Forstman & Cutchen LLP",
+                  "suite": "410 E",
+                  "arrow": "",
+                  "note": ""
+                },
+                {
+                  "name": "Summit Family Law",
+                  "suite": "423 E",
+                  "arrow": "",
+                  "note": ""
+                },
+                {
+                  "name": "Walker360/Seek Publishing",
+                  "suite": "425 E",
+                  "arrow": "",
+                  "note": ""
+                },
+                {
+                  "name": "Stillwell Counseling Group",
+                  "suite": "435 E",
+                  "arrow": "",
+                  "note": ""
+                },
+                {
+                  "name": "Smart Source, LLC",
+                  "suite": "440 E",
+                  "arrow": "",
+                  "note": ""
+                },
+                {
+                  "name": "Webster, Henry, Lyons, Bradwell, Cohen & Speagle, P.C.",
+                  "suite": "445 E",
+                  "arrow": "",
+                  "note": ""
+                },
+                {
+                  "name": "Prime Senior Placement & Your Choice Senior Care",
+                  "suite": "460 E",
+                  "arrow": "",
+                  "note": ""
+                }
+              ],
+              "screen": {
+                "key": "ppii-4e",
+                "name": "PPII - 4-East",
+                "orientation": "landscape",
+                "hardware": {
+                  "yodeck_id": "344521",
+                  "model": "Raspberry Pi 4 Model B Rev 1.5",
+                  "serial": "100000001dff1cf6",
+                  "ethernet_mac": "2c:cf:67:01:d0:61",
+                  "ethernet_ip": "192.168.44.10",
+                  "wifi_mac": "2c:cf:67:01:d0:62",
+                  "resolution": "1920x1080",
+                  "power_supply": "OK",
+                  "cpu_temp_c": "42.8",
+                  "orientation": "landscape"
+                }
+              }
+            },
+            {
+              "slug": "ppii-5e",
+              "title": "PPII - 5 East",
+              "subtitle": "",
+              "tenants": [
+                {
+                  "name": "Sain Associates",
+                  "suite": "500 E",
+                  "arrow": "",
+                  "note": ""
+                },
+                {
+                  "name": "Drake Law Firm",
+                  "suite": "510 E",
+                  "arrow": "",
+                  "note": ""
+                }
+              ],
+              "screen": {
+                "key": "ppii-5e",
+                "name": "PPII - 5-East",
+                "orientation": "landscape",
+                "hardware": {
+                  "yodeck_id": "344520",
+                  "model": "Raspberry Pi 4 Model B Rev 1.5",
+                  "serial": "100000000cb94421",
+                  "ethernet_mac": "d8:3a:dd:fe:23:87",
+                  "ethernet_ip": "192.168.44.5",
+                  "wifi_mac": "d8:3a:dd:fe:23:8b",
+                  "resolution": "1920x1080",
+                  "power_supply": "OK",
+                  "cpu_temp_c": "42.8",
+                  "orientation": "landscape"
+                }
+              }
+            },
+            {
+              "slug": "ppii-3w",
+              "title": "PPII - 3 West",
+              "subtitle": "",
+              "tenants": [
+                {
+                  "name": "Norluxe Realty Birmingham",
+                  "suite": "305 W",
+                  "arrow": "",
+                  "note": ""
+                },
+                {
+                  "name": "Prometheus Group",
+                  "suite": "312 W",
+                  "arrow": "",
+                  "note": ""
+                },
+                {
+                  "name": "Organogenesis, Inc.",
+                  "suite": "320 W",
+                  "arrow": "",
+                  "note": ""
+                },
+                {
+                  "name": "Hair Club",
+                  "suite": "350 W",
+                  "arrow": "",
+                  "note": ""
+                },
+                {
+                  "name": "Willcam, Inc",
+                  "suite": "335 W",
+                  "arrow": "",
+                  "note": ""
+                }
+              ],
+              "screen": {
+                "key": "ppii-3w",
+                "name": "PPII - 3-West",
+                "orientation": "landscape",
+                "hardware": {
+                  "yodeck_id": "344524",
+                  "model": "Raspberry Pi 4 Model B Rev 1.5",
+                  "serial": "10000000eb1199eb",
+                  "ethernet_mac": "d8:3a:dd:fe:2a:d1",
+                  "ethernet_ip": "192.168.44.9",
+                  "wifi_mac": "d8:3a:dd:fe:2a:d2",
+                  "resolution": "1920x1080",
+                  "power_supply": "OK",
+                  "cpu_temp_c": "43.3",
+                  "orientation": "landscape"
+                }
+              }
+            },
+            {
+              "slug": "ppii-4w",
+              "title": "PPII - 4 West",
+              "subtitle": "",
+              "tenants": [
+                {
+                  "name": "Neel-Schaffer, Inc.",
+                  "suite": "400 W",
+                  "arrow": "",
+                  "note": ""
+                },
+                {
+                  "name": "Alvarez & Marsal Holdings, LLC",
+                  "suite": "430 W",
+                  "arrow": "",
+                  "note": ""
+                },
+                {
+                  "name": "Harmon-Dennis-Bradshaw, Inc.",
+                  "suite": "450 W",
+                  "arrow": "",
+                  "note": ""
+                }
+              ],
+              "screen": {
+                "key": "ppii-4w",
+                "name": "PPII - 4-West",
+                "orientation": "landscape",
+                "hardware": {
+                  "yodeck_id": "372930",
+                  "model": "Raspberry Pi 4 Model B Rev 1.5",
+                  "serial": "10000000dafecaaa",
+                  "ethernet_mac": "d8:3a:dd:fd:d7:f6",
+                  "ethernet_ip": "192.168.44.8",
+                  "wifi_mac": "d8:3a:dd:fd:d7:f9",
+                  "resolution": "1920x1080",
+                  "power_supply": "UNDER",
+                  "cpu_temp_c": "44.3",
+                  "orientation": "landscape"
+                }
+              }
+            },
+            {
+              "slug": "ppii-5w",
+              "title": "PPII - 5 West",
+              "subtitle": "",
+              "tenants": [
+                {
+                  "name": "StoneX Wealth Management",
+                  "suite": "500 W",
+                  "arrow": "",
+                  "note": ""
+                },
+                {
+                  "name": "Anistar Technologies",
+                  "suite": "575 W",
+                  "arrow": "",
+                  "note": ""
+                }
+              ],
+              "screen": {
+                "key": "ppii-5w",
+                "name": "PPII - 5-West",
+                "orientation": "landscape",
+                "hardware": {
+                  "yodeck_id": "344522",
+                  "model": "Raspberry Pi 4 Model B Rev 1.5",
+                  "serial": "100000009ebd5abe",
+                  "ethernet_mac": "2c:cf:67:01:d3:2b",
+                  "ethernet_ip": "192.168.44.4",
+                  "wifi_mac": "2c:cf:67:01:d3:2c",
+                  "resolution": "1920x1080",
+                  "power_supply": "OK",
+                  "cpu_temp_c": "42.8",
+                  "orientation": "landscape"
+                }
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "key": "cadence",
+      "name": "Cadence Place (owner to confirm)",
+      "kind": "owner",
+      "properties": [
+        {
+          "key": "cadence-place",
+          "name": "Cadence Place",
+          "address": "",
+          "footer": "",
+          "lat": 33.5186,
+          "lon": -86.8104,
+          "directories": [
+            {
+              "slug": "cadence-place",
+              "title": "Welcome",
+              "subtitle": "",
+              "tenants": [
+                {
+                  "name": "Butler & Company Architects, LLC",
+                  "suite": "202",
+                  "arrow": "",
+                  "note": ""
+                },
+                {
+                  "name": "Acrisure Mortgage, LLC",
+                  "suite": "204",
+                  "arrow": "",
+                  "note": ""
+                },
+                {
+                  "name": "Advo(K)ate Advisors, LLC",
+                  "suite": "206",
+                  "arrow": "",
+                  "note": ""
+                },
+                {
+                  "name": "Office Suites",
+                  "suite": "208",
+                  "arrow": "",
+                  "note": ""
+                },
+                {
+                  "name": "Reliance Partners, LLC",
+                  "suite": "208E",
+                  "arrow": "",
+                  "note": ""
+                },
+                {
+                  "name": "Dyer Orthodontics, LLC",
+                  "suite": "210",
+                  "arrow": "",
+                  "note": ""
+                },
+                {
+                  "name": "American Fidelity Insurance",
+                  "suite": "212",
+                  "arrow": "",
+                  "note": ""
+                }
+              ],
+              "screen": {
+                "key": "cadence-place",
+                "name": "Cadence Place",
+                "orientation": "portrait",
+                "hardware": {
+                  "yodeck_id": "561904",
+                  "model": "Raspberry Pi 4 Model B Rev 1.5",
+                  "serial": "10000000a4ae272d",
+                  "ethernet_mac": "2c:cf:67:55:70:5f",
+                  "ethernet_ip": "192.168.0.245",
+                  "wifi_mac": "2c:cf:67:55:70:61",
+                  "resolution": "1080x1920",
+                  "power_supply": "OK",
+                  "cpu_temp_c": "38",
+                  "orientation": "portrait"
+                }
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}
