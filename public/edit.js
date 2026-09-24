@@ -80,7 +80,7 @@
     const s = S.screens;
     if (!s.length) { $("checkin").textContent = "No screen shows this directory yet"; $("open-display").hidden = true; return; }
     const fresh = s.filter((x) => x.last_seen && Date.now() - Date.parse(x.last_seen) < 15 * 60000).length;
-    $("checkin").textContent = s.length === 1 ? `Screen checked in ${since(s[0].last_seen)}` : `${fresh} of ${s.length} screens online`;
+    $("checkin").textContent = s.length === 1 ? (s[0].last_seen ? `Screen checked in ${since(s[0].last_seen)}` : "Screen hasn't checked in yet") : `${fresh} of ${s.length} screens online`;
     $("checkin").classList.toggle("stale", fresh < s.length);
     $("open-display").href = `/?screen=${encodeURIComponent(s[0].key)}`;
     $("updated").textContent = S.dir.updated_at ? `Last published ${new Date(S.dir.updated_at).toLocaleString()}` : "";

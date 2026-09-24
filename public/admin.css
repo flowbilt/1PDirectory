@@ -70,10 +70,11 @@ legend { font-weight: 700; padding: 0 6px; }
 .bg-controls input[type=range] { padding: 0; border: 0; }
 
 /* Tenant rows */
-.tenant-head, .tenant-row { display: grid; grid-template-columns: minmax(0, 1fr) 90px 110px 190px; gap: 8px; align-items: center; }
+.tenant-head, .tenant-row { display: grid; grid-template-columns: minmax(0, 1fr) 90px 110px 240px; gap: 8px; align-items: center; }
 .tenant-head { font-size: 13px; color: var(--muted); font-weight: 700; padding: 0 2px; }
 .tenant-rows { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
-.row-actions { display: flex; gap: 4px; justify-content: flex-end; }
+.row-actions { display: flex; gap: 4px; justify-content: flex-end; flex-wrap: nowrap; }
+.row-actions .icon-btn { flex-shrink: 0; }
 .row-actions .remove { color: var(--danger); }
 .empty-rows { color: var(--muted); padding: 10px 2px; }
 
