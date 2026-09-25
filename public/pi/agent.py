@@ -1,8 +1,10 @@
 #!/usr/bin/env python3
 """Lobby directory agent for Raspberry Pi.
 
-Checks in with the directory site every minute: reports this Pi's health, sends a small screenshot every few
-minutes, and runs commands queued in the console. Only the fixed commands below can run; nothing free-form.
+Checks in with the directory site once a minute, on a fixed schedule: reports this Pi's health, sends a small
+screenshot every few minutes, and runs commands queued in the console. Only the fixed commands below can run;
+nothing free-form. Command results go out with the next scheduled check-in (never an extra one); results that
+must survive a reboot or an agent update are kept on disk until the site has them.
 The Pi always makes the connection (outbound HTTPS), so no ports are opened and nothing can connect in.
 
 Config: /etc/lobby-agent.json  {"site": "https://...", "key": "<this Pi's secret>", "user": "<desktop user>"}
@@ -10,9 +12,10 @@ Runs as a systemd service (lobby-agent). Standard library only.
 """
 import base64, json, os, pwd, re, shutil, socket, subprocess, sys, tempfile, time, urllib.error, urllib.request
 
-VERSION = "1.0.0"
+VERSION = "1.1.0"
 CONFIG = os.environ.get("LOBBY_AGENT_CONFIG", "/etc/lobby-agent.json")
-INTERVAL = 60
+STATE = os.environ.get("LOBBY_AGENT_STATE", "/var/lib/lobby-agent/pending-results.json")
+INTERVAL = max(1.0, float(os.environ.get("LOBBY_AGENT_INTERVAL", "60")))   # seconds; only tests change this
 
 
 def log(*a):
@@ -142,12 +145,11 @@ def cmd_reload(cfg):
 
 
 def cmd_reboot(cfg):
-    return True, "Rebooting."   # the reboot itself happens after the result is reported
+    return True, "Rebooted."    # reported on the first check-in after the restart (see main)
 
 
 def cmd_screenshot(cfg):
-    cfg["_force_shot"] = True
-    return True, "Taking a screenshot…"   # replaced with the real outcome once it's been taken
+    return True, "Taking a screenshot…"   # taken on the next check-in, and this is replaced with the outcome
 
 
 def cmd_update_agent(cfg):
@@ -185,6 +187,38 @@ def post(cfg, body):
         return json.loads(r.read() or b"{}")
 
 
+# ── results that must outlive this process (a reboot, an agent update) ──
+def load_pending():
+    try:
+        with open(STATE) as f:
+            got = json.load(f)
+        return [r for r in got if isinstance(r, dict) and "id" in r][:20]
+    except (OSError, ValueError):
+        return []
+
+
+def save_pending(results):
+    try:
+        if not results:
+            if os.path.exists(STATE):
+                os.remove(STATE)
+            return
+        os.makedirs(os.path.dirname(STATE), exist_ok=True)
+        tmp = STATE + ".tmp"
+        with open(tmp, "w") as f:
+            json.dump(results, f)
+        os.replace(tmp, STATE)
+    except OSError as e:
+        log("couldn't save command results:", e)
+
+
+def next_slot(start, now, interval=INTERVAL):
+    """The next tick of a fixed schedule that began at `start`, strictly after `now`. Time spent on the work
+    itself never pushes the schedule back, so the Pi checks in once a minute, not once every 61-62 seconds;
+    if a check-in overruns a whole minute (a slow network), the missed tick is skipped, not made up."""
+    return start + (int((now - start) // interval) + 1) * interval
+
+
 def main():
     cfg = json.loads(read(CONFIG, "{}"))
     if not cfg.get("site") or len(cfg.get("key", "")) < 24:
@@ -195,45 +229,52 @@ def main():
         log("could not read this Pi's serial number")
         sys.exit(1)
     log(f"lobby agent {VERSION} starting, serial {me}, site {cfg['site']}")
-    results, last_shot, shot_every = [], 0.0, 300
+    results = load_pending()          # e.g. "Rebooted." from before a reboot
+    last_shot, shot_every = 0.0, 300
+    force_shot, shot_results = False, []
     once = "--once" in sys.argv
+    start = time.monotonic()
 
     while True:
         body = {"serial": me, "model": model(), "hostname": socket.gethostname(), "version": VERSION, "health": health(), "results": results}
-        if cfg.pop("_force_shot", False) or time.time() - last_shot >= shot_every:
+        if force_shot or time.time() - last_shot >= shot_every:
             shot = screenshot(cfg)
             if shot:
                 body["screenshot"] = shot
                 last_shot = time.time()
+            for r in shot_results:                  # the console's "Take screenshot": report what actually happened
+                r.update(status="done" if shot else "failed",
+                         result="Screenshot taken." if shot else "Couldn't capture the screen (is grim installed?).")
+        force_shot, shot_results = False, []
         try:
             reply = post(cfg, body)
             results = []
+            save_pending([])
             shot_every = max(60, int(reply.get("screenshot_every", 300)))
             reboot = False
             for c in reply.get("commands", []):
                 fn = COMMANDS.get(c.get("command"))
                 ok, msg = fn(cfg) if fn else (False, "Unknown command.")
-                results.append({"id": c.get("id"), "status": "done" if ok else "failed", "result": msg})
+                r = {"id": c.get("id"), "status": "done" if ok else "failed", "result": msg}
+                results.append(r)
                 log("command", c.get("command"), "->", msg)
+                if c.get("command") == "screenshot" and ok:
+                    force_shot = True
+                    shot_results.append(r)
                 reboot = reboot or (c.get("command") == "reboot" and ok)
-            if results and (reboot or cfg.get("_restart") or cfg.get("_force_shot")):
-                if cfg.get("_force_shot"):                          # send the fresh screenshot right away
-                    cfg.pop("_force_shot")
-                    shot = screenshot(cfg)
-                    extra = {"screenshot": shot} if shot else {}
-                    last_shot = time.time() if shot else last_shot
-                    for r in results:                               # report what actually happened
-                        if r["result"].startswith("Taking a screenshot"):
-                            r.update(status="done" if shot else "failed",
-                                     result="Screenshot taken." if shot else "Couldn't capture the screen (is grim installed?).")
-                else:
-                    extra = {}
-                post(cfg, {"serial": me, "model": model(), "hostname": socket.gethostname(), "version": VERSION, "health": health(), "results": results, **extra})
-                results = []
+            # Results go out with the next scheduled check-in. Before a reboot or an update restart, keep them
+            # on disk so the first check-in afterwards reports them.
+            if reboot or cfg.get("_restart"):
+                save_pending(results)
             if reboot:
                 log("rebooting")
-                run(["systemctl", "reboot"])
-            if cfg.get("_restart"):
+                r = run(["systemctl", "reboot"])
+                if r.returncode != 0:                # still here: the reboot didn't happen
+                    for x in results:
+                        if x["result"] == "Rebooted.":
+                            x.update(status="failed", result="Reboot failed: " + (r.stderr or b"").decode(errors="ignore")[:200])
+                    save_pending(results)
+            if cfg.pop("_restart", False):
                 log("restarting after update")
                 os.execv(sys.executable, [sys.executable] + sys.argv)
         except urllib.error.HTTPError as e:
@@ -242,7 +283,7 @@ def main():
             log("check-in failed:", e)
         if once:
             return
-        time.sleep(INTERVAL)
+        time.sleep(max(0.0, next_slot(start, time.monotonic()) - time.monotonic()))
 
 
 if __name__ == "__main__":

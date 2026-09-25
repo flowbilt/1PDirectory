@@ -132,8 +132,11 @@ export default async (req) => {
 export const config = { path: "/api/devices" };
 
 // ── Fleet health summary ──
-// Uptime = check-ins / minutes the Pi should have been checking in (one a minute), counted from its first day
-// of history so a newly installed Pi isn't marked down for days before it existed.
+// Uptime = time credited as up / time the Pi should have been up, counted from its first check-in so a newly
+// installed Pi isn't marked down for days before it existed. Each check-in credits the time since the previous
+// one, up to 3 minutes (supabase/07-uptime.sql), so small timing jitter never shows as downtime. Rows from before
+// round 2 have no online_s and count a minute per check-in, as uptime was counted then.
+export const upSeconds = (r) => (r.online_s === null || r.online_s === undefined ? r.checkins * 60 : r.online_s);
 const DAY_MS = 86400_000;
 const shiftDay = (day, n) => new Date(Date.parse(day + "T12:00:00Z") + n * DAY_MS).toISOString().slice(0, 10);
 
@@ -165,10 +168,10 @@ export function computeSummary({ devices, daily, screens, dirs, props, orgs, now
       if (!days.length) return { uptime: null, dips: 0, browserDown: 0, maxTemp: null };
       const expected = days.reduce((m, day) => m + dayMinutes(day), 0);
       const inRange = mine.filter((r) => days.includes(r.day));
-      const checkins = inRange.reduce((m, r) => m + r.checkins, 0);
+      const upMinutes = inRange.reduce((m, r) => m + upSeconds(r), 0) / 60;
       const temps = inRange.map((r) => r.max_temp_c).filter((t) => typeof t === "number");
       return {
-        uptime: pct(Math.min(1, checkins / expected)),
+        uptime: pct(Math.min(1, upMinutes / expected)),
         dips: inRange.reduce((m, r) => m + r.power_dips, 0),
         browserDown: inRange.reduce((m, r) => m + r.browser_down, 0),
         maxTemp: temps.length ? Math.max(...temps) : null,
@@ -218,7 +221,7 @@ async function summary() {
   const since = shiftDay(centralDay(), -29);
   const [devices, daily, screens, dirs, props, orgs] = await Promise.all([
     db("devices?select=id,serial,screen_id,status,model,agent_version,last_seen,last_health&order=serial.asc"),
-    db(`device_daily?day=gte.${since}&select=device_id,day,checkins,power_dips,browser_down,max_temp_c,first_at`),
+    db(`device_daily?day=gte.${since}&select=device_id,day,checkins,online_s,power_dips,browser_down,max_temp_c,first_at`),
     db("screens?select=id,name,key,directory_id"),
     db("directories?select=id,property_id"),
     db("properties?select=id,name,org_id"),

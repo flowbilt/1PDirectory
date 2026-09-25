@@ -16,7 +16,8 @@ export function createFake() {
   const outbox = [];
   const rpcCalls = []; // which database functions were called, for tests that count trips
   const restCalls = [];
-  const now = () => new Date().toISOString();
+  let clock = null;                                   // tests can fix "now" with setClock(date)
+  const now = () => (clock ? new Date(clock) : new Date()).toISOString();
 
   // ── seed from the migration data ──
   function seed() {
@@ -237,6 +238,14 @@ export function createFake() {
 
   // ── database functions (mirror of supabase/05-tuning.sql, agent_checkin as replaced by 06-trust.sql) ──
   const centralDay = (d = new Date()) => new Intl.DateTimeFormat("en-CA", { timeZone: "America/Chicago" }).format(d);
+  // Mirror of device_credit (07-uptime.sql): {today, previous day} seconds for a check-in at `at` after one at `prev`
+  function deviceCredit(prev, at) {
+    const gap = prev ? (Date.parse(at) - Date.parse(prev)) / 1000 : 0;
+    const total = gap > 0 && gap <= 180 ? Math.round(gap) : 0;
+    const p = Object.fromEntries(new Intl.DateTimeFormat("en-US", { timeZone: "America/Chicago", hour: "numeric", minute: "numeric", second: "numeric", hourCycle: "h23" }).formatToParts(new Date(at)).map((x) => [x.type, Number(x.value)]));
+    const intoToday = Math.floor(p.hour * 3600 + p.minute * 60 + p.second + (Date.parse(at) % 1000) / 1000);
+    return [Math.min(total, intoToday), total - Math.min(total, intoToday)];
+  }
   const FUNCS = {
     agent_checkin({ p_serial, p_key_hash, p_info = {}, p_health = {}, p_screenshot = null, p_results = [] }) {
       const t = now();
@@ -247,21 +256,28 @@ export function createFake() {
         if (!dv.enroll_until || dv.enroll_until < t) return { refused: "enroll" };  // registered, no key: needs the window
         Object.assign(dv, { key_hash: p_key_hash, enroll_until: null });
       } else if (dv.key_hash !== p_key_hash) return { refused: "key" };
+      const prevSeen = dv.last_seen;
       Object.assign(dv, { last_seen: t, last_health: p_health || {}, model: p_info?.model ?? "", hostname: p_info?.hostname ?? "", agent_version: p_info?.version ?? "" });
       if (p_screenshot != null && dv.screen_id) Object.assign(dv, { screenshot: p_screenshot, screenshot_at: t }); // none while unassigned
-      const day = centralDay(), h = p_health || {};
+      const cred = deviceCredit(prevSeen, t);
+      const day = centralDay(new Date(t)), h = p_health || {};
       const temp = typeof h.temp_c === "number" ? h.temp_c : null;
       const row = T.device_daily.find((r) => r.device_id === dv.id && r.day === day);
-      if (row) Object.assign(row, { checkins: row.checkins + 1, power_dips: row.power_dips + (h.under_voltage_now === true ? 1 : 0),
+      if (row) Object.assign(row, { checkins: row.checkins + 1, online_s: (row.online_s ?? 0) + cred[0], power_dips: row.power_dips + (h.under_voltage_now === true ? 1 : 0),
         browser_down: row.browser_down + (h.browser_running === false ? 1 : 0),
         max_temp_c: row.max_temp_c == null ? temp : temp == null ? row.max_temp_c : Math.max(row.max_temp_c, temp), last_at: t });
-      else T.device_daily.push({ ...defaults.device_daily(), device_id: dv.id, day, checkins: 1, power_dips: h.under_voltage_now === true ? 1 : 0,
+      else T.device_daily.push({ ...defaults.device_daily(), device_id: dv.id, day, checkins: 1, online_s: cred[0], power_dips: h.under_voltage_now === true ? 1 : 0,
         browser_down: h.browser_running === false ? 1 : 0, max_temp_c: temp, first_at: t, last_at: t });
+      if (cred[1] > 0) {
+        const yday = centralDay(new Date(Date.parse(t) - cred[0] * 1000 - 1000));
+        const y = T.device_daily.find((r) => r.device_id === dv.id && r.day === yday);
+        if (y) y.online_s = (y.online_s ?? 0) + cred[1];
+      }
       for (const r of p_results || []) {
         const c = T.device_commands.find((x) => x.id === Number(r.id) && x.device_id === dv.id && x.status === "sent");
         if (c) Object.assign(c, { status: r.status === "done" ? "done" : "failed", result: String(r.result ?? "").slice(0, 500), done_at: t });
       }
-      const hourAgo = new Date(Date.now() - 3600_000).toISOString();
+      const hourAgo = new Date(Date.parse(t) - 3600_000).toISOString();
       T.device_commands.filter((c) => c.device_id === dv.id && ["pending", "sent"].includes(c.status) && c.created_at < hourAgo).forEach((c) => { c.status = "expired"; });
       const pending = T.device_commands.filter((c) => c.device_id === dv.id && c.status === "pending").sort((a, b) => a.id - b.id);
       pending.forEach((c) => Object.assign(c, { status: "sent", sent_at: t }));
@@ -358,5 +374,5 @@ export function createFake() {
   }
 
   seed();
-  return { handle, T, users, outbox, addUser, rpcCalls, restCalls };
+  return { handle, T, users, outbox, addUser, rpcCalls, restCalls, deviceCredit, setClock: (d) => { clock = d ? new Date(d) : null; } };
 }

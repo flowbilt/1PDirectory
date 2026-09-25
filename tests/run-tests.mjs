@@ -356,6 +356,7 @@ test("every check-in adds to the Pi's daily summary", async () => {
 });
 
 test("uptime math: full days, today so far, and new Pis aren't penalized for days before they existed", () => {
+  // These rows have no online_s: history from before round 2, counted a minute per check-in
   const now = Date.parse("2026-09-24T17:00:00Z"); // noon Central -> 720 minutes into today
   const d = (day, checkins, extra = {}) => ({ device_id: "A", day, checkins, power_dips: 0, browser_down: 0, max_temp_c: 55, ...extra });
   const daily = [d("2026-09-22", 1440), d("2026-09-23", 720, { power_dips: 3, max_temp_c: 71 }), d("2026-09-24", 720)];
@@ -375,6 +376,12 @@ test("uptime math: full days, today so far, and new Pis aren't penalized for day
     daily: [{ device_id: "C", day: "2026-09-24", checkins: 10, power_dips: 0, browser_down: 0, max_temp_c: 50, first_at: "2026-09-24T16:50:00Z" }], screens: [], dirs: [], props: [], orgs: [], now });
   assert.equal(c.devices[0].uptime.d1, 100, "counted from its first check-in");
   assert.equal(r.fleet.never, 1); assert.equal(r.fleet.online, 1);
+  // Round 2 rows: credited seconds, not check-ins
+  const e = computeSummary({ devices: [{ id: "E", serial: "10000000eeeeeeee", screen_id: null, status: "active", last_seen: new Date(now).toISOString(), last_health: {} }],
+    daily: [{ device_id: "E", day: "2026-09-23", checkins: 1400, online_s: 1440 * 60, power_dips: 0, browser_down: 0, max_temp_c: 50, first_at: "2026-09-23T05:00:00Z" },
+            { device_id: "E", day: "2026-09-24", checkins: 700, online_s: 360 * 60, power_dips: 0, browser_down: 0, max_temp_c: 50 }], screens: [], dirs: [], props: [], orgs: [], now });
+  assert.equal(e.devices[0].uptime.d1, 50, "360 of 720 minutes today, whatever the check-in count");
+  assert.equal(e.devices[0].uptime.d7, Math.round((1440 + 360) / (1440 + 720) * 1000) / 10);
 });
 
 test("the summary endpoint returns every Pi for 1Point", async () => {
@@ -383,7 +390,64 @@ test("the summary endpoint returns every Pi for 1Point", async () => {
   assert.ok(r.devices.length >= 16);
   const p = r.devices.find((x) => x.serial === PPI2S_SERIAL);
   assert.equal(p.screen.key, "ppi-2s"); assert.equal(p.account, "Barber Companies");
-  assert.ok(p.uptime.d1 > 0);
+  assert.ok("d1" in p.uptime && "d30" in p.uptime);
+  const row = fake.T.device_daily.find((x) => x.device_id === p.id && x.day === centralDay());
+  assert.ok(row && "online_s" in row, "the summary reads credited time");
+});
+
+// ── Uptime counting (round 2): time since the previous check-in, up to 3 minutes ──
+const pi = (serial) => (at, key = "u".repeat(43)) => { fake.setClock(at); return agent(new Request(SITE + "/api/agent", { method: "POST", headers: { Authorization: `Bearer ${key}` }, body: JSON.stringify({ serial, health: {} }) })); };
+const dailyOf = (serial) => { const d = fake.T.devices.find((x) => x.serial === serial); return fake.T.device_daily.filter((r) => r.device_id === d.id); };
+
+test("each check-in credits the time since the previous one, up to 3 minutes", async () => {
+  const at = pi("10000000c0ffee01"), t0 = Date.parse("2026-09-24T15:00:00Z");
+  try {
+    await at(t0);                                   // first contact: counted, nothing credited
+    await at(t0 + 50_000);                          // 50 s later
+    await at(t0 + 50_000 + 180_000);                // exactly 3 minutes: still up
+    await at(t0 + 50_000 + 180_000 + 181_000);      // 3 min 1 s: an outage, nothing credited
+    await at(t0 + 50_000 + 180_000 + 181_000 + 61_000);
+  } finally { fake.setClock(null); }
+  const [row] = dailyOf("10000000c0ffee01");
+  assert.equal(row.checkins, 5);
+  assert.equal(row.online_s, 50 + 180 + 0 + 61);
+  assert.deepEqual(fake.deviceCredit(null, "2026-09-24T15:00:00Z"), [0, 0]);
+  assert.deepEqual(fake.deviceCredit("2026-09-24T15:00:10Z", "2026-09-24T15:00:00Z"), [0, 0], "a clock that went backwards credits nothing");
+});
+
+test("a gap across midnight (Central) is split between the two days", async () => {
+  const at = pi("10000000c0ffee02");
+  try {
+    await at("2026-09-25T04:58:30Z");               // 23:58:30 Central
+    await at("2026-09-25T04:59:20Z");               // 23:59:20: 50 s to the 24th
+    await at("2026-09-25T05:00:30Z");               // 00:00:30: 40 s to the 24th, 30 s to the 25th
+  } finally { fake.setClock(null); }
+  const rows = dailyOf("10000000c0ffee02");
+  assert.equal(rows.find((r) => r.day === "2026-09-24").online_s, 90);
+  assert.equal(rows.find((r) => r.day === "2026-09-25").online_s, 30);
+  assert.deepEqual(fake.deviceCredit("2026-11-01T04:59:00Z", "2026-11-01T05:01:00Z"), [60, 60], "the night the clocks change");
+});
+
+test("a healthy Pi checking in every 61 seconds reads 100%; an outage costs its length plus at most a minute", async () => {
+  const serial = "10000000c0ffee03", at = pi(serial), start = Date.parse("2026-09-23T05:00:00Z"); // midnight Central
+  const sixAm = start + 6 * 3600_000;
+  try {
+    for (let t = start, i = 0; t <= sixAm; t += 61_000 + ((i++ % 5) - 2) * 700) await at(t);  // 59.6 to 62.4 s apart
+  } finally { fake.setClock(null); }
+  const summary = (daily, nowMs) => computeSummary({ devices: [{ ...fake.T.devices.find((x) => x.id === daily[0].device_id), last_seen: new Date(nowMs).toISOString() }], daily, screens: [], dirs: [], props: [], orgs: [], now: nowMs }).devices[0];
+  const day = dailyOf(serial);
+  assert.ok(day[0].checkins < 360, `drifting Pi made ${day[0].checkins} check-ins in 360 minutes`);
+  assert.ok(day[0].checkins / 360 < 0.99, "the old count would have shown it under 99%");
+  assert.ok(summary(day, sixAm).uptime.d1 >= 99.9, `uptime ${summary(day, sixAm).uptime.d1}%`);
+  // The same six hours with a 10-minute gap from 02:00
+  const serial2 = "10000000c0ffee04", at2 = pi(serial2);
+  try {
+    for (let t = start; t <= sixAm; t += 60_000) if (t < start + 2 * 3600_000 || t >= start + 2 * 3600_000 + 10 * 60_000) await at2(t);
+  } finally { fake.setClock(null); }
+  // Last check-in 01:59, next 02:10: the whole 11-minute gap is uncredited, so a 10-minute outage costs 11 minutes.
+  // Outages are reported slightly long rather than hidden.
+  const up = summary(dailyOf(serial2), sixAm).uptime.d1;
+  assert.equal(up, Math.round((349 / 360) * 1000) / 10, `uptime ${up}%`);
 });
 
 test("identify flashes a screen; 1Point can assign a new Pi and reset keys", async () => {

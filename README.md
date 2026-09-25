@@ -62,7 +62,7 @@ Options: `--rotate 270` if a portrait picture is upside down (or `0`/`90` to fix
 
 ## Remote management (the agent)
 
-Each Pi runs a small agent (`public/pi/agent.py`) that checks in every minute over HTTPS. Each check-in is a single database call (`supabase/05-tuning.sql`), because Netlify bills for the time a function spends waiting. The Pi always makes the connection, so no ports are opened. It reports:
+Each Pi runs a small agent (`public/pi/agent.py`) that checks in once a minute over HTTPS, on a fixed schedule (a slow check-in never pushes the next one back). Results of console actions go out with the next scheduled check-in; a reboot's or an update's result is kept on the Pi until it's reported. Each check-in is a single database call (`supabase/05-tuning.sql`), because Netlify bills for the time a function spends waiting. The Pi always makes the connection, so no ports are opened. It reports:
 
 - temperature, power (under-voltage), uptime, storage and IP address
 - whether the browser is running
@@ -80,7 +80,7 @@ In the console, the **Pi** button on each screen offers Identify, Reload screen,
 
 It filters by account and exports a CSV, for customer service reports.
 
-Uptime comes from a daily summary for each Pi (`device_daily`), kept for 400 days. A new Pi's uptime counts from its first check-in, so it isn't penalized for time before it was installed.
+Uptime comes from a daily summary for each Pi (`device_daily`), kept for 400 days. Each check-in credits the time since the Pi's previous one, if that was 3 minutes ago or less (`supabase/07-uptime.sql`), so small timing differences never show as downtime. A longer gap is an outage and earns nothing, so an outage reads up to a minute longer than it was, never shorter. A new Pi's uptime counts from its first check-in, so it isn't penalized for time before it was installed. The nightly reboot (about a minute) counts as up.
 
 Only those fixed actions exist, and the agent can't run anything else. Actions not picked up within an hour are dropped rather than run late.
 
@@ -97,6 +97,7 @@ npm install
 npm test                      # server functions, against a fake Supabase
 node --import ./tests/register-stub.mjs tests/test-server.mjs   # the whole site locally, with sample logins
 bash tests/kiosk-rotation-test.sh    # the Pi's automatic rotation, against the local site (takes about 3 minutes)
+python3 tests/agent-test.py          # the Pi's agent: schedule, command results, reboot and update (about 40 seconds)
 ```
 
 Local sample logins: `scot@1pointusa.com / admin-pass`, `leighann@barber.test / owner-pass`, `editor@barber.test / editor-pass`.
