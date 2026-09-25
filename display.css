@@ -1,0 +1,189 @@
+@font-face { font-family: "Instrument Sans"; src: url("/fonts/InstrumentSans-Regular.ttf") format("truetype"); font-weight: 400; font-display: block; }
+@font-face { font-family: "Instrument Sans"; src: url("/fonts/InstrumentSans-Bold.ttf") format("truetype"); font-weight: 700; font-display: block; }
+@font-face { font-family: "Lora"; src: url("/fonts/Lora-Bold.ttf") format("truetype"); font-weight: 700; font-display: block; }
+
+:root {
+  --navy: #0d1b2e;      /* page, from the original directory design */
+  --navy-deep: #081322; /* news panel + contact band */
+  --steel: #c7cdd6;     /* brushed-steel frame on the lobby wall */
+  --ink: #ffffff;
+  --muted: #8d9bb0;
+  --rule: rgba(199, 205, 214, 0.16);
+
+  /* --u is 1% of the stage width; display.js sets it. 10.8px on a 1080-wide portrait screen. */
+  --u: 10.8px;
+  --pad: calc(var(--u) * 5);
+  --tf: calc(var(--u) * 4.6); /* tenant font size, fitted by display.js */
+}
+
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+[hidden] { display: none !important; }
+html, body { width: 100%; height: 100%; overflow: hidden; background: var(--navy); cursor: none; }
+body { font-family: "Instrument Sans", "Segoe UI", Arial, sans-serif; color: var(--ink); -webkit-font-smoothing: antialiased; }
+
+#stage {
+  position: absolute; left: 0; top: 0;
+  width: var(--W, 100vw); height: var(--H, 100vh);
+  display: flex; flex-direction: column;
+  background: var(--navy);
+  transform-origin: 0 0;
+  transition: opacity 0.6s ease;
+}
+#stage.is-loading { opacity: 0; }
+
+/* ── Background photo (optional) ─────────────
+   The photo sits behind everything under a navy tint. --bg-show is how much of it shows through.
+   The tint is heavier behind the tenant list, where legibility matters most. */
+.bg { position: absolute; inset: 0; z-index: 0; overflow: hidden; }
+/* The photo is pinned to the top and scaled by width (--bg-size), so a building photo shows whole behind
+   the header and tenant list; the street falls behind the news panel, and the bottom fades to navy. */
+.bg-photo {
+  position: absolute; top: var(--bg-top, 0px); left: var(--bg-left, 0px);
+  width: var(--bg-width, 100%); height: auto; max-width: none;
+  filter: grayscale(0.35) blur(calc(var(--u) * 0.2));
+  -webkit-mask-image: linear-gradient(to bottom, transparent 0%, #000 7%, #000 72%, transparent 100%);
+          mask-image: linear-gradient(to bottom, transparent 0%, #000 7%, #000 72%, transparent 100%);
+}
+.bg-tint {
+  position: absolute; inset: 0;
+  background: linear-gradient(to bottom,
+    rgba(13, 27, 46, calc(1 - var(--bg-show) * 1.6)) 0%,
+    rgba(13, 27, 46, calc(1 - var(--bg-show))) 16%,
+    rgba(13, 27, 46, calc(1 - var(--bg-show))) 100%);
+}
+#stage > :not(.bg):not(.offline):not(.identify) { position: relative; z-index: 1; }
+.offline { z-index: 2; }
+#stage.has-bg { background: #0d1b2e; }
+#stage.has-bg .contacts, #stage.has-bg .welcome { background: rgba(8, 19, 34, 0.82); }
+
+/* ── Masthead ───────────────────────────────── */
+.masthead {
+  display: flex; justify-content: space-between; align-items: flex-end; gap: calc(var(--u) * 4);
+  padding: calc(var(--u) * 5) var(--pad) calc(var(--u) * 3.4);
+  border-bottom: 2px solid var(--steel);
+}
+.masthead-id { min-width: 0; flex: 1 1 auto; }
+.logo { display: block; max-height: calc(var(--u) * 8); max-width: calc(var(--u) * 40); object-fit: contain; object-position: left center; margin-bottom: calc(var(--u) * 2.6); }
+/* Logo standing in for the property name: larger, and no gap below it */
+#stage.wordmark .logo { width: 100%; max-width: calc(var(--u) * 58); height: auto; max-height: calc(var(--u) * 11); margin-bottom: 0; }
+#stage.wordmark .label { margin-top: calc(var(--u) * 1.6); }
+.property {
+  font-family: "Lora", Georgia, serif; font-weight: 700;
+  font-size: calc(var(--u) * 7.2); line-height: 1.02; letter-spacing: -0.01em;
+  text-wrap: balance;
+}
+.label { margin-top: calc(var(--u) * 1.2); font-size: calc(var(--u) * 2.7); color: var(--muted); }
+
+.masthead-now { text-align: right; flex-shrink: 0; }
+.time { font-size: calc(var(--u) * 6); font-weight: 400; line-height: 1; font-variant-numeric: tabular-nums; letter-spacing: -0.02em; }
+.time small { font-size: 0.42em; margin-left: 0.18em; color: var(--muted); letter-spacing: 0; }
+.date { margin-top: calc(var(--u) * 1); font-size: calc(var(--u) * 2.5); color: var(--muted); }
+.weather { display: inline-flex; align-items: center; gap: calc(var(--u) * 1.2); margin-top: calc(var(--u) * 1.8); }
+.wx-icon { width: calc(var(--u) * 4.6); height: calc(var(--u) * 4.6); display: inline-flex; }
+.wx-icon svg { width: 100%; height: 100%; }
+.wx-temp { font-size: calc(var(--u) * 4); font-weight: 700; line-height: 1; }
+.wx-text { font-size: calc(var(--u) * 2.3); color: var(--muted); max-width: calc(var(--u) * 20); text-align: left; line-height: 1.15; }
+
+/* ── Tenant listing ─────────────────────────── */
+.listing { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; padding: calc(var(--u) * 3.6) var(--pad) calc(var(--u) * 2); }
+.listing-head {
+  display: flex; justify-content: space-between;
+  font-size: calc(var(--u) * 2.4); color: var(--muted);
+  padding-bottom: calc(var(--u) * 1.2);
+  border-bottom: 1px solid var(--rule);
+}
+.list-frame { flex: 1 1 auto; min-height: 0; overflow: hidden; }
+.tenants { list-style: none; }
+.tenant {
+  display: grid; grid-template-columns: 1fr auto auto; align-items: baseline; column-gap: calc(var(--tf) * 0.6);
+  padding: calc(var(--tf) * 0.46) 0;
+  border-bottom: 1px solid var(--rule);
+  font-size: var(--tf); font-weight: 700; line-height: 1.14;
+}
+.tenant-name { min-width: 0; text-wrap: pretty; }
+.tenant-note { display: block; margin-top: 0.12em; font-size: 0.56em; font-weight: 400; font-style: italic; color: var(--muted); line-height: 1.2; }
+.tenant-suite { font-variant-numeric: tabular-nums; min-width: 3.1ch; text-align: right; }
+.tenant-dir { width: 0.9em; align-self: start; margin-top: 0.14em; display: flex; }
+.tenant-dir svg { width: 100%; height: auto; }
+.tenants.no-arrows .tenant { grid-template-columns: 1fr auto; }
+.tenants.no-arrows .tenant-dir { display: none; }
+.tenants.two-col { columns: 2; column-gap: calc(var(--u) * 5); }
+.tenants.two-col .tenant { break-inside: avoid; }
+.listing.two-col-head .listing-head { display: none; }
+.empty { font-size: calc(var(--u) * 3); color: var(--muted); padding-top: calc(var(--u) * 4); }
+
+/* ── News ───────────────────────────────────── */
+.news { flex: 0 0 auto; padding: 0 var(--pad) calc(var(--u) * 3.6); }
+.news-slides { position: relative; height: calc(var(--u) * 42); overflow: hidden; background: var(--navy-deep); }
+.slide { position: absolute; inset: 0; opacity: 0; transition: opacity 1.2s ease; }
+.slide.on { opacity: 1; }
+.slide img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+.slide-text {
+  position: absolute; left: 0; right: 0; bottom: 0;
+  padding: calc(var(--u) * 10) calc(var(--u) * 3.4) calc(var(--u) * 3);
+  background: linear-gradient(to top, rgba(8, 19, 34, 0.96) 0%, rgba(8, 19, 34, 0.86) 45%, rgba(8, 19, 34, 0) 100%);
+}
+.slide.text-only .slide-text { top: 0; display: flex; flex-direction: column; justify-content: center; background: none; padding-top: calc(var(--u) * 3); }
+.slide-headline { font-size: calc(var(--u) * 3.7); font-weight: 700; line-height: 1.16; text-wrap: balance; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+.slide.text-only .slide-headline { font-size: calc(var(--u) * 4.6); -webkit-line-clamp: 4; }
+.slide-meta { margin-top: calc(var(--u) * 1.2); font-size: calc(var(--u) * 2.1); color: var(--steel); }
+
+/* ── Contacts ───────────────────────────────── */
+.contacts {
+  display: grid; grid-template-columns: 1fr 1fr;
+  background: var(--navy-deep);
+  border-top: 2px solid var(--steel);
+}
+.contacts.single { grid-template-columns: 1fr; }
+.contact { padding: calc(var(--u) * 3.2) var(--pad) calc(var(--u) * 3.4); }
+.contact + .contact { border-left: 1px solid var(--rule); }
+.contact-role { font-size: calc(var(--u) * 2.2); color: var(--muted); }
+.contact-name { margin-top: calc(var(--u) * 0.8); font-size: calc(var(--u) * 3); font-weight: 700; line-height: 1.15; }
+.contact-line { margin-top: calc(var(--u) * 0.4); font-size: calc(var(--u) * 2.5); color: var(--steel); }
+.contact-phone { font-variant-numeric: tabular-nums; }
+
+.welcome {
+  background: var(--navy-deep); color: var(--muted);
+  font-size: calc(var(--u) * 2.3); text-align: center; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  padding: 0 var(--pad) calc(var(--u) * 2.8);
+}
+
+.offline {
+  position: absolute; right: calc(var(--u) * 2); bottom: calc(var(--u) * 1); 
+  font-size: calc(var(--u) * 1.4); color: var(--muted); opacity: 0.7;
+}
+
+@media (prefers-reduced-motion: reduce) { .slide, #stage { transition: none; } }
+
+/* ── Landscape ──────────────────────────────
+   Header across the top, tenants on the left, news on the right, contacts across the bottom.
+   When the list needs the room, the news steps aside and the list takes the full width. */
+#stage.landscape {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) calc(var(--u) * 64);
+  grid-template-rows: auto minmax(0, 1fr) auto auto;
+}
+#stage.landscape .masthead { grid-column: 1 / -1; }
+#stage.landscape .property { font-size: calc(var(--u) * 6); }
+#stage.landscape .listing { grid-column: 1; grid-row: 2; }
+#stage.landscape.no-news .listing { grid-column: 1 / -1; }
+#stage.landscape .news { grid-column: 2; grid-row: 2; display: flex; padding: calc(var(--u) * 3.6) var(--pad) calc(var(--u) * 2) 0; }
+#stage.landscape .news-slides { flex: 1; height: auto; }
+#stage.landscape .slide.text-only .slide-headline { font-size: calc(var(--u) * 3.8); }
+#stage.landscape .contacts, #stage.landscape .welcome { grid-column: 1 / -1; }
+#stage.landscape .contact { padding-top: calc(var(--u) * 2.2); padding-bottom: calc(var(--u) * 2.4); }
+
+/* Identify: big, unmistakable, temporary */
+.identify {
+  position: absolute; inset: 0; z-index: 5; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: calc(var(--u) * 2);
+  background: rgba(8, 19, 34, 0.9); border: calc(var(--u) * 1.2) solid #f2c14e; text-align: center; padding: calc(var(--u) * 6);
+}
+.identify-name { font-size: calc(var(--u) * 9); font-weight: 700; line-height: 1.05; }
+.identify-key { font-size: calc(var(--u) * 3.4); color: #f2c14e; font-variant-numeric: tabular-nums; }
+.identify[hidden] { display: none !important; }
+
+/* The bare address, with no screen chosen */
+.no-screen { margin: auto; padding: 40px; text-align: center; font-size: 20px; line-height: 1.5; color: var(--muted); cursor: auto; }
+.no-screen h1 { font-family: "Lora", Georgia, serif; font-size: 36px; color: var(--ink); margin-bottom: 12px; }
+.no-screen a { color: var(--steel); }
+body:has(.no-screen) { cursor: auto; }

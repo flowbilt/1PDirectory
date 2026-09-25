@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<rss xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:media="http://search.yahoo.com/mrss/" version="2.0">
+<channel>
+<title><![CDATA[BBC News - US & Canada]]></title>
+<item>
+  <title><![CDATA[Farmers markets report record blueberry season across the South]]></title>
+  <description><![CDATA[Growers say a mild spring helped yields.]]></description>
+  <pubDate>Wed, 23 Sep 2026 13:10:00 GMT</pubDate>
+  <media:thumbnail width="240" height="135" url="https://ichef.bbci.co.uk/ace/standard/240/cpsprodpb/abc/live/berries.jpg"/>
+</item>
+<item>
+  <title><![CDATA[Three killed in highway pile-up during heavy fog]]></title>
+  <pubDate>Wed, 23 Sep 2026 12:00:00 GMT</pubDate>
+  <media:thumbnail width="240" height="135" url="https://ichef.bbci.co.uk/ace/standard/240/x.jpg"/>
+</item>
+<item>
+  <title>Warm weather expected to linger into October</title>
+  <pubDate>Wed, 23 Sep 2026 11:00:00 GMT</pubDate>
+</item>
+</channel>
+</rss>

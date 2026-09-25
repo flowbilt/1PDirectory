@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>Sign in · Directory</title>
+<link rel="stylesheet" href="/admin.css">
+</head>
+<body>
+<main class="login">
+  <form id="signin" class="login-card">
+    <h1>Directory sign in</h1>
+    <label for="email">Email</label>
+    <input id="email" type="email" autocomplete="username" required>
+    <label for="password">Password</label>
+    <input id="password" type="password" autocomplete="current-password" required>
+    <p id="signin-error" class="error" role="alert" hidden></p>
+    <button type="submit" class="primary">Sign in</button>
+    <button type="button" id="show-forgot" class="linkish">Forgot your password?</button>
+  </form>
+
+  <form id="forgot" class="login-card" hidden>
+    <h1>Reset your password</h1>
+    <p class="hint">Enter your email and we'll send you a link to set a new password.</p>
+    <label for="forgot-email">Email</label>
+    <input id="forgot-email" type="email" autocomplete="username" required>
+    <p id="forgot-msg" class="hint" role="status" hidden></p>
+    <button type="submit" class="primary">Send reset link</button>
+    <button type="button" id="back" class="linkish">Back to sign in</button>
+  </form>
+
+  <form id="setpw" class="login-card" hidden>
+    <h1 id="setpw-title">Set your password</h1>
+    <p class="hint">At least 10 characters. A short phrase works well.</p>
+    <label for="new-password">New password</label>
+    <input id="new-password" type="password" autocomplete="new-password" required>
+    <label for="new-password2">Type it again</label>
+    <input id="new-password2" type="password" autocomplete="new-password" required>
+    <p id="setpw-error" class="error" role="alert" hidden></p>
+    <button type="submit" class="primary">Save password and continue</button>
+  </form>
+</main>
+<script src="/auth.js"></script>
+<script>
+(() => {
+  const $ = (id) => document.getElementById(id);
+  const next = new URLSearchParams(location.search).get("next");
+  const go = () => { location.href = next && next.startsWith("/") && !next.startsWith("//") ? next : "/console.html"; };
+  const show = (id) => ["signin", "forgot", "setpw"].forEach((f) => ($(f).hidden = f !== id));
+  const err = (id, msg) => { $(id).textContent = msg; $(id).hidden = !msg; };
+
+  // Arrived from an invitation or password-reset email?
+  const link = Auth.linkFromAddress();
+  history.replaceState(null, "", location.pathname + location.search); // keep tokens out of history
+  if (link?.error) { show("signin"); err("signin-error", `That link didn't work: ${link.error}. Links expire after a while; ask for a new one.`); }
+  else if (link) {
+    show("setpw");
+    $("setpw-title").textContent = link.type === "invite" ? "Welcome. Choose a password" : "Choose a new password";
+    $("setpw").addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const a = $("new-password").value, b = $("new-password2").value;
+      if (a.length < 10) return err("setpw-error", "Use at least 10 characters.");
+      if (a !== b) return err("setpw-error", "The two passwords don't match.");
+      try { await Auth.setPassword(link, a); go(); }
+      catch (ex) { err("setpw-error", ex.message); }
+    });
+  } else {
+    Auth.session().then((s) => { if (s) go(); });
+  }
+
+  $("signin").addEventListener("submit", async (e) => {
+    e.preventDefault();
+    err("signin-error", "");
+    try { await Auth.signIn($("email").value, $("password").value); go(); }
+    catch (ex) { err("signin-error", ex.message); }
+  });
+  $("show-forgot").addEventListener("click", () => { $("forgot-email").value = $("email").value; show("forgot"); });
+  $("back").addEventListener("click", () => show("signin"));
+  $("forgot").addEventListener("submit", async (e) => {
+    e.preventDefault();
+    try { await Auth.sendReset($("forgot-email").value); }
+    catch { /* same message either way, so this can't be used to check who has an account */ }
+    $("forgot-msg").textContent = "If that email has an account, a reset link is on its way. Check your inbox.";
+    $("forgot-msg").hidden = false;
+  });
+})();
+</script>
+</body>
+</html>

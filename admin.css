@@ -149,3 +149,37 @@ details.hw dd { margin: 0; word-break: break-all; }
 .row-actions .icon-btn[data-act="note"] { font-size: 12px; }
 .workspace.wide-preview { grid-template-columns: minmax(0, 1fr) 520px; }
 .preview-box.landscape { aspect-ratio: 16 / 9; }
+
+/* ── Pis (agent) ── */
+.dev-note { font-size: 12px; margin-top: 4px; }
+td.thumb { width: 96px; padding: 6px 8px; }
+.thumb-btn { padding: 0; border: 1px solid var(--line); border-radius: 4px; background: var(--navy); width: 88px; height: 50px; overflow: hidden; display: block; }
+.thumb-btn img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.new-devices { margin-bottom: 16px; }
+.new-devices h2 { margin-bottom: 8px; }
+.new-devices .table-wrap { border-color: #e7c66b; }
+.dev-dlg { width: min(980px, 95vw); padding: 0; }
+.dev-dlg::backdrop { background: rgba(13,27,46,0.55); }
+.dev-panel header { display: flex; justify-content: space-between; align-items: center; padding: 16px 20px; border-bottom: 1px solid var(--line); }
+.dev-body { display: grid; grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr); gap: 20px; padding: 20px; }
+@media (max-width: 760px) { .dev-body { grid-template-columns: 1fr; } }
+.dev-shot { margin: 0; display: grid; gap: 6px; align-content: start; }
+.dev-shot img { width: 100%; border-radius: 6px; background: var(--navy); border: 1px solid var(--line); }
+.dev-facts { display: grid; grid-template-columns: max-content 1fr; gap: 4px 14px; margin: 0 0 14px; font-size: 14px; }
+.dev-facts dt { color: var(--muted); }
+.dev-facts dd { margin: 0; }
+.dev-actions { display: flex; flex-wrap: wrap; gap: 8px; margin: 8px 0 14px; }
+.dev-panel h3 { font-size: 14px; margin: 6px 0; }
+.dev-cmds { list-style: none; margin: 0; padding: 0; display: grid; gap: 4px; font-size: 13px; }
+
+/* ── Health tab ── */
+.health-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 12px; margin-bottom: 16px; }
+.hcard { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 14px 16px; }
+.hcard .hval { font-size: 28px; font-weight: 700; line-height: 1.1; }
+.hcard .hlabel { color: var(--muted); font-size: 13px; margin-top: 4px; }
+.hcard.good .hval, .good { color: var(--ok); }
+.hcard.bad .hval { color: var(--danger); }
+.health-grid td.nums { white-space: nowrap; font-variant-numeric: tabular-nums; }
+.health-grid tr.has-problem td:first-child { box-shadow: inset 3px 0 0 var(--danger); }
+.check.inline { padding: 0; font-weight: 400; }
+.toolbar-controls input[type=checkbox] { min-width: 0; width: auto; }

@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Directory</title>
+<link rel="preload" href="/fonts/InstrumentSans-Bold.ttf" as="font" type="font/ttf" crossorigin>
+<link rel="stylesheet" href="/display.css">
+</head>
+<body>
+<div id="stage" class="is-loading">
+  <div id="bg" class="bg" aria-hidden="true" hidden></div>
+  <header class="masthead">
+    <div class="masthead-id">
+      <img id="logo" class="logo" alt="" hidden>
+      <h1 id="property" class="property"></h1>
+      <p id="label" class="label" hidden></p>
+    </div>
+    <div class="masthead-now">
+      <div id="time" class="time"></div>
+      <div id="date" class="date"></div>
+      <div id="weather" class="weather" hidden>
+        <span id="wx-icon" class="wx-icon" aria-hidden="true"></span>
+        <span id="wx-temp" class="wx-temp"></span>
+        <span id="wx-text" class="wx-text"></span>
+      </div>
+    </div>
+  </header>
+
+  <section class="listing" aria-label="Tenant directory">
+    <div class="listing-head"><span>Tenant</span><span>Suite</span></div>
+    <div id="list-frame" class="list-frame">
+      <ol id="tenants" class="tenants"></ol>
+    </div>
+  </section>
+
+  <section id="news" class="news" hidden aria-live="off">
+    <div id="news-slides" class="news-slides"></div>
+  </section>
+
+  <footer class="contacts">
+    <div id="managed" class="contact"></div>
+    <div id="leased" class="contact"></div>
+  </footer>
+
+  <p id="welcome" class="welcome" hidden></p>
+  <div id="identify" class="identify" hidden></div>
+  <p id="offline" class="offline" hidden>Showing saved information. Reconnecting…</p>
+</div>
+<script src="/display.js"></script>
+</body>
+</html>
