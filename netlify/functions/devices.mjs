@@ -96,6 +96,7 @@ export default async (req) => {
 
     if (body.action === "command") {
       if (!COMMANDS.includes(body.command)) throw fail(400, "Unknown command.");
+      if (!d.key_hash) throw fail(409, "This Pi hasn't enrolled yet, so there's nothing to receive that. Open its enrollment window first.");
       await db("device_commands", { method: "POST", prefer: "return=minimal", body: { device_id: d.id, command: body.command, created_by: user.id } });
       await audit(user.id, `device ${body.command}`, "device", d.id, { serial: d.serial });
       return json({ ok: true, queued: body.command });

@@ -54,7 +54,7 @@ The Pi opens `/?device=<its serial number>` and installs the agent. Then:
 - **A Pi from the Yodeck report** recognizes itself by serial and shows its screen straight away. Its agent, though, is refused until 1Point opens its **enrollment window**: in the console, **Pi → Open enrollment (24 hours)**, on install day, before or soon after the Pi starts. The agent keeps trying every minute, so it enrolls within a minute of the window opening. The window closes as soon as the Pi enrolls.
 - **A new Pi** (not in the Yodeck report) enrolls on first contact, shows "New display" with its serial, and appears under **Screens → New devices** in the console. Check that the serial matches the one on the TV, then pick its screen there and it switches within a minute. No screenshot is kept for a Pi until it's assigned.
 
-Rotation is automatic. Each time the Pi starts, it asks the site whether its screen is set to portrait or landscape in the console, and turns the picture to match. Portrait turns 90°. Landscape, new and unassigned Pis stay upright. Without internet it keeps its last answer. So a new Pi assigned to a portrait screen turns on its next restart (the nightly reboot, or **Reboot Pi** in the console).
+Rotation is automatic. Each time the Pi starts, it asks the site whether its screen is set to portrait or landscape in the console, and turns the picture to match. Portrait turns 90°. Landscape, new and unassigned Pis stay upright. Without internet it keeps its last answer. So after assigning a new Pi to a portrait screen, use **Pi → Reboot Pi** in the console to turn it. The Pi never reboots on its own; reboot scheduling will come to the console with maintenance windows.
 
 SSH is switched off by setup (from the restart that finishes it), so the Pi opens no ports. The agent covers remote management. Use `--ssh` for a Pi that needs it, and re-run setup without `--ssh` to switch it off again.
 
@@ -70,7 +70,7 @@ Each Pi runs a small agent (`public/pi/agent.py`) that checks in once a minute o
 
 Pi health is a 1Point service tool. Owner users see only each screen's Online/Offline dot. The server refuses them all device information, not just the console.
 
-In the console, the **Pi** button on each screen offers Identify, Reload screen, Take screenshot, Reboot Pi and Update agent. Under **More** are Reset device key, Switch off, and Unassign.
+In the console, the **Pi** button on each screen offers Identify, Reload screen, Take screenshot, Reboot Pi and Update agent. The Pi actions appear only once the Pi has enrolled (the server refuses them before that). Under **More** are Reset device key, Switch off, and Unassign.
 
 **Health tab:** every Pi on one page, with problems sorted to the top. It shows:
 
@@ -80,7 +80,7 @@ In the console, the **Pi** button on each screen offers Identify, Reload screen,
 
 It filters by account and exports a CSV, for customer service reports.
 
-Uptime comes from a daily summary for each Pi (`device_daily`), kept for 400 days. Each check-in credits the time since the Pi's previous one, if that was 3 minutes ago or less (`supabase/07-uptime.sql`), so small timing differences never show as downtime. A longer gap is an outage and earns nothing, so an outage reads up to a minute longer than it was, never shorter. A new Pi's uptime counts from its first check-in, so it isn't penalized for time before it was installed. The nightly reboot (about a minute) counts as up.
+Uptime comes from a daily summary for each Pi (`device_daily`), kept for 400 days. Each check-in credits the time since the Pi's previous one, if that was 3 minutes ago or less (`supabase/07-uptime.sql`), so small timing differences never show as downtime. A longer gap is an outage and earns nothing, so an outage reads up to a minute longer than it was, never shorter. A new Pi's uptime counts from its first check-in, so it isn't penalized for time before it was installed. A reboot (about a minute) counts as up.
 
 Only those fixed actions exist, and the agent can't run anything else. Actions not picked up within an hour are dropped rather than run late.
 

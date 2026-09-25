@@ -124,7 +124,7 @@ window.ConsoleDevices = (() => {
             : `<button type="button" class="ghost" data-dev-action="open_enrollment" title="On install day: the Pi accepts its first key only while this is open">Open enrollment (24 hours)</button>`}</div>` : ""}
           <div class="dev-actions">
             ${s ? `<button type="button" class="ghost" data-identify="${s.id}" title="Shows the screen's name on the TV for 90 seconds">Identify</button>` : ""}
-            ${ACTIONS.filter(([, , , adminOnly]) => admin || !adminOnly).map(([c, label, hint]) => `<button type="button" class="ghost" data-cmd="${c}" title="${esc(hint)}">${label}</button>`).join("")}
+            ${!d.enrolled ? `<span class="sub">Pi actions appear once it has enrolled.</span>` : ACTIONS.filter(([, , , adminOnly]) => admin || !adminOnly).map(([c, label, hint]) => `<button type="button" class="ghost" data-cmd="${c}" title="${esc(hint)}">${label}</button>`).join("")}
           </div>
           ${admin ? `<details class="hw"><summary>More</summary><div class="dev-actions">
             <button type="button" class="ghost" data-dev-action="reset_key" title="Use if this Pi was reflashed and now gets 'key doesn't match'. Opens enrollment for 24 hours.">Reset device key</button>

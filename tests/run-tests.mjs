@@ -236,6 +236,10 @@ test("a pre-registered Pi is refused until 1Point opens its enrollment window", 
   assert.equal(dev.screenshot, "", "no screenshot either");
   const owner = await login("leighann@barber.test", "owner-pass");
   assert.equal((await devApi(owner, { method: "POST", body: { action: "open_enrollment", device_id: dev.id } })).status, 403, "owners can't open it");
+  const admin = await login("scot@1pointusa.com", "admin-pass");
+  const q = await devApi(admin, { method: "POST", body: { action: "command", device_id: dev.id, command: "reboot" } });
+  assert.equal(q.status, 409, "no commands for a Pi that hasn't enrolled");
+  assert.ok(!fake.T.device_commands.some((c) => c.device_id === dev.id), "nothing queued");
   dev.enroll_until = new Date(Date.now() - 60000).toISOString();
   assert.equal((await checkin({})).status, 403, "an expired window is closed");
 });

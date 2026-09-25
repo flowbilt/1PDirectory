@@ -16,7 +16,6 @@
 #                      or landscape (as set in the console) and turns the picture to match. Landscape, new
 #                      and unassigned Pis use 0. A fixed number overrides that. If a portrait picture is
 #                      upside down, re-run with --rotate 270.
-#   --reboot HH:MM     Nightly reboot time, 24-hour. Default 03:30. Use "off" to skip.
 #   --tz ZONE          Time zone. Default America/Chicago.
 #   --no-1080p         Keep the TV's native resolution (4K runs slowly on a Pi 4; not recommended).
 #   --connect          Also install Raspberry Pi Connect for remote screen viewing from a browser.
@@ -25,14 +24,14 @@
 #                      and the agent handles remote management. Re-run setup without --ssh to switch it off again.
 set -euo pipefail
 
-SITE="https://1pdirectory.netlify.app"; URL=""; ROTATE="auto"; REBOOT="03:30"; TZ_NAME="America/Chicago"; FORCE_1080=1; CONNECT=0; AGENT=1; SSH=0
+SITE="https://1pdirectory.netlify.app"; URL=""; ROTATE="auto"; TZ_NAME="America/Chicago"; FORCE_1080=1; CONNECT=0; AGENT=1; SSH=0
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --site) SITE="${2%/}"; shift 2 ;;
     --url) URL="$2"; shift 2 ;;
     --no-agent) AGENT=0; shift ;;
     --rotate) ROTATE="$2"; shift 2 ;;
-    --reboot) REBOOT="$2"; shift 2 ;;
+    --reboot) echo "--reboot has been removed: the Pi doesn't reboot on its own. Reboots are started (and later scheduled) from the console."; exit 1 ;;
     --tz) TZ_NAME="$2"; shift 2 ;;
     --no-1080p) FORCE_1080=0; shift ;;
     --connect) CONNECT=1; shift ;;
@@ -52,7 +51,6 @@ if [[ -z "$URL" ]]; then
 fi
 [[ "$URL" =~ ^https?:// ]] || { echo "--url must start with https://"; exit 1; }
 [[ "$ROTATE" =~ ^(auto|0|90|270)$ ]] || { echo "--rotate must be auto, 0, 90 or 270"; exit 1; }
-if [[ "$REBOOT" != "off" ]] && ! [[ "$REBOOT" =~ ^([01][0-9]|2[0-3]):[0-5][0-9]$ ]]; then echo "--reboot must look like 03:30 or be off"; exit 1; fi
 
 KUSER="${SUDO_USER:-}"
 [[ -n "$KUSER" && "$KUSER" != "root" ]] || { echo "Run this with sudo from the desktop user's account, not as root directly."; exit 1; }
@@ -70,7 +68,7 @@ if [[ "$ROTATE" == "auto" ]]; then
 else
   echo "    Rotation: fixed at $ROTATE"
 fi
-echo "    Nightly reboot: $REBOOT   Time zone: $TZ_NAME"
+echo "    Time zone: $TZ_NAME   No automatic reboots (reboots come from the console)"
 echo "    SSH: $([[ $SSH -eq 1 ]] && echo "on (--ssh)" || echo "off from the next restart (use --ssh to keep it)")"
 
 echo "==> Installing packages"
@@ -223,13 +221,9 @@ UNIT
   systemctl enable --now lobby-agent.service
 fi
 
-if [[ "$REBOOT" != "off" ]]; then
-  echo "==> Nightly reboot at $REBOOT"
-  echo "${REBOOT#*:} ${REBOOT%%:*} * * * root /sbin/shutdown -r now" > /etc/cron.d/kiosk-reboot
-  chmod 644 /etc/cron.d/kiosk-reboot
-else
-  rm -f /etc/cron.d/kiosk-reboot
-fi
+# No automatic reboots: they're started from the console (and, later, scheduled there). Remove the nightly
+# reboot an earlier version of this script installed, if this Pi has one.
+rm -f /etc/cron.d/kiosk-reboot
 
 echo
 echo "Done. Reboot to start the directory:  sudo reboot"
