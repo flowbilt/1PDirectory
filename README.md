@@ -50,7 +50,9 @@ The Pi opens `/?device=<its serial number>` and installs the agent. Then:
 - **A Pi from the Yodeck report** recognizes itself by serial and shows its screen straight away.
 - **A new Pi** shows "New display" with its serial, and appears under **Screens → New devices** in the console. Pick its screen there and it switches within a minute.
 
-Options: `--rotate 270` if the picture is upside down, `--connect` for Raspberry Pi Connect, `--no-agent` to skip the agent, and `--url` to pin a fixed screen address the old way.
+Rotation is automatic. Each time the Pi starts, it asks the site whether its screen is set to portrait or landscape in the console, and turns the picture to match. Portrait turns 90°. Landscape, new and unassigned Pis stay upright. Without internet it keeps its last answer. So a new Pi assigned to a portrait screen turns on its next restart (the nightly reboot, or **Reboot Pi** in the console).
+
+Options: `--rotate 270` if a portrait picture is upside down (or `0`/`90` to fix it by hand), `--connect` for Raspberry Pi Connect, `--no-agent` to skip the agent, and `--url` to pin a fixed screen address the old way.
 
 ## Remote management (the agent)
 
@@ -86,6 +88,7 @@ Only those fixed actions exist, and the agent can't run anything else. Actions n
 npm install
 npm test                      # server functions, against a fake Supabase
 node --import ./tests/register-stub.mjs tests/test-server.mjs   # the whole site locally, with sample logins
+bash tests/kiosk-rotation-test.sh    # the Pi's automatic rotation, against the local site (takes about 3 minutes)
 ```
 
 Local sample logins: `scot@1pointusa.com / admin-pass`, `leighann@barber.test / owner-pass`, `editor@barber.test / editor-pass`.

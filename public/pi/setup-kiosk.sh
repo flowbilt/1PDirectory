@@ -12,7 +12,10 @@
 # Options:
 #   --site URL         The directory site. Default https://1pdirectory.netlify.app
 #   --url URL          Old style: a fixed screen address instead of letting the console decide
-#   --rotate 90|270|0  Portrait rotation. Default 90. If the picture is upside down, re-run with the other value.
+#   --rotate auto|0|90|270  Default auto: at every start the Pi asks the site whether its screen is portrait
+#                      or landscape (as set in the console) and turns the picture to match. Landscape, new
+#                      and unassigned Pis use 0. A fixed number overrides that. If a portrait picture is
+#                      upside down, re-run with --rotate 270.
 #   --reboot HH:MM     Nightly reboot time, 24-hour. Default 03:30. Use "off" to skip.
 #   --tz ZONE          Time zone. Default America/Chicago.
 #   --no-1080p         Keep the TV's native resolution (4K runs slowly on a Pi 4; not recommended).
@@ -20,7 +23,7 @@
 #   --no-agent         Don't install the remote-management agent.
 set -euo pipefail
 
-SITE="https://1pdirectory.netlify.app"; URL=""; ROTATE=90; REBOOT="03:30"; TZ_NAME="America/Chicago"; FORCE_1080=1; CONNECT=0; AGENT=1
+SITE="https://1pdirectory.netlify.app"; URL=""; ROTATE="auto"; REBOOT="03:30"; TZ_NAME="America/Chicago"; FORCE_1080=1; CONNECT=0; AGENT=1
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --site) SITE="${2%/}"; shift 2 ;;
@@ -31,7 +34,7 @@ while [[ $# -gt 0 ]]; do
     --tz) TZ_NAME="$2"; shift 2 ;;
     --no-1080p) FORCE_1080=0; shift ;;
     --connect) CONNECT=1; shift ;;
-    -h|--help) sed -n '2,24p' "$0"; exit 0 ;;
+    -h|--help) sed -n '2,27p' "$0"; exit 0 ;;
     *) echo "Unknown option: $1 (see --help)"; exit 1 ;;
   esac
 done
@@ -45,7 +48,7 @@ if [[ -z "$URL" ]]; then
   URL="$SITE/?device=$SERIAL"
 fi
 [[ "$URL" =~ ^https?:// ]] || { echo "--url must start with https://"; exit 1; }
-[[ "$ROTATE" =~ ^(0|90|270)$ ]] || { echo "--rotate must be 0, 90 or 270"; exit 1; }
+[[ "$ROTATE" =~ ^(auto|0|90|270)$ ]] || { echo "--rotate must be auto, 0, 90 or 270"; exit 1; }
 if [[ "$REBOOT" != "off" ]] && ! [[ "$REBOOT" =~ ^([01][0-9]|2[0-3]):[0-5][0-9]$ ]]; then echo "--reboot must look like 03:30 or be off"; exit 1; fi
 
 KUSER="${SUDO_USER:-}"
@@ -56,7 +59,15 @@ KDIR="$KHOME/kiosk"
 echo "==> Setting up kiosk for user $KUSER"
 echo "    Pi serial: ${SERIAL:-unknown}"
 echo "    Screen:   $URL"
-echo "    Rotation: $ROTATE   Nightly reboot: $REBOOT   Time zone: $TZ_NAME"
+# Where the Pi asks which way its screen faces: the screen address with /api/screen in front of the "?"
+LOOKUP="${URL/\/\?//api/screen?}"
+if [[ "$ROTATE" == "auto" ]]; then
+  NOW="$(curl -fsS --max-time 8 "$LOOKUP" 2>/dev/null | python3 -c 'import json,sys; d=json.load(sys.stdin); print(d.get("orientation") or "auto", "(not assigned yet)" if d.get("newDevice") or d.get("assigned") is False else "")' 2>/dev/null || echo "unknown (couldn't reach the site)")"
+  echo "    Rotation: automatic. The site says this screen is: $NOW"
+else
+  echo "    Rotation: fixed at $ROTATE"
+fi
+echo "    Nightly reboot: $REBOOT   Time zone: $TZ_NAME"
 
 echo "==> Installing packages"
 apt-get update -qq
@@ -88,6 +99,7 @@ echo "==> Writing $KDIR/kiosk.sh"
 mkdir -p "$KDIR"
 cat > "$KDIR/kiosk.conf" <<EOF
 URL="$URL"
+LOOKUP="$LOOKUP"
 ROTATE="$ROTATE"
 EOF
 
@@ -101,18 +113,32 @@ CHROME="$(command -v chromium || command -v chromium-browser)"
 exec >>"$LOG" 2>&1
 echo "$(date '+%F %T') kiosk starting"
 
+# Wait up to 90 seconds for the network. The page works from its saved copy if it never comes.
+for _ in $(seq 1 45); do curl -fsS --max-time 3 -o /dev/null "$URL" && break; sleep 2; done
+
+# Which way to turn the picture. "auto" asks the site how this screen is set in the console:
+# portrait -> 90, anything else (landscape, automatic, new or unassigned Pi) -> 0.
+# If the site can't be reached, the last answer is used, so a Pi that boots without internet stays the same.
+# tests/kiosk-rotation-test.sh runs this very script against the local test server.
+rotation_for() {
+  curl -fsS --max-time 8 "$1" 2>/dev/null | python3 -c 'import json,sys; print(90 if json.load(sys.stdin).get("orientation") == "portrait" else 0)' 2>/dev/null
+}
+ROT="$ROTATE"
+if [[ "$ROT" == "auto" ]]; then
+  if ROT="$(rotation_for "${LOOKUP:-}")" && [[ -n "$ROT" ]]; then echo "$ROT" > "$HOME/kiosk/rotation.last"
+  else ROT="$(cat "$HOME/kiosk/rotation.last" 2>/dev/null || echo 0)"; fi
+fi
+echo "$(date '+%F %T') rotation $ROT (setting: $ROTATE)"
+
 # Rotate the screen
 if [[ -n "${WAYLAND_DISPLAY:-}" ]] && command -v wlr-randr >/dev/null; then
   OUT="$(wlr-randr | awk '/^HDMI/ {print $1; exit}')"
-  [[ -n "$OUT" && "$ROTATE" != "0" ]] && wlr-randr --output "$OUT" --transform "$ROTATE"
+  [[ -n "$OUT" ]] && wlr-randr --output "$OUT" --transform "$([[ "$ROT" == "0" ]] && echo normal || echo "$ROT")"
 elif [[ -n "${DISPLAY:-}" ]] && command -v xrandr >/dev/null; then
   OUT="$(xrandr | awk '/ connected/ {print $1; exit}')"
-  case "$ROTATE" in 90) xrandr --output "$OUT" --rotate right ;; 270) xrandr --output "$OUT" --rotate left ;; esac
+  case "$ROT" in 90) xrandr --output "$OUT" --rotate right ;; 270) xrandr --output "$OUT" --rotate left ;; *) xrandr --output "$OUT" --rotate normal ;; esac
   xset s off; xset -dpms; xset s noblank
 fi
-
-# Wait up to 90 seconds for the network. The page works from its saved copy if it never comes.
-for _ in $(seq 1 45); do curl -fsS --max-time 3 -o /dev/null "$URL" && break; sleep 2; done
 
 # Keep the log small
 [[ $(wc -c <"$LOG") -gt 1000000 ]] && tail -n 2000 "$LOG" > "$LOG.tmp" && mv "$LOG.tmp" "$LOG"
