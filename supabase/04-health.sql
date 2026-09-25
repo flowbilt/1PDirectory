@@ -1,5 +1,6 @@
 -- Lobby Directory: daily health history for each Pi, for monitoring and service reports.
--- Run once in Supabase after 03-agent.sql: SQL Editor -> New query -> paste -> Run.
+-- Run in Supabase after 03-agent.sql: SQL Editor -> New query -> paste -> Run.
+-- Safe to run more than once: anything already in place is left as it is.
 --
 -- One row per Pi per day (Central time), updated on every check-in (about once a minute):
 --   checkins        how many times it checked in; about 1,440 in a full day online
@@ -9,7 +10,7 @@
 -- Kept for 400 days, so a year-over-year report is possible. Like the device tables, it has row-level
 -- security switched on and no policies: only the site's server functions can read or write it.
 
-create table public.device_daily (
+create table if not exists public.device_daily (
   id            bigint generated always as identity primary key,
   device_id     uuid not null references public.devices (id) on delete cascade,
   day           date not null,
@@ -21,6 +22,6 @@ create table public.device_daily (
   last_at       timestamptz,
   unique (device_id, day)
 );
-create index device_daily_day on public.device_daily (day);
+create index if not exists device_daily_day on public.device_daily (day);
 
 alter table public.device_daily enable row level security;

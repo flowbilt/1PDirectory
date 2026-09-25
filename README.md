@@ -12,6 +12,8 @@ Tenant directories for lobby screens, replacing Yodeck and Wix. Hosted on Netlif
 | `/?device=<serial>` | lobby screens | What a Pi shows: whichever screen the console assigns it to |
 | `/?screen=ppi-2s` | lobby screens | A fixed screen. Older screens use `?site=landmark-center`, which still works |
 
+Lobby screens check for changes every minute (`/api/screen`). The same check records the screen as online, and the directory is sent only when something has changed; otherwise the answer is "not modified". `heartbeat` only serves screens still running display 2.0.0 and can be deleted a few days after the 2.1.0 deploy.
+
 What each person sees is enforced by the database (see `supabase/01-schema.sql`):
 
 - **1Point admin:** everything. Creates accounts, buildings, directories and screens, and invites anyone.
@@ -52,7 +54,7 @@ Options: `--rotate 270` if the picture is upside down, `--connect` for Raspberry
 
 ## Remote management (the agent)
 
-Each Pi runs a small agent (`public/pi/agent.py`) that checks in every minute over HTTPS. The Pi always makes the connection, so no ports are opened. It reports:
+Each Pi runs a small agent (`public/pi/agent.py`) that checks in every minute over HTTPS. Each check-in is a single database call (`supabase/05-tuning.sql`), because Netlify bills for the time a function spends waiting. The Pi always makes the connection, so no ports are opened. It reports:
 
 - temperature, power (under-voltage), uptime, storage and IP address
 - whether the browser is running
@@ -94,7 +96,7 @@ Local sample logins: `scot@1pointusa.com / admin-pass`, `leighann@barber.test / 
 public/             screen (index.html, display.*), sign-in, console (+ console-devices.js), editor, shared auth.js
 netlify/functions/  screen, heartbeat, users, migrate, config, weather, news, agent, devices, alerts
 netlify/lib/        Supabase client, RSS reader, shared helpers
-supabase/           database schema, starting data, setup guide
+supabase/           database schema (01 to 05, run in order), starting data, check queries, setup guide
 migration/          the Yodeck/Wix transcription the starting data was built from
 public/pi/          setup-kiosk.sh and agent.py (served by the site so Pis can download them)
 tests/              function tests, fake Supabase, local test server

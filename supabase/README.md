@@ -14,8 +14,9 @@ Do these once. The current site keeps running as it is until the new build is de
 3. New query again: paste all of `02-seed.sql` and click **Run**. This loads the 16 directories and 83 tenants from Yodeck, Wix and the Landmark Center.
 4. For remote management of the Pis: new query, paste all of `03-agent.sql`, and click **Run**. This adds the device tables and pre-registers the 15 Yodeck Pis by serial number.
 5. For the daily health history: new query, paste all of `04-health.sql`, and click **Run**.
+6. For cheaper check-ins: new query, paste all of `05-tuning.sql`, and click **Run**. Then new query, paste all of `check-tuning.sql`, and click **Run**. That one always ends with a red message on purpose (it undoes its own test data); it should read **ALL 10 CHECKS PASSED**.
 
-If either one shows an error, copy the message (it includes a line number) and send it to Claude.
+If any of them shows an error (other than the expected red message from `check-tuning.sql`), copy the message (it includes a line number) and send it to Claude.
 
 ## 3. Lock down sign-ups
 

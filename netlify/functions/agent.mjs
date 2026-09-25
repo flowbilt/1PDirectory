@@ -8,7 +8,7 @@
 // report are pre-registered and matched to their screens by serial, so they attach themselves on first boot.
 import { createHash } from "node:crypto";
 import { json } from "../lib/common.mjs";
-import { db, enc } from "../lib/sb.mjs";
+import { rpc } from "../lib/sb.mjs";
 
 export const SERIAL_RE = /^[0-9a-f]{8,32}$/;
 export const COMMANDS = ["reboot", "reload", "screenshot", "update_agent"];
@@ -17,34 +17,11 @@ const sha = (s) => createHash("sha256").update(s).digest("hex");
 /** Today's date in Central time, e.g. "2026-09-24": the daily summary's day. */
 export const centralDay = (d = new Date()) => new Intl.DateTimeFormat("en-CA", { timeZone: "America/Chicago" }).format(d);
 
-/** Adds this check-in to the Pi's summary for the day. Never blocks the check-in itself. */
-export async function recordDaily(deviceId, health, nowIso) {
-  try {
-    const day = centralDay(new Date(nowIso));
-    const [row] = await db(`device_daily?device_id=eq.${deviceId}&day=eq.${day}&select=id,checkins,power_dips,browser_down,max_temp_c`);
-    const temp = typeof health.temp_c === "number" ? health.temp_c : null;
-    if (row) {
-      await db(`device_daily?id=eq.${row.id}`, { method: "PATCH", prefer: "return=minimal", body: {
-        checkins: row.checkins + 1,
-        power_dips: row.power_dips + (health.under_voltage_now ? 1 : 0),
-        browser_down: row.browser_down + (health.browser_running === false ? 1 : 0),
-        max_temp_c: temp === null ? row.max_temp_c : Math.max(row.max_temp_c ?? temp, temp),
-        last_at: nowIso,
-      } });
-    } else {
-      await db("device_daily", { method: "POST", prefer: "return=minimal", body: {
-        device_id: deviceId, day, checkins: 1, power_dips: health.under_voltage_now ? 1 : 0,
-        browser_down: health.browser_running === false ? 1 : 0, max_temp_c: temp, first_at: nowIso, last_at: nowIso,
-      } });
-    }
-  } catch (e) {
-    console.log("daily summary not recorded:", e.message);
-  }
-}
 const clip = (v, n) => String(v ?? "").slice(0, n);
 
 // Keep only the health fields we understand, as numbers/booleans/short strings.
-function cleanHealth(h = {}) {
+function cleanHealth(h) {
+  h = h && typeof h === "object" ? h : {};
   const num = (v) => (Number.isFinite(Number(v)) ? Number(v) : null);
   return {
     temp_c: num(h.temp_c), uptime_s: num(h.uptime_s), load: num(h.load),
@@ -64,53 +41,26 @@ export default async (req) => {
   if (!SERIAL_RE.test(serial)) return json({ error: "Bad serial." }, 400);
   if (key.length < 24) return json({ error: "Missing device key." }, 401);
 
+  const shot = body.screenshot;
+  const goodShot = typeof shot === "string" && /^data:image\/jpeg;base64,[A-Za-z0-9+/=]+$/.test(shot) && shot.length <= MAX_SHOT;
+  const results = (Array.isArray(body.results) ? body.results.slice(0, 20) : [])
+    .filter((r) => Number.isInteger(Number(r?.id)))
+    .map((r) => ({ id: Number(r.id), status: r.status === "done" ? "done" : "failed", result: clip(r.result, 500) }));
+
   try {
-    let [dev] = await db(`devices?serial=eq.${enc(serial)}&select=id,screen_id,key_hash,status`);
-    if (!dev) {
-      [dev] = await db("devices", { method: "POST", prefer: "return=representation", body: { serial, key_hash: sha(key) } });
-    } else if (!dev.key_hash) {
-      await db(`devices?id=eq.${dev.id}`, { method: "PATCH", prefer: "return=minimal", body: { key_hash: sha(key) } });
-    } else if (dev.key_hash !== sha(key)) {
-      return json({ error: "This Pi's key doesn't match. A 1Point admin can reset it in the console." }, 401);
-    }
-    if (dev.status === "revoked") return json({ error: "This device has been switched off in the console." }, 403);
-
-    const now = new Date().toISOString();
-    const patch = {
-      last_seen: now,
-      last_health: cleanHealth(body.health),
-      model: clip(body.model, 80), hostname: clip(body.hostname, 64), agent_version: clip(body.version, 20),
-    };
-    const shot = body.screenshot;
-    if (typeof shot === "string" && /^data:image\/jpeg;base64,[A-Za-z0-9+/=]+$/.test(shot) && shot.length <= MAX_SHOT) {
-      patch.screenshot = shot; patch.screenshot_at = now;
-    }
-    await db(`devices?id=eq.${dev.id}`, { method: "PATCH", prefer: "return=minimal", body: patch });
-    await recordDaily(dev.id, patch.last_health, now);
-
-    // Results of commands this Pi ran
-    for (const r of Array.isArray(body.results) ? body.results.slice(0, 20) : []) {
-      const id = Number(r?.id);
-      if (!Number.isInteger(id)) continue;
-      await db(`device_commands?id=eq.${id}&device_id=eq.${dev.id}&status=eq.sent`, {
-        method: "PATCH", prefer: "return=minimal",
-        body: { status: r.status === "done" ? "done" : "failed", result: clip(r.result, 500), done_at: now },
-      });
-    }
-
-    // Anything queued over an hour ago is dropped rather than run late (a surprise reboot at 3 p.m. helps no one).
-    const hourAgo = new Date(Date.now() - 3600_000).toISOString();
-    await db(`device_commands?device_id=eq.${dev.id}&status=in.(pending,sent)&created_at=lt.${enc(hourAgo)}`, {
-      method: "PATCH", prefer: "return=minimal", body: { status: "expired" },
+    // Everything happens in one database call (supabase/05-tuning.sql): enrollment, health, the daily summary,
+    // command results, expiring old commands and handing over new ones.
+    const r = await rpc("agent_checkin", {
+      p_serial: serial,
+      p_key_hash: sha(key),
+      p_info: { model: clip(body.model, 80), hostname: clip(body.hostname, 64), version: clip(body.version, 20) },
+      p_health: cleanHealth(body.health),
+      p_screenshot: goodShot ? shot : null,
+      p_results: results,
     });
-    const pending = await db(`device_commands?device_id=eq.${dev.id}&status=eq.pending&select=id,command&order=id.asc`);
-    if (pending.length) {
-      await db(`device_commands?id=in.(${pending.map((c) => c.id).join(",")})`, { method: "PATCH", prefer: "return=minimal", body: { status: "sent", sent_at: now } });
-    }
-
-    let screen = null;
-    if (dev.screen_id) [screen] = await db(`screens?id=eq.${dev.screen_id}&select=key`);
-    return json({ screen: screen?.key || null, commands: pending.filter((c) => COMMANDS.includes(c.command)), screenshot_every: 300 });
+    if (r?.refused === "key") return json({ error: "This Pi's key doesn't match. A 1Point admin can reset it in the console." }, 401);
+    if (r?.refused === "revoked") return json({ error: "This device has been switched off in the console." }, 403);
+    return json({ screen: r?.screen || null, commands: (r?.commands || []).filter((c) => COMMANDS.includes(c.command)), screenshot_every: 300 });
   } catch (e) {
     return json({ error: e.message }, e.status && e.status < 500 ? e.status : 502);
   }

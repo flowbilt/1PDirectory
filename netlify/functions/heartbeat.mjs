@@ -1,4 +1,6 @@
 // POST /api/heartbeat {key, screen:{w,h}, version} -> records when a screen last checked in.
+// Only for screens still running display 2.0.0 or older: newer displays check in through /api/screen.
+// Every screen picks up the new display on its 3 a.m. reload, so this can be deleted a few days after that deploy.
 import { SITE_RE, json } from "../lib/common.mjs";
 import { db, enc } from "../lib/sb.mjs";
 

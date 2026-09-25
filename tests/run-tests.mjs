@@ -80,9 +80,45 @@ test("screens re-download only when something changed (304)", async () => {
   const r1 = await screen(req("/api/screen?key=ppi-2s"));
   const etag = r1.headers.get("ETag");
   assert.equal((await screen(req("/api/screen?key=ppi-2s", { headers: { "If-None-Match": etag } }))).status, 304);
+  // Edit a tenant the way the editor does (through the database, which marks the directory changed)
   const d = fake.T.directories.find((x) => x.slug === "ppi-2s");
-  fake.T.tenants.find((t) => t.directory_id === d.id).name = "Evan Terry Associates, LLC (edited)";
-  assert.equal((await screen(req("/api/screen?key=ppi-2s", { headers: { "If-None-Match": etag } }))).status, 200);
+  const t = fake.T.tenants.find((x) => x.directory_id === d.id);
+  await new Promise((r) => setTimeout(r, 5));
+  await fake.handle(new Request(`${SB}/rest/v1/tenants?id=eq.${t.id}`, { method: "PATCH", headers: { apikey: SERVICE_KEY }, body: JSON.stringify({ name: "Evan Terry Associates, LLC (edited)" }) }));
+  const r2 = await screen(req("/api/screen?key=ppi-2s", { headers: { "If-None-Match": etag } }));
+  assert.equal(r2.status, 200);
+  assert.equal((await r2.json()).tenants[0].name, "Evan Terry Associates, LLC (edited)");
+  assert.equal((await screen(req("/api/screen?key=ppi-2s", { headers: { "If-None-Match": `W/${r2.headers.get("ETag")}` } }))).status, 304, "weak ETags from the CDN count too");
+});
+
+test("a screen's check costs one database call, and records its check-in at most every 4 minutes", async () => {
+  const s = fake.T.screens.find((x) => x.key === "ppii-5e");
+  s.last_seen = null;
+  const rest = fake.restCalls.length, calls = fake.rpcCalls.length;
+  const look = (etag) => screen(req("/api/screen?key=ppii-5e", { headers: { "X-Screen-Size": "1920x1080", "X-Display-Version": "2.1.0", ...(etag ? { "If-None-Match": etag } : {}) } }));
+  const r1 = await look();
+  assert.equal(r1.status, 200);
+  assert.equal(fake.rpcCalls.length - calls, 1); assert.equal(fake.restCalls.length - rest, 0, "no other trips to the database");
+  assert.ok(s.last_seen, "check-in recorded");
+  assert.deepEqual([s.last_report.w, s.last_report.h, s.last_report.version], [1920, 1080, "2.1.0"]);
+  const seen = s.last_seen;
+  assert.equal((await look(r1.headers.get("ETag"))).status, 304);
+  assert.equal(s.last_seen, seen, "not re-recorded within 4 minutes");
+  s.last_seen = new Date(Date.now() - 5 * 60000).toISOString();
+  await look(r1.headers.get("ETag"));
+  assert.notEqual(s.last_seen, seen, "recorded again after 4 minutes");
+  const before = s.last_seen;
+  await screen(req("/api/screen?key=ppii-5e"));
+  assert.equal(s.last_seen, before, "a request without the display's headers isn't a check-in");
+});
+
+test("Identify reaches a screen on its next check even if nothing else changed", async () => {
+  const r1 = await screen(req("/api/screen?key=ppii-3w"));
+  const etag = r1.headers.get("ETag");
+  fake.T.screens.find((x) => x.key === "ppii-3w").identify_until = new Date(Date.now() + 90000).toISOString();
+  const r2 = await screen(req("/api/screen?key=ppii-3w", { headers: { "If-None-Match": etag } }));
+  assert.equal(r2.status, 200);
+  assert.ok((await r2.json()).identifyUntil);
 });
 
 test("the editor preview and real screens use the same fields", () => {
@@ -199,6 +235,21 @@ test("a Yodeck Pi enrolls on first check-in and finds its own screen by serial",
   assert.ok(dev.key_hash && dev.key_hash !== KEY, "key stored hashed");
   assert.equal(dev.last_health.temp_c, 51.2);
   assert.equal(dev.last_health.bogus, undefined, "unknown fields dropped");
+});
+
+test("a Pi's check-in is one database call", async () => {
+  const rest = fake.restCalls.length, calls = fake.rpcCalls.length;
+  assert.equal((await checkin({ health: { temp_c: 50 } })).status, 200);
+  assert.deepEqual(fake.rpcCalls.slice(calls), ["agent_checkin"]);
+  assert.equal(fake.restCalls.length - rest, 0);
+});
+
+test("a switched-off Pi is refused", async () => {
+  const dev = fake.T.devices.find((x) => x.serial === PPI2S_SERIAL);
+  dev.status = "revoked";
+  assert.equal((await checkin({})).status, 403);
+  dev.status = "active";
+  assert.equal((await checkin({ health: null })).status, 200, "a missing health report doesn't break the check-in");
 });
 
 test("a different key for an enrolled Pi is refused", async () => {

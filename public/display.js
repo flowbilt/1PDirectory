@@ -3,11 +3,11 @@
      ?screen=ppi-2s          which screen this is (older screens use ?site=landmark-center; same thing)
      ?device=<serial>        set by the agent's setup: the console decides which screen this Pi shows
      ?rotate=90 | 270        force software rotation; otherwise the screen's orientation setting decides
-     ?preview=1              used by the editor; skips heartbeat and service worker
+     ?preview=1              used by the editor; skips the check-in and service worker
 */
 (() => {
   "use strict";
-  const VERSION = "2.0.0";
+  const VERSION = "2.1.0";
   const q = new URLSearchParams(location.search);
   const DEVICE = (q.get("device") || "").toLowerCase();
   const SITE = DEVICE ? `device-${DEVICE}` : (q.get("screen") || q.get("key") || q.get("site") || "landmark-center").toLowerCase();
@@ -18,7 +18,6 @@
   const POLL_DIRECTORY_MS = 60 * 1000;
   const POLL_WEATHER_MS = 10 * 60 * 1000;
   const POLL_NEWS_MS = 15 * 60 * 1000;
-  const HEARTBEAT_MS = 5 * 60 * 1000;
 
   const $ = (id) => document.getElementById(id);
   const stage = $("stage");
@@ -199,7 +198,9 @@
   async function loadDirectory() {
     if (draftMode) return;
     try {
-      const res = await fetch(SCREEN_URL, { cache: "no-cache" });
+      // The size and version headers are the screen's check-in (they used to be a separate heartbeat call).
+      const headers = PREVIEW ? {} : { "X-Screen-Size": `${screen.width}x${screen.height}`, "X-Display-Version": VERSION };
+      const res = await fetch(SCREEN_URL, { cache: "no-cache", headers });
       if (!res.ok) throw new Error(`directory ${res.status}`);
       const d = await res.json();
       const fromCache = res.headers.get("X-Served-From") === "offline-cache";
@@ -348,16 +349,6 @@
     if (newsWanted() && wasEmpty) startRotation();
   }
 
-  // ── Heartbeat so the admin page shows when this screen last checked in ──
-  function heartbeat() {
-    if (PREVIEW || (DEVICE && !data?.key)) return;
-    fetch("/api/heartbeat", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ key: data?.key || SITE, screen: { w: screen.width, h: screen.height }, version: VERSION }),
-    }).catch(() => {});
-  }
-
   // ── Daily reload at 3 a.m. picks up code updates and clears browser memory ──
   function scheduleNightlyReload() {
     const now = new Date(), next = new Date(now);
@@ -376,8 +367,6 @@
   setInterval(loadWeather, POLL_WEATHER_MS);
   setInterval(loadNews, POLL_NEWS_MS);
   setInterval(tick, 1000);
-  heartbeat();
-  setInterval(heartbeat, HEARTBEAT_MS);
   scheduleNightlyReload();
 
   // When settings change (rotation time, news on/off), restart the rotator.

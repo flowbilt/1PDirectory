@@ -1,6 +1,6 @@
 // A small stand-in for Supabase used only in tests: Auth (GoTrue) and REST (PostgREST) endpoints the app
 // uses, with row-level security that mirrors supabase/01-schema.sql. Not a database; good enough to test the app.
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { readFileSync } from "node:fs";
 
 export const SERVICE_KEY = "test-service-key";
@@ -12,6 +12,8 @@ export function createFake() {
   const users = new Map(); // id -> {id,email,password,last_sign_in_at,invited_at,user_metadata}
   const tokens = new Map(); // token -> user id
   const outbox = [];
+  const rpcCalls = []; // which database functions were called, for tests that count trips
+  const restCalls = [];
   const now = () => new Date().toISOString();
 
   // ── seed from the migration data ──
@@ -156,6 +158,7 @@ export function createFake() {
   }
 
   async function rest(req, table, params) {
+    restCalls.push(`${req.method} ${table}`);
     if (!(table in T)) return err(404, `relation "public.${table}" does not exist`);
     const who = whoFrom(req);
     if (!who) return err(401, "Invalid API key");
@@ -221,6 +224,67 @@ export function createFake() {
     return err(405, "Method not allowed");
   }
 
+
+  // ── database functions (mirror of supabase/05-tuning.sql) ──
+  const centralDay = (d = new Date()) => new Intl.DateTimeFormat("en-CA", { timeZone: "America/Chicago" }).format(d);
+  const FUNCS = {
+    agent_checkin({ p_serial, p_key_hash, p_info = {}, p_health = {}, p_screenshot = null, p_results = [] }) {
+      const t = now();
+      let dv = T.devices.find((d) => d.serial === p_serial);
+      if (!dv) { dv = { ...defaults.devices(), serial: p_serial, key_hash: p_key_hash }; T.devices.push(dv); }
+      else if (!dv.key_hash) dv.key_hash = p_key_hash;
+      else if (dv.key_hash !== p_key_hash) return { refused: "key" };
+      if (dv.status === "revoked") return { refused: "revoked" };
+      Object.assign(dv, { last_seen: t, last_health: p_health || {}, model: p_info?.model ?? "", hostname: p_info?.hostname ?? "", agent_version: p_info?.version ?? "" });
+      if (p_screenshot != null) Object.assign(dv, { screenshot: p_screenshot, screenshot_at: t });
+      const day = centralDay(), h = p_health || {};
+      const temp = typeof h.temp_c === "number" ? h.temp_c : null;
+      const row = T.device_daily.find((r) => r.device_id === dv.id && r.day === day);
+      if (row) Object.assign(row, { checkins: row.checkins + 1, power_dips: row.power_dips + (h.under_voltage_now === true ? 1 : 0),
+        browser_down: row.browser_down + (h.browser_running === false ? 1 : 0),
+        max_temp_c: row.max_temp_c == null ? temp : temp == null ? row.max_temp_c : Math.max(row.max_temp_c, temp), last_at: t });
+      else T.device_daily.push({ ...defaults.device_daily(), device_id: dv.id, day, checkins: 1, power_dips: h.under_voltage_now === true ? 1 : 0,
+        browser_down: h.browser_running === false ? 1 : 0, max_temp_c: temp, first_at: t, last_at: t });
+      for (const r of p_results || []) {
+        const c = T.device_commands.find((x) => x.id === Number(r.id) && x.device_id === dv.id && x.status === "sent");
+        if (c) Object.assign(c, { status: r.status === "done" ? "done" : "failed", result: String(r.result ?? "").slice(0, 500), done_at: t });
+      }
+      const hourAgo = new Date(Date.now() - 3600_000).toISOString();
+      T.device_commands.filter((c) => c.device_id === dv.id && ["pending", "sent"].includes(c.status) && c.created_at < hourAgo).forEach((c) => { c.status = "expired"; });
+      const pending = T.device_commands.filter((c) => c.device_id === dv.id && c.status === "pending").sort((a, b) => a.id - b.id);
+      pending.forEach((c) => Object.assign(c, { status: "sent", sent_at: t }));
+      const sc = T.screens.find((s) => s.id === dv.screen_id);
+      return { screen: sc?.key ?? null, commands: pending.map((c) => ({ id: c.id, command: c.command })) };
+    },
+    screen_state({ p_key, p_device, p_etag, p_report }) {
+      let s;
+      if (p_device) {
+        const dv = T.devices.find((d) => d.serial === p_device);
+        s = dv && T.screens.find((x) => x.id === dv.screen_id);
+        if (!s) return { new_device: true };
+      } else {
+        s = T.screens.find((x) => x.key === p_key);
+        if (!s) return { missing: true };
+      }
+      if (p_report && (!s.last_seen || Date.parse(s.last_seen) < Date.now() - 4 * 60000)) Object.assign(s, { last_seen: now(), last_report: p_report });
+      const d = s.directory_id ? T.directories.find((x) => x.id === s.directory_id) : null;
+      const p = d ? T.properties.find((x) => x.id === d.property_id) : null;
+      const etag = createHash("md5").update([s.key, s.name, s.orientation, s.directory_id || "-", s.identify_until || "-", d?.updated_at || "-", p?.updated_at || "-"].join("|")).digest("hex");
+      if (etag === p_etag) return { etag, not_modified: true };
+      const tenants = d ? order(T.tenants.filter((t) => t.directory_id === d.id), "sort,name").map(({ name, suite, arrow, note, sort }) => ({ name, suite, arrow, note, sort })) : [];
+      return { etag, screen: { key: s.key, name: s.name, orientation: s.orientation, identify_until: s.identify_until ?? null }, dir: d ? { ...d } : null, prop: p ? { ...p } : null, tenants };
+    },
+  };
+  async function rpc(req, name) {
+    const who = whoFrom(req);
+    if (!who) return err(401, "Invalid API key");
+    if (!FUNCS[name]) return err(404, `Could not find the function public.${name}`);
+    if (!who.service) return err(403, `permission denied for function ${name}`);
+    if (req.method !== "POST") return err(405, "Method not allowed");
+    rpcCalls.push(name);
+    return out(FUNCS[name](await req.json()));
+  }
+
   async function authApi(req, path, url) {
     const who = whoFrom(req);
     if (!who) return err(401, "Invalid API key");
@@ -275,11 +339,12 @@ export function createFake() {
     const url = new URL(req.url);
     if (req.method === "OPTIONS") return new Response(null, { status: 204, headers: cors });
     if (url.pathname === "/__outbox") return out(outbox);
+    if (url.pathname.startsWith("/rest/v1/rpc/")) return rpc(req, url.pathname.slice(13));
     if (url.pathname.startsWith("/rest/v1/")) return rest(req, url.pathname.slice(9), url.searchParams);
     if (url.pathname.startsWith("/auth/v1")) return authApi(req, url.pathname.slice(8), url);
     return err(404, "not found");
   }
 
   seed();
-  return { handle, T, users, outbox, addUser };
+  return { handle, T, users, outbox, addUser, rpcCalls, restCalls };
 }

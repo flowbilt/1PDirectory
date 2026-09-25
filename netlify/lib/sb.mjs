@@ -39,6 +39,9 @@ async function call(path, { method = "GET", body, apikey, token, prefer } = {}) 
 /** Database with the service key. path like "screens?key=eq.ppi-2s&select=*" */
 export const db = (path, opts = {}) => call(`/rest/v1/${path}`, { ...opts, apikey: serviceKey() });
 
+/** Calls a database function with the service key (supabase/05-tuning.sql). Returns what the function returns. */
+export const rpc = (name, args) => db(`rpc/${name}`, { method: "POST", body: args });
+
 /** Auth admin endpoints with the service key. path like "/admin/users" */
 export const auth = (path, opts = {}) => call(`/auth/v1${path}`, { ...opts, apikey: serviceKey() });
 

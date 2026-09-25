@@ -1,5 +1,6 @@
 -- Lobby Directory: remote management of the Pis (the "agent").
--- Run once in Supabase: SQL Editor -> New query -> paste -> Run. Safe to run after 01 and 02.
+-- Run in Supabase: SQL Editor -> New query -> paste -> Run, after 01 and 02.
+-- Safe to run more than once: anything already in place is left as it is.
 --
 --   devices          one row per physical Pi, identified by its hardware serial number
 --   device_commands  actions queued from the console (reboot, reload, ...) and their results
@@ -8,7 +9,7 @@
 -- per-device key, and the site uses the service key. So these tables have row-level security switched on
 -- and no policies at all: nothing is readable or writable except through the site's server functions.
 
-create table public.devices (
+create table if not exists public.devices (
   id               uuid primary key default gen_random_uuid(),
   serial           text not null unique check (serial ~ '^[0-9a-fA-F]{8,32}$'),
   screen_id        uuid unique references public.screens (id) on delete set null,  -- which screen this Pi drives
@@ -25,7 +26,7 @@ create table public.devices (
   created_at       timestamptz not null default now()
 );
 
-create table public.device_commands (
+create table if not exists public.device_commands (
   id           bigint generated always as identity primary key,
   device_id    uuid not null references public.devices (id) on delete cascade,
   command      text not null check (command in ('reboot', 'reload', 'screenshot', 'update_agent')),
@@ -36,7 +37,7 @@ create table public.device_commands (
   sent_at      timestamptz,
   done_at      timestamptz
 );
-create index device_commands_pending on public.device_commands (device_id) where status in ('pending', 'sent');
+create index if not exists device_commands_pending on public.device_commands (device_id) where status in ('pending', 'sent');
 
 -- "Identify" flashes the screen's name on the TV; the display picks it up on its next check.
 alter table public.screens add column if not exists identify_until timestamptz;
