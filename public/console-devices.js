@@ -11,6 +11,15 @@ window.ConsoleDevices = (() => {
 
   const fresh = (iso) => iso && Date.now() - Date.parse(iso) <= ONLINE_MIN * 60000;
   const forScreen = (screenId) => devices.find((d) => d.screen_id === screenId);
+  const windowOpen = (d) => !d.enrolled && d.enroll_until && Date.parse(d.enroll_until) > Date.now();
+  const clock = (iso) => new Date(iso).toLocaleString("en-US", { weekday: "short", hour: "numeric", minute: "2-digit" });
+  /** One line on a Pi's enrollment: enrolled Pis say nothing. */
+  const enrollNote = (d) => (d.enrolled ? "" : windowOpen(d) ? `Enrollment open until ${clock(d.enroll_until)}` : "Not enrolled · enrollment closed");
+
+  /** A screen's hardware record (1Point only; signed-in users can't read it from the database). */
+  async function hardware(screenId) {
+    try { return (await Auth.api(`/api/devices?hardware=${encodeURIComponent(screenId)}`)).hardware; } catch { return null; }
+  }
 
   async function load(isAdmin) {
     admin = isAdmin;
@@ -26,7 +35,8 @@ window.ConsoleDevices = (() => {
     if (!d) return `<div class="sub">No agent</div>`;
     const h = d.last_health || {};
     const bits = [];
-    if (!fresh(d.last_seen)) bits.push(d.last_seen ? `<span class="warn">Pi offline</span>` : `<span class="sub">Pi not checked in</span>`);
+    if (!d.enrolled) bits.push(`<span class="sub">Pi ${windowOpen(d) ? "waiting to enroll" : "not enrolled"}</span>`);
+    else if (!fresh(d.last_seen)) bits.push(d.last_seen ? `<span class="warn">Pi offline</span>` : `<span class="sub">Pi not checked in</span>`);
     else if (!fresh(screen.last_seen)) bits.push(`<span class="warn">Pi on, screen not reporting</span>`);
     if (h.under_voltage_now) bits.push(`<span class="warn" title="Weak power supply">⚡ Power low</span>`);
     else if (h.under_voltage_seen) bits.push(`<span class="sub" title="Under-voltage since last boot">⚡ Power dipped</span>`);
@@ -61,7 +71,7 @@ window.ConsoleDevices = (() => {
     const taken = new Set(devices.filter((d) => d.screen_id).map((d) => d.screen_id));
     const opts = `<option value="">Choose a screen…</option>` + screens.filter((s) => !taken.has(s.id)).map((s) => `<option value="${s.id}">${esc(s.name)} (${esc(s.key)})</option>`).join("");
     $("new-device-rows").innerHTML = list.map((d) => `<tr>
-      <td><strong>${esc(d.serial)}</strong><div class="sub">${esc(d.model || "")}${d.last_health?.ip ? ` · ${esc(d.last_health.ip)}` : ""}</div></td>
+      <td><strong>${esc(d.serial)}</strong> <button type="button" class="ghost" data-device="${d.id}">Pi</button><div class="sub">${esc(d.model || "")}${d.last_health?.ip ? ` · ${esc(d.last_health.ip)}` : ""}${d.enrolled ? "" : ` · ${esc(enrollNote(d))}`}</div></td>
       <td>${since(d.created_at)}</td><td>${since(d.last_seen)}</td>
       <td><select data-assign="${d.id}" aria-label="Assign ${esc(d.serial)}">${opts}</select></td></tr>`).join("");
   }
@@ -98,22 +108,26 @@ window.ConsoleDevices = (() => {
         <div>
           <dl class="dev-facts">
             ${row("Pi", `${d.serial}${d.model ? ` · ${d.model}` : ""}`)}
+            ${row("Enrollment", d.enrolled ? "" : windowOpen(d) ? `Open until ${clock(d.enroll_until)}` : "Closed (not enrolled yet)")}
             ${row("Pi last check-in", since(d.last_seen))}
             ${row("Temperature", typeof h.temp_c === "number" ? `${h.temp_c}°C` : "")}
             ${row("Power", h.under_voltage_now ? "Under-voltage now: replace the power supply" : h.under_voltage_seen ? "Dipped since last boot" : h.throttled !== undefined ? "Normal" : "")}
-            ${row("Browser", h.browser_running === false ? "Not running" : "Running")}
+            ${row("Browser", h.browser_running === false ? "Not running" : h.browser_running ? "Running" : "")}
             ${row("Up for", up)}
             ${row("Storage used", h.disk_used_pct != null ? `${h.disk_used_pct}%` : "")}
             ${row("Address", h.ip)}
             ${row("System", h.os)}
             ${row("Agent", d.agent_version)}
           </dl>
+          ${admin && !d.enrolled ? `<div class="dev-actions">${windowOpen(d)
+            ? `<button type="button" class="ghost" data-dev-action="close_enrollment">Close enrollment</button>`
+            : `<button type="button" class="ghost" data-dev-action="open_enrollment" title="On install day: the Pi accepts its first key only while this is open">Open enrollment (24 hours)</button>`}</div>` : ""}
           <div class="dev-actions">
             ${s ? `<button type="button" class="ghost" data-identify="${s.id}" title="Shows the screen's name on the TV for 90 seconds">Identify</button>` : ""}
             ${ACTIONS.filter(([, , , adminOnly]) => admin || !adminOnly).map(([c, label, hint]) => `<button type="button" class="ghost" data-cmd="${c}" title="${esc(hint)}">${label}</button>`).join("")}
           </div>
           ${admin ? `<details class="hw"><summary>More</summary><div class="dev-actions">
-            <button type="button" class="ghost" data-dev-action="reset_key" title="Use if this Pi was reflashed and now gets 'key doesn't match'">Reset device key</button>
+            <button type="button" class="ghost" data-dev-action="reset_key" title="Use if this Pi was reflashed and now gets 'key doesn't match'. Opens enrollment for 24 hours.">Reset device key</button>
             <button type="button" class="ghost danger" data-dev-action="${d.status === "revoked" ? "activate" : "revoke"}">${d.status === "revoked" ? "Switch back on" : "Switch off (refuse this Pi)"}</button>
             ${d.screen_id ? `<button type="button" class="ghost" data-dev-action="unassign">Unassign from screen</button>` : ""}
           </div></details>` : ""}
@@ -138,9 +152,11 @@ window.ConsoleDevices = (() => {
           toast("The screen will show its name for 90 seconds, starting within a minute.");
         } else if (act) {
           if (act === "revoke" && !confirm("Switch off this Pi? It will be refused until switched back on.")) return;
+          if (act === "reset_key" && !confirm("Reset this Pi's key? It must enroll again within 24 hours.")) return;
           const body = act === "unassign" ? { action: "assign", device_id: d.id, screen_id: null } : { action: act, device_id: d.id };
           await Auth.api("/api/devices", { method: "POST", body });
-          toast("Done."); dlg.close(); await window.ConsoleRefresh();
+          toast({ open_enrollment: "Enrollment open for 24 hours. Start the Pi (or run its setup) now.", reset_key: "Key cleared. Enrollment is open for 24 hours.", close_enrollment: "Enrollment closed." }[act] || "Done.");
+          dlg.close(); await window.ConsoleRefresh();
         }
       } catch (ex) { toast(ex.message, true); }
     };
@@ -200,5 +216,5 @@ window.ConsoleDevices = (() => {
     a.click();
   });
 
-  return { load, statusNote, thumbCell, actionButton, fillThumbs, renderNew, loadHealth, list: () => devices };
+  return { load, statusNote, thumbCell, actionButton, fillThumbs, renderNew, loadHealth, hardware, list: () => devices };
 })();

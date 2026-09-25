@@ -3,15 +3,20 @@
 //   GET                          all devices, with health and recent commands
 //   GET ?summary=1               fleet health: uptime today / 7 / 30 days, power dips, peak temperature
 //   GET ?screenshot=<device id>  the latest screenshot (JPEG)
+//   GET ?hardware=<screen id>    the screen's hardware record (serial, MACs, Yodeck snapshot); signed-in users
+//                                can't read that column directly (supabase/06-trust.sql)
 //   POST {action:"command", device_id, command}       reboot | reload | screenshot | update_agent
 //   POST {action:"identify", screen_id}               flash the screen's name on the TV for 90 seconds
 //   POST {action:"assign", device_id, screen_id|null} which screen this Pi drives (1Point only)
-//   POST {action:"reset_key" | "revoke" | "activate", device_id}  (1Point only)
+//   POST {action:"open_enrollment" | "close_enrollment", device_id}  a Pi with no key accepts one only while open
+//   POST {action:"reset_key" | "revoke" | "activate", device_id}  reset_key also opens the enrollment window
 import { json } from "../lib/common.mjs";
 import { audit, caller, db, enc } from "../lib/sb.mjs";
 import { COMMANDS, centralDay } from "./agent.mjs";
 
 const ONLINE_MIN = 15;
+export const ENROLL_HOURS = 24;
+const enrollUntil = () => new Date(Date.now() + ENROLL_HOURS * 3600_000).toISOString();
 const fail = (status, error) => Object.assign(new Error(error), { status });
 
 // Screens (id -> {key, name, org}) the caller may see
@@ -32,7 +37,7 @@ async function visibleScreens(profile) {
 
 async function loadDevice(id, profile, screens) {
   if (!id) throw fail(400, "device_id is required.");
-  const [d] = await db(`devices?id=eq.${enc(id)}&select=id,serial,screen_id,status`);
+  const [d] = await db(`devices?id=eq.${enc(id)}&select=id,serial,screen_id,status,key_hash`);
   if (!d) throw fail(404, "No such device.");
   if (profile.role !== "platform_admin" && !screens.has(d.screen_id)) throw fail(404, "No such device.");
   return d;
@@ -54,10 +59,17 @@ export default async (req) => {
       return new Response(Buffer.from(m[1], "base64"), { headers: { "Content-Type": "image/jpeg", "Cache-Control": "private, no-store" } });
     }
 
+    if (req.method === "GET" && url.searchParams.get("hardware")) {
+      const sid = url.searchParams.get("hardware");
+      if (!screens.has(sid)) throw fail(404, "No such screen.");
+      const [row] = await db(`screens?id=eq.${enc(sid)}&select=hardware`);
+      return json({ hardware: row?.hardware || {} });
+    }
+
     if (req.method === "GET" && url.searchParams.get("summary")) return json(await summary());
 
     if (req.method === "GET") {
-      const devices = await db("devices?select=id,serial,screen_id,status,model,hostname,agent_version,last_seen,last_health,screenshot_at,key_hash,created_at&order=serial.asc");
+      const devices = await db("devices?select=id,serial,screen_id,status,model,hostname,agent_version,last_seen,last_health,screenshot_at,key_hash,enroll_until,created_at&order=serial.asc");
       const mine = devices.filter((d) => admin || screens.has(d.screen_id));
       const ids = mine.map((d) => d.id);
       const cmds = ids.length ? await db(`device_commands?device_id=in.(${ids.join(",")})&select=id,device_id,command,status,result,created_at,done_at&order=id.desc`) : [];
@@ -93,12 +105,20 @@ export default async (req) => {
       const sid = body.screen_id || null;
       if (sid && !screens.has(sid)) throw fail(404, "No such screen.");
       if (sid) await db(`devices?screen_id=eq.${enc(sid)}&id=neq.${d.id}`, { method: "PATCH", prefer: "return=minimal", body: { screen_id: null } }); // one Pi per screen
-      await db(`devices?id=eq.${d.id}`, { method: "PATCH", prefer: "return=minimal", body: { screen_id: sid } });
+      // An unassigned Pi keeps no screenshot (supabase/06-trust.sql), so an old one doesn't linger either
+      await db(`devices?id=eq.${d.id}`, { method: "PATCH", prefer: "return=minimal", body: sid ? { screen_id: sid } : { screen_id: null, screenshot: "", screenshot_at: null } });
       await audit(user.id, "assign device", "device", d.id, { serial: d.serial, screen_id: sid });
       return json({ ok: true });
     }
+    if (body.action === "open_enrollment" || body.action === "close_enrollment") {
+      if (body.action === "open_enrollment" && d.key_hash) throw fail(409, "This Pi is already enrolled. Use Reset device key to enroll it again.");
+      const until = body.action === "open_enrollment" ? enrollUntil() : null;
+      await db(`devices?id=eq.${d.id}`, { method: "PATCH", prefer: "return=minimal", body: { enroll_until: until } });
+      await audit(user.id, body.action.replace("_", " "), "device", d.id, { serial: d.serial, until });
+      return json({ ok: true, enroll_until: until });
+    }
     if (["reset_key", "revoke", "activate"].includes(body.action)) {
-      const patch = body.action === "reset_key" ? { key_hash: null } : { status: body.action === "revoke" ? "revoked" : "active" };
+      const patch = body.action === "reset_key" ? { key_hash: null, enroll_until: enrollUntil() } : { status: body.action === "revoke" ? "revoked" : "active" };
       await db(`devices?id=eq.${d.id}`, { method: "PATCH", prefer: "return=minimal", body: patch });
       await audit(user.id, body.action.replace("_", " "), "device", d.id, { serial: d.serial });
       return json({ ok: true });

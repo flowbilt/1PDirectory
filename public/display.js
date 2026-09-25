@@ -4,16 +4,31 @@
      ?device=<serial>        set by the agent's setup: the console decides which screen this Pi shows
      ?rotate=90 | 270        force software rotation; otherwise the screen's orientation setting decides
      ?preview=1              used by the editor; skips the check-in and service worker
+     ?view=1                 used by the console's View button: a person looking at the screen, so no check-in
+                             (only real screens check in) and no service worker
+   The bare address (no screen chosen) shows a short note instead of any directory.
 */
 (() => {
   "use strict";
-  const VERSION = "2.1.0";
+  const VERSION = "2.2.0";
   const q = new URLSearchParams(location.search);
   const DEVICE = (q.get("device") || "").toLowerCase();
-  const SITE = DEVICE ? `device-${DEVICE}` : (q.get("screen") || q.get("key") || q.get("site") || "landmark-center").toLowerCase();
+  const CHOSEN = (q.get("screen") || q.get("key") || q.get("site") || "").toLowerCase();
+  const PREVIEW = q.get("preview") === "1";
+  const VIEW = q.get("view") === "1";
+
+  // Nothing chosen: no directory, no polling, no check-in. (This used to fall back to landmark-center.)
+  if (!DEVICE && !CHOSEN && !PREVIEW) {
+    const stage = document.getElementById("stage");
+    stage.classList.remove("is-loading");
+    stage.innerHTML = `<div class="no-screen"><h1>Lobby Directory</h1><p>No screen chosen. Screens open this page with their own address.</p><p><a href="/console.html">Sign in to the console</a></p></div>`;
+    return;
+  }
+
+  const SITE = DEVICE ? `device-${DEVICE}` : CHOSEN || "preview";
   const SCREEN_URL = DEVICE ? `/api/screen?device=${encodeURIComponent(DEVICE)}` : `/api/screen?key=${encodeURIComponent(SITE)}`;
   const URL_ROTATE = ["90", "270"].includes(q.get("rotate")) ? Number(q.get("rotate")) : null;
-  const PREVIEW = q.get("preview") === "1";
+  const CHECKS_IN = !PREVIEW && !VIEW; // only a real screen records a check-in
 
   const POLL_DIRECTORY_MS = 60 * 1000;
   const POLL_WEATHER_MS = 10 * 60 * 1000;
@@ -199,7 +214,7 @@
     if (draftMode) return;
     try {
       // The size and version headers are the screen's check-in (they used to be a separate heartbeat call).
-      const headers = PREVIEW ? {} : { "X-Screen-Size": `${screen.width}x${screen.height}`, "X-Display-Version": VERSION };
+      const headers = !CHECKS_IN ? {} : { "X-Screen-Size": `${screen.width}x${screen.height}`, "X-Display-Version": VERSION };
       const res = await fetch(SCREEN_URL, { cache: "no-cache", headers });
       if (!res.ok) throw new Error(`directory ${res.status}`);
       const d = await res.json();
@@ -388,5 +403,5 @@
     });
   }
 
-  if (!PREVIEW && "serviceWorker" in navigator) navigator.serviceWorker.register("/sw.js").catch(() => {});
+  if (CHECKS_IN && "serviceWorker" in navigator) navigator.serviceWorker.register("/sw.js").catch(() => {});
 })();

@@ -21,9 +21,11 @@
 #   --no-1080p         Keep the TV's native resolution (4K runs slowly on a Pi 4; not recommended).
 #   --connect          Also install Raspberry Pi Connect for remote screen viewing from a browser.
 #   --no-agent         Don't install the remote-management agent.
+#   --ssh              Leave SSH on. By default SSH is switched off (from the next restart): the Pi opens no ports,
+#                      and the agent handles remote management. Re-run setup without --ssh to switch it off again.
 set -euo pipefail
 
-SITE="https://1pdirectory.netlify.app"; URL=""; ROTATE="auto"; REBOOT="03:30"; TZ_NAME="America/Chicago"; FORCE_1080=1; CONNECT=0; AGENT=1
+SITE="https://1pdirectory.netlify.app"; URL=""; ROTATE="auto"; REBOOT="03:30"; TZ_NAME="America/Chicago"; FORCE_1080=1; CONNECT=0; AGENT=1; SSH=0
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --site) SITE="${2%/}"; shift 2 ;;
@@ -34,7 +36,8 @@ while [[ $# -gt 0 ]]; do
     --tz) TZ_NAME="$2"; shift 2 ;;
     --no-1080p) FORCE_1080=0; shift ;;
     --connect) CONNECT=1; shift ;;
-    -h|--help) sed -n '2,27p' "$0"; exit 0 ;;
+    --ssh) SSH=1; shift ;;
+    -h|--help) sed -n '2,/^set -euo pipefail/p' "$0" | sed '$d'; exit 0 ;;
     *) echo "Unknown option: $1 (see --help)"; exit 1 ;;
   esac
 done
@@ -68,6 +71,7 @@ else
   echo "    Rotation: fixed at $ROTATE"
 fi
 echo "    Nightly reboot: $REBOOT   Time zone: $TZ_NAME"
+echo "    SSH: $([[ $SSH -eq 1 ]] && echo "on (--ssh)" || echo "off from the next restart (use --ssh to keep it)")"
 
 echo "==> Installing packages"
 apt-get update -qq
@@ -78,13 +82,20 @@ apt-get install -y wlr-randr x11-xserver-utils curl grim scrot python3 python3-p
 if [[ $CONNECT -eq 1 ]]; then apt-get install -y rpi-connect || echo "    rpi-connect not available on this OS image; skipping."; fi
 CHROME="$(command -v chromium || command -v chromium-browser)"
 
-echo "==> Desktop autologin, no screen blanking, SSH on, time zone"
+echo "==> Desktop autologin, no screen blanking, time zone, SSH $([[ $SSH -eq 1 ]] && echo on || echo off)"
 if command -v raspi-config >/dev/null; then
   raspi-config nonint do_boot_behaviour B4   # desktop, auto login
   raspi-config nonint do_blanking 1          # disable screen blanking
-  raspi-config nonint do_ssh 0               # enable SSH for remote support
 fi
 timedatectl set-timezone "$TZ_NAME"
+# SSH: off unless --ssh. Only disabled here, not stopped, so a setup run over SSH isn't cut off halfway;
+# it stays off from the restart that finishes setup. (The imager may have switched it on.)
+if [[ $SSH -eq 1 ]]; then
+  systemctl enable --now ssh.service 2>/dev/null || echo "    Couldn't switch SSH on (is openssh-server installed?)"
+else
+  systemctl disable ssh.service >/dev/null 2>&1 || true
+  systemctl disable ssh.socket >/dev/null 2>&1 || true
+fi
 
 if [[ $FORCE_1080 -eq 1 ]]; then
   CMDLINE=/boot/firmware/cmdline.txt; [[ -f $CMDLINE ]] || CMDLINE=/boot/cmdline.txt

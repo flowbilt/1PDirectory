@@ -4,6 +4,8 @@
   const { esc, toast, since, slug, roleName } = window.UI;
   const PAGE = 25;
   const ONLINE_MIN = 15;
+  // Signed-in users may read only these screen columns (supabase/06-trust.sql); hardware comes from /api/devices.
+  const SCREEN_COLS = "id,directory_id,key,name,location_note,orientation,last_seen,last_report,identify_until,created_at";
 
   const S = { me: null, admin: false, orgs: [], props: [], dirs: [], screens: [], tenantCount: {}, tenantText: {}, people: [], page: 0 };
   window.ConsoleState = S;
@@ -15,7 +17,7 @@
       Auth.db("organizations?select=id,name,kind&order=name.asc"),
       Auth.db("properties?select=id,org_id,name,address&order=name.asc"),
       Auth.db("directories?select=id,property_id,slug,title,subtitle,updated_at&order=title.asc"),
-      Auth.db("screens?select=*&order=name.asc"),
+      Auth.db(`screens?select=${SCREEN_COLS}&order=name.asc`),
       Auth.db("tenants?select=directory_id,name"),
     ]);
     Object.assign(S, { orgs, props, dirs, screens, tenantCount: {}, tenantText: {} });
@@ -76,7 +78,7 @@
         <td>${since(s.last_seen)}</td>
         <td class="actions">
           ${d ? `<a class="ghost" href="/edit.html?d=${d.id}">Edit tenants</a>` : ""}
-          <a class="ghost" href="/?screen=${encodeURIComponent(s.key)}" target="_blank" rel="noopener">View</a>
+          <a class="ghost" href="/?screen=${encodeURIComponent(s.key)}&view=1" target="_blank" rel="noopener">View</a>
           ${Dev.actionButton(s)}
           ${S.admin ? `<button type="button" class="ghost" data-screen="${s.id}">Settings</button>` : ""}
         </td></tr>`;
@@ -98,7 +100,6 @@
 
   function screenDialog(s) {
     const isNew = !s;
-    const hw = s?.hardware || {};
     openDialog({
       title: isNew ? "Add screen" : `Screen settings: ${s.name}`,
       body: `
@@ -107,9 +108,13 @@
         ${field("s-dir", "Shows directory", `<select id="s-dir">${dirOptions(s?.directory_id)}</select>`)}
         ${field("s-orient", "Layout", `<select id="s-orient">${["auto", "portrait", "landscape"].map((o) => `<option value="${o}"${(s?.orientation || "auto") === o ? " selected" : ""}>${{ auto: "Automatic (match the TV)", portrait: "Portrait", landscape: "Landscape" }[o]}</option>`).join("")}</select>`, "If this doesn't match how the TV is mounted, the page turns itself to fit. Changes reach the screen within a minute.")}
         ${field("s-loc", "Location note", `<input id="s-loc" maxlength="120" value="${esc(s?.location_note || "")}" placeholder="e.g. 3rd floor, north elevator lobby">`)}
-        ${Object.keys(hw).length ? `<details class="hw"><summary>Hardware</summary><dl>${Object.entries(hw).map(([k, v]) => `<dt>${esc(k.replace(/_/g, " "))}</dt><dd>${esc(v)}</dd>`).join("")}</dl></details>` : ""}
+        <div id="s-hw"></div>
         ${isNew ? "" : `<button type="button" id="s-delete" class="ghost danger">Remove this screen</button>`}`,
       afterOpen() {
+        if (!isNew && S.admin) Dev.hardware(s.id).then((hw) => {   // 1Point only; the server refuses everyone else
+          if (!hw || !Object.keys(hw).length || !$("s-hw")) return;
+          $("s-hw").innerHTML = `<details class="hw"><summary>Hardware</summary><dl>${Object.entries(hw).map(([k, v]) => `<dt>${esc(k.replace(/_/g, " "))}</dt><dd>${esc(v)}</dd>`).join("")}</dl></details>`;
+        });
         $("s-name").addEventListener("input", () => { if (isNew && !$("s-key").dataset.touched) $("s-key").value = slug($("s-name").value); });
         $("s-key").addEventListener("input", () => ($("s-key").dataset.touched = "1"));
         $("s-delete")?.addEventListener("click", async () => {
@@ -356,7 +361,7 @@
       showTab(["screens", "buildings", "people", "health", "accounts"].includes(tab) && !document.querySelector(`[data-tab=${tab}]`).hidden ? tab : "screens");
       setInterval(async () => {
         if (document.querySelector("dialog[open]")) return; // don't redraw under an open panel
-        try { S.screens = await Auth.db("screens?select=*&order=name.asc"); await Dev.load(S.admin); Dev.renderNew(S.screens); renderScreens(); } catch { /* keep last */ }
+        try { S.screens = await Auth.db(`screens?select=${SCREEN_COLS}&order=name.asc`); await Dev.load(S.admin); Dev.renderNew(S.screens); renderScreens(); } catch { /* keep last */ }
       }, 60000);
     } catch (ex) {
       if (ex.message !== "Signing in…") { $("load-error").textContent = ex.message; $("load-error").hidden = false; }

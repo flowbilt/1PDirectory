@@ -15,8 +15,9 @@ Do these once. The current site keeps running as it is until the new build is de
 4. For remote management of the Pis: new query, paste all of `03-agent.sql`, and click **Run**. This adds the device tables and pre-registers the 15 Yodeck Pis by serial number.
 5. For the daily health history: new query, paste all of `04-health.sql`, and click **Run**.
 6. For cheaper check-ins: new query, paste all of `05-tuning.sql`, and click **Run**. Then new query, paste all of `check-tuning.sql`, and click **Run**. That one always ends with a red message on purpose (it undoes its own test data); it should read **ALL 10 CHECKS PASSED**.
+7. For the trust fixes (DP-02): **only after the DP-02 code is live on Netlify**, new query, paste all of `06-trust.sql`, and click **Run**. Then new query, paste all of `check-trust.sql`, and click **Run**. Like `check-tuning.sql` it ends with a red message on purpose; it should read **ALL 9 CHECKS PASSED**. (Run in the other order, the old console would stop loading screens until the new code arrived: `06` stops signed-in users reading every screen column, and the old console asks for all of them.)
 
-If any of them shows an error (other than the expected red message from `check-tuning.sql`), copy the message (it includes a line number) and send it to Claude.
+If any of them shows an error (other than the expected red messages from `check-tuning.sql` and `check-trust.sql`), copy the message (it includes a line number) and send it to Claude.
 
 ## 3. Lock down sign-ups
 

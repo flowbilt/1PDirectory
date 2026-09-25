@@ -181,3 +181,9 @@ body { font-family: "Instrument Sans", "Segoe UI", Arial, sans-serif; color: var
 .identify-name { font-size: calc(var(--u) * 9); font-weight: 700; line-height: 1.05; }
 .identify-key { font-size: calc(var(--u) * 3.4); color: #f2c14e; font-variant-numeric: tabular-nums; }
 .identify[hidden] { display: none !important; }
+
+/* The bare address, with no screen chosen */
+.no-screen { margin: auto; padding: 40px; text-align: center; font-size: 20px; line-height: 1.5; color: var(--muted); cursor: auto; }
+.no-screen h1 { font-family: "Lora", Georgia, serif; font-size: 36px; color: var(--ink); margin-bottom: 12px; }
+.no-screen a { color: var(--steel); }
+body:has(.no-screen) { cursor: auto; }

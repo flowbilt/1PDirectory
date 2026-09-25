@@ -14,7 +14,7 @@ PPI = [
     t("Perpetual Lifestyle Planning, LLC", "140 S", "L"),
     t("Hyde Roofing", "145 S", "L"),
     t("Fitness Room", "120 S", "L")]),
-  ("ppi-2s", "TBC - PPI - 2 S - 194242", "Perimeter Park One - Two South", "South Tower", [
+  ("ppi-2s", "TBC - PPI - 2 S - 194292", "Perimeter Park One - Two South", "South Tower", [
     t("Evan Terry Associates, LLC", "200 S", "R"),
     t("MortgageRight", "230 S", "L")]),
   ("ppi-3n", "TBC - PPI - 3 N - 194293", "Perimeter Park One - Three North", "North Tower", [

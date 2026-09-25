@@ -9,6 +9,8 @@ export const ANON_KEY = "test-anon-key";
 export function createFake() {
   const T = { organizations: [], profiles: [], properties: [], directories: [], tenants: [], screens: [], audit_log: [], devices: [], device_commands: [], device_daily: [] };
   const SERVICE_ONLY = new Set(["devices", "device_commands", "device_daily"]); // row-level security on, no policies: server key only
+  // Columns of screens signed-in users may read (supabase/06-trust.sql). hardware is server-only.
+  const SCREEN_COLS = new Set(["id", "directory_id", "key", "name", "location_note", "orientation", "last_seen", "last_report", "identify_until", "created_at"]);
   const users = new Map(); // id -> {id,email,password,last_sign_in_at,invited_at,user_metadata}
   const tokens = new Map(); // token -> user id
   const outbox = [];
@@ -145,7 +147,7 @@ export function createFake() {
     screens: () => ({ id: randomUUID(), directory_id: null, location_note: "", orientation: "auto", hardware: {}, last_seen: null, last_report: {}, created_at: now() }),
     profiles: () => ({ full_name: "", created_at: now() }),
     audit_log: () => ({ id: T.audit_log.length + 1, at: now(), detail: {} }),
-    devices: () => ({ id: randomUUID(), screen_id: null, key_hash: null, status: "active", model: "", hostname: "", agent_version: "", last_seen: null, last_health: {}, screenshot: "", screenshot_at: null, alert_state: {}, created_at: now() }),
+    devices: () => ({ id: randomUUID(), screen_id: null, key_hash: null, enroll_until: null, status: "active", model: "", hostname: "", agent_version: "", last_seen: null, last_health: {}, screenshot: "", screenshot_at: null, alert_state: {}, created_at: now() }),
     device_daily: () => ({ id: (T.device_daily.at(-1)?.id || 0) + 1, checkins: 0, power_dips: 0, browser_down: 0, max_temp_c: null }),
     device_commands: () => ({ id: (T.device_commands.at(-1)?.id || 0) + 1, status: "pending", result: "", created_at: now(), sent_at: null, done_at: null }),
   };
@@ -167,9 +169,17 @@ export function createFake() {
     const prefer = req.headers.get("prefer") || "";
     const wantRows = prefer.includes("return=representation");
 
+    // Column privileges: signed-in users get only SCREEN_COLS of screens, and "*" is refused as Postgres does
+    const cols = (params.get("select") || "*").split(",").map((c) => c.trim());
+    if (table === "screens" && !who.service) {
+      const asked = req.method === "GET" || wantRows ? cols : [];
+      if (asked.some((c) => !SCREEN_COLS.has(c))) return err(403, "permission denied for table screens");
+    }
+    const pick = (r) => (cols.includes("*") ? { ...r } : Object.fromEntries(cols.map((c) => [c, r[c] ?? null])));
+
     if (req.method === "GET") {
       const rows = T[table].filter((r) => canSee(table, r, who) && match(r));
-      return out(order(rows, params.get("order")).map((r) => ({ ...r })));
+      return out(order(rows, params.get("order")).map(pick));
     }
     if (req.method === "POST") {
       let body = await req.json();
@@ -225,18 +235,20 @@ export function createFake() {
   }
 
 
-  // ── database functions (mirror of supabase/05-tuning.sql) ──
+  // ── database functions (mirror of supabase/05-tuning.sql, agent_checkin as replaced by 06-trust.sql) ──
   const centralDay = (d = new Date()) => new Intl.DateTimeFormat("en-CA", { timeZone: "America/Chicago" }).format(d);
   const FUNCS = {
     agent_checkin({ p_serial, p_key_hash, p_info = {}, p_health = {}, p_screenshot = null, p_results = [] }) {
       const t = now();
       let dv = T.devices.find((d) => d.serial === p_serial);
-      if (!dv) { dv = { ...defaults.devices(), serial: p_serial, key_hash: p_key_hash }; T.devices.push(dv); }
-      else if (!dv.key_hash) dv.key_hash = p_key_hash;
-      else if (dv.key_hash !== p_key_hash) return { refused: "key" };
+      if (!dv) { dv = { ...defaults.devices(), serial: p_serial, key_hash: p_key_hash }; T.devices.push(dv); } // not registered: enrolls, waits under New devices
       if (dv.status === "revoked") return { refused: "revoked" };
+      if (!dv.key_hash) {
+        if (!dv.enroll_until || dv.enroll_until < t) return { refused: "enroll" };  // registered, no key: needs the window
+        Object.assign(dv, { key_hash: p_key_hash, enroll_until: null });
+      } else if (dv.key_hash !== p_key_hash) return { refused: "key" };
       Object.assign(dv, { last_seen: t, last_health: p_health || {}, model: p_info?.model ?? "", hostname: p_info?.hostname ?? "", agent_version: p_info?.version ?? "" });
-      if (p_screenshot != null) Object.assign(dv, { screenshot: p_screenshot, screenshot_at: t });
+      if (p_screenshot != null && dv.screen_id) Object.assign(dv, { screenshot: p_screenshot, screenshot_at: t }); // none while unassigned
       const day = centralDay(), h = p_health || {};
       const temp = typeof h.temp_c === "number" ? h.temp_c : null;
       const row = T.device_daily.find((r) => r.device_id === dv.id && r.day === day);

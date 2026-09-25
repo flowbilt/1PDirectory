@@ -32,7 +32,7 @@ insert into public.directories (id, property_id, slug, title, subtitle) values (
 insert into public.tenants (directory_id, sort, name, suite, arrow, note) values
   ('943d2aab-818b-491e-8404-780c02c21944', 0, 'Evan Terry Associates, LLC', '200 S', 'right', ''),
   ('943d2aab-818b-491e-8404-780c02c21944', 10, 'MortgageRight', '230 S', 'left', '');
-insert into public.screens (directory_id, key, name, orientation, hardware) values ('943d2aab-818b-491e-8404-780c02c21944', 'ppi-2s', 'TBC - PPI - 2 S - 194242', 'landscape', '{"yodeck_id": "194292", "model": "Raspberry Pi 4 Model B Rev 1.5", "serial": "100000008294ba46", "ethernet_mac": "e4:5f:01:f0:c5:ae", "ethernet_ip": "192.168.44.70", "wifi_mac": "e4:5f:01:f0:c5:af", "resolution": "1920x1080", "power_supply": "OK", "cpu_temp_c": "42.4", "orientation": "landscape"}'::jsonb);
+insert into public.screens (directory_id, key, name, orientation, hardware) values ('943d2aab-818b-491e-8404-780c02c21944', 'ppi-2s', 'TBC - PPI - 2 S - 194292', 'landscape', '{"yodeck_id": "194292", "model": "Raspberry Pi 4 Model B Rev 1.5", "serial": "100000008294ba46", "ethernet_mac": "e4:5f:01:f0:c5:ae", "ethernet_ip": "192.168.44.70", "wifi_mac": "e4:5f:01:f0:c5:af", "resolution": "1920x1080", "power_supply": "OK", "cpu_temp_c": "42.4", "orientation": "landscape"}'::jsonb);
 insert into public.directories (id, property_id, slug, title, subtitle) values ('2361cba9-0d3c-4ed7-901d-239c822dc870', 'fdae532d-e2ce-4036-abb7-86e5aab72e7c', 'ppi-3n', 'Perimeter Park One - Three North', 'North Tower');
 insert into public.tenants (directory_id, sort, name, suite, arrow, note) values
   ('2361cba9-0d3c-4ed7-901d-239c822dc870', 0, 'Jacobs Engineering Group, Inc.', '315 N', 'right', ''),

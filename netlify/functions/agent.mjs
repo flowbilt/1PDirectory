@@ -3,9 +3,10 @@
 //   Body:    {serial, model, hostname, version, health:{...}, screenshot?:"data:image/jpeg;base64,...", results?:[{id,status,result}]}
 //   Reply:   {screen, commands:[{id,command}], screenshot_every}
 //
-// Enrollment: the first check-in from a serial sets that Pi's key (stored hashed). After that the same key is
-// required; a different key is refused until a 1Point admin resets it in the console. Pis listed in the Yodeck
-// report are pre-registered and matched to their screens by serial, so they attach themselves on first boot.
+// Enrollment (supabase/06-trust.sql): a Pi's key is stored hashed, and after that the same key is required.
+// A registered Pi with no key yet (pre-registered from the Yodeck report, or after Reset device key) accepts its
+// first key only while 1Point has opened its enrollment window in the console. A Pi that isn't registered at all
+// enrolls on first contact and waits under New devices; no screenshot is kept for it until it's assigned.
 import { createHash } from "node:crypto";
 import { json } from "../lib/common.mjs";
 import { rpc } from "../lib/sb.mjs";
@@ -59,6 +60,7 @@ export default async (req) => {
       p_results: results,
     });
     if (r?.refused === "key") return json({ error: "This Pi's key doesn't match. A 1Point admin can reset it in the console." }, 401);
+    if (r?.refused === "enroll") return json({ error: "This Pi isn't enrolled yet. 1Point opens its enrollment window in the console (Pi → Open enrollment)." }, 403);
     if (r?.refused === "revoked") return json({ error: "This device has been switched off in the console." }, 403);
     return json({ screen: r?.screen || null, commands: (r?.commands || []).filter((c) => COMMANDS.includes(c.command)), screenshot_every: 300 });
   } catch (e) {

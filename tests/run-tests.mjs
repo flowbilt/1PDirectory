@@ -226,15 +226,39 @@ const KEY = "k".repeat(43);
 const checkin = (body, key = KEY) => agent(new Request(SITE + "/api/agent", { method: "POST", headers: { Authorization: `Bearer ${key}` }, body: JSON.stringify({ serial: PPI2S_SERIAL, model: "Raspberry Pi 4 Model B Rev 1.5", hostname: "ppi-2s", version: "1.0.0", ...body }) }));
 const devApi = (token, { method = "GET", body, qs = "" } = {}) => devices(req(`/api/devices${qs}`, { method, token, body }));
 
-test("a Yodeck Pi enrolls on first check-in and finds its own screen by serial", async () => {
+test("a pre-registered Pi is refused until 1Point opens its enrollment window", async () => {
+  const dev = fake.T.devices.find((x) => x.serial === PPI2S_SERIAL);
+  const r = await checkin({ screenshot: "data:image/jpeg;base64,/9j/4AAQ" });
+  assert.equal(r.status, 403);
+  assert.match((await r.json()).error, /enrollment/i);
+  assert.equal(dev.key_hash, null, "no key taken");
+  assert.equal(dev.last_seen, null, "nothing recorded for a refused Pi");
+  assert.equal(dev.screenshot, "", "no screenshot either");
+  const owner = await login("leighann@barber.test", "owner-pass");
+  assert.equal((await devApi(owner, { method: "POST", body: { action: "open_enrollment", device_id: dev.id } })).status, 403, "owners can't open it");
+  dev.enroll_until = new Date(Date.now() - 60000).toISOString();
+  assert.equal((await checkin({})).status, 403, "an expired window is closed");
+});
+
+test("with the window open, a Yodeck Pi enrolls and finds its own screen by serial", async () => {
+  const admin = await login("scot@1pointusa.com", "admin-pass");
+  const dev = fake.T.devices.find((x) => x.serial === PPI2S_SERIAL);
+  const o = await devApi(admin, { method: "POST", body: { action: "open_enrollment", device_id: dev.id } });
+  assert.equal(o.status, 200);
+  const hours = (Date.parse(dev.enroll_until) - Date.now()) / 3600_000;
+  assert.ok(hours > 23.9 && hours <= 24, "open for 24 hours");
+  const listed = (await (await devApi(admin)).json()).devices.find((x) => x.id === dev.id);
+  assert.equal(listed.enrolled, false); assert.equal(listed.enroll_until, dev.enroll_until, "the console sees the window");
   const r = await checkin({ health: { temp_c: 51.2, under_voltage_now: false, ip: "192.168.44.21", bogus: "dropped" } });
   assert.equal(r.status, 200);
   const d = await r.json();
   assert.equal(d.screen, "ppi-2s", "matched by the serial from the Yodeck report");
-  const dev = fake.T.devices.find((x) => x.serial === PPI2S_SERIAL);
   assert.ok(dev.key_hash && dev.key_hash !== KEY, "key stored hashed");
   assert.equal(dev.last_health.temp_c, 51.2);
   assert.equal(dev.last_health.bogus, undefined, "unknown fields dropped");
+  assert.equal(dev.enroll_until, null, "the window closes once it's used");
+  assert.equal((await devApi(admin, { method: "POST", body: { action: "open_enrollment", device_id: dev.id } })).status, 409, "an enrolled Pi can't be reopened; that's Reset device key");
+  assert.equal((await checkin({}, "y".repeat(43))).status, 401, "a second key is refused");
 });
 
 test("a Pi's check-in is one database call", async () => {
@@ -259,9 +283,14 @@ test("a different key for an enrolled Pi is refused", async () => {
   assert.equal(bad.status, 400);
 });
 
-test("a brand-new Pi appears as an unassigned device, and its screen says so", async () => {
-  const r = await agent(new Request(SITE + "/api/agent", { method: "POST", headers: { Authorization: `Bearer ${"n".repeat(43)}` }, body: JSON.stringify({ serial: "10000000ffff0001" }) }));
+test("a brand-new Pi appears as an unassigned device, keeps no screenshot, and its screen says so", async () => {
+  const r = await agent(new Request(SITE + "/api/agent", { method: "POST", headers: { Authorization: `Bearer ${"n".repeat(43)}` }, body: JSON.stringify({ serial: "10000000ffff0001", screenshot: "data:image/jpeg;base64,/9j/4AAQ" }) }));
+  assert.equal(r.status, 200, "an unregistered Pi enrolls on first contact");
   assert.equal((await r.json()).screen, null);
+  const newbie = fake.T.devices.find((x) => x.serial === "10000000ffff0001");
+  assert.ok(newbie.key_hash, "it has its key");
+  assert.equal(newbie.screenshot, "", "no screenshot stored until it's assigned");
+  assert.equal(newbie.screenshot_at, null);
   const shown = await (await screen(req("/api/screen?device=10000000ffff0001"))).json();
   assert.equal(shown.newDevice, true);
   const assigned = await (await screen(req(`/api/screen?device=${PPI2S_SERIAL}`))).json();
@@ -368,14 +397,53 @@ test("identify flashes a screen; 1Point can assign a new Pi and reset keys", asy
   assert.equal((await devApi(admin, { method: "POST", body: { action: "assign", device_id: newbie.id, screen_id: cad.id } })).status, 200);
   assert.equal(newbie.screen_id, cad.id);
   assert.equal(old.screen_id, null, "one Pi per screen: the old one is unassigned");
+  const newKey = (s) => agent(new Request(SITE + "/api/agent", { method: "POST", headers: { Authorization: `Bearer ${s.repeat(43)}` }, body: JSON.stringify({ serial: "10000000ffff0001", screenshot: "data:image/jpeg;base64,/9j/4AAQ" }) }));
+  assert.equal((await newKey("n")).status, 200);
+  assert.equal(newbie.screenshot, "data:image/jpeg;base64,/9j/4AAQ", "screenshots are kept once it's assigned");
   await devApi(admin, { method: "POST", body: { action: "reset_key", device_id: newbie.id } });
-  assert.equal(newbie.key_hash, null, "next check-in enrolls again");
+  assert.equal(newbie.key_hash, null, "key cleared");
+  assert.ok(Date.parse(newbie.enroll_until) > Date.now() + 23.9 * 3600_000, "reset opens a 24-hour window");
+  await devApi(admin, { method: "POST", body: { action: "close_enrollment", device_id: newbie.id } });
+  assert.equal((await newKey("m")).status, 403, "closed again: refused");
+  await devApi(admin, { method: "POST", body: { action: "open_enrollment", device_id: newbie.id } });
+  assert.equal((await newKey("m")).status, 200, "the reflashed Pi enrolls with its new key");
+  assert.equal((await newKey("n")).status, 401, "and the old key no longer works");
+  await devApi(admin, { method: "POST", body: { action: "assign", device_id: newbie.id, screen_id: null } });
+  assert.equal(newbie.screenshot, "", "unassigning clears its screenshot");
+  assert.equal(newbie.screenshot_at, null);
+});
+
+// ── Screen hardware (serials, MACs, IPs) is server-only ──
+test("nobody reads screens.hardware from the database; 1Point gets it through the server", async () => {
+  const owner = await login("leighann@barber.test", "owner-pass");
+  const editor = await login("editor@barber.test", "editor-pass");
+  const admin = await login("scot@1pointusa.com", "admin-pass");
+  const rest = (token, q) => fake.handle(new Request(`${SB}/rest/v1/screens?${q}`, { headers: { apikey: ANON_KEY, Authorization: `Bearer ${token}` } }));
+  const cols = readFileSync(new URL("../public/console.js", import.meta.url), "utf8").match(/SCREEN_COLS = "([^"]+)"/)[1];
+  for (const t of [owner, editor, admin]) {
+    assert.equal((await rest(t, "select=*")).status, 403, "select=* is refused");
+    assert.equal((await rest(t, "select=id,hardware")).status, 403, "hardware is refused");
+    const r = await rest(t, `select=${cols}`);
+    assert.equal(r.status, 200, "the console's column list works");
+    const rows = await r.json();
+    assert.ok(rows.length && rows.every((x) => !("hardware" in x)));
+  }
+  const ppi2s = fake.T.screens.find((x) => x.key === "ppi-2s");
+  for (const t of [owner, editor]) assert.equal((await devApi(t, { qs: `?hardware=${ppi2s.id}` })).status, 403);
+  const hw = await (await devApi(admin, { qs: `?hardware=${ppi2s.id}` })).json();
+  assert.equal(hw.hardware.serial, PPI2S_SERIAL);
+  assert.equal(hw.hardware.yodeck_id, "194292");
+  assert.equal(ppi2s.name, "TBC - PPI - 2 S - 194292", "the name matches its Yodeck ID");
+  const edit = readFileSync(new URL("../public/edit.js", import.meta.url), "utf8").match(/screens\?directory_id=eq\.\$\{dir\.id\}&select=([\w,]+)/)[1];
+  assert.ok(edit.split(",").every((c) => cols.split(",").includes(c)), "the editor asks only for readable columns");
+  const granted = readFileSync(new URL("../supabase/06-trust.sql", import.meta.url), "utf8").match(/grant select \(([^)]+)\)/)[1].split(",").map((c) => c.trim());
+  assert.deepEqual([...granted].sort(), cols.split(",").sort(), "06-trust.sql grants exactly the console's columns");
 });
 
 test("alerts email once when a Pi goes offline, and once when it's back", async () => {
   const dev = fake.T.devices.find((x) => x.serial === PPI2S_SERIAL);
   const sent = [];
-  const send = async (lines) => sent.push(...lines);
+  const send = async (lines) => { sent.push(...lines); return true; };
   dev.last_seen = new Date(Date.now() - 30 * 60000).toISOString();
   dev.last_health = { temp_c: 50, under_voltage_now: true };
   await runAlerts({ send });
@@ -389,6 +457,55 @@ test("alerts email once when a Pi goes offline, and once when it's back", async 
   assert.ok(sent.some((l) => /back online/.test(l.text) && !l.problem));
   assert.ok(sent.some((l) => /power is normal/.test(l.text)));
   assert.deepEqual(evaluate({ last_seen: null, last_health: {} }), { offline: false, power: false, hot: false }, "never-seen Pis aren't 'offline'");
+});
+
+test("a failed alert email is retried on the next run, and state is saved only once it goes out", async () => {
+  const dev = fake.T.devices.find((x) => x.serial === PPI2S_SERIAL);
+  const before = JSON.stringify(dev.alert_state);
+  dev.last_health = { temp_c: 85 };
+  const tries = [];
+  let r = await runAlerts({ send: async (lines) => { tries.push(lines); return false; } });
+  assert.equal(r.sent, false); assert.equal(JSON.stringify(dev.alert_state), before, "not saved after a failed send");
+  const log = console.log; console.log = () => {};
+  try { r = await runAlerts({ send: async () => { throw new Error("Resend is down"); } }); } finally { console.log = log; }
+  assert.equal(r.sent, false); assert.equal(JSON.stringify(dev.alert_state), before, "not saved after an error either");
+  const sent = [];
+  r = await runAlerts({ send: async (lines) => { sent.push(...lines); return true; } });
+  assert.ok(sent.some((l) => /running hot at 85/.test(l.text)), "retried and delivered");
+  assert.equal(dev.alert_state.hot, true, "saved once delivered");
+  sent.length = 0;
+  await runAlerts({ send: async (lines) => { sent.push(...lines); return true; } });
+  assert.equal(sent.length, 0, "and not sent again");
+  dev.last_health = { temp_c: 50 };
+  await runAlerts({ send: async () => true });
+});
+
+test("problems that already exist are emailed once when the email settings are first added", async () => {
+  const dev = fake.T.devices.find((x) => x.serial === PPI2S_SERIAL);
+  dev.last_health = { temp_c: 50, under_voltage_now: true };
+  const saved = { ...process.env };
+  for (const k of ["RESEND_API_KEY", "ALERT_EMAIL_TO", "ALERT_EMAIL_FROM"]) delete process.env[k];
+  const log = console.log; console.log = () => {};
+  try {
+    const r1 = await runAlerts(), r2 = await runAlerts();         // the real sender, with no settings: logs only
+    assert.equal(r1.sent, false); assert.equal(r2.sent, false);
+    assert.ok(r2.lines.some((l) => /under-voltage/.test(l.text)), "still pending, not forgotten");
+    assert.ok(!dev.alert_state.power, "nothing saved while email isn't set up");
+  } finally { console.log = log; Object.assign(process.env, saved); }
+  // The settings are added: the real sender posts to Resend
+  Object.assign(process.env, { RESEND_API_KEY: "re_test", ALERT_EMAIL_TO: "ops@1pointusa.com", ALERT_EMAIL_FROM: "Directory <alerts@1pointusa.com>" });
+  const realFetch = globalThis.fetch, posted = [];
+  globalThis.fetch = async (url, init) => (String(url).startsWith("https://api.resend.com") ? (posted.push(JSON.parse(init.body)), new Response("{}", { status: 200 })) : realFetch(url, init));
+  try {
+    await runAlerts(); await runAlerts();
+  } finally {
+    globalThis.fetch = realFetch;
+    for (const k of ["RESEND_API_KEY", "ALERT_EMAIL_TO", "ALERT_EMAIL_FROM"]) delete process.env[k];
+  }
+  assert.equal(posted.length, 1, "one email, not one per run");
+  assert.match(posted[0].html, /under-voltage/);
+  assert.deepEqual(posted[0].to, ["ops@1pointusa.com"]);
+  assert.equal(dev.alert_state.power, true);
 });
 
 // ── Config ──
