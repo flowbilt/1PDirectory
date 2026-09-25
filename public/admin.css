@@ -183,3 +183,12 @@ td.thumb { width: 96px; padding: 6px 8px; }
 .health-grid tr.has-problem td:first-child { box-shadow: inset 3px 0 0 var(--danger); }
 .check.inline { padding: 0; font-weight: 400; }
 .toolbar-controls input[type=checkbox] { min-width: 0; width: auto; }
+
+/* Pi setup: prepare a card */
+.prep { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 20px; background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 18px; margin-bottom: 16px; }
+.prep h2 { margin: 0 0 6px; font-size: 18px; }
+.prep-actions { display: grid; gap: 10px; align-content: start; justify-items: start; }
+.prep-out { display: grid; gap: 6px; width: 100%; }
+.prep-code { font: 700 30px/1.1 ui-monospace, "Cascadia Mono", Consolas, monospace; letter-spacing: 0.08em; color: var(--navy); }
+.prep-cmd { display: block; padding: 10px 12px; background: var(--bg); border: 1px solid var(--line); border-radius: 6px; font: 13px/1.5 ui-monospace, "Cascadia Mono", Consolas, monospace; user-select: all; overflow-x: auto; white-space: nowrap; }
+@media (max-width: 800px) { .prep { grid-template-columns: 1fr; } }

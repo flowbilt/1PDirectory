@@ -9,6 +9,8 @@ What it proves:
   - "Take screenshot" sends the picture with that next check-in and reports what happened
   - a reboot's result survives the reboot and is reported by the first check-in afterwards
   - Update agent installs the new agent, restarts it, and the new one reports the result
+  - a card carries no identity: the agent makes its own key in each Pi, keeps it across restarts, makes a new one
+    if the card moves to another Pi, and keeps the key of a Pi set up before generic cards
 """
 import json, os, re, shutil, subprocess, sys, tempfile, threading, time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -34,7 +36,7 @@ class Site(BaseHTTPRequestHandler):
     def do_POST(self):
         data = json.loads(self.rfile.read(int(self.headers["Content-Length"])))
         with lock:
-            checkins.append((time.monotonic(), data))
+            checkins.append((time.monotonic(), data, self.headers.get("Authorization", "")))
             cmds = replies.pop(0) if replies else []
         body = json.dumps({"screen": "test", "commands": cmds, "screenshot_every": 300}).encode()
         self.send_response(200); self.send_header("Content-Type", "application/json"); self.end_headers(); self.wfile.write(body)
@@ -60,10 +62,11 @@ def main():
     cfg = os.path.join(W, "agent.json")
     json.dump({"site": f"http://127.0.0.1:{srv.server_port}", "key": "k" * 43, "user": "no-such-desktop-user"}, open(cfg, "w"))
     state = os.path.join(W, "state", "pending-results.json")
-    env = dict(os.environ, PATH=f"{W}/bin:" + os.environ["PATH"], LOBBY_AGENT_CONFIG=cfg, LOBBY_AGENT_STATE=state,
+    ident = os.path.join(W, "state", "identity.json")
+    env = dict(os.environ, PATH=f"{W}/bin:" + os.environ["PATH"], LOBBY_AGENT_CONFIG=cfg, LOBBY_AGENT_STATE=state, LOBBY_AGENT_IDENTITY=ident,
                LOBBY_AGENT_INTERVAL=str(TICK), LOBBY_AGENT_SERIAL="10000000abcd0001")
     log = open(os.path.join(W, "agent.log"), "a")
-    start = lambda: subprocess.Popen([sys.executable, agent], env=env, stdout=log, stderr=log)
+    start = lambda serial="10000000abcd0001": subprocess.Popen([sys.executable, agent], env=dict(env, LOBBY_AGENT_SERIAL=serial), stdout=log, stderr=log)
 
     passed, failed = 0, 0
 
@@ -125,6 +128,26 @@ def main():
     p.terminate()
     try: p.wait(timeout=5)
     except subprocess.TimeoutExpired: p.kill()
+
+    # ── D. identity: a key per Pi, made by the agent ──
+    def run_once(serial):
+        with lock: n = len(checkins)
+        q = start(serial); wait_for(n + 1); q.terminate()
+        try: q.wait(timeout=5)
+        except subprocess.TimeoutExpired: q.kill()
+        return checkins[n][2], json.load(open(ident))
+    auth0 = checkins[0][2]
+    check("a Pi set up before generic cards keeps its key", auth0 == "Bearer " + "k" * 43, auth0[:20])
+    a1, id1 = run_once("10000000abcd0001")
+    check("and the same Pi keeps it on restart", a1 == auth0 and id1["serial"] == "10000000abcd0001")
+    a2, id2 = run_once("10000000abcd0002")
+    check("the card in another Pi makes a new key there", a2 != a1 and id2["serial"] == "10000000abcd0002" and len(id2["key"]) >= 24, id2.get("serial"))
+    a3, _ = run_once("10000000abcd0002")
+    check("which it keeps from then on", a3 == a2)
+    json.dump({"site": f"http://127.0.0.1:{srv.server_port}", "user": "no-such-desktop-user"}, open(cfg, "w"))
+    os.remove(ident)
+    a4, id4 = run_once("10000000abcd0003")
+    check("a prepared card (no key anywhere) makes its own", a4 not in (a1, a2, "Bearer " + "k" * 43) and a4 == "Bearer " + id4["key"] and oct(os.stat(ident).st_mode & 0o777) == "0o600", oct(os.stat(ident).st_mode & 0o777))
     srv.shutdown()
     print(f"\n{passed}/{passed + failed} passed")
     if failed:

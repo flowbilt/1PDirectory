@@ -15,6 +15,7 @@ import weather from "../netlify/functions/weather.mjs";
 import news from "../netlify/functions/news.mjs";
 import agent from "../netlify/functions/agent.mjs";
 import devices from "../netlify/functions/devices.mjs";
+import networks from "../netlify/functions/networks.mjs";
 
 const port = Number(process.argv[2]) || 8888;
 const ORIGIN = `http://localhost:${port}`;
@@ -40,7 +41,7 @@ globalThis.fetch = async (url, init = {}) => {
   return new Response("offline", { status: 503 });
 };
 
-const ROUTES = { "/api/screen": screen, "/api/heartbeat": heartbeat, "/api/users": users, "/api/migrate": migrate, "/api/config": config, "/api/weather": weather, "/api/news": news, "/api/agent": agent, "/api/devices": devices };
+const ROUTES = { "/api/screen": screen, "/api/heartbeat": heartbeat, "/api/users": users, "/api/migrate": migrate, "/api/config": config, "/api/weather": weather, "/api/news": news, "/api/agent": agent, "/api/devices": devices, "/api/networks": networks };
 const TYPES = { ".html": "text/html", ".js": "text/javascript", ".css": "text/css", ".ttf": "font/ttf", ".svg": "image/svg+xml", ".png": "image/png", ".jpg": "image/jpeg" };
 const PUB = new URL("../public/", import.meta.url).pathname;
 

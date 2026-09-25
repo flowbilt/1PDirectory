@@ -39,26 +39,70 @@ Owner users can't read a screen's hardware record (serial, MACs, IPs, the Yodeck
 
 `ADMIN_PASSWORD` is no longer used and can be deleted once everyone signs in with their own login.
 
-## Setting up a screen (Raspberry Pi)
+## Screens and cards (Raspberry Pi)
 
-On a freshly flashed Pi (Raspberry Pi OS with desktop, 64-bit), open Terminal and run:
+Every Pi runs from a **prepared card**, and every card is the same. A card carries no identity until it's in a Pi:
+at every start the Pi builds its screen address from its own serial (`/?device=<serial>`), the agent makes its own key
+for that Pi, and the Pi names itself after its serial on the network (e.g. `lobby-a4ae272d`). So any card works in
+any Pi, and a tech can carry spares. Which screen a Pi shows is decided in the console, by serial.
 
-```
-curl -fsSLO https://1pdirectory.netlify.app/pi/setup-kiosk.sh
-sudo bash setup-kiosk.sh
-sudo reboot
-```
+Every card also carries every Wi-Fi network saved in the console (**Pi setup** tab, 1Point only). A Pi joins
+whichever saved network is in range, and a network cable always wins. Passwords can be replaced in the console but
+never read back. Because every card holds every saved password, treat cards and the card image like a password.
 
-The Pi opens `/?device=<its serial number>` and installs the agent. Then:
+### Preparing cards (office, once per batch)
 
-- **A Pi from the Yodeck report** recognizes itself by serial and shows its screen straight away. Its agent, though, is refused until 1Point opens its **enrollment window**: in the console, **Pi → Open enrollment (24 hours)**, on install day, before or soon after the Pi starts. The agent keeps trying every minute, so it enrolls within a minute of the window opening. The window closes as soon as the Pi enrolls.
-- **A new Pi** (not in the Yodeck report) enrolls on first contact, shows "New display" with its serial, and appears under **Screens → New devices** in the console. Check that the serial matches the one on the TV, then pick its screen there and it switches within a minute. No screenshot is kept for a Pi until it's assigned.
+1. **Save the Wi-Fi** for every building on Wi-Fi, plus the office network if Pis are tested there: console,
+   **Pi setup → Add Wi-Fi network**.
+2. **Flash one card** with Raspberry Pi Imager: Raspberry Pi OS (64-bit, with desktop). In Imager's settings, set the
+   user name and password, the Wi-Fi country (US) and time zone. Wi-Fi is only needed if the bench Pi has no cable;
+   the bench's own network is removed from the card at the end.
+3. **Boot it in any Pi** (the bench Pi). In the console, **Pi setup → Get a prepare code**, then in the Pi's Terminal,
+   at its own keyboard, run the two commands the console shows:
+
+   ```
+   curl -fsSLO https://1pdirectory.netlify.app/pi/setup-kiosk.sh
+   sudo bash setup-kiosk.sh --prepare --code ABCD-EFGH
+   ```
+
+   It installs everything, saves the Wi-Fi, clears everything that belongs to the bench Pi (machine ID, logs,
+   browser data, keys, the bench's own Wi-Fi) and powers off. **Don't start that card again before copying it.**
+4. **Copy the card to an image file** on a Windows PC with Win32 Disk Imager: **Read**, to a file like
+   `lobby-card-2026-10.img`. The file is the full size of the card.
+5. **Optional but recommended: shrink the image** so it fits any 32 GB card (two "32 GB" cards can differ slightly,
+   and a full-size image won't write to a smaller one). In WSL (Ubuntu on Windows), with
+   [PiShrink](https://github.com/Drewsif/PiShrink): `sudo pishrink.sh lobby-card-2026-10.img`. A shrunk card grows
+   back to fill its card at first start. Skip this only if every card is the same brand and model.
+6. **Write the image to every card** with Raspberry Pi Imager: **Choose OS → Use custom**, pick the image, and when it
+   asks about OS customisation, choose **No** (the card is already set up). No card is named or labeled.
+7. **Test one card in any Pi** before a field visit: within a couple of minutes its serial appears under
+   **Screens → New devices** (or, for a pre-registered Pi, it shows its screen).
+
+When a saved network changes, cards already made keep the old one: prepare a new image, or (later) change it from
+the console once Pi settings are built.
+
+### In the field
+
+- **Yodeck changeover** (a pre-registered Pi): open the Pi's enrollment window in the console (**Pi → Open
+  enrollment**), swap in a prepared card, and power on. It shows its screen straight away and enrolls within a minute.
+  Keep the old Yodeck card bagged and labeled at the screen as the rollback.
+- **A new Pi** (not in the Yodeck report): power on with a prepared card. It shows "New display" with its serial and
+  appears under **Screens → New devices**. Check the serial matches the one on the TV, then assign it to its screen.
+- **A bad card, same Pi:** swap in a spare card, then **Pi → More → Reset device key** in the console (that opens the
+  enrollment window). The Pi re-enrolls within a minute.
+- **A bad Pi:** put a card in the replacement Pi. Its serial appears under New devices: assign it to the screen (the
+  old Pi is unassigned automatically).
+
+### Setting up one Pi directly (instead of a prepared card)
+
+On a freshly flashed Pi, open Terminal and run the same commands without `--prepare` (the code is only needed to
+save the Wi-Fi; a wired Pi can leave out `--code`), then `sudo reboot`.
 
 Rotation is automatic. Each time the Pi starts, it asks the site whether its screen is set to portrait or landscape in the console, and turns the picture to match. Portrait turns 90°. Landscape, new and unassigned Pis stay upright. Without internet it keeps its last answer. So after assigning a new Pi to a portrait screen, use **Pi → Reboot Pi** in the console to turn it. The Pi never reboots on its own; reboot scheduling will come to the console with maintenance windows.
 
 SSH is switched off by setup (from the restart that finishes it), so the Pi opens no ports. The agent covers remote management. Use `--ssh` for a Pi that needs it, and re-run setup without `--ssh` to switch it off again.
 
-Options: `--rotate 270` if a portrait picture is upside down (or `0`/`90` to fix it by hand), `--ssh` to leave SSH on, `--connect` for Raspberry Pi Connect, `--no-agent` to skip the agent, and `--url` to pin a fixed screen address the old way.
+Options (`sudo bash setup-kiosk.sh --help` lists them all): `--rotate 270` if a portrait picture is upside down (or `0`/`90` to fix it by hand), `--ssh` to leave SSH on, `--connect` for Raspberry Pi Connect, `--no-agent` to skip the agent, and `--url` to pin a fixed screen address the old way.
 
 ## Remote management (the agent)
 
@@ -88,7 +132,7 @@ Only those fixed actions exist, and the agent can't run anything else. Actions n
 
 **Enrollment:** each Pi has its own key, stored hashed. A registered Pi with no key yet (from the Yodeck report, or after **Reset device key**) accepts its first key only while its enrollment window is open (24 hours, opened from **Pi** in the console). Anyone who knows a Pi's serial can't claim it outside that window.
 
-**Reflashed a Pi?** If its log says the key doesn't match, use **Reset device key** in the console. That clears the key and opens the enrollment window for 24 hours; the Pi re-enrolls on its next check-in.
+**New card in an enrolled Pi?** The agent makes a new key, which the site refuses ("key doesn't match") until you use **Reset device key** in the console. That clears the key and opens the enrollment window for 24 hours; the Pi re-enrolls on its next check-in. Each Pi's key is kept on its card in `/var/lib/lobby-agent/identity.json`, with the serial it belongs to.
 
 ## Tests
 
@@ -96,8 +140,9 @@ Only those fixed actions exist, and the agent can't run anything else. Actions n
 npm install
 npm test                      # server functions, against a fake Supabase
 node --import ./tests/register-stub.mjs tests/test-server.mjs   # the whole site locally, with sample logins
-bash tests/kiosk-rotation-test.sh    # the Pi's automatic rotation, against the local site (takes about 3 minutes)
-python3 tests/agent-test.py          # the Pi's agent: schedule, command results, reboot and update (about 40 seconds)
+bash tests/kiosk-rotation-test.sh    # the kiosk: address from the serial, rotation, a card moved between Pis (about 5 minutes)
+python3 tests/agent-test.py          # the Pi's agent: schedule, command results, reboot, update, keys (about a minute)
+bash tests/setup-test.sh             # setup's option checks, Wi-Fi import and start-up naming (a few seconds)
 ```
 
 Local sample logins: `scot@1pointusa.com / admin-pass`, `leighann@barber.test / owner-pass`, `editor@barber.test / editor-pass`.
@@ -105,10 +150,10 @@ Local sample logins: `scot@1pointusa.com / admin-pass`, `leighann@barber.test / 
 ## Files
 
 ```
-public/             screen (index.html, display.*), sign-in, console (+ console-devices.js), editor, shared auth.js
-netlify/functions/  screen, heartbeat, users, migrate, config, weather, news, agent, devices, alerts
+public/             screen (index.html, display.*), sign-in, console (+ console-devices.js, console-setup.js), editor, shared auth.js
+netlify/functions/  screen, heartbeat, users, migrate, config, weather, news, agent, devices, networks, alerts
 netlify/lib/        Supabase client, RSS reader, shared helpers
-supabase/           database schema (01 to 06, run in order), starting data, check queries, setup guide
+supabase/           database schema (01 to 08, run in order), starting data, check queries, setup guide
 migration/          the Yodeck/Wix transcription the starting data was built from
 public/pi/          setup-kiosk.sh and agent.py (served by the site so Pis can download them)
 tests/              function tests, fake Supabase, local test server

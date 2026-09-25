@@ -13,6 +13,7 @@ import weather, { iconFor } from "../netlify/functions/weather.mjs";
 import news from "../netlify/functions/news.mjs";
 import agent from "../netlify/functions/agent.mjs";
 import devices from "../netlify/functions/devices.mjs";
+import networks, { normalCode } from "../netlify/functions/networks.mjs";
 import { runAlerts, evaluate } from "../netlify/functions/alerts.mjs";
 import { computeSummary } from "../netlify/functions/devices.mjs";
 import { centralDay } from "../netlify/functions/agent.mjs";
@@ -574,6 +575,52 @@ test("problems that already exist are emailed once when the email settings are f
   assert.match(posted[0].html, /under-voltage/);
   assert.deepEqual(posted[0].to, ["ops@1pointusa.com"]);
   assert.equal(dev.alert_state.power, true);
+});
+
+// ── Wi-Fi networks and prepare codes (generic prepared cards) ──
+const netApi = (token, { method = "GET", body } = {}) => networks(req("/api/networks", { method, token, body }));
+test("saved Wi-Fi is 1Point-only, and passwords never come back to the console", async () => {
+  const owner = await login("leighann@barber.test", "owner-pass");
+  const editor = await login("editor@barber.test", "editor-pass");
+  const admin = await login("scot@1pointusa.com", "admin-pass");
+  for (const t of [owner, editor]) {
+    assert.equal((await netApi(t)).status, 403);
+    assert.equal((await netApi(t, { method: "POST", body: { action: "save", ssid: "X", psk: "password1" } })).status, 403);
+    assert.equal((await netApi(t, { method: "POST", body: { action: "code" } })).status, 403);
+  }
+  assert.equal((await netApi(null)).status, 401);
+  const save = (body) => netApi(admin, { method: "POST", body: { action: "save", ...body } });
+  assert.equal((await save({ label: "Perimeter Park One", ssid: "PPI-Lobby", psk: "correct horse" })).status, 200);
+  assert.equal((await save({ label: "1Point office", ssid: "1Point-Guest", psk: "" })).status, 200, "an open network");
+  assert.equal((await save({ ssid: "Short", psk: "1234567" })).status, 400, "WPA passwords are at least 8 characters");
+  assert.equal((await save({ ssid: "x".repeat(33), psk: "password1" })).status, 400, "network names are at most 32 bytes");
+  const list = (await (await netApi(admin)).json()).networks;
+  assert.equal(list.length, 2);
+  assert.ok(list.every((n) => !("psk" in n)), "no passwords in the list");
+  const ppi = list.find((n) => n.ssid === "PPI-Lobby");
+  assert.equal(ppi.has_password, true); assert.equal(list.find((n) => n.ssid === "1Point-Guest").has_password, false);
+  assert.equal((await save({ id: ppi.id, label: "Perimeter Park One", ssid: "PPI-Lobby", hidden: true })).status, 200);
+  assert.equal(fake.T.wifi_networks.find((n) => n.id === ppi.id).psk, "correct horse", "editing without a password keeps the saved one");
+});
+
+test("a prepare code downloads the networks once, within the hour", async () => {
+  const admin = await login("scot@1pointusa.com", "admin-pass");
+  const r = await (await netApi(admin, { method: "POST", body: { action: "code" } })).json();
+  assert.match(r.code, /^[A-HJ-NP-Z2-9]{4}-[A-HJ-NP-Z2-9]{4}$/, "reads cleanly off a screen");
+  assert.ok(!fake.T.prepare_codes.some((c) => JSON.stringify(c).includes(normalCode(r.code))), "only a hash is stored");
+  const prep = (code) => networks(req("/api/networks", { method: "POST", body: { action: "prepare", code } }));
+  assert.equal((await prep("ZZZZ-ZZZZ")).status, 403, "a wrong code");
+  const ok = await prep(r.code.toLowerCase().replace("-", " "));
+  assert.equal(ok.status, 200, "case and spacing don't matter");
+  const nets = (await ok.json()).networks;
+  assert.deepEqual(nets.map((n) => [n.ssid, n.psk, n.hidden]), [["1Point-Guest", "", false], ["PPI-Lobby", "correct horse", true]]);
+  assert.equal((await prep(r.code)).status, 403, "works once");
+  const late = await (await netApi(admin, { method: "POST", body: { action: "code" } })).json();
+  fake.T.prepare_codes.at(-1).expires_at = new Date(Date.now() - 1000).toISOString();
+  assert.equal((await prep(late.code)).status, 403, "expired after an hour");
+  const del = fake.T.wifi_networks.find((n) => n.ssid === "1Point-Guest");
+  await netApi(admin, { method: "POST", body: { action: "delete", id: del.id } });
+  assert.equal(fake.T.wifi_networks.length, 1);
 });
 
 // ── Config ──

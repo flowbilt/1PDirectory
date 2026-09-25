@@ -7,14 +7,17 @@ nothing free-form. Command results go out with the next scheduled check-in (neve
 must survive a reboot or an agent update are kept on disk until the site has them.
 The Pi always makes the connection (outbound HTTPS), so no ports are opened and nothing can connect in.
 
-Config: /etc/lobby-agent.json  {"site": "https://...", "key": "<this Pi's secret>", "user": "<desktop user>"}
+Config: /etc/lobby-agent.json  {"site": "https://...", "user": "<desktop user>"}. It holds no identity, so a prepared
+card works in any Pi. The agent makes its own key the first time it starts in a given Pi, and records which serial it
+belongs to (/var/lib/lobby-agent/identity.json); if the card turns up in a different Pi, it makes a new key there.
 Runs as a systemd service (lobby-agent). Standard library only.
 """
-import base64, json, os, pwd, re, shutil, socket, subprocess, sys, tempfile, time, urllib.error, urllib.request
+import base64, json, os, pwd, re, secrets, shutil, socket, subprocess, sys, tempfile, time, urllib.error, urllib.request
 
-VERSION = "1.1.0"
+VERSION = "1.2.0"
 CONFIG = os.environ.get("LOBBY_AGENT_CONFIG", "/etc/lobby-agent.json")
 STATE = os.environ.get("LOBBY_AGENT_STATE", "/var/lib/lobby-agent/pending-results.json")
+IDENTITY = os.environ.get("LOBBY_AGENT_IDENTITY", "/var/lib/lobby-agent/identity.json")
 INTERVAL = max(1.0, float(os.environ.get("LOBBY_AGENT_INTERVAL", "60")))   # seconds; only tests change this
 
 
@@ -44,6 +47,34 @@ def serial():
         m = re.search(r"^Serial\s*:\s*([0-9a-fA-F]+)", read("/proc/cpuinfo"), re.M)
         s = m.group(1) if m else ""
     return s.lower()
+
+
+def identity(cfg, me):
+    """This Pi's key: made the first time the agent starts in this Pi, and remade if the card is now in another Pi.
+    A Pi set up before generic cards has its key in the config file; that one is kept, so it stays enrolled."""
+    try:
+        with open(IDENTITY) as f:
+            known = json.load(f)
+    except (OSError, ValueError):
+        known = {}
+    if known.get("serial") == me and len(known.get("key", "")) >= 24:
+        return known["key"]
+    if not known and len(cfg.get("key", "")) >= 24:
+        key = cfg["key"]
+    else:
+        key = secrets.token_urlsafe(32)
+        if known.get("serial"):
+            log(f"this card was in Pi {known['serial']}; made a new key for Pi {me} (1Point enrolls it in the console)")
+            save_pending([])                     # results from the other Pi aren't this one's to report
+    try:
+        os.makedirs(os.path.dirname(IDENTITY), exist_ok=True)
+        fd = os.open(IDENTITY + ".tmp", os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+        with os.fdopen(fd, "w") as f:
+            json.dump({"serial": me, "key": key}, f)
+        os.replace(IDENTITY + ".tmp", IDENTITY)
+    except OSError as e:
+        log("couldn't save this Pi's key:", e)
+    return key
 
 
 def model():
@@ -221,13 +252,14 @@ def next_slot(start, now, interval=INTERVAL):
 
 def main():
     cfg = json.loads(read(CONFIG, "{}"))
-    if not cfg.get("site") or len(cfg.get("key", "")) < 24:
-        log(f"missing site or key in {CONFIG}")
+    if not cfg.get("site"):
+        log(f"missing site in {CONFIG}")
         sys.exit(1)
     me = serial()
     if not me:
         log("could not read this Pi's serial number")
         sys.exit(1)
+    cfg["key"] = identity(cfg, me)
     log(f"lobby agent {VERSION} starting, serial {me}, site {cfg['site']}")
     results = load_pending()          # e.g. "Rebooted." from before a reboot
     last_shot, shot_every = 0.0, 300

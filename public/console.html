@@ -23,6 +23,7 @@
   <button role="tab" data-tab="buildings" aria-selected="false">Buildings</button>
   <button role="tab" data-tab="people" aria-selected="false" id="tab-people">People</button>
   <button role="tab" data-tab="health" aria-selected="false" id="tab-health" hidden>Health</button>
+  <button role="tab" data-tab="setup" aria-selected="false" id="tab-setup" hidden>Pi setup</button>
   <button role="tab" data-tab="accounts" aria-selected="false" id="tab-accounts" hidden>Accounts</button>
 </nav>
 
@@ -101,6 +102,30 @@
     </div>
   </section>
 
+  <!-- Pi setup (1Point only): the Wi-Fi every prepared card carries, and prepare codes for the bench Pi -->
+  <section id="panel-setup" class="tabpanel" hidden>
+    <div class="prep">
+      <div>
+        <h2>Prepare a card</h2>
+        <p class="sub">On the bench Pi, after flashing Raspberry Pi OS: get a code, run the command it shows at the Pi's own keyboard, and the card powers off ready to copy. Every card made from it carries all the Wi-Fi below and works in any Pi.</p>
+      </div>
+      <div class="prep-actions">
+        <button type="button" id="prep-code" class="primary">Get a prepare code</button>
+        <div id="prep-out" class="prep-out" hidden></div>
+      </div>
+    </div>
+    <div class="toolbar">
+      <div class="summary" id="wifi-summary"></div>
+      <div class="toolbar-controls"><button type="button" id="add-wifi" class="primary">Add Wi-Fi network</button></div>
+    </div>
+    <div class="table-wrap">
+      <table class="grid">
+        <thead><tr><th>Network</th><th>Where</th><th>Password</th><th>Updated</th><th><span class="sr-only">Actions</span></th></tr></thead>
+        <tbody id="wifi-rows"></tbody>
+      </table>
+    </div>
+  </section>
+
   <!-- Accounts (1Point only) -->
   <section id="panel-accounts" class="tabpanel" hidden>
     <div class="toolbar">
@@ -131,6 +156,7 @@
 
 <script src="/auth.js"></script>
 <script src="/console-devices.js"></script>
+<script src="/console-setup.js"></script>
 <script src="/console.js"></script>
 </body>
 </html>
