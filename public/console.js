@@ -362,10 +362,14 @@
       if (S.admin) { $("screen-owner").hidden = false; $("screen-owner").innerHTML = `<option value="">All accounts</option>` + orgOptions(); }
       const tab = location.hash.slice(1);
       showTab(["screens", "buildings", "people", "health", "setup", "accounts"].includes(tab) && !document.querySelector(`[data-tab=${tab}]`).hidden ? tab : "screens");
-      setInterval(async () => {
-        if (document.querySelector("dialog[open]")) return; // don't redraw under an open panel
+      // Once a minute, but only while this tab is on screen (a console left open in a background tab costs nothing),
+      // and at once when it comes back. An open Pi panel refreshes itself instead (console-devices.js).
+      const minuteRefresh = async () => {
+        if (document.hidden || document.querySelector("dialog[open]")) return;
         try { S.screens = await Auth.db(`screens?select=${SCREEN_COLS}&order=name.asc`); await Dev.load(S.admin); Dev.renderNew(S.screens); renderScreens(); } catch { /* keep last */ }
-      }, 60000);
+      };
+      setInterval(minuteRefresh, 60000);
+      document.addEventListener("visibilitychange", () => { if (!document.hidden) minuteRefresh(); });
     } catch (ex) {
       if (ex.message !== "Signing in…") { $("load-error").textContent = ex.message; $("load-error").hidden = false; }
     }

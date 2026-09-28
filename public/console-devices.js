@@ -35,7 +35,8 @@ window.ConsoleDevices = (() => {
     if (!d) return `<div class="sub">No agent</div>`;
     const h = d.last_health || {};
     const bits = [];
-    if (!d.enrolled) bits.push(`<span class="sub">Pi ${windowOpen(d) ? "waiting to enroll" : "not enrolled"}</span>`);
+    if (refusedNote(d)) bits.push(`<span class="warn">Pi refused: ${d.refused_why === "key" ? "new key" : d.refused_why === "enroll" ? "wants to enroll" : "switched off"}</span>`);
+    else if (!d.enrolled) bits.push(`<span class="sub">Pi ${windowOpen(d) ? "waiting to enroll" : "not enrolled"}</span>`);
     else if (!fresh(d.last_seen)) bits.push(d.last_seen ? `<span class="warn">Pi offline</span>` : `<span class="sub">Pi not checked in</span>`);
     else if (!fresh(screen.last_seen)) bits.push(`<span class="warn">Pi on, screen not reporting</span>`);
     if (h.under_voltage_now) bits.push(`<span class="warn" title="Weak power supply">⚡ Power low</span>`);
@@ -93,14 +94,40 @@ window.ConsoleDevices = (() => {
     ["update_agent", "Update agent", "Installs the latest agent from the site.", true],
     ["update_pi", "Update Pi", "Re-applies the latest setup and installs system updates, then restarts. About 5 to 20 minutes; the screen goes dark for a minute at the end.", true],
   ];
+  // The panel refreshes itself while it's open: every 10 seconds, every 3 for two minutes after a command
+  let openId = null, fastUntil = 0, timer = null, shot = { at: "", url: "" };
+  function schedule() { clearTimeout(timer); timer = setTimeout(tick, Date.now() < fastUntil ? 3000 : 10000); }
+  async function tick() {
+    if (!$("dev-dlg")?.open || !openId) { openId = null; return; }
+    if (!document.hidden) {
+      try { await load(admin); } catch { /* keep what's shown */ }
+      if ($("dev-dlg")?.open && openId) panel(openId);
+    }
+    schedule();
+  }
+  /** Why the Pi's last check-in was refused, if that's still its latest news (supabase/10-refused.sql). */
+  function refusedNote(d) {
+    if (!d.refused_at || Date.now() - Date.parse(d.refused_at) > 10 * 60_000) return "";
+    if (d.last_seen && Date.parse(d.last_seen) > Date.parse(d.refused_at)) return "";
+    return {
+      key: "This Pi is checking in with a different key: a new card in an enrolled Pi? Use More → Reset device key.",
+      enroll: "This Pi is trying to enroll. Open its enrollment window (24 hours).",
+      revoked: "This Pi is switched off, so it's refused. More → Switch back on.",
+    }[d.refused_why] || "";
+  }
+
   function panel(deviceId) {
     const d = devices.find((x) => x.id === deviceId);
     if (!d) return;
+    openId = deviceId;
+    const note = refusedNote(d);
     const s = (window.ConsoleState?.screens || []).find((x) => x.id === d.screen_id);
     const h = d.last_health || {};
     const row = (k, v) => (v === undefined || v === null || v === "" ? "" : `<dt>${k}</dt><dd>${esc(v)}</dd>`);
     const up = h.uptime_s ? `${Math.floor(h.uptime_s / 86400)}d ${Math.floor((h.uptime_s % 86400) / 3600)}h` : "";
     const dlg = $("dev-dlg") || document.body.appendChild(Object.assign(document.createElement("dialog"), { id: "dev-dlg", className: "dev-dlg" }));
+    const moreOpen = !!dlg.querySelector("details.hw")?.open && dlg.dataset.device === deviceId;
+    dlg.dataset.device = deviceId;
     dlg.innerHTML = `<div class="dev-panel">
       <header><h2>${esc(s?.name || "New device")}</h2><button type="button" class="ghost" data-close>Close</button></header>
       <div class="dev-body">
@@ -120,6 +147,7 @@ window.ConsoleDevices = (() => {
             ${row("System", h.os)}
             ${row("Agent", d.agent_version)}
           </dl>
+          ${note ? `<p class="dev-note warn">${esc(note)}</p>` : ""}
           ${admin && !d.enrolled ? `<div class="dev-actions">${windowOpen(d)
             ? `<button type="button" class="ghost" data-dev-action="close_enrollment">Close enrollment</button>`
             : `<button type="button" class="ghost" data-dev-action="open_enrollment" title="On install day: the Pi accepts its first key only while this is open">Open enrollment (24 hours)</button>`}</div>` : ""}
@@ -136,8 +164,13 @@ window.ConsoleDevices = (() => {
           <ul class="dev-cmds">${d.commands.length ? d.commands.map((c) => `<li><strong>${esc(c.command.replace("_", " "))}</strong> · ${esc(c.status)}${c.result ? ` · ${esc(c.result)}` : ""} <span class="sub">${since(c.created_at)}</span></li>`).join("") : `<li class="sub">None yet</li>`}</ul>
         </div>
       </div></div>`;
-    dlg.showModal();
-    if (d.screenshot_at) Auth.blob(`/api/devices?screenshot=${d.id}`).then((u) => { const i = $("dev-shot-img"); if (u && i) i.src = u; });
+    if (moreOpen) dlg.querySelector("details.hw").open = true;
+    if (!dlg.open) dlg.showModal();
+    schedule();
+    // The screenshot is fetched again only when there's a new one
+    const key = `${d.id}|${d.screenshot_at}`;
+    if (d.screenshot_at && shot.at === key && shot.url) $("dev-shot-img").src = shot.url;
+    else if (d.screenshot_at) Auth.blob(`/api/devices?screenshot=${d.id}`).then((u) => { shot = { at: key, url: u }; const i = $("dev-shot-img"); if (u && i) i.src = u; });
     dlg.onclick = async (e) => {
       if (e.target === dlg || e.target.closest("[data-close]")) return dlg.close();
       const cmd = e.target.closest("[data-cmd]")?.dataset.cmd;
@@ -148,7 +181,9 @@ window.ConsoleDevices = (() => {
           if (cmd === "reboot" && !confirm("Reboot this Pi? The screen will be blank for about a minute.")) return;
           if (cmd === "update_pi" && !confirm("Update this Pi? It installs the latest setup and system updates (5 to 20 minutes, the screen keeps running), then restarts: the screen is dark for about a minute. Try one Pi before the rest.")) return;
           await Auth.api("/api/devices", { method: "POST", body: { action: "command", device_id: d.id, command: cmd } });
-          toast("Sent. The Pi picks it up within a minute.");
+          toast("Sent. The Pi picks it up within a minute; this panel updates as it does.");
+          fastUntil = Date.now() + 120_000;
+          await load(admin); panel(d.id);
         } else if (ident) {
           await Auth.api("/api/devices", { method: "POST", body: { action: "identify", screen_id: ident } });
           toast("The screen will show its name for 90 seconds, starting within a minute.");

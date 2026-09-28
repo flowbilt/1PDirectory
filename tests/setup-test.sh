@@ -131,4 +131,20 @@ ok "running setup again doesn't add it twice" "$(grep -o 'video=' "$W/cmdline.tx
 CMDLINE="$W/cmdline.txt" FORCE_1080=0 bash -c "source '$W/video.sh'" >/dev/null
 ok "--no-1080p keeps the output on at the TV's own resolution" "$(grep -o 'video=[^ ]*' "$W/cmdline.txt")" "video=HDMI-A-1:D"
 
+# ── a quiet start ──
+awk '/^# A quiet start/{f=1} f{print} /^# \(end of the quiet start\)/{exit}' "$SETUP" > "$W/quiet.sh"
+printf 'console=serial0,115200 console=tty1 root=PARTUUID=abc rootfstype=ext4 fsck.repair=yes rootwait quiet splash plymouth.ignore-serial-consoles cfg80211.ieee80211_regdom=US video=HDMI-A-1:1920x1080@60D\n' > "$W/cmdline.txt"
+printf '[all]\ndtoverlay=vc4-kms-v3d\n' > "$W/config.txt"
+quiet() { CMDLINE="$W/cmdline.txt" LOBBY_CONFIG_TXT="$W/config.txt" bash -c "source '$W/quiet.sh'" >/dev/null; }
+quiet
+C="$(cat "$W/cmdline.txt")"
+ok "the Raspberry Pi logo splash is off" "$(grep -cE '(^| )splash( |$)' "$W/cmdline.txt")" "0"
+has "the rest of the boot line is untouched" "$C" "rootwait quiet plymouth.ignore-serial-consoles cfg80211.ieee80211_regdom=US video=HDMI-A-1:1920x1080@60D"
+has "no boot text, logo or blinking cursor" "$C" "loglevel=3 logo.nologo vt.global_cursor_default=0"
+ok "'quiet' isn't added twice" "$(grep -o ' quiet' "$W/cmdline.txt" | wc -l)" "1"
+ok "no rainbow square" "$(grep -c '^disable_splash=1' "$W/config.txt")" "1"
+quiet; ok "running setup again changes nothing" "$(cat "$W/cmdline.txt")|$(grep -c disable_splash "$W/config.txt")" "$C|1"
+ok "still one line" "$(wc -l < "$W/cmdline.txt")" "1"
+has "the desktop behind the browser is plain black" "$(grep -F 'labwc/autostart' "$SETUP")" "swaybg -c '#000000'"
+
 echo; echo "$pass/$((pass+fail)) passed"; [[ $fail -eq 0 ]]

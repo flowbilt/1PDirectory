@@ -113,6 +113,8 @@ A Pi needs no one on site after a power cut, whatever comes back first:
   wrong until it's online. The clock follows the site's own time, so it's right even where a building blocks the
   usual time service (NTP). Everything returns within about a minute of the network.
 - **No mouse pointer** on screen, with or without a mouse (an invisible pointer theme).
+- **A quiet restart:** no rainbow square, Raspberry Pi logo, boot text or desktop picture; the TV stays black until
+  the directory appears (about a minute).
 
 ### Updating Pis in the field
 
@@ -153,6 +155,12 @@ Pi health is a 1Point service tool. Owner users see only each screen's Online/Of
 
 In the console, the **Pi** button on each screen offers Identify, Reload screen, Take screenshot, Reboot Pi, Update agent and Update Pi (see Updating Pis in the field). The Pi actions appear only once the Pi has enrolled (the server refuses them before that). Under **More** are Reset device key, Switch off, and Unassign.
 
+The Pi panel updates itself while it's open (every 10 seconds, every 3 for two minutes after an action), so results
+and new screenshots appear without reopening it. If a Pi's check-in was refused, the panel says why and what to do:
+a different key (a new card: **Reset device key**), trying to enroll (**Open enrollment**), or switched off. The
+agent takes its first automatic screenshot about 2 minutes after it starts, once the directory is up. The console
+refreshes once a minute only while its browser tab is on screen.
+
 **Health tab:** every Pi on one page, with problems sorted to the top. It shows:
 
 - uptime today, over 7 days and over 30 days
@@ -179,7 +187,7 @@ npm test                      # server functions, against a fake Supabase
 node --import ./tests/register-stub.mjs tests/test-server.mjs   # the whole site locally, with sample logins
 bash tests/kiosk-rotation-test.sh    # the kiosk: address from the serial, rotation and its watcher, a card moved between Pis (about 5 minutes)
 python3 tests/agent-test.py          # the Pi's agent: schedule, results, reboot, updates, keys, Update Pi (about 1.5 minutes)
-bash tests/setup-test.sh             # setup's options, Wi-Fi import, start-up naming, TV keeper, pointer, HDMI (seconds)
+bash tests/setup-test.sh             # setup's options, Wi-Fi import, naming, TV keeper, pointer, HDMI, quiet start (seconds)
 ```
 
 Local sample logins: `scot@1pointusa.com / admin-pass`, `leighann@barber.test / owner-pass`, `editor@barber.test / editor-pass`.
@@ -190,7 +198,7 @@ Local sample logins: `scot@1pointusa.com / admin-pass`, `leighann@barber.test / 
 public/             screen (index.html, display.*), sign-in, console (+ console-devices.js, console-setup.js), editor, shared auth.js
 netlify/functions/  screen, heartbeat, users, migrate, config, weather, news, agent, devices, networks, alerts
 netlify/lib/        Supabase client, RSS reader, shared helpers
-supabase/           database schema (01 to 09, run in order), starting data, check queries, setup guide
+supabase/           database schema (01 to 10, run in order), starting data, check queries, setup guide
 migration/          the Yodeck/Wix transcription the starting data was built from
 public/pi/          setup-kiosk.sh and agent.py (served by the site so Pis can download them)
 tests/              function tests, fake Supabase, local test server

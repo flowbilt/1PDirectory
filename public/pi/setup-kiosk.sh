@@ -137,7 +137,7 @@ apt-get update -qq
 if ! command -v chromium >/dev/null && ! command -v chromium-browser >/dev/null; then
   apt-get install -y chromium || apt-get install -y chromium-browser
 fi
-apt-get install -y wlr-randr x11-xserver-utils curl grim scrot python3 python3-pil v4l-utils >/dev/null || true
+apt-get install -y wlr-randr x11-xserver-utils curl grim scrot python3 python3-pil v4l-utils swaybg >/dev/null || true
 if [[ $CONNECT -eq 1 ]]; then apt-get install -y rpi-connect || echo "    rpi-connect not available on this OS image; skipping."; fi
 CHROME="$(command -v chromium || command -v chromium-browser)"
 if [[ $UPDATE -eq 1 ]]; then
@@ -170,6 +170,18 @@ if [[ -f $CMDLINE ]]; then
   [[ -f "$CMDLINE.bak-kiosk" ]] || cp "$CMDLINE" "$CMDLINE.bak-kiosk"
   sed -i -E '1 s/ ?video=HDMI-A-1:[^ ]*//g; 1 s/$/ '"$VIDEO"'/' "$CMDLINE"
 fi
+# A quiet start: no rainbow square, no Raspberry Pi logo splash, no scrolling boot text or cursor. The TV stays
+# black until the directory appears. (Company branding can replace the black later.)
+CONFIG_TXT="${LOBBY_CONFIG_TXT:-/boot/firmware/config.txt}"; [[ -f $CONFIG_TXT ]] || CONFIG_TXT=/boot/config.txt
+if [[ -f $CMDLINE ]]; then
+  echo "==> A quiet start (no splash, logo or boot text)"
+  sed -i -E '1 s/(^| )splash( |$)/\1\2/g; 1 s/  +/ /g; 1 s/ +$//' "$CMDLINE"
+  for t in quiet loglevel=3 logo.nologo vt.global_cursor_default=0; do
+    grep -qE "(^| )$t( |\$)" "$CMDLINE" || sed -i "1 s/\$/ $t/" "$CMDLINE"
+  done
+fi
+if [[ -f $CONFIG_TXT ]] && ! grep -q '^disable_splash=1' "$CONFIG_TXT"; then echo 'disable_splash=1' >> "$CONFIG_TXT"; fi
+# (end of the quiet start)
 
 echo "==> Saving the Wi-Fi tools and the start-up naming"
 cat > /usr/local/sbin/lobby-wifi-import <<'PY'
@@ -417,7 +429,8 @@ fi
 echo "==> Starting the kiosk at login (labwc, wayfire and X11 all covered)"
 # labwc: a user autostart replaces the desktop panel, which is what a kiosk wants.
 mkdir -p "$KHOME/.config/labwc"
-echo "$KDIR/kiosk.sh &" > "$KHOME/.config/labwc/autostart"
+# A plain black desktop behind the browser, instead of the Raspberry Pi wallpaper, while it starts
+printf '%s\n' "swaybg -c '#000000' >/dev/null 2>&1 &" "$KDIR/kiosk.sh &" > "$KHOME/.config/labwc/autostart"
 # wayfire (older Bookworm images)
 WF="$KHOME/.config/wayfire.ini"
 touch "$WF"

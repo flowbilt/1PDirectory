@@ -69,7 +69,7 @@ export default async (req) => {
     if (req.method === "GET" && url.searchParams.get("summary")) return json(await summary());
 
     if (req.method === "GET") {
-      const devices = await db("devices?select=id,serial,screen_id,status,model,hostname,agent_version,last_seen,last_health,screenshot_at,key_hash,enroll_until,created_at&order=serial.asc");
+      const devices = await db("devices?select=id,serial,screen_id,status,model,hostname,agent_version,last_seen,last_health,screenshot_at,key_hash,enroll_until,refused_at,refused_why,created_at&order=serial.asc");
       const mine = devices.filter((d) => admin || screens.has(d.screen_id));
       const ids = mine.map((d) => d.id);
       const cmds = ids.length ? await db(`device_commands?device_id=in.(${ids.join(",")})&select=id,device_id,command,status,result,created_at,done_at&order=id.desc`) : [];

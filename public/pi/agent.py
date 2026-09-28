@@ -14,11 +14,12 @@ Runs as a systemd service (lobby-agent). Standard library only.
 """
 import base64, json, os, pwd, re, secrets, shutil, socket, subprocess, sys, tempfile, time, urllib.error, urllib.request
 
-VERSION = "1.3.0"
+VERSION = "1.4.0"
 CONFIG = os.environ.get("LOBBY_AGENT_CONFIG", "/etc/lobby-agent.json")
 STATE = os.environ.get("LOBBY_AGENT_STATE", "/var/lib/lobby-agent/pending-results.json")
 IDENTITY = os.environ.get("LOBBY_AGENT_IDENTITY", "/var/lib/lobby-agent/identity.json")
 UPDATE_DIR = os.environ.get("LOBBY_AGENT_UPDATE_DIR", "/var/lib/lobby-agent/update")
+FIRST_SHOT = 120           # seconds after start before the first automatic screenshot (the browser is up by then)
 UPDATE_LIMIT = 45 * 60      # an update still running after this long is stopped and reported as failed
 INTERVAL = max(1.0, float(os.environ.get("LOBBY_AGENT_INTERVAL", "60")))   # seconds; only tests change this
 
@@ -326,7 +327,8 @@ def main():
     cfg["key"] = identity(cfg, me)
     log(f"lobby agent {VERSION} starting, serial {me}, site {cfg['site']}")
     results = load_pending()          # e.g. "Rebooted." from before a reboot
-    last_shot, shot_every = 0.0, 300
+    shot_every = 300
+    last_shot = time.time() - shot_every + FIRST_SHOT   # not straight away: at start the screen is still blank
     force_shot, shot_results = False, []
     once = "--once" in sys.argv
     start = time.monotonic()

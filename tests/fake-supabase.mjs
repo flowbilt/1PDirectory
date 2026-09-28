@@ -148,7 +148,7 @@ export function createFake() {
     screens: () => ({ id: randomUUID(), directory_id: null, location_note: "", orientation: "auto", hardware: {}, last_seen: null, last_report: {}, created_at: now() }),
     profiles: () => ({ full_name: "", created_at: now() }),
     audit_log: () => ({ id: T.audit_log.length + 1, at: now(), detail: {} }),
-    devices: () => ({ id: randomUUID(), screen_id: null, key_hash: null, enroll_until: null, status: "active", model: "", hostname: "", agent_version: "", last_seen: null, last_health: {}, screenshot: "", screenshot_at: null, alert_state: {}, created_at: now() }),
+    devices: () => ({ id: randomUUID(), screen_id: null, key_hash: null, enroll_until: null, refused_at: null, refused_why: null, status: "active", model: "", hostname: "", agent_version: "", last_seen: null, last_health: {}, screenshot: "", screenshot_at: null, alert_state: {}, created_at: now() }),
     device_daily: () => ({ id: (T.device_daily.at(-1)?.id || 0) + 1, checkins: 0, power_dips: 0, browser_down: 0, max_temp_c: null }),
     wifi_networks: () => ({ id: randomUUID(), label: "", psk: "", hidden: false, sort: 0, updated_at: now(), updated_by: null }),
     prepare_codes: () => ({ id: (T.prepare_codes.at(-1)?.id || 0) + 1, used_at: null, created_at: now() }),
@@ -253,13 +253,14 @@ export function createFake() {
       const t = now();
       let dv = T.devices.find((d) => d.serial === p_serial);
       if (!dv) { dv = { ...defaults.devices(), serial: p_serial, key_hash: p_key_hash }; T.devices.push(dv); } // not registered: enrolls, waits under New devices
-      if (dv.status === "revoked") return { refused: "revoked" };
+      const refuse = (why) => (Object.assign(dv, { refused_at: t, refused_why: why }), { refused: why });   // 10-refused.sql
+      if (dv.status === "revoked") return refuse("revoked");
       if (!dv.key_hash) {
-        if (!dv.enroll_until || dv.enroll_until < t) return { refused: "enroll" };  // registered, no key: needs the window
+        if (!dv.enroll_until || dv.enroll_until < t) return refuse("enroll");  // registered, no key: needs the window
         Object.assign(dv, { key_hash: p_key_hash, enroll_until: null });
-      } else if (dv.key_hash !== p_key_hash) return { refused: "key" };
+      } else if (dv.key_hash !== p_key_hash) return refuse("key");
       const prevSeen = dv.last_seen;
-      Object.assign(dv, { last_seen: t, last_health: p_health || {}, model: p_info?.model ?? "", hostname: p_info?.hostname ?? "", agent_version: p_info?.version ?? "" });
+      Object.assign(dv, { last_seen: t, refused_at: null, refused_why: null, last_health: p_health || {}, model: p_info?.model ?? "", hostname: p_info?.hostname ?? "", agent_version: p_info?.version ?? "" });
       if (p_screenshot != null && dv.screen_id) Object.assign(dv, { screenshot: p_screenshot, screenshot_at: t }); // none while unassigned
       const cred = deviceCredit(prevSeen, t);
       const day = centralDay(new Date(t)), h = p_health || {};

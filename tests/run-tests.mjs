@@ -323,6 +323,20 @@ test("1Point queues a reboot; the Pi gets it once and reports back", async () =>
   assert.equal(cmd.status, "done"); assert.equal(cmd.result, "Rebooting.");
 });
 
+test("a refused Pi says why in the console, until its next good check-in", async () => {
+  const admin = await login("scot@1pointusa.com", "admin-pass");
+  const dev = fake.T.devices.find((x) => x.serial === PPI2S_SERIAL);
+  assert.equal((await checkin({}, "z".repeat(43))).status, 401, "a new card's key");
+  let listed = (await (await devApi(admin)).json()).devices.find((x) => x.id === dev.id);
+  assert.equal(listed.refused_why, "key"); assert.ok(listed.refused_at);
+  assert.equal((await checkin({})).status, 200, "the right key again");
+  listed = (await (await devApi(admin)).json()).devices.find((x) => x.id === dev.id);
+  assert.equal(listed.refused_why, null, "cleared"); assert.equal(listed.refused_at, null);
+  const sql = readFileSync(new URL("../supabase/10-refused.sql", import.meta.url), "utf8");
+  for (const why of ["key", "enroll", "revoked"]) assert.ok(sql.includes(`refused_why = '${why}'`), `10 records ${why}`);
+  assert.ok(sql.includes("refused_at    = null"), "10 clears it on a good check-in");
+});
+
 test("Update Pi can be sent to an enrolled Pi, and reaches it", async () => {
   const admin = await login("scot@1pointusa.com", "admin-pass");
   const dev = fake.T.devices.find((x) => x.serial === PPI2S_SERIAL);

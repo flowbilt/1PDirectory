@@ -107,6 +107,7 @@ def main():
     check("command results go out with the next scheduled check-in", res.get(1, {}).get("status") == "done", after.get("results"))
     check("Take screenshot sends the picture then, and says so",
           after.get("screenshot", "").startswith("data:image/jpeg;base64,") and res.get(2, {}).get("result") == "Screenshot taken.", res.get(2))
+    check("no automatic screenshot straight after start (the screen is still blank then)", not any(c[1].get("screenshot") for c in checkins[:3]))
     check("results are sent once", not checkins[4][1].get("results"), checkins[4][1].get("results"))
 
     # ── B. a reboot's result survives the reboot ──
