@@ -64,4 +64,61 @@ ok "the next start changes nothing" "$(grep -c '^set' "$W/nm.log")" "0"
 id_run 100000008294ba46
 ok "the card moved to another Pi takes that Pi's name" "$(cat "$W/hostname")" "lobby-8294ba46"
 
+# ── keeping the TV on (lobby-tv, against a stand-in TV) ──
+awk "/^  cat > \/usr\/local\/sbin\/lobby-tv <</{f=1;next} /^TVS\$/{f=0} f" "$SETUP" > "$W/lobby-tv"
+cat > "$W/bin/cec-ctl" <<'S'
+#!/usr/bin/env bash
+shift 2                                             # -d <device>
+echo "$*" >> "$CECLOG"
+case "$*" in
+  "--to 0 --give-device-power-status") echo "    pwr-state: $(cat "$TVSTATE") (0x00)" ;;
+  "--to 0 --image-view-on") echo on > "$TVSTATE" ;;
+  "") printf 'Driver Info:\n\tPhysical Address           : 1.0.0.0\n' ;;
+esac
+S
+chmod +x "$W/bin/cec-ctl"; touch "$W/cec0"
+tv_run() {  # run the keeper for $1 seconds with the TV starting in state $2
+  echo "$2" > "$W/tv"; : > "$W/cec.log"
+  CECLOG="$W/cec.log" TVSTATE="$W/tv" LOBBY_CEC_DEV="$W/cec0" LOBBY_TV_FAST=0.3 LOBBY_TV_SLOW=0.3 PATH="$W/bin:$PATH" \
+    timeout "$1" bash "$W/lobby-tv" > "$W/tv.out" 2>&1
+}
+tv_run 2 standby
+C="$(cat "$W/cec.log")"
+has "a TV in standby is turned on" "$C" "--to 0 --image-view-on"
+has "and switched to this Pi's input" "$C" "--to 15 --active-source phys-addr=1.0.0.0"
+ok "the input is switched once, not every check" "$(grep -c active-source "$W/cec.log")" "1"
+has "it says what it did" "$(cat "$W/tv.out")" "TV is standby; turning it on"
+tv_run 2 on
+ok "a TV that's already on isn't sent 'turn on'" "$(grep -c image-view-on "$W/cec.log")" "0"
+has "but is switched to this Pi once" "$(cat "$W/cec.log")" "active-source"
+( sleep 1; echo standby > "$W/tv" ) & tv_run 2.5 on
+ok "a TV that goes off later is turned back on" "$(grep -c image-view-on "$W/cec.log")" "1"
+ok "and switched back to this Pi" "$(grep -c active-source "$W/cec.log")" "2"
+CECLOG="$W/cec.log" LOBBY_CEC_DEV="$W/no-such-cec" PATH="$W/bin:$PATH" timeout 1 bash "$W/lobby-tv" > "$W/tv.out" 2>&1
+has "no CEC device: says so and does nothing" "$(cat "$W/tv.out")" "not controlling the TV"
+
+# ── the invisible pointer ──
+awk "/^python3 - \"\\\$KHOME\/.icons\/lobby-hidden\" <<'PY'/{f=1;next} /^PY\$/{f=0} f" "$SETUP" > "$W/pointer.py"
+python3 "$W/pointer.py" "$W/icons/lobby-hidden"
+ok "the pointer theme is a valid, fully transparent cursor" "$(python3 - "$W/icons/lobby-hidden/cursors/left_ptr" <<'PY'
+import struct, sys
+b = open(sys.argv[1], "rb").read()
+magic, hsize, ver, ntoc = b[:4], *struct.unpack("<3I", b[4:16])
+typ, sub, pos = struct.unpack("<3I", b[16:28])
+h = struct.unpack("<9I", b[pos:pos + 36]); px = struct.unpack("<I", b[pos + 36:pos + 40])[0]
+print("ok" if (magic, hsize, ntoc, typ, h[0], h[1], h[4], h[5], px, len(b)) == (b"Xcur", 16, 1, 0xFFFD0002, 36, 0xFFFD0002, 1, 1, 0, pos + 40) else "bad")
+PY
+)" "ok"
+ok "every common pointer name is covered" "$(ls "$W/icons/lobby-hidden/cursors" | wc -l)" "19"
+
+# ── the boot line: HDMI 0 always on ──
+awk '/^if \[\[ -f \$CMDLINE \]\]; then/{f=1} f{print} f&&/^fi$/{exit}' "$SETUP" > "$W/video.sh"
+printf 'console=tty1 root=PARTUUID=abc rootwait video=HDMI-A-1:1920x1080@60 quiet\n' > "$W/cmdline.txt"
+CMDLINE="$W/cmdline.txt" FORCE_1080=1 bash -c "source '$W/video.sh'" >/dev/null
+ok "an older 1080p setting is replaced by 1080p + always on" "$(cat "$W/cmdline.txt")" "console=tty1 root=PARTUUID=abc rootwait quiet video=HDMI-A-1:1920x1080@60D"
+CMDLINE="$W/cmdline.txt" FORCE_1080=1 bash -c "source '$W/video.sh'" >/dev/null
+ok "running setup again doesn't add it twice" "$(grep -o 'video=' "$W/cmdline.txt" | wc -l)" "1"
+CMDLINE="$W/cmdline.txt" FORCE_1080=0 bash -c "source '$W/video.sh'" >/dev/null
+ok "--no-1080p keeps the output on at the TV's own resolution" "$(grep -o 'video=[^ ]*' "$W/cmdline.txt")" "video=HDMI-A-1:D"
+
 echo; echo "$pass/$((pass+fail)) passed"; [[ $fail -eq 0 ]]

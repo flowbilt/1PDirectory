@@ -12,16 +12,22 @@ for _ in $(seq 1 30); do curl -fsS -o /dev/null "$BASE/login.html" 2>/dev/null &
 
 sed -n '/cat > "\$KDIR\/kiosk.sh" <<.EOF./,/^EOF$/p' public/pi/setup-kiosk.sh | sed '1d;$d' > "$WORK/kiosk.sh"
 
-# Stand-ins: wlr-randr lists one HDMI output and records what it was told; chromium records the address it was
-# given and then stops the kiosk loop (the real one would run until the Pi reboots).
+# Stand-ins: wlr-randr lists one HDMI output, records what it was told and reports the rotation it has (or forgets
+# it, as a TV powering up can, with WLR_FORGET=1); chromium records the address it was given, waits CHROME_WAIT
+# seconds, then stops the kiosk loop (the real one would run until the Pi reboots).
 mkdir -p "$WORK/bin"
 cat > "$WORK/bin/wlr-randr" <<'S'
 #!/usr/bin/env bash
-if [[ $# -eq 0 ]]; then echo 'HDMI-A-1 "Test TV"'; else echo "$*" >> "$HOME/wlr.log"; fi
+if [[ $# -eq 0 ]]; then
+  printf 'HDMI-A-1 "Test TV"\n  Enabled: yes\n  Transform: %s\n' "$( [[ -z "${WLR_FORGET:-}" ]] && cat "$HOME/wlr.state" 2>/dev/null || echo normal)"
+else
+  echo "$*" >> "$HOME/wlr.log"; echo "${@: -1}" > "$HOME/wlr.state"
+fi
 S
 cat > "$WORK/bin/chromium" <<'S'
 #!/usr/bin/env bash
 for a in "$@"; do [[ "$a" == http* ]] && echo "$a" >> "$HOME/chromium.log"; done
+sleep "${CHROME_WAIT:-0}"
 kill -TERM "$PPID"
 S
 chmod +x "$WORK/bin/"*
@@ -30,13 +36,13 @@ pass=0; fail=0
 # run HOME SERIAL SITE URL ROTATE: start the kiosk once, as that Pi. Returns what it told wlr-randr and chromium.
 run() {
   local H="$1" serial="$2" site="$3" url="$4" setting="$5"
-  mkdir -p "$H/kiosk"; rm -f "$H/wlr.log" "$H/chromium.log"
+  mkdir -p "$H/kiosk"; rm -f "$H/wlr.log" "$H/chromium.log" "$H/wlr.state"
   printf 'SITE="%s"\nURL="%s"\nROTATE="%s"\n' "$site" "$url" "$setting" > "$H/kiosk/kiosk.conf"
-  HOME="$H" LOBBY_SERIAL="$serial" WAYLAND_DISPLAY=wayland-0 PATH="$WORK/bin:$PATH" timeout 120 bash "$WORK/kiosk.sh" >/dev/null 2>&1
+  env ${EXTRA:-} HOME="$H" LOBBY_SERIAL="$serial" WAYLAND_DISPLAY=wayland-0 PATH="$WORK/bin:$PATH" timeout 120 bash "$WORK/kiosk.sh" >/dev/null 2>&1
   GOT_ROT="$(cat "$H/wlr.log" 2>/dev/null)"; GOT_URL="$(cat "$H/chromium.log" 2>/dev/null)"
 }
 ok() { if [[ "$2" == "$3" ]]; then echo "  ok  $1"; pass=$((pass+1)); else echo "  FAIL $1: wanted '$3', got '$2'"; fail=$((fail+1)); fi; }
-T() { echo "--output HDMI-A-1 --transform $1"; }
+T() { echo "--output HDMI-A-1 --on --transform $1"; }
 OFF="http://localhost:1"   # a site that can't be reached
 
 H="$WORK/a"; run "$H" 100000008294ba46 "$BASE" "" auto
@@ -61,4 +67,12 @@ ok "a card moved to another Pi opens that Pi's address" "$GOT_URL" "$BASE/?devic
 ok "and turns the way that Pi's screen is set" "$GOT_ROT" "$(T normal)"
 H="$WORK/i"; run "$H" 10000000a4ae272d "$BASE" "" auto; run "$H" 100000008294ba46 "$OFF" "" auto
 ok "a moved card with no internet doesn't reuse the other Pi's answer" "$GOT_ROT" "$(T normal)"
+# The watcher (every second here, 10 in real life) while the browser runs for 4 seconds
+H="$WORK/j"; EXTRA="CHROME_WAIT=4 KIOSK_WATCH_SECONDS=1" run "$H" 10000000a4ae272d "$BASE" "" auto
+ok "the watcher leaves a correctly turned screen alone" "$GOT_ROT" "$(T 90)"
+H="$WORK/k"; EXTRA="CHROME_WAIT=4 KIOSK_WATCH_SECONDS=1 WLR_FORGET=1" run "$H" 10000000a4ae272d "$BASE" "" auto
+n="$(grep -c -- "$(T 90)" "$H/wlr.log")"
+ok "a TV that resets the screen gets it turned back (and switched on)" "$([[ $n -ge 3 && $(sort -u "$H/wlr.log" | wc -l) -eq 1 ]] && echo yes || echo "no: $n")" "yes"
+sleep 2
+ok "the watcher stops with the kiosk" "$(pgrep -f "$WORK/kiosk.sh" | wc -l)" "0"
 echo; echo "$pass/$((pass+fail)) passed"; [[ $fail -eq 0 ]]

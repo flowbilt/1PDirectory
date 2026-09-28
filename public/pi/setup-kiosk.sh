@@ -31,6 +31,9 @@
 #   --tz ZONE          Time zone. Default America/Chicago.
 #   --wifi-country CC  Wi-Fi country code. Default US.
 #   --no-1080p         Keep the TV's native resolution (4K runs slowly on a Pi 4; not recommended).
+#   --no-tv            Don't control the TV. By default the Pi keeps the TV switched on and showing this Pi, over HDMI-CEC
+#                      (the TV's CEC setting must be on: Anynet+, SimpLink, Bravia Sync...); use this for a TV that
+#                      misbehaves with it.
 #   --connect          Also install Raspberry Pi Connect for remote screen viewing from a browser.
 #   --no-agent         Don't install the remote-management agent.
 #   --ssh              Leave SSH on. By default SSH is switched off (from the next restart): the Pi opens no ports,
@@ -38,7 +41,7 @@
 set -euo pipefail
 
 SITE="https://1pdirectory.netlify.app"; URL=""; ROTATE="auto"; TZ_NAME="America/Chicago"; COUNTRY="US"
-FORCE_1080=1; CONNECT=0; AGENT=1; SSH=0; PREPARE=0; CODE=""
+FORCE_1080=1; CONNECT=0; AGENT=1; SSH=0; PREPARE=0; CODE=""; TV=1
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --site) SITE="${2%/}"; shift 2 ;;
@@ -52,6 +55,7 @@ while [[ $# -gt 0 ]]; do
     --wifi-country) COUNTRY="$2"; shift 2 ;;
     --no-1080p) FORCE_1080=0; shift ;;
     --connect) CONNECT=1; shift ;;
+    --no-tv) TV=0; shift ;;
     --ssh) SSH=1; shift ;;
     -h|--help) sed -n '2,/^set -euo pipefail/p' "$0" | sed '$d'; exit 0 ;;
     *) echo "Unknown option: $1 (see --help)"; exit 1 ;;
@@ -86,6 +90,7 @@ fi
 echo "    Rotation: $([[ "$ROTATE" == "auto" ]] && echo "automatic (asks the site at every start)" || echo "fixed at $ROTATE")"
 echo "    Time zone: $TZ_NAME   No automatic reboots (reboots come from the console)"
 echo "    SSH: $([[ $SSH -eq 1 ]] && echo "on (--ssh)" || echo "off from the next restart (use --ssh to keep it)")"
+echo "    TV: $([[ $TV -eq 1 ]] && echo "kept on and showing this Pi (HDMI-CEC)" || echo "left alone (--no-tv)")"
 
 # The saved Wi-Fi first, so a bad or used code stops setup before anything is installed
 NETS=""
@@ -106,7 +111,7 @@ apt-get update -qq
 if ! command -v chromium >/dev/null && ! command -v chromium-browser >/dev/null; then
   apt-get install -y chromium || apt-get install -y chromium-browser
 fi
-apt-get install -y wlr-randr x11-xserver-utils curl grim scrot python3 python3-pil >/dev/null || true
+apt-get install -y wlr-randr x11-xserver-utils curl grim scrot python3 python3-pil v4l-utils >/dev/null || true
 if [[ $CONNECT -eq 1 ]]; then apt-get install -y rpi-connect || echo "    rpi-connect not available on this OS image; skipping."; fi
 CHROME="$(command -v chromium || command -v chromium-browser)"
 
@@ -126,13 +131,14 @@ else
   systemctl disable ssh.socket >/dev/null 2>&1 || true
 fi
 
-if [[ $FORCE_1080 -eq 1 ]]; then
-  CMDLINE=/boot/firmware/cmdline.txt; [[ -f $CMDLINE ]] || CMDLINE=/boot/cmdline.txt
-  if [[ -f $CMDLINE ]] && ! grep -q "video=HDMI-A-1:" "$CMDLINE"; then
-    echo "==> Forcing 1920x1080 output on HDMI 0 (a Pi 4 struggles at 4K)"
-    cp "$CMDLINE" "$CMDLINE.bak-kiosk"
-    sed -i '1 s/$/ video=HDMI-A-1:1920x1080@60/' "$CMDLINE"
-  fi
+# HDMI 0 always sends a picture, even when no TV is detected at start (a TV that powers up after the Pi then just
+# shows it), at 1920x1080 unless --no-1080p (a Pi 4 struggles at 4K). "D" = keep the output on regardless.
+CMDLINE=/boot/firmware/cmdline.txt; [[ -f $CMDLINE ]] || CMDLINE=/boot/cmdline.txt
+if [[ -f $CMDLINE ]]; then
+  VIDEO="video=HDMI-A-1:$([[ $FORCE_1080 -eq 1 ]] && echo 1920x1080@60)D"
+  echo "==> HDMI 0 always on$([[ $FORCE_1080 -eq 1 ]] && echo ", 1920x1080")"
+  [[ -f "$CMDLINE.bak-kiosk" ]] || cp "$CMDLINE" "$CMDLINE.bak-kiosk"
+  sed -i -E '1 s/ ?video=HDMI-A-1:[^ ]*//g; 1 s/$/ '"$VIDEO"'/' "$CMDLINE"
 fi
 
 echo "==> Saving the Wi-Fi tools and the start-up naming"
@@ -253,10 +259,23 @@ if [[ "$ROT" == "auto" ]]; then
 fi
 echo "$(date '+%F %T') rotation $ROT (setting: $ROTATE)"
 
-# Rotate the screen
+# Rotate the screen. On Wayland a watcher keeps it that way: a TV that powers up after the Pi (or is switched off
+# and on) can come back with the output reset or switched off, which would leave a portrait screen sideways or dark.
 if [[ -n "${WAYLAND_DISPLAY:-}" ]] && command -v wlr-randr >/dev/null; then
-  OUT="$(wlr-randr | awk '/^HDMI/ {print $1; exit}')"
-  [[ -n "$OUT" ]] && wlr-randr --output "$OUT" --transform "$([[ "$ROT" == "0" ]] && echo normal || echo "$ROT")"
+  WANT="$([[ "$ROT" == "0" ]] && echo normal || echo "$ROT")"
+  turn() {
+    local out; out="$(wlr-randr 2>/dev/null | awk '/^HDMI/ {print $1; exit}')"
+    [[ -n "$out" ]] && wlr-randr --output "$out" --on --transform "$WANT"
+  }
+  turn
+  (
+    while sleep "${KIOSK_WATCH_SECONDS:-10}"; do
+      kill -0 $$ 2>/dev/null || exit 0                     # the kiosk has stopped
+      now="$(wlr-randr 2>/dev/null | awk '/^[^[:space:]]/ {h = !seen && $1 ~ /^HDMI/; if (h) seen = 1}
+                                        h && /Enabled:/ {e = $2} h && /Transform:/ {t = $2} END {print e " " t}')"
+      if [[ "$now" != "yes $WANT" ]]; then echo "$(date '+%F %T') screen was '$now'; setting it back to $WANT"; turn; fi
+    done
+  ) &
 elif [[ -n "${DISPLAY:-}" ]] && command -v xrandr >/dev/null; then
   OUT="$(xrandr | awk '/ connected/ {print $1; exit}')"
   case "$ROT" in 90) xrandr --output "$OUT" --rotate right ;; 270) xrandr --output "$OUT" --rotate left ;; *) xrandr --output "$OUT" --rotate normal ;; esac
@@ -289,6 +308,80 @@ done
 EOF
 chmod +x "$KDIR/kiosk.sh"
 
+echo "==> Hiding the mouse pointer"
+# An invisible pointer theme, so no arrow sits on the screen at start (with or without a mouse). The page hides the
+# pointer too, but only once it has moved over the page, which never happens without a mouse.
+python3 - "$KHOME/.icons/lobby-hidden" <<'PY'
+import os, struct, sys
+d = os.path.join(sys.argv[1], "cursors"); os.makedirs(d, exist_ok=True)
+img = struct.pack("<9I", 36, 0xFFFD0002, 24, 1, 1, 1, 0, 0, 0) + struct.pack("<I", 0)   # one transparent pixel
+blob = b"Xcur" + struct.pack("<3I", 16, 0x10000, 1) + struct.pack("<3I", 0xFFFD0002, 24, 28) + img
+with open(os.path.join(d, "left_ptr"), "wb") as f:
+    f.write(blob)
+for name in ("default", "arrow", "top_left_arrow", "text", "xterm", "pointer", "hand1", "hand2", "watch", "wait",
+             "progress", "left_ptr_watch", "crosshair", "move", "grab", "grabbing", "all-scroll", "not-allowed"):
+    link = os.path.join(d, name)
+    if not os.path.lexists(link):
+        os.symlink("left_ptr", link)
+with open(os.path.join(sys.argv[1], "index.theme"), "w") as f:
+    f.write("[Icon Theme]\nName=lobby-hidden\nComment=No visible pointer (lobby kiosk)\n")
+PY
+mkdir -p "$KHOME/.config/labwc"
+LENV="$KHOME/.config/labwc/environment"
+touch "$LENV"; sed -i '/^XCURSOR_THEME=/d; /^XCURSOR_SIZE=/d' "$LENV"
+printf 'XCURSOR_THEME=lobby-hidden\nXCURSOR_SIZE=24\n' >> "$LENV"
+
+if [[ $TV -eq 1 ]]; then
+  echo "==> Keeping the TV on (HDMI-CEC)"
+  cat > /usr/local/sbin/lobby-tv <<'TVS'
+#!/usr/bin/env bash
+# Keeps the TV switched on and showing this Pi, over HDMI-CEC: at start (after a power cut the TV often comes back in
+# standby, or later than the Pi) and from then on, so a TV that lost power on its own comes back too. Every 15 seconds
+# for the first 5 minutes after the Pi starts, then every 2 minutes. Needs the TV's CEC setting on (Anynet+ on
+# Samsung, SimpLink on LG, Bravia Sync on Sony). Nothing to do without a CEC device (logged once).
+DEV="${LOBBY_CEC_DEV:-}"
+if [[ -z "$DEV" ]]; then for d in /dev/cec0 /dev/cec1; do [[ -e "$d" ]] && { DEV="$d"; break; }; done; fi
+if [[ -z "$DEV" || ! -e "$DEV" ]]; then echo "no HDMI-CEC device on this Pi; not controlling the TV"; exec sleep infinity; fi
+FAST="${LOBBY_TV_FAST:-15}"; SLOW="${LOBBY_TV_SLOW:-120}"; FAST_FOR="${LOBBY_TV_FAST_FOR:-300}"
+cec() { cec-ctl -d "$DEV" "$@" 2>&1; }
+cec --playback --osd-name "Lobby" >/dev/null           # join the TV's CEC network as a player
+sourced=0; last=""
+while true; do
+  st="$(cec --to 0 --give-device-power-status | grep -o 'pwr-state: [a-z-]*' | head -1 | cut -d' ' -f2)"
+  if [[ "$st" == "on" || "$st" == "to-on" ]]; then
+    if [[ $sourced -eq 0 ]]; then                        # make sure it's showing this Pi's input
+      pa="$(cec | awk -F': *' '/Physical Address/ {print $2; exit}')"
+      [[ -n "$pa" && "$pa" != "f.f.f.f" ]] && cec --to 15 --active-source phys-addr="$pa" >/dev/null
+      echo "TV is on; switched it to this Pi ($pa)"; sourced=1
+    fi
+  else
+    [[ "$st" != "$last" ]] && echo "TV is ${st:-not answering}; turning it on"
+    cec --to 0 --image-view-on >/dev/null; sourced=0
+  fi
+  last="$st"
+  if (( SECONDS < FAST_FOR )); then sleep "$FAST"; else sleep "$SLOW"; fi
+done
+TVS
+  chmod 755 /usr/local/sbin/lobby-tv
+  cat > /etc/systemd/system/lobby-tv.service <<'UNIT'
+[Unit]
+Description=Lobby directory: keep the TV on and showing this Pi (HDMI-CEC)
+
+[Service]
+ExecStart=/usr/local/sbin/lobby-tv
+Restart=always
+RestartSec=30
+
+[Install]
+WantedBy=multi-user.target
+UNIT
+  systemctl daemon-reload
+  if [[ $PREPARE -eq 1 ]]; then systemctl enable lobby-tv.service >/dev/null 2>&1
+  else systemctl enable --now lobby-tv.service >/dev/null 2>&1; systemctl restart lobby-tv.service; fi
+else
+  systemctl disable --now lobby-tv.service >/dev/null 2>&1 || true
+fi
+
 echo "==> Starting the kiosk at login (labwc, wayfire and X11 all covered)"
 # labwc: a user autostart replaces the desktop panel, which is what a kiosk wants.
 mkdir -p "$KHOME/.config/labwc"
@@ -303,7 +396,7 @@ fi
 # X11 / LXDE
 mkdir -p "$KHOME/.config/lxsession/LXDE-pi"
 printf '@xset s off\n@xset -dpms\n@%s\n' "$KDIR/kiosk.sh" > "$KHOME/.config/lxsession/LXDE-pi/autostart"
-chown -R "$KUSER:$KUSER" "$KDIR" "$KHOME/.config"
+chown -R "$KUSER:$KUSER" "$KDIR" "$KHOME/.config" "$KHOME/.icons"
 
 if [[ $AGENT -eq 1 ]]; then
   echo "==> Installing the remote-management agent"

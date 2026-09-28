@@ -67,10 +67,14 @@ never read back. Because every card holds every saved password, treat cards and 
 
    It installs everything, saves the Wi-Fi, clears everything that belongs to the bench Pi (machine ID, logs,
    browser data, keys, the bench's own Wi-Fi) and powers off. **Don't start that card again before copying it.**
-4. **Copy the card to an image file** on a Windows PC with Win32 Disk Imager: **Read**, to a file like
-   `lobby-card-2026-10.img`. The file is the full size of the card.
+4. **Copy the card to an image file** on a Windows PC with Win32 Disk Imager: **Read** (not Write), to a file like
+   `lobby-card-2026-10.img`. The file is the full size of the card. Win32 Disk Imager lists only drives with a
+   letter; if the card doesn't appear, give its small FAT32 partition (bootfs) a letter in Disk Management
+   (right-click, Change Drive Letter and Paths, Add), leave the large partition alone, cancel any "format" prompt,
+   and reopen Win32 Disk Imager.
 5. **Optional but recommended: shrink the image** so it fits any 32 GB card (two "32 GB" cards can differ slightly,
-   and a full-size image won't write to a smaller one). In WSL (Ubuntu on Windows), with
+   and a full-size image won't write to a smaller one). In WSL (Ubuntu on Windows: `wsl --install -d Ubuntu` in an
+   admin PowerShell, then restart), with
    [PiShrink](https://github.com/Drewsif/PiShrink): `sudo pishrink.sh lobby-card-2026-10.img`. A shrunk card grows
    back to fill its card at first start. Skip this only if every card is the same brand and model.
 6. **Write the image to every card** with Raspberry Pi Imager: **Choose OS → Use custom**, pick the image, and when it
@@ -93,6 +97,24 @@ the console once Pi settings are built.
 - **A bad Pi:** put a card in the replacement Pi. Its serial appears under New devices: assign it to the screen (the
   old Pi is unassigned automatically).
 
+### Unattended after a power cut
+
+A Pi needs no one on site after a power cut, whatever comes back first:
+
+- **The TV:** the Pi keeps the TV switched on and showing the Pi, over HDMI-CEC. At start it tries every 15 seconds
+  for 5 minutes (a TV can come up after the Pi), then checks every 2 minutes, so a TV switched off, or one that lost
+  power on its own, comes back on. The TV's CEC setting must be on (Anynet+ on Samsung, SimpLink on LG, Bravia Sync
+  on Sony). If a TV has a "power on after power loss" setting, set it to On as well. `--no-tv` leaves the TV alone.
+- **The picture:** HDMI 0 always sends a picture at 1080p, even if no TV was detected at start, and the kiosk puts the
+  rotation back within 10 seconds if a TV powering up resets it.
+- **No network:** the screen shows the directory and news it last received, with "Showing saved information.
+  Reconnecting…" at the bottom. Weather shows for up to 3 hours, then disappears. The time and date are hidden until
+  the Pi has reached the site since it started: a Pi 4 has no battery-backed clock, so after a power cut its time is
+  wrong until it's online. Everything returns within about a minute of the network.
+- **No mouse pointer** on screen, with or without a mouse (an invisible pointer theme).
+
+Kiosk changes like these live on the card: they reach a Pi through a newly prepared card, not through **Update agent**.
+
 ### Setting up one Pi directly (instead of a prepared card)
 
 On a freshly flashed Pi, open Terminal and run the same commands without `--prepare` (the code is only needed to
@@ -102,7 +124,7 @@ Rotation is automatic. Each time the Pi starts, it asks the site whether its scr
 
 SSH is switched off by setup (from the restart that finishes it), so the Pi opens no ports. The agent covers remote management. Use `--ssh` for a Pi that needs it, and re-run setup without `--ssh` to switch it off again.
 
-Options (`sudo bash setup-kiosk.sh --help` lists them all): `--rotate 270` if a portrait picture is upside down (or `0`/`90` to fix it by hand), `--ssh` to leave SSH on, `--connect` for Raspberry Pi Connect, `--no-agent` to skip the agent, and `--url` to pin a fixed screen address the old way.
+Options (`sudo bash setup-kiosk.sh --help` lists them all): `--rotate 270` if a portrait picture is upside down (or `0`/`90` to fix it by hand), `--ssh` to leave SSH on, `--no-tv` to leave the TV alone, `--connect` for Raspberry Pi Connect, `--no-agent` to skip the agent, and `--url` to pin a fixed screen address the old way.
 
 ## Remote management (the agent)
 
@@ -140,9 +162,9 @@ Only those fixed actions exist, and the agent can't run anything else. Actions n
 npm install
 npm test                      # server functions, against a fake Supabase
 node --import ./tests/register-stub.mjs tests/test-server.mjs   # the whole site locally, with sample logins
-bash tests/kiosk-rotation-test.sh    # the kiosk: address from the serial, rotation, a card moved between Pis (about 5 minutes)
+bash tests/kiosk-rotation-test.sh    # the kiosk: address from the serial, rotation and its watcher, a card moved between Pis (about 5 minutes)
 python3 tests/agent-test.py          # the Pi's agent: schedule, command results, reboot, update, keys (about a minute)
-bash tests/setup-test.sh             # setup's option checks, Wi-Fi import and start-up naming (a few seconds)
+bash tests/setup-test.sh             # setup's options, Wi-Fi import, start-up naming, TV keeper, pointer, HDMI (seconds)
 ```
 
 Local sample logins: `scot@1pointusa.com / admin-pass`, `leighann@barber.test / owner-pass`, `editor@barber.test / editor-pass`.

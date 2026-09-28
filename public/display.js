@@ -10,7 +10,7 @@
 */
 (() => {
   "use strict";
-  const VERSION = "2.2.0";
+  const VERSION = "2.3.0";
   const q = new URLSearchParams(location.search);
   const DEVICE = (q.get("device") || "").toLowerCase();
   const CHOSEN = (q.get("screen") || q.get("key") || q.get("site") || "").toLowerCase();
@@ -29,6 +29,9 @@
   const SCREEN_URL = DEVICE ? `/api/screen?device=${encodeURIComponent(DEVICE)}` : `/api/screen?key=${encodeURIComponent(SITE)}`;
   const URL_ROTATE = ["90", "270"].includes(q.get("rotate")) ? Number(q.get("rotate")) : null;
   const CHECKS_IN = !PREVIEW && !VIEW; // only a real screen records a check-in
+  // A Pi 4 has no battery-backed clock: after a power cut it starts at the last time it saved and corrects itself only
+  // once it's online. So a real screen shows the time and date only after it has reached the site since it started.
+  let clockTrusted = !CHECKS_IN;
 
   const POLL_DIRECTORY_MS = 60 * 1000;
   const POLL_WEATHER_MS = 10 * 60 * 1000;
@@ -219,7 +222,7 @@
       if (!res.ok) throw new Error(`directory ${res.status}`);
       const d = await res.json();
       const fromCache = res.headers.get("X-Served-From") === "offline-cache";
-      if (!fromCache) cache.set("directory", d);
+      if (!fromCache) { cache.set("directory", d); if (!clockTrusted) { clockTrusted = true; tick(); } }
       $("offline").hidden = !fromCache;
       apply(d);
     } catch (e) {
@@ -254,6 +257,8 @@
   function tick() {
     showIdentify();
     const tz = data?.timezone || "America/Chicago";
+    $("time").hidden = $("date").hidden = !clockTrusted;
+    if (!clockTrusted) return;
     const now = new Date();
     let timeParts;
     try { timeParts = new Intl.DateTimeFormat("en-US", { hour: "numeric", minute: "2-digit", hour12: true, timeZone: tz }).formatToParts(now); }
