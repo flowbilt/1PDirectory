@@ -110,10 +110,25 @@ A Pi needs no one on site after a power cut, whatever comes back first:
 - **No network:** the screen shows the directory and news it last received, with "Showing saved information.
   Reconnecting…" at the bottom. Weather shows for up to 3 hours, then disappears. The time and date are hidden until
   the Pi has reached the site since it started: a Pi 4 has no battery-backed clock, so after a power cut its time is
-  wrong until it's online. Everything returns within about a minute of the network.
+  wrong until it's online. The clock follows the site's own time, so it's right even where a building blocks the
+  usual time service (NTP). Everything returns within about a minute of the network.
 - **No mouse pointer** on screen, with or without a mouse (an invisible pointer theme).
 
-Kiosk changes like these live on the card: they reach a Pi through a newly prepared card, not through **Update agent**.
+### Updating Pis in the field
+
+Nothing needs a site visit or a new card:
+
+- **What the screen shows** (the display's code) comes from the site: every Pi reloads it at 3 a.m., or at once with
+  **Pi → Reload screen**. Content (tenants, logos, photos) is live within a minute of saving.
+- **Pi → Update Pi** (1Point): the Pi downloads the latest setup from the site and re-applies it in place, with the
+  options it was set up with (`/etc/lobby-setup.conf`), installs Raspberry Pi OS updates, then restarts. Its
+  identity, key and Wi-Fi stay as they are. The screen keeps running during the update (5 to 20 minutes) and is dark
+  for about a minute at the restart. The result ("Updated; restarting." or the error) shows under Recent actions; a
+  failed update doesn't restart the Pi. Try one Pi before the rest.
+- **Pi → Update agent** installs just the latest agent, without a restart.
+
+New card images are only for new cards (installs and spares). A spare made from an older image catches up with one
+Update Pi. Saved Wi-Fi changes still reach a Pi only on a new card (see the roadmap).
 
 ### Setting up one Pi directly (instead of a prepared card)
 
@@ -136,7 +151,7 @@ Each Pi runs a small agent (`public/pi/agent.py`) that checks in once a minute o
 
 Pi health is a 1Point service tool. Owner users see only each screen's Online/Offline dot. The server refuses them all device information, not just the console.
 
-In the console, the **Pi** button on each screen offers Identify, Reload screen, Take screenshot, Reboot Pi and Update agent. The Pi actions appear only once the Pi has enrolled (the server refuses them before that). Under **More** are Reset device key, Switch off, and Unassign.
+In the console, the **Pi** button on each screen offers Identify, Reload screen, Take screenshot, Reboot Pi, Update agent and Update Pi (see Updating Pis in the field). The Pi actions appear only once the Pi has enrolled (the server refuses them before that). Under **More** are Reset device key, Switch off, and Unassign.
 
 **Health tab:** every Pi on one page, with problems sorted to the top. It shows:
 
@@ -148,7 +163,7 @@ It filters by account and exports a CSV, for customer service reports.
 
 Uptime comes from a daily summary for each Pi (`device_daily`), kept for 400 days. Each check-in credits the time since the Pi's previous one, if that was 3 minutes ago or less (`supabase/07-uptime.sql`), so small timing differences never show as downtime. A longer gap is an outage and earns nothing, so an outage reads up to a minute longer than it was, never shorter. A new Pi's uptime counts from its first check-in, so it isn't penalized for time before it was installed. A reboot (about a minute) counts as up.
 
-Only those fixed actions exist, and the agent can't run anything else. Actions not picked up within an hour are dropped rather than run late.
+Only those fixed actions exist; the console can't send anything free-form. Update agent and Update Pi install code downloaded from this site over HTTPS, so whoever can change the site (its GitHub repo and Netlify) is trusted with every Pi: keep those accounts on two-factor sign-in. Actions not picked up within an hour are dropped rather than run late.
 
 **Alerts:** every 10 minutes the site checks each Pi. It sends one email when a Pi goes offline, reports under-voltage, or runs at 80°C or hotter, and another when that clears. A Pi's alert state is saved only after the email has gone out, so a failed send is retried on the next run, and problems that already exist are emailed once when the email settings are first added.
 
@@ -163,7 +178,7 @@ npm install
 npm test                      # server functions, against a fake Supabase
 node --import ./tests/register-stub.mjs tests/test-server.mjs   # the whole site locally, with sample logins
 bash tests/kiosk-rotation-test.sh    # the kiosk: address from the serial, rotation and its watcher, a card moved between Pis (about 5 minutes)
-python3 tests/agent-test.py          # the Pi's agent: schedule, command results, reboot, update, keys (about a minute)
+python3 tests/agent-test.py          # the Pi's agent: schedule, results, reboot, updates, keys, Update Pi (about 1.5 minutes)
 bash tests/setup-test.sh             # setup's options, Wi-Fi import, start-up naming, TV keeper, pointer, HDMI (seconds)
 ```
 
@@ -175,7 +190,7 @@ Local sample logins: `scot@1pointusa.com / admin-pass`, `leighann@barber.test / 
 public/             screen (index.html, display.*), sign-in, console (+ console-devices.js, console-setup.js), editor, shared auth.js
 netlify/functions/  screen, heartbeat, users, migrate, config, weather, news, agent, devices, networks, alerts
 netlify/lib/        Supabase client, RSS reader, shared helpers
-supabase/           database schema (01 to 08, run in order), starting data, check queries, setup guide
+supabase/           database schema (01 to 09, run in order), starting data, check queries, setup guide
 migration/          the Yodeck/Wix transcription the starting data was built from
 public/pi/          setup-kiosk.sh and agent.py (served by the site so Pis can download them)
 tests/              function tests, fake Supabase, local test server

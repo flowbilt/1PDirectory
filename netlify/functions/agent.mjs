@@ -12,7 +12,7 @@ import { json } from "../lib/common.mjs";
 import { rpc } from "../lib/sb.mjs";
 
 export const SERIAL_RE = /^[0-9a-f]{8,32}$/;
-export const COMMANDS = ["reboot", "reload", "screenshot", "update_agent"];
+export const COMMANDS = ["reboot", "reload", "screenshot", "update_agent", "update_pi"];
 const MAX_SHOT = 400_000; // ~300 KB JPEG
 const sha = (s) => createHash("sha256").update(s).digest("hex");
 /** Today's date in Central time, e.g. "2026-09-24": the daily summary's day. */

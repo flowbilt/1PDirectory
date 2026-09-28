@@ -91,6 +91,7 @@ window.ConsoleDevices = (() => {
     ["screenshot", "Take screenshot", "A fresh picture of the TV within a minute.", false],
     ["reboot", "Reboot Pi", "The screen is blank for about a minute.", true],
     ["update_agent", "Update agent", "Installs the latest agent from the site.", true],
+    ["update_pi", "Update Pi", "Re-applies the latest setup and installs system updates, then restarts. About 5 to 20 minutes; the screen goes dark for a minute at the end.", true],
   ];
   function panel(deviceId) {
     const d = devices.find((x) => x.id === deviceId);
@@ -145,6 +146,7 @@ window.ConsoleDevices = (() => {
       try {
         if (cmd) {
           if (cmd === "reboot" && !confirm("Reboot this Pi? The screen will be blank for about a minute.")) return;
+          if (cmd === "update_pi" && !confirm("Update this Pi? It installs the latest setup and system updates (5 to 20 minutes, the screen keeps running), then restarts: the screen is dark for about a minute. Try one Pi before the rest.")) return;
           await Auth.api("/api/devices", { method: "POST", body: { action: "command", device_id: d.id, command: cmd } });
           toast("Sent. The Pi picks it up within a minute.");
         } else if (ident) {

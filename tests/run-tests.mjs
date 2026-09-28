@@ -323,6 +323,17 @@ test("1Point queues a reboot; the Pi gets it once and reports back", async () =>
   assert.equal(cmd.status, "done"); assert.equal(cmd.result, "Rebooting.");
 });
 
+test("Update Pi can be sent to an enrolled Pi, and reaches it", async () => {
+  const admin = await login("scot@1pointusa.com", "admin-pass");
+  const dev = fake.T.devices.find((x) => x.serial === PPI2S_SERIAL);
+  const q = await devApi(admin, { method: "POST", body: { action: "command", device_id: dev.id, command: "update_pi" } });
+  assert.equal(q.status, 200);
+  const got = await (await checkin({})).json();
+  assert.ok(got.commands.some((c) => c.command === "update_pi"), "the Pi receives it");
+  const sql = readFileSync(new URL("../supabase/09-update.sql", import.meta.url), "utf8");
+  for (const c of ["reboot", "reload", "screenshot", "update_agent", "update_pi"]) assert.ok(sql.includes(`'${c}'`), `09 allows ${c}`);
+});
+
 test("commands older than an hour are dropped, not run late", async () => {
   const dev = fake.T.devices.find((x) => x.serial === PPI2S_SERIAL);
   fake.T.device_commands.push({ id: 999, device_id: dev.id, command: "reboot", status: "pending", result: "", created_at: new Date(Date.now() - 2 * 3600_000).toISOString() });

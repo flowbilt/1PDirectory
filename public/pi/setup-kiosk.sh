@@ -10,6 +10,7 @@
 #   curl -fsSLO https://1pdirectory.netlify.app/pi/setup-kiosk.sh
 #   sudo bash setup-kiosk.sh --code XXXX-XXXX             set up this Pi, with the saved Wi-Fi networks
 #   sudo bash setup-kiosk.sh --prepare --code XXXX-XXXX   bench Pi: prepare a card to copy, then power off
+#   (The console's Update Pi runs it with --update on a Pi in the field.)
 # Get the code in the console: Pi setup -> Get a prepare code (it lasts an hour and works once). Without --code,
 # the Pi keeps whatever network it already has (fine for a wired Pi).
 #
@@ -19,6 +20,10 @@
 # Options:
 #   --code CODE        Download the Wi-Fi networks saved in the console (Pi setup). Every network is saved on the
 #                      card; the Pi joins whichever is in range, and a network cable always wins.
+#   --update           Update this Pi in place (the console's Update Pi runs this): re-apply the latest setup with the
+#                      options this Pi was set up with (saved in /etc/lobby-setup.conf), install Raspberry Pi OS
+#                      updates, keep its identity, key and Wi-Fi. The agent restarts the Pi afterwards.
+#   --user NAME        The desktop user, when not run with sudo from that user (--update from the agent).
 #   --prepare          Bench mode: install everything, then clear everything that belongs to this Pi (machine ID,
 #                      logs, browser profile, keys, the bench's own Wi-Fi) and power off, ready to copy the card.
 #                      Needs --code. Run it at the Pi's own keyboard or on a cable: it drops the bench's Wi-Fi.
@@ -41,13 +46,15 @@
 set -euo pipefail
 
 SITE="https://1pdirectory.netlify.app"; URL=""; ROTATE="auto"; TZ_NAME="America/Chicago"; COUNTRY="US"
-FORCE_1080=1; CONNECT=0; AGENT=1; SSH=0; PREPARE=0; CODE=""; TV=1
+FORCE_1080=1; CONNECT=0; AGENT=1; SSH=0; PREPARE=0; CODE=""; TV=1; UPDATE=0; KUSER_OPT=""
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --site) SITE="${2%/}"; shift 2 ;;
     --url) URL="$2"; shift 2 ;;
     --code) CODE="$2"; shift 2 ;;
     --prepare) PREPARE=1; shift ;;
+    --update) UPDATE=1; shift ;;
+    --user) KUSER_OPT="$2"; shift 2 ;;
     --no-agent) AGENT=0; shift ;;
     --rotate) ROTATE="$2"; shift 2 ;;
     --reboot) echo "--reboot has been removed: the Pi doesn't reboot on its own. Reboots are started (and later scheduled) from the console."; exit 1 ;;
@@ -67,20 +74,30 @@ done
 [[ "$ROTATE" =~ ^(auto|0|90|270)$ ]] || { echo "--rotate must be auto, 0, 90 or 270"; exit 1; }
 [[ "$COUNTRY" =~ ^[A-Z]{2}$ ]] || { echo "--wifi-country must be two capital letters, like US"; exit 1; }
 [[ -z "$CODE" || "$CODE" =~ ^[A-Za-z0-9\ -]{8,12}$ ]] || { echo "That doesn't look like a prepare code (like ABCD-EFGH)."; exit 1; }
+if [[ $UPDATE -eq 1 ]]; then
+  [[ $PREPARE -eq 0 && -z "$CODE" ]] || { echo "--update keeps this Pi's settings and Wi-Fi; it can't be combined with --prepare or --code."; exit 1; }
+fi
 if [[ $PREPARE -eq 1 ]]; then
   [[ -n "$CODE" ]] || { echo "--prepare needs --code: get one in the console (Pi setup -> Get a prepare code), so the card carries the saved Wi-Fi."; exit 1; }
   [[ -z "$URL" ]] || { echo "--prepare makes a card for any Pi; it can't have a fixed --url."; exit 1; }
 fi
 [[ $EUID -eq 0 ]] || { echo "Run with sudo: sudo bash $0 ..."; exit 1; }
 
-KUSER="${SUDO_USER:-}"
+SETUP_CONF="${LOBBY_SETUP_CONF:-/etc/lobby-setup.conf}"
+if [[ $UPDATE -eq 1 && -f "$SETUP_CONF" ]]; then
+  source "$SETUP_CONF"                       # the options this Pi was set up (or its card prepared) with
+fi
+KUSER="${KUSER_OPT:-${SUDO_USER:-}}"
+if [[ -z "$KUSER" && $UPDATE -eq 1 ]]; then
+  KUSER="$(python3 -c 'import json; print(json.load(open("/etc/lobby-agent.json")).get("user", ""))' 2>/dev/null || true)"
+fi
 [[ -n "$KUSER" && "$KUSER" != "root" ]] || { echo "Run this with sudo from the desktop user's account, not as root directly."; exit 1; }
 KHOME="$(getent passwd "$KUSER" | cut -d: -f6)"
 KDIR="$KHOME/kiosk"
 SERIAL="$( { tr -d '\0' </proc/device-tree/serial-number; } 2>/dev/null || awk '/^Serial/ {print $3}' /proc/cpuinfo 2>/dev/null || true)"
 SERIAL="$(echo "$SERIAL" | tr 'A-F' 'a-f')"
 
-echo "==> $([[ $PREPARE -eq 1 ]] && echo "Preparing a card on this bench Pi" || echo "Setting up this Pi") for user $KUSER"
+echo "==> $([[ $PREPARE -eq 1 ]] && echo "Preparing a card on this bench Pi" || { [[ $UPDATE -eq 1 ]] && echo "Updating this Pi" || echo "Setting up this Pi"; }) for user $KUSER"
 if [[ $PREPARE -eq 1 ]]; then
   echo "    The card will carry no identity: it takes on the serial of whichever Pi it's put in."
 else
@@ -106,6 +123,15 @@ if [[ -n "$CODE" ]]; then
   echo "    $(python3 -c 'import json,sys; print(len(json.load(open(sys.argv[1]))["networks"]))' "$NETS") network(s) to save"
 fi
 
+# The agent too, now: saving Wi-Fi below can drop a Pi's network for a few seconds (it may be on one of those networks)
+AGENT_PY=""
+if [[ $AGENT -eq 1 ]]; then
+  AGENT_PY="$(mktemp)"
+  HERE="$(cd "$(dirname "$0")" && pwd)"
+  if [[ -f "$HERE/agent.py" ]]; then cp "$HERE/agent.py" "$AGENT_PY"
+  else curl -fsSL "$SITE/pi/agent.py" -o "$AGENT_PY" || { echo "Couldn't download the agent from $SITE. Check the network and run setup again."; exit 1; }; fi
+fi
+
 echo "==> Installing packages"
 apt-get update -qq
 if ! command -v chromium >/dev/null && ! command -v chromium-browser >/dev/null; then
@@ -114,6 +140,10 @@ fi
 apt-get install -y wlr-randr x11-xserver-utils curl grim scrot python3 python3-pil v4l-utils >/dev/null || true
 if [[ $CONNECT -eq 1 ]]; then apt-get install -y rpi-connect || echo "    rpi-connect not available on this OS image; skipping."; fi
 CHROME="$(command -v chromium || command -v chromium-browser)"
+if [[ $UPDATE -eq 1 ]]; then
+  echo "==> Installing Raspberry Pi OS updates"
+  DEBIAN_FRONTEND=noninteractive apt-get -y -o Dpkg::Options::=--force-confdef -o Dpkg::Options::=--force-confold full-upgrade
+fi
 
 echo "==> Desktop autologin, no screen blanking, Wi-Fi country $COUNTRY, time zone, SSH $([[ $SSH -eq 1 ]] && echo on || echo off)"
 if command -v raspi-config >/dev/null; then
@@ -215,6 +245,8 @@ systemctl enable lobby-identity.service >/dev/null 2>&1
 if [[ -n "$NETS" ]]; then
   echo "==> Saving the Wi-Fi networks"
   /usr/local/sbin/lobby-wifi-import "$NETS" || { echo "Some networks couldn't be saved (see above)."; exit 1; }
+  # If this Pi was on one of those networks, it reconnects now; wait for it (up to a minute)
+  for _ in $(seq 1 30); do curl -fsS --max-time 3 -o /dev/null "$SITE/login.html" && break; sleep 2; done
 fi
 
 echo "==> Writing $KDIR/kiosk.sh"
@@ -401,9 +433,7 @@ chown -R "$KUSER:$KUSER" "$KDIR" "$KHOME/.config" "$KHOME/.icons"
 if [[ $AGENT -eq 1 ]]; then
   echo "==> Installing the remote-management agent"
   mkdir -p /opt/lobby-agent
-  HERE="$(cd "$(dirname "$0")" && pwd)"
-  if [[ -f "$HERE/agent.py" ]]; then cp "$HERE/agent.py" /opt/lobby-agent/agent.py
-  else curl -fsSL "$SITE/pi/agent.py" -o /opt/lobby-agent/agent.py; fi
+  cp "$AGENT_PY" /opt/lobby-agent/agent.py; rm -f "$AGENT_PY"   # downloaded at the start
   python3 -m py_compile /opt/lobby-agent/agent.py
   chmod 755 /opt/lobby-agent/agent.py
   # The agent makes its own key for the Pi it's in (/var/lib/lobby-agent/identity.json). A Pi set up before
@@ -439,6 +469,9 @@ UNIT
   else systemctl enable --now lobby-agent.service; systemctl restart lobby-agent.service; fi
 fi
 
+# The options this Pi was set up with, so the console's Update Pi (--update) re-applies them the same way
+{ for v in SITE URL ROTATE TZ_NAME COUNTRY FORCE_1080 CONNECT AGENT SSH TV; do printf '%s=%q\n' "$v" "${!v}"; done; } > "$SETUP_CONF"
+
 # No automatic reboots: they're started from the console (and, later, scheduled there). Remove the nightly
 # reboot an earlier version of this script installed, if this Pi has one.
 rm -f /etc/cron.d/kiosk-reboot
@@ -472,6 +505,11 @@ if [[ $PREPARE -eq 1 ]]; then
   echo "Card prepared. Powering off now."
   echo "Next: copy this card to an image file (README: Preparing cards). Don't start it in this Pi again first."
   systemctl poweroff
+  exit 0
+fi
+
+if [[ $UPDATE -eq 1 ]]; then
+  echo "Updated."                            # the agent reports this, then restarts the Pi
   exit 0
 fi
 

@@ -14,10 +14,12 @@ Runs as a systemd service (lobby-agent). Standard library only.
 """
 import base64, json, os, pwd, re, secrets, shutil, socket, subprocess, sys, tempfile, time, urllib.error, urllib.request
 
-VERSION = "1.2.0"
+VERSION = "1.3.0"
 CONFIG = os.environ.get("LOBBY_AGENT_CONFIG", "/etc/lobby-agent.json")
 STATE = os.environ.get("LOBBY_AGENT_STATE", "/var/lib/lobby-agent/pending-results.json")
 IDENTITY = os.environ.get("LOBBY_AGENT_IDENTITY", "/var/lib/lobby-agent/identity.json")
+UPDATE_DIR = os.environ.get("LOBBY_AGENT_UPDATE_DIR", "/var/lib/lobby-agent/update")
+UPDATE_LIMIT = 45 * 60      # an update still running after this long is stopped and reported as failed
 INTERVAL = max(1.0, float(os.environ.get("LOBBY_AGENT_INTERVAL", "60")))   # seconds; only tests change this
 
 
@@ -203,6 +205,68 @@ def cmd_update_agent(cfg):
         return False, f"Update failed: {e}"
 
 
+# ── Update Pi: the latest setup (setup-kiosk.sh --update) run as its own job, so check-ins carry on meanwhile ──
+def _upd(name):
+    return os.path.join(UPDATE_DIR, name)
+
+
+def start_update(cfg, cid):
+    try:
+        with open(_upd("update.json")) as f:
+            if not os.path.exists(_upd("update.rc")) and time.time() - json.load(f).get("started", 0) < UPDATE_LIMIT:
+                return False, "An update is already running."
+    except (OSError, ValueError):
+        pass
+    try:
+        os.makedirs(UPDATE_DIR, exist_ok=True)
+        script = urllib.request.urlopen(cfg["site"].rstrip("/") + "/pi/setup-kiosk.sh", timeout=30).read()
+        if b"--update" not in script:
+            return False, "The downloaded setup doesn't support updates."
+        with open(_upd("setup-kiosk.sh"), "wb") as f:
+            f.write(script)
+        if run(["bash", "-n", _upd("setup-kiosk.sh")]).returncode != 0:
+            return False, "The downloaded setup didn't check out; nothing was changed."
+        for name in ("update.rc", "update.log"):
+            if os.path.exists(_upd(name)):
+                os.remove(_upd(name))
+        with open(_upd("update.json"), "w") as f:
+            json.dump({"id": cid, "started": time.time()}, f)
+        job = f'bash "{_upd("setup-kiosk.sh")}" --update --user "{cfg.get("user", "")}" > "{_upd("update.log")}" 2>&1; echo $? > "{_upd("update.rc")}"'
+        r = run(["systemd-run", "--unit", "lobby-update", "--collect", "--quiet", "--", "bash", "-c", job])
+        if r.returncode != 0:
+            os.remove(_upd("update.json"))
+            return False, "Couldn't start the update: " + (r.stderr or b"").decode(errors="ignore")[:200]
+        return True, None
+    except Exception as e:
+        return False, f"Update failed to start: {e}"
+
+
+def update_outcome():
+    """The finished update's result for the site, and whether to restart; None while there's nothing to report."""
+    try:
+        with open(_upd("update.json")) as f:
+            job = json.load(f)
+    except (OSError, ValueError):
+        return None
+    tail = [l.strip() for l in read(_upd("update.log")).splitlines() if l.strip()][-3:]
+    if os.path.exists(_upd("update.rc")):
+        ok = read(_upd("update.rc")).strip() == "0"
+        msg = "Updated; restarting." if ok else "Update failed: " + " / ".join(tail)[-300:]
+        return {"id": job.get("id"), "status": "done" if ok else "failed", "result": msg}, ok
+    if time.time() - job.get("started", 0) > UPDATE_LIMIT:
+        run(["systemctl", "stop", "lobby-update"])
+        return {"id": job.get("id"), "status": "failed", "result": "Update timed out after 45 minutes: " + " / ".join(tail)[-200:]}, False
+    return None
+
+
+def clear_update():
+    for name in ("update.json", "update.rc"):
+        try:
+            os.remove(_upd(name))
+        except OSError:
+            pass
+
+
 COMMANDS = {"reload": cmd_reload, "reboot": cmd_reboot, "screenshot": cmd_screenshot, "update_agent": cmd_update_agent}
 
 
@@ -268,6 +332,12 @@ def main():
     start = time.monotonic()
 
     while True:
+        done = update_outcome()                      # an Update Pi that has finished since the last check-in
+        restart_after = False
+        if done:
+            if not any(r.get("id") == done[0]["id"] for r in results):
+                results.append(done[0])
+            restart_after = done[1]
         body = {"serial": me, "model": model(), "hostname": socket.gethostname(), "version": VERSION, "health": health(), "results": results}
         if force_shot or time.time() - last_shot >= shot_every:
             shot = screenshot(cfg)
@@ -282,9 +352,20 @@ def main():
             reply = post(cfg, body)
             results = []
             save_pending([])
+            if done:
+                clear_update()
+                if restart_after:
+                    log("update finished; restarting")
+                    run(["systemctl", "reboot"])
             shot_every = max(60, int(reply.get("screenshot_every", 300)))
             reboot = False
             for c in reply.get("commands", []):
+                if c.get("command") == "update_pi":          # its result comes when the update finishes
+                    ok, msg = start_update(cfg, c.get("id"))
+                    log("command update_pi ->", "started" if ok else msg)
+                    if not ok:
+                        results.append({"id": c.get("id"), "status": "failed", "result": msg})
+                    continue
                 fn = COMMANDS.get(c.get("command"))
                 ok, msg = fn(cfg) if fn else (False, "Unknown command.")
                 r = {"id": c.get("id"), "status": "done" if ok else "failed", "result": msg}

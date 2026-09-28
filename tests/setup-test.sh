@@ -18,6 +18,16 @@ has "--prepare can't have a fixed address" "$(setup --prepare --code ABCD-EFGH -
 has "a malformed code is refused" "$(setup --code 'x"; rm -rf /')" "doesn't look like a prepare code"
 has "--reboot explains it's gone" "$(setup --reboot 03:30)" "--reboot has been removed"
 has "--help lists --prepare" "$(bash "$SETUP" --help)" "--prepare"
+has "--update keeps the Wi-Fi: no --code with it" "$(setup --update --code ABCD-EFGH)" "can't be combined"
+has "--update can't prepare a card" "$(setup --update --prepare)" "can't be combined"
+has "--help lists --update" "$(bash "$SETUP" --help)" "--update"
+
+# ── the saved setup options (what Update Pi re-applies) ──
+grep -F "printf '%s=%q" "$SETUP" > "$W/save-opts.sh"
+( SITE="https://1pdirectory.netlify.app"; URL="https://x.test/?site=a b&c=\$d"; ROTATE=270; TZ_NAME="America/Chicago"; COUNTRY=US
+  FORCE_1080=0; CONNECT=1; AGENT=1; SSH=1; TV=0; SETUP_CONF="$W/lobby-setup.conf"; source "$W/save-opts.sh" )
+( source "$W/lobby-setup.conf"; echo "$URL|$ROTATE|$FORCE_1080|$SSH|$TV" ) > "$W/opts.out"
+ok "the options a Pi was set up with come back exactly (odd characters too)" "$(cat "$W/opts.out")" 'https://x.test/?site=a b&c=$d|270|0|1|0'
 has "a good command gets past the checks (and stops at the sudo checks)" "$(setup --prepare --code abcd-efgh)" "sudo"
 
 # ── Wi-Fi import ──

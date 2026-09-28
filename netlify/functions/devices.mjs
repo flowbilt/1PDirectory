@@ -5,7 +5,7 @@
 //   GET ?screenshot=<device id>  the latest screenshot (JPEG)
 //   GET ?hardware=<screen id>    the screen's hardware record (serial, MACs, Yodeck snapshot); signed-in users
 //                                can't read that column directly (supabase/06-trust.sql)
-//   POST {action:"command", device_id, command}       reboot | reload | screenshot | update_agent
+//   POST {action:"command", device_id, command}       reboot | reload | screenshot | update_agent | update_pi
 //   POST {action:"identify", screen_id}               flash the screen's name on the TV for 90 seconds
 //   POST {action:"assign", device_id, screen_id|null} which screen this Pi drives (1Point only)
 //   POST {action:"open_enrollment" | "close_enrollment", device_id}  a Pi with no key accepts one only while open

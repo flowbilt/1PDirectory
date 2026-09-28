@@ -11,6 +11,8 @@ What it proves:
   - Update agent installs the new agent, restarts it, and the new one reports the result
   - a card carries no identity: the agent makes its own key in each Pi, keeps it across restarts, makes a new one
     if the card moves to another Pi, and keeps the key of a Pi set up before generic cards
+  - Update Pi runs the latest setup as its own job (check-ins carry on), reports when it's done, then restarts the
+    Pi; a failed update reports its error and doesn't restart
 """
 import json, os, re, shutil, subprocess, sys, tempfile, threading, time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -22,6 +24,12 @@ WORK = 0.6          # each check-in's slow part (vcgencmd), which must not push 
 
 W = tempfile.mkdtemp(prefix="agent-test-")
 checkins, replies, lock = [], [], threading.Lock()   # replies: list of command lists, one per check-in
+FAKE_SETUP = """#!/usr/bin/env bash
+# stand-in for setup-kiosk.sh --update
+echo "==> Updating this Pi ($*)"; sleep 5
+if [[ -f "$UPDATE_FAIL_FILE" ]]; then echo "E: Unable to fetch some archives"; exit 100; fi
+echo "Updated."
+"""
 NEW_AGENT = re.sub(r'VERSION = "[^"]+"', 'VERSION = "9.9.9-test"', open(AGENT).read(), count=1)   # what Update agent downloads
 
 
@@ -29,8 +37,8 @@ class Site(BaseHTTPRequestHandler):
     def log_message(self, *a):
         pass
 
-    def do_GET(self):  # Update agent downloads this
-        body = NEW_AGENT.encode()
+    def do_GET(self):  # Update agent downloads the agent; Update Pi downloads setup-kiosk.sh
+        body = (FAKE_SETUP if self.path.endswith("setup-kiosk.sh") else NEW_AGENT).encode()
         self.send_response(200); self.send_header("Content-Length", str(len(body))); self.end_headers(); self.wfile.write(body)
 
     def do_POST(self):
@@ -56,6 +64,8 @@ def main():
     stub("vcgencmd", f"sleep {WORK}; echo throttled=0x0\n")
     # "Rebooting" stops the agent (its parent), as a real reboot would
     stub("systemctl", f'echo "$*" >> {W}/systemctl.log; [[ "$1" == reboot ]] && kill -TERM $PPID; exit 0\n')
+    # systemd-run starts the job in the background, as the real one starts a separate service
+    stub("systemd-run", f'echo "$*" >> {W}/systemd-run.log; while [[ $# -gt 0 && "$1" != "--" ]]; do shift; done; shift; nohup "$@" >/dev/null 2>&1 &\n')
     stub("grim", 'python3 -c "import sys; from PIL import Image; Image.new(\'RGB\', (64, 36), (20, 40, 80)).save(sys.argv[1])" "${@: -1}"\n')
     agent = os.path.join(W, "agent.py")
     shutil.copy(AGENT, agent)                            # Update agent rewrites this copy, not the real one
@@ -63,7 +73,7 @@ def main():
     json.dump({"site": f"http://127.0.0.1:{srv.server_port}", "key": "k" * 43, "user": "no-such-desktop-user"}, open(cfg, "w"))
     state = os.path.join(W, "state", "pending-results.json")
     ident = os.path.join(W, "state", "identity.json")
-    env = dict(os.environ, PATH=f"{W}/bin:" + os.environ["PATH"], LOBBY_AGENT_CONFIG=cfg, LOBBY_AGENT_STATE=state, LOBBY_AGENT_IDENTITY=ident,
+    env = dict(os.environ, PATH=f"{W}/bin:" + os.environ["PATH"], LOBBY_AGENT_CONFIG=cfg, LOBBY_AGENT_STATE=state, LOBBY_AGENT_IDENTITY=ident, LOBBY_AGENT_UPDATE_DIR=os.path.join(W, "update"), UPDATE_FAIL_FILE=os.path.join(W, "fail"),
                LOBBY_AGENT_INTERVAL=str(TICK), LOBBY_AGENT_SERIAL="10000000abcd0001")
     log = open(os.path.join(W, "agent.log"), "a")
     start = lambda serial="10000000abcd0001": subprocess.Popen([sys.executable, agent], env=dict(env, LOBBY_AGENT_SERIAL=serial), stdout=log, stderr=log)
@@ -148,6 +158,41 @@ def main():
     os.remove(ident)
     a4, id4 = run_once("10000000abcd0003")
     check("a prepared card (no key anywhere) makes its own", a4 not in (a1, a2, "Bearer " + "k" * 43) and a4 == "Bearer " + id4["key"] and oct(os.stat(ident).st_mode & 0o777) == "0o600", oct(os.stat(ident).st_mode & 0o777))
+
+    # ── E. Update Pi ──
+    def results_for(cid):
+        with lock: return [(i, r) for i, c in enumerate(checkins) for r in c[1].get("results", []) if r.get("id") == cid]
+    def wait_result(cid, timeout=25):
+        end = time.monotonic() + timeout
+        while time.monotonic() < end:
+            if results_for(cid): return results_for(cid)
+            time.sleep(0.1)
+        return []
+    open(os.path.join(W, "systemctl.log"), "w").close()
+    with lock: replies.clear(); n = len(checkins)
+    p = start("10000000abcd0003"); wait_for(n + 1)
+    with lock: replies.append([{"id": 5, "command": "update_pi"}]); n = len(checkins)
+    got = wait_result(5)
+    check("Update Pi: check-ins carry on while it runs, and the result comes when it's finished", got and got[0][0] >= n + 3, got and got[0][0] - n)
+    check("and says it's done", got and got[0][1]["status"] == "done" and got[0][1]["result"] == "Updated; restarting.", got)
+    ran = open(os.path.join(W, "systemd-run.log")).read()
+    check("it ran the site's setup with --update for the desktop user", "--update --user" in ran and "no-such-desktop-user" in ran, ran[:200])
+    try: p.wait(timeout=10)
+    except subprocess.TimeoutExpired: p.kill()
+    check("then the Pi restarts", "reboot" in open(os.path.join(W, "systemctl.log")).read())
+    with lock: n = len(checkins)
+    p = start("10000000abcd0003"); wait_for(n + 2)
+    check("and the result isn't reported again after the restart", len(results_for(5)) == 1, len(results_for(5)))
+    open(os.path.join(W, "fail"), "w").close(); open(os.path.join(W, "systemctl.log"), "w").close()
+    with lock: replies.append([{"id": 6, "command": "update_pi"}])
+    got = wait_result(6)
+    check("a failed update reports its error", got and got[0][1]["status"] == "failed" and "Unable to fetch" in got[0][1]["result"], got)
+    time.sleep(1)
+    check("and doesn't restart the Pi", p.poll() is None and "reboot" not in open(os.path.join(W, "systemctl.log")).read())
+    p.terminate()
+    try: p.wait(timeout=5)
+    except subprocess.TimeoutExpired: p.kill()
+
     srv.shutdown()
     print(f"\n{passed}/{passed + failed} passed")
     if failed:
