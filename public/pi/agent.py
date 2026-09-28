@@ -14,10 +14,11 @@ Runs as a systemd service (lobby-agent). Standard library only.
 """
 import base64, json, os, pwd, re, secrets, shutil, socket, subprocess, sys, tempfile, time, urllib.error, urllib.request
 
-VERSION = "1.4.0"
+VERSION = "1.5.0"
 CONFIG = os.environ.get("LOBBY_AGENT_CONFIG", "/etc/lobby-agent.json")
 STATE = os.environ.get("LOBBY_AGENT_STATE", "/var/lib/lobby-agent/pending-results.json")
 IDENTITY = os.environ.get("LOBBY_AGENT_IDENTITY", "/var/lib/lobby-agent/identity.json")
+TV_STATE = os.environ.get("LOBBY_TV_STATE", "/run/lobby-tv/state")   # written by lobby-tv (setup-kiosk.sh)
 UPDATE_DIR = os.environ.get("LOBBY_AGENT_UPDATE_DIR", "/var/lib/lobby-agent/update")
 FIRST_SHOT = 120           # seconds after start before the first automatic screenshot (the browser is up by then)
 UPDATE_LIMIT = 45 * 60      # an update still running after this long is stopped and reported as failed
@@ -109,6 +110,11 @@ def health():
         v = int(m.group(1), 16)
         h.update(throttled=hex(v), under_voltage_now=bool(v & 0x1), throttled_now=bool(v & 0x4), under_voltage_seen=bool(v & 0x10000))
     h["browser_running"] = run(["pgrep", "-f", "chromium"]).returncode == 0
+    try:   # the TV's power state, if the TV keeper has checked in the last 5 minutes
+        if time.time() - os.path.getmtime(TV_STATE) < 300:
+            h["tv"] = read(TV_STATE).strip()
+    except OSError:
+        pass
     try:
         s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         s.connect(("1.1.1.1", 80))

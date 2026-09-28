@@ -101,7 +101,8 @@ the console once Pi settings are built.
 
 A Pi needs no one on site after a power cut, whatever comes back first:
 
-- **The TV:** the Pi keeps the TV switched on and showing the Pi, over HDMI-CEC. At start it tries every 15 seconds
+- **The TV:** the Pi keeps the TV switched on and showing the Pi, over HDMI-CEC, and reports its state (On, standby,
+  not answering) to the Pi panel and the Health tab, where a TV that's off shows as a problem. At start it tries every 15 seconds
   for 5 minutes (a TV can come up after the Pi), then checks every 2 minutes, so a TV switched off, or one that lost
   power on its own, comes back on. The TV's CEC setting must be on (Anynet+ on Samsung, SimpLink on LG, Bravia Sync
   on Sony). If a TV has a "power on after power loss" setting, set it to On as well. `--no-tv` leaves the TV alone.
@@ -137,11 +138,11 @@ Update Pi. Saved Wi-Fi changes still reach a Pi only on a new card (see the road
 On a freshly flashed Pi, open Terminal and run the same commands without `--prepare` (the code is only needed to
 save the Wi-Fi; a wired Pi can leave out `--code`), then `sudo reboot`.
 
-Rotation is automatic. Each time the Pi starts, it asks the site whether its screen is set to portrait or landscape in the console, and turns the picture to match. Portrait turns 90°. Landscape, new and unassigned Pis stay upright. Without internet it keeps its last answer. So after assigning a new Pi to a portrait screen, use **Pi → Reboot Pi** in the console to turn it. The Pi never reboots on its own; reboot scheduling will come to the console with maintenance windows.
+Rotation is automatic. Each time the Pi starts, it asks the site how its screen's **Layout** is set in the console, and turns the picture to match: Portrait 90°, **Portrait (turned the other way)** 270° for a portrait TV hung the other way round, **Landscape (upside down)** 180°; landscape, new and unassigned Pis stay upright. Without internet it keeps its last answer. So after assigning a Pi or changing a Layout, use **Pi → Reboot Pi** to turn it. The Pi never reboots on its own; reboot scheduling will come to the console with maintenance windows.
 
 SSH is switched off by setup (from the restart that finishes it), so the Pi opens no ports. The agent covers remote management. Use `--ssh` for a Pi that needs it, and re-run setup without `--ssh` to switch it off again.
 
-Options (`sudo bash setup-kiosk.sh --help` lists them all): `--rotate 270` if a portrait picture is upside down (or `0`/`90` to fix it by hand), `--ssh` to leave SSH on, `--no-tv` to leave the TV alone, `--connect` for Raspberry Pi Connect, `--no-agent` to skip the agent, and `--url` to pin a fixed screen address the old way.
+Options (`sudo bash setup-kiosk.sh --help` lists them all): `--rotate 0|90|180|270` to fix the turn by hand (for good; the console's Layout is the usual way), `--ssh` to leave SSH on, `--no-tv` to leave the TV alone, `--connect` for Raspberry Pi Connect, `--no-agent` to skip the agent, and `--url` to pin a fixed screen address the old way.
 
 ## Remote management (the agent)
 
@@ -198,7 +199,7 @@ Local sample logins: `scot@1pointusa.com / admin-pass`, `leighann@barber.test / 
 public/             screen (index.html, display.*), sign-in, console (+ console-devices.js, console-setup.js), editor, shared auth.js
 netlify/functions/  screen, heartbeat, users, migrate, config, weather, news, agent, devices, networks, alerts
 netlify/lib/        Supabase client, RSS reader, shared helpers
-supabase/           database schema (01 to 10, run in order), starting data, check queries, setup guide
+supabase/           database schema (01 to 11, run in order), starting data, check queries, setup guide
 migration/          the Yodeck/Wix transcription the starting data was built from
 public/pi/          setup-kiosk.sh and agent.py (served by the site so Pis can download them)
 tests/              function tests, fake Supabase, local test server

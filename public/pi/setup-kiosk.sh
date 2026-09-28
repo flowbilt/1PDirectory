@@ -29,10 +29,10 @@
 #                      Needs --code. Run it at the Pi's own keyboard or on a cable: it drops the bench's Wi-Fi.
 #   --site URL         The directory site. Default https://1pdirectory.netlify.app
 #   --url URL          Old style: a fixed screen address instead of letting the console decide (not with --prepare)
-#   --rotate auto|0|90|270  Default auto: at every start the Pi asks the site whether its screen is portrait
-#                      or landscape (as set in the console) and turns the picture to match. Landscape, new
-#                      and unassigned Pis use 0. A fixed number overrides that. If a portrait picture is
-#                      upside down, re-run with --rotate 270.
+#   --rotate auto|0|90|180|270  Default auto: at every start the Pi asks the site how its screen is set in the
+#                      console (portrait 90, portrait turned the other way 270, landscape upside down 180) and turns
+#                      the picture to match. Landscape, new and unassigned Pis use 0. A fixed number overrides
+#                      the console for good; for a TV mounted the other way round, use the console's Layout instead.
 #   --tz ZONE          Time zone. Default America/Chicago.
 #   --wifi-country CC  Wi-Fi country code. Default US.
 #   --no-1080p         Keep the TV's native resolution (4K runs slowly on a Pi 4; not recommended).
@@ -71,7 +71,7 @@ done
 
 [[ "$SITE" =~ ^https?:// ]] || { echo "--site must start with https://"; exit 1; }
 [[ -z "$URL" || "$URL" =~ ^https?:// ]] || { echo "--url must start with https://"; exit 1; }
-[[ "$ROTATE" =~ ^(auto|0|90|270)$ ]] || { echo "--rotate must be auto, 0, 90 or 270"; exit 1; }
+[[ "$ROTATE" =~ ^(auto|0|90|180|270)$ ]] || { echo "--rotate must be auto, 0, 90, 180 or 270"; exit 1; }
 [[ "$COUNTRY" =~ ^[A-Z]{2}$ ]] || { echo "--wifi-country must be two capital letters, like US"; exit 1; }
 [[ -z "$CODE" || "$CODE" =~ ^[A-Za-z0-9\ -]{8,12}$ ]] || { echo "That doesn't look like a prepare code (like ABCD-EFGH)."; exit 1; }
 if [[ $UPDATE -eq 1 ]]; then
@@ -294,7 +294,7 @@ for _ in $(seq 1 45); do curl -fsS --max-time 3 -o /dev/null "$URL" && break; sl
 # portrait -> 90, anything else (landscape, automatic, new or unassigned Pi) -> 0.
 # If the site can't be reached, this Pi's last answer is used, so a Pi that boots without internet stays the same.
 rotation_for() {
-  curl -fsS --max-time 8 "$1" 2>/dev/null | python3 -c 'import json,sys; print(90 if json.load(sys.stdin).get("orientation") == "portrait" else 0)' 2>/dev/null
+  curl -fsS --max-time 8 "$1" 2>/dev/null | python3 -c 'import json,sys; print({"portrait": 90, "portrait-flipped": 270, "landscape-flipped": 180}.get(json.load(sys.stdin).get("orientation"), 0))' 2>/dev/null
 }
 ROT="$ROTATE"
 if [[ "$ROT" == "auto" ]]; then
@@ -322,7 +322,7 @@ if [[ -n "${WAYLAND_DISPLAY:-}" ]] && command -v wlr-randr >/dev/null; then
   ) &
 elif [[ -n "${DISPLAY:-}" ]] && command -v xrandr >/dev/null; then
   OUT="$(xrandr | awk '/ connected/ {print $1; exit}')"
-  case "$ROT" in 90) xrandr --output "$OUT" --rotate right ;; 270) xrandr --output "$OUT" --rotate left ;; *) xrandr --output "$OUT" --rotate normal ;; esac
+  case "$ROT" in 90) xrandr --output "$OUT" --rotate right ;; 270) xrandr --output "$OUT" --rotate left ;; 180) xrandr --output "$OUT" --rotate inverted ;; *) xrandr --output "$OUT" --rotate normal ;; esac
   xset s off; xset -dpms; xset s noblank
 fi
 
@@ -385,13 +385,19 @@ if [[ $TV -eq 1 ]]; then
 # Samsung, SimpLink on LG, Bravia Sync on Sony). Nothing to do without a CEC device (logged once).
 DEV="${LOBBY_CEC_DEV:-}"
 if [[ -z "$DEV" ]]; then for d in /dev/cec0 /dev/cec1; do [[ -e "$d" ]] && { DEV="$d"; break; }; done; fi
-if [[ -z "$DEV" || ! -e "$DEV" ]]; then echo "no HDMI-CEC device on this Pi; not controlling the TV"; exec sleep infinity; fi
+STATE="${LOBBY_TV_STATE:-/run/lobby-tv/state}"; mkdir -p "$(dirname "$STATE")"
+report() { echo "$1" > "$STATE.tmp" && mv "$STATE.tmp" "$STATE"; }   # the agent reports it to the console
+if [[ -z "$DEV" || ! -e "$DEV" ]]; then
+  echo "no HDMI-CEC device on this Pi; not controlling the TV"
+  while true; do report no-cec; sleep 120; done
+fi
 FAST="${LOBBY_TV_FAST:-15}"; SLOW="${LOBBY_TV_SLOW:-120}"; FAST_FOR="${LOBBY_TV_FAST_FOR:-300}"
 cec() { cec-ctl -d "$DEV" "$@" 2>&1; }
 cec --playback --osd-name "Lobby" >/dev/null           # join the TV's CEC network as a player
 sourced=0; last=""
 while true; do
   st="$(cec --to 0 --give-device-power-status | grep -o 'pwr-state: [a-z-]*' | head -1 | cut -d' ' -f2)"
+  case "$st" in on|to-on) report on ;; standby|to-standby) report standby ;; *) report not-answering ;; esac
   if [[ "$st" == "on" || "$st" == "to-on" ]]; then
     if [[ $sourced -eq 0 ]]; then                        # make sure it's showing this Pi's input
       pa="$(cec | awk -F': *' '/Physical Address/ {print $2; exit}')"

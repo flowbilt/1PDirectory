@@ -67,6 +67,14 @@ ok "a card moved to another Pi opens that Pi's address" "$GOT_URL" "$BASE/?devic
 ok "and turns the way that Pi's screen is set" "$GOT_ROT" "$(T normal)"
 H="$WORK/i"; run "$H" 10000000a4ae272d "$BASE" "" auto; run "$H" 100000008294ba46 "$OFF" "" auto
 ok "a moved card with no internet doesn't reuse the other Pi's answer" "$GOT_ROT" "$(T normal)"
+# The layouts for a TV mounted the other way round, set in the console
+layout() { curl -fsS -o /dev/null -X PATCH "$BASE/sb/rest/v1/screens?key=eq.$1" -H "apikey: test-service-key" \
+  -H "Content-Type: application/json" -d "{\"orientation\": \"$2\"}"; }
+layout ppi-3n portrait-flipped; H="$WORK/l"; run "$H" 10000000335b04b3 "$BASE" "" auto
+ok "Portrait (turned the other way) turns the picture 270 degrees" "$GOT_ROT" "$(T 270)"
+layout ppi-4n landscape-flipped; H="$WORK/m"; run "$H" 1000000025b7d4d6 "$BASE" "" auto
+ok "Landscape (upside down) turns it 180 degrees" "$GOT_ROT" "$(T 180)"
+
 # The watcher (every second here, 10 in real life) while the browser runs for 4 seconds
 H="$WORK/j"; EXTRA="CHROME_WAIT=4 KIOSK_WATCH_SECONDS=1" run "$H" 10000000a4ae272d "$BASE" "" auto
 ok "the watcher leaves a correctly turned screen alone" "$GOT_ROT" "$(T 90)"

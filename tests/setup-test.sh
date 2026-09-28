@@ -20,6 +20,8 @@ has "--reboot explains it's gone" "$(setup --reboot 03:30)" "--reboot has been r
 has "--help lists --prepare" "$(bash "$SETUP" --help)" "--prepare"
 has "--update keeps the Wi-Fi: no --code with it" "$(setup --update --code ABCD-EFGH)" "can't be combined"
 has "--update can't prepare a card" "$(setup --update --prepare)" "can't be combined"
+has "--rotate takes 180 now" "$(setup --rotate 180 --prepare)" "--prepare needs --code"
+has "but not other numbers" "$(setup --rotate 45)" "must be auto, 0, 90, 180 or 270"
 has "--help lists --update" "$(bash "$SETUP" --help)" "--update"
 
 # ── the saved setup options (what Update Pi re-applies) ──
@@ -89,7 +91,7 @@ S
 chmod +x "$W/bin/cec-ctl"; touch "$W/cec0"
 tv_run() {  # run the keeper for $1 seconds with the TV starting in state $2
   echo "$2" > "$W/tv"; : > "$W/cec.log"
-  CECLOG="$W/cec.log" TVSTATE="$W/tv" LOBBY_CEC_DEV="$W/cec0" LOBBY_TV_FAST=0.3 LOBBY_TV_SLOW=0.3 PATH="$W/bin:$PATH" \
+  CECLOG="$W/cec.log" TVSTATE="$W/tv" LOBBY_TV_STATE="$W/tvstate" LOBBY_CEC_DEV="$W/cec0" LOBBY_TV_FAST=0.3 LOBBY_TV_SLOW=0.3 PATH="$W/bin:$PATH" \
     timeout "$1" bash "$W/lobby-tv" > "$W/tv.out" 2>&1
 }
 tv_run 2 standby
@@ -98,14 +100,21 @@ has "a TV in standby is turned on" "$C" "--to 0 --image-view-on"
 has "and switched to this Pi's input" "$C" "--to 15 --active-source phys-addr=1.0.0.0"
 ok "the input is switched once, not every check" "$(grep -c active-source "$W/cec.log")" "1"
 has "it says what it did" "$(cat "$W/tv.out")" "TV is standby; turning it on"
+ok "and reports the TV's state for the console (on, once woken)" "$(cat "$W/tvstate")" "on"
 tv_run 2 on
 ok "a TV that's already on isn't sent 'turn on'" "$(grep -c image-view-on "$W/cec.log")" "0"
 has "but is switched to this Pi once" "$(cat "$W/cec.log")" "active-source"
 ( sleep 1; echo standby > "$W/tv" ) & tv_run 2.5 on
 ok "a TV that goes off later is turned back on" "$(grep -c image-view-on "$W/cec.log")" "1"
 ok "and switched back to this Pi" "$(grep -c active-source "$W/cec.log")" "2"
-CECLOG="$W/cec.log" LOBBY_CEC_DEV="$W/no-such-cec" PATH="$W/bin:$PATH" timeout 1 bash "$W/lobby-tv" > "$W/tv.out" 2>&1
+CECLOG="$W/cec.log" LOBBY_TV_STATE="$W/tvstate" LOBBY_CEC_DEV="$W/no-such-cec" PATH="$W/bin:$PATH" timeout 1 bash "$W/lobby-tv" > "$W/tv.out" 2>&1
 has "no CEC device: says so and does nothing" "$(cat "$W/tv.out")" "not controlling the TV"
+ok "and reports that to the console" "$(cat "$W/tvstate")" "no-cec"
+printf '#!/usr/bin/env bash\nshift 2; exit 0\n' > "$W/bin/cec-ctl.silent"
+cp "$W/bin/cec-ctl" "$W/bin/cec-ctl.keep"; cp "$W/bin/cec-ctl.silent" "$W/bin/cec-ctl"
+tv_run 1 standby
+ok "a TV that doesn't answer is reported as not answering" "$(cat "$W/tvstate")" "not-answering"
+cp "$W/bin/cec-ctl.keep" "$W/bin/cec-ctl"
 
 # ── the invisible pointer ──
 awk "/^python3 - \"\\\$KHOME\/.icons\/lobby-hidden\" <<'PY'/{f=1;next} /^PY\$/{f=0} f" "$SETUP" > "$W/pointer.py"

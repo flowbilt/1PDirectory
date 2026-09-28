@@ -337,6 +337,22 @@ test("a refused Pi says why in the console, until its next good check-in", async
   assert.ok(sql.includes("refused_at    = null"), "10 clears it on a good check-in");
 });
 
+test("the TV's state is reported, only as a known value, and a TV that's off shows in Health", async () => {
+  const admin = await login("scot@1pointusa.com", "admin-pass");
+  const dev = fake.T.devices.find((x) => x.serial === PPI2S_SERIAL);
+  await checkin({ health: { tv: "<script>" } });
+  assert.equal(dev.last_health.tv, null, "unknown values are dropped");
+  await checkin({ health: { tv: "standby" } });
+  assert.equal(dev.last_health.tv, "standby");
+  const p = (await (await devApi(admin, { qs: "?summary=1" })).json()).devices.find((x) => x.serial === PPI2S_SERIAL);
+  assert.ok(p.problems.includes("TV off"), p.problems.join(", ")); assert.equal(p.tv, "standby");
+  await checkin({ health: { tv: "on" } });
+  const q = (await (await devApi(admin, { qs: "?summary=1" })).json()).devices.find((x) => x.serial === PPI2S_SERIAL);
+  assert.ok(!q.problems.some((x) => x.startsWith("TV")));
+  const sql = readFileSync(new URL("../supabase/11-layouts.sql", import.meta.url), "utf8");
+  for (const o of ["auto", "portrait", "landscape", "portrait-flipped", "landscape-flipped"]) assert.ok(sql.includes(`'${o}'`), `11 allows ${o}`);
+});
+
 test("Update Pi can be sent to an enrolled Pi, and reaches it", async () => {
   const admin = await login("scot@1pointusa.com", "admin-pass");
   const dev = fake.T.devices.find((x) => x.serial === PPI2S_SERIAL);

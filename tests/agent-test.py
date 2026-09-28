@@ -73,7 +73,7 @@ def main():
     json.dump({"site": f"http://127.0.0.1:{srv.server_port}", "key": "k" * 43, "user": "no-such-desktop-user"}, open(cfg, "w"))
     state = os.path.join(W, "state", "pending-results.json")
     ident = os.path.join(W, "state", "identity.json")
-    env = dict(os.environ, PATH=f"{W}/bin:" + os.environ["PATH"], LOBBY_AGENT_CONFIG=cfg, LOBBY_AGENT_STATE=state, LOBBY_AGENT_IDENTITY=ident, LOBBY_AGENT_UPDATE_DIR=os.path.join(W, "update"), UPDATE_FAIL_FILE=os.path.join(W, "fail"),
+    env = dict(os.environ, PATH=f"{W}/bin:" + os.environ["PATH"], LOBBY_AGENT_CONFIG=cfg, LOBBY_AGENT_STATE=state, LOBBY_AGENT_IDENTITY=ident, LOBBY_TV_STATE=os.path.join(W, "tv-state"), LOBBY_AGENT_UPDATE_DIR=os.path.join(W, "update"), UPDATE_FAIL_FILE=os.path.join(W, "fail"),
                LOBBY_AGENT_INTERVAL=str(TICK), LOBBY_AGENT_SERIAL="10000000abcd0001")
     log = open(os.path.join(W, "agent.log"), "a")
     start = lambda serial="10000000abcd0001": subprocess.Popen([sys.executable, agent], env=dict(env, LOBBY_AGENT_SERIAL=serial), stdout=log, stderr=log)
@@ -93,6 +93,7 @@ def main():
             time.sleep(0.05)
         return False
 
+    open(os.path.join(W, "tv-state"), "w").write("standby\n")   # as lobby-tv writes it
     # ── A. schedule, and commands without an extra check-in ──
     replies.extend([[], [], [{"id": 1, "command": "reload"}, {"id": 2, "command": "screenshot"}], [], [], [], [], []])
     p = start()
@@ -108,6 +109,7 @@ def main():
     check("Take screenshot sends the picture then, and says so",
           after.get("screenshot", "").startswith("data:image/jpeg;base64,") and res.get(2, {}).get("result") == "Screenshot taken.", res.get(2))
     check("no automatic screenshot straight after start (the screen is still blank then)", not any(c[1].get("screenshot") for c in checkins[:3]))
+    check("the TV's state goes out with the health report", checkins[0][1].get("health", {}).get("tv") == "standby", checkins[0][1].get("health", {}).get("tv"))
     check("results are sent once", not checkins[4][1].get("results"), checkins[4][1].get("results"))
 
     # ── B. a reboot's result survives the reboot ──

@@ -30,6 +30,8 @@ function cleanHealth(h) {
     throttled: clip(h.throttled, 12), under_voltage_now: !!h.under_voltage_now, under_voltage_seen: !!h.under_voltage_seen,
     throttled_now: !!h.throttled_now, browser_running: h.browser_running !== false,
     ip: clip(h.ip, 45), os: clip(h.os, 80), display: clip(h.display, 40),
+    // The TV's power state over HDMI-CEC (agent 1.5.0): on, standby, not-answering, or no-cec (no CEC on this Pi)
+    tv: ["on", "standby", "not-answering", "no-cec"].includes(h.tv) ? h.tv : null,
   };
 }
 

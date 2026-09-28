@@ -20,6 +20,7 @@ Do these once. The current site keeps running as it is until the new build is de
 9. For saved Wi-Fi and prepare codes (generic prepared cards): **before uploading that code**, new query, paste all of `08-networks.sql`, and click **Run**. Then new query, paste all of `check-networks.sql`, and click **Run**; every column should read **true**. (The old code doesn't know these tables exist, so this order has no gap.)
 10. For Update Pi (DP-02 round 5): **before uploading that code**, new query, paste all of `09-update.sql`, and click **Run**. Then run `check-update.sql`; it should read **true**.
 11. For the refused-Pi message (DP-02 round 6): **before uploading that code**, new query, paste all of `10-refused.sql`, and click **Run**. Then run `check-refused.sql`; it should read **ALL 5 CHECKS PASSED** (red on purpose).
+12. For the extra screen layouts (DP-02 round 7): **before uploading that code**, new query, paste all of `11-layouts.sql`, and click **Run**. Then run `check-layouts.sql`; it should read **true**.
 
 If any of them shows an error (other than the expected red messages from the `check-…sql` files), copy the message (it includes a line number) and send it to Claude.
 

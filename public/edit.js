@@ -213,7 +213,7 @@
   }
   function previewShape() {
     const o = S.screens[0]?.orientation || "auto";
-    return o === "landscape" ? "landscape" : "portrait";
+    return o.startsWith("landscape") ? "landscape" : "portrait";
   }
   function scalePreview() {
     const box = $("preview-box"), land = previewShape() === "landscape";

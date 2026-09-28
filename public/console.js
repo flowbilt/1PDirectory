@@ -4,6 +4,8 @@
   const { esc, toast, since, slug, roleName } = window.UI;
   const PAGE = 25;
   const ONLINE_MIN = 15;
+  const LAYOUTS = { auto: "Automatic (match the TV)", portrait: "Portrait", "portrait-flipped": "Portrait (turned the other way)",
+                    landscape: "Landscape", "landscape-flipped": "Landscape (upside down)" };
   // Signed-in users may read only these screen columns (supabase/06-trust.sql); hardware comes from /api/devices.
   const SCREEN_COLS = "id,directory_id,key,name,location_note,orientation,last_seen,last_report,identify_until,created_at";
 
@@ -75,7 +77,7 @@
         ${Dev.thumbCell(s)}
         <td><strong>${esc(s.name)}</strong><div class="sub">${esc(s.key)}${s.location_note ? ` · ${esc(s.location_note)}` : ""}</div></td>
         <td>${d ? `${esc(d.title)}${d.subtitle ? ` · ${esc(d.subtitle)}` : ""}<div class="sub">${esc(p?.name || "")} · ${S.tenantCount[d.id] || 0} tenants</div>` : `<span class="warn">Not assigned</span>`}</td>
-        <td>${esc({ auto: "Automatic", portrait: "Portrait", landscape: "Landscape" }[s.orientation] || s.orientation)}${rep.w ? `<div class="sub">${rep.w}×${rep.h}</div>` : ""}</td>
+        <td>${esc({ ...LAYOUTS, auto: "Automatic" }[s.orientation] || s.orientation)}${rep.w ? `<div class="sub">${rep.w}×${rep.h}</div>` : ""}</td>
         <td>${since(s.last_seen)}</td>
         <td class="actions">
           ${d ? `<a class="ghost" href="/edit.html?d=${d.id}">Edit tenants</a>` : ""}
@@ -107,7 +109,7 @@
         ${field("s-name", "Name", `<input id="s-name" required maxlength="80" value="${esc(s?.name || "")}">`)}
         ${field("s-key", "Screen address", `<input id="s-key" required pattern="[a-z0-9][a-z0-9-]{0,47}" value="${esc(s?.key || "")}" ${isNew ? "" : "readonly"}>`, isNew ? "Lowercase letters, numbers and dashes. The Pi opens this address, so it can't change later." : `The Pi opens ${location.origin}/?screen=${esc(s.key)}`)}
         ${field("s-dir", "Shows directory", `<select id="s-dir">${dirOptions(s?.directory_id)}</select>`)}
-        ${field("s-orient", "Layout", `<select id="s-orient">${["auto", "portrait", "landscape"].map((o) => `<option value="${o}"${(s?.orientation || "auto") === o ? " selected" : ""}>${{ auto: "Automatic (match the TV)", portrait: "Portrait", landscape: "Landscape" }[o]}</option>`).join("")}</select>`, "If this doesn't match how the TV is mounted, the page turns itself to fit. Changes reach the screen within a minute.")}
+        ${field("s-orient", "Layout", `<select id="s-orient">${Object.entries(LAYOUTS).map(([o, label]) => `<option value="${o}"${(s?.orientation || "auto") === o ? " selected" : ""}>${label}</option>`).join("")}</select>`, "A Pi turns its picture to match at its next start (Pi → Reboot Pi). A portrait TV that comes out upside down is mounted the other way round: choose Portrait (turned the other way).")}
         ${field("s-loc", "Location note", `<input id="s-loc" maxlength="120" value="${esc(s?.location_note || "")}" placeholder="e.g. 3rd floor, north elevator lobby">`)}
         <div id="s-hw"></div>
         ${isNew ? "" : `<button type="button" id="s-delete" class="ghost danger">Remove this screen</button>`}`,

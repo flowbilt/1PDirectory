@@ -10,7 +10,7 @@
 */
 (() => {
   "use strict";
-  const VERSION = "2.4.0";
+  const VERSION = "2.5.0";
   const q = new URLSearchParams(location.search);
   const DEVICE = (q.get("device") || "").toLowerCase();
   const CHOSEN = (q.get("screen") || q.get("key") || q.get("site") || "").toLowerCase();
@@ -64,10 +64,11 @@
   // TV is being driven, the page rotates itself 90 degrees. ?rotate= in the address overrides that.
   function sizeStage() {
     const vw = window.innerWidth, vh = window.innerHeight;
-    const wanted = data?.orientation || "auto";
+    const wanted = data?.orientation || "auto";           // portrait-flipped / landscape-flipped: the same layouts, the
+    const shape = wanted.split("-")[0];                   // Pi turns the picture the other way (setup-kiosk.sh)
     const viewportPortrait = vh > vw;
     let rotate = URL_ROTATE;
-    if (rotate === null) rotate = (wanted === "portrait" && !viewportPortrait) || (wanted === "landscape" && viewportPortrait) ? 90 : 0;
+    if (rotate === null) rotate = shape === "portrait" && !viewportPortrait ? (wanted === "portrait-flipped" ? 270 : 90) : shape === "landscape" && viewportPortrait ? 90 : 0;
     const W = rotate ? vh : vw, H = rotate ? vw : vh;
     const landscape = W > H;
     const root = document.documentElement.style;

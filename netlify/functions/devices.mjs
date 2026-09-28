@@ -191,13 +191,14 @@ export function computeSummary({ devices, daily, screens, dirs, props, orgs, now
       typeof h.temp_c === "number" && h.temp_c >= 80 ? "hot" : null,
       online && h.browser_running === false ? "browser not running" : null,
       d.status === "revoked" ? "switched off" : null,
+      online && h.tv === "standby" ? "TV off" : online && h.tv === "not-answering" ? "TV not answering" : null,
     ].filter(Boolean);
     return {
       id: d.id, serial: d.serial, status: d.status, online, last_seen: d.last_seen,
       screen: s ? { id: s.id, name: s.name, key: s.key } : null,
       building: prop?.name || null, account: org?.name || null, org_id: org?.id || null,
       temp_now: typeof h.temp_c === "number" ? h.temp_c : null, power_now: !!h.under_voltage_now,
-      browser_running: h.browser_running !== false, ip: h.ip || null, agent_version: d.agent_version || null, model: d.model || null,
+      browser_running: h.browser_running !== false, tv: h.tv || null, ip: h.ip || null, agent_version: d.agent_version || null, model: d.model || null,
       uptime: { d1: d1.uptime, d7: d7.uptime, d30: d30.uptime },
       dips: { d7: d7.dips, d30: d30.dips }, max_temp_7d: d7.maxTemp, browser_down_7d: d7.browserDown,
       history_from: firstDay, problems,
