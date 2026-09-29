@@ -4,7 +4,10 @@
 // Each problem is emailed once when it starts and once when it clears, never every 10 minutes.
 // A Pi's alert state is saved only after the email has actually gone out. So a failed send is retried on the
 // next run, and problems that already exist are emailed once when the email settings are first added.
-// Needs: RESEND_API_KEY, ALERT_EMAIL_TO (comma-separated), ALERT_EMAIL_FROM. Without them it only logs.
+// Needs ALERT_EMAIL_TO (comma-separated) and ALERT_EMAIL_FROM, and a way to send: the company mail server
+// (SMTP_HOST, SMTP_PORT 465 or 587, SMTP_USER, SMTP_PASS, e.g. Rackspace) or, if that isn't set, RESEND_API_KEY.
+// Without them it only logs.
+import { sendMail } from "../lib/smtp.mjs";
 import { db, enc } from "../lib/sb.mjs";
 
 const OFFLINE_MIN = 15;
@@ -55,18 +58,25 @@ export async function runAlerts({ send = sendEmail, now = Date.now() } = {}) {
   return { lines, sent };
 }
 
-/** Returns true only when Resend accepted the email. */
-export async function sendEmail(lines) {
-  const { RESEND_API_KEY: key, ALERT_EMAIL_TO: to, ALERT_EMAIL_FROM: from } = process.env;
-  if (!key || !to || !from) { console.log("alerts (email not configured):", lines.map((l) => l.text)); return false; }
+/** Returns true only when the mail server (or Resend) accepted the email. */
+export async function sendEmail(lines, { tlsOptions } = {}) {
+  const { RESEND_API_KEY: key, ALERT_EMAIL_TO: to, ALERT_EMAIL_FROM: from, SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASS } = process.env;
+  const smtp = SMTP_HOST && SMTP_USER && SMTP_PASS;
+  if ((!smtp && !key) || !to || !from) { console.log("alerts (email not configured):", lines.map((l) => l.text)); return false; }
   const problems = lines.filter((l) => l.problem).length;
   const subject = problems ? `Directory screens: ${problems} problem${problems === 1 ? "" : "s"}` : "Directory screens: back to normal";
   const esc = (s) => s.replace(/[&<>]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" }[c]));
   const html = `<p>${lines.map((l) => `${l.problem ? "⚠️" : "✅"} ${esc(l.text)}`).join("<br>")}</p><p><a href="${process.env.URL || ""}/console.html">Open the console</a></p>`;
+  const recipients = to.split(",").map((s) => s.trim()).filter(Boolean);
+  if (smtp) {
+    try {
+      return await sendMail({ host: SMTP_HOST, port: Number(SMTP_PORT) || 587, user: SMTP_USER, pass: SMTP_PASS, from, to: recipients, subject, html, tlsOptions });
+    } catch (e) { console.log("alert email failed (mail server):", e.message); return false; }
+  }
   const r = await fetch("https://api.resend.com/emails", {
     method: "POST",
     headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
-    body: JSON.stringify({ from, to: to.split(",").map((s) => s.trim()).filter(Boolean), subject, html }),
+    body: JSON.stringify({ from, to: recipients, subject, html }),
     signal: AbortSignal.timeout(10000),
   });
   if (!r.ok) { console.log("alert email failed:", r.status, await r.text()); return false; }

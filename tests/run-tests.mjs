@@ -14,7 +14,9 @@ import news from "../netlify/functions/news.mjs";
 import agent from "../netlify/functions/agent.mjs";
 import devices from "../netlify/functions/devices.mjs";
 import networks, { normalCode } from "../netlify/functions/networks.mjs";
-import { runAlerts, evaluate } from "../netlify/functions/alerts.mjs";
+import { sendMail } from "../netlify/lib/smtp.mjs";
+import { fakeSmtp, CERT } from "./fake-smtp.mjs";
+import { runAlerts, evaluate, sendEmail } from "../netlify/functions/alerts.mjs";
 import { computeSummary } from "../netlify/functions/devices.mjs";
 import { centralDay } from "../netlify/functions/agent.mjs";
 import { parseFeed, isBlocked } from "../netlify/lib/rss.mjs";
@@ -662,6 +664,65 @@ test("a prepare code downloads the networks once, within the hour", async () => 
   const del = fake.T.wifi_networks.find((n) => n.ssid === "1Point-Guest");
   await netApi(admin, { method: "POST", body: { action: "delete", id: del.id } });
   assert.equal(fake.T.wifi_networks.length, 1);
+});
+
+// ── Alert email through the company mail server (SMTP) ──
+const mail = (port, extra = {}) => ({ host: "localhost", port, user: "alerts@1pointusa.com", pass: "secret", from: "Lobby Directory <alerts@1pointusa.com>",
+  to: ["ops@1pointusa.com", "tech@1pointusa.com"], subject: "Directory screens: 1 problem", html: "<p>⚠️ PPI 2 South is offline</p>", tlsOptions: { ca: CERT }, timeoutMs: 5000, ...extra });
+const decoded = (m) => Buffer.from(m.data.split("\n\n").slice(1).join("").replace(/\s/g, ""), "base64").toString();
+
+test("mail goes out through an encrypted-from-the-start server (port 465 style)", async () => {
+  const srv = await fakeSmtp({ implicit: true });
+  try {
+    assert.equal(await sendMail(mail(srv.port, { secure: true })), true);
+    const [m] = srv.got.messages;
+    assert.equal(m.from, "alerts@1pointusa.com"); assert.deepEqual(m.to, ["ops@1pointusa.com", "tech@1pointusa.com"]);
+    assert.match(m.data, /^From: Lobby Directory <alerts@1pointusa.com>$/m); assert.match(m.data, /^Subject: Directory screens: 1 problem$/m);
+    assert.match(decoded(m), /PPI 2 South is offline/);
+    assert.deepEqual(srv.got.auth, [{ user: "alerts@1pointusa.com", pass: "secret", secure: true }]);
+  } finally { srv.close(); }
+});
+
+test("mail goes out through STARTTLS (port 587 style), signing in only once it's encrypted", async () => {
+  const srv = await fakeSmtp({ starttls: true, plainAuth: false });
+  try {
+    assert.equal(await sendMail(mail(srv.port)), true);
+    assert.equal(srv.got.messages.length, 1);
+    assert.ok(srv.got.auth.length === 1 && srv.got.auth[0].secure, "the password went over the encrypted connection");
+    assert.ok(!srv.got.commands.some((c) => /^AUTH/.test(c.line) && !c.secure), "never before encryption");
+  } finally { srv.close(); }
+});
+
+test("a server that offers no encryption never gets the password", async () => {
+  const srv = await fakeSmtp({ starttls: false });
+  try {
+    await assert.rejects(sendMail(mail(srv.port)), /doesn't offer encryption/);
+    assert.equal(srv.got.auth.length, 0); assert.equal(srv.got.messages.length, 0);
+  } finally { srv.close(); }
+});
+
+test("alerts use the mail server when it's set up; a wrong password means not sent (and retried next run)", async () => {
+  const dev = fake.T.devices.find((x) => x.serial === PPI2S_SERIAL);
+  const srv = await fakeSmtp({ starttls: true, password: "right" });
+  const saved = { ...process.env };
+  Object.assign(process.env, { SMTP_HOST: "localhost", SMTP_PORT: String(srv.port), SMTP_USER: "alerts@1pointusa.com", SMTP_PASS: "wrong",
+    ALERT_EMAIL_TO: "ops@1pointusa.com", ALERT_EMAIL_FROM: "Lobby Directory <alerts@1pointusa.com>" });
+  delete process.env.RESEND_API_KEY;
+  const log = console.log; console.log = () => {};
+  try {
+    dev.last_health = { temp_c: 88 };
+    const bad = await runAlerts({ send: (lines) => sendEmail(lines, { tlsOptions: { ca: CERT } }) });
+    assert.equal(bad.sent, false); assert.ok(!dev.alert_state.hot, "not saved after a refused sign-in");
+    process.env.SMTP_PASS = "right";
+    const good = await runAlerts({ send: (lines) => sendEmail(lines, { tlsOptions: { ca: CERT } }) });
+    assert.equal(good.sent, true); assert.equal(dev.alert_state.hot, true);
+    assert.match(decoded(srv.got.messages.at(-1)), /running hot at 88/);
+  } finally {
+    console.log = log; srv.close();
+    for (const k of ["SMTP_HOST", "SMTP_PORT", "SMTP_USER", "SMTP_PASS", "ALERT_EMAIL_TO", "ALERT_EMAIL_FROM"]) delete process.env[k];
+    Object.assign(process.env, saved);
+    dev.last_health = { temp_c: 50 }; await runAlerts({ send: async () => true });
+  }
 });
 
 // ── Config ──

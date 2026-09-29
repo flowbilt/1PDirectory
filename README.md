@@ -33,9 +33,15 @@ Owner users can't read a screen's hardware record (serial, MACs, IPs, the Yodeck
 | `SUPABASE_SERVICE_KEY` | **Yes**, Production + Functions only | Supabase secret (or legacy service_role) key |
 | `NWS_CONTACT` | No | Email address for the National Weather Service |
 | `NEWS_FEEDS`, `NEWS_BLOCKLIST` | No | Optional news settings |
-| `RESEND_API_KEY` | **Yes** | For alert emails (Resend). Without it, alerts are only logged |
+| `SMTP_HOST` | No | Company mail server for alert emails, e.g. `secure.emailsrvr.com` (Rackspace) |
+| `SMTP_PORT` | No | `465` (encrypted from the start) or `587` (STARTTLS). Plain, unencrypted mail servers are refused |
+| `SMTP_USER` | No | The mailbox alerts are sent from, e.g. `directory@1pointusa.com` |
+| `SMTP_PASS` | **Yes** | That mailbox's password |
 | `ALERT_EMAIL_TO` | No | Who gets alerts, comma-separated |
-| `ALERT_EMAIL_FROM` | No | Sender, e.g. `Directory <alerts@1pointusa.com>` (must be a verified Resend domain) |
+| `ALERT_EMAIL_FROM` | No | Sender, e.g. `Lobby Directory <directory@1pointusa.com>`: the same mailbox as `SMTP_USER` (mail servers refuse other senders) |
+| `RESEND_API_KEY` | **Yes** | Optional instead of the SMTP settings: Resend, used only when `SMTP_HOST` isn't set |
+
+Without a way to send, alerts are only logged. Settings take effect at the next deploy (Deploys → Trigger deploy).
 
 `ADMIN_PASSWORD` is no longer used and can be deleted once everyone signs in with their own login.
 
