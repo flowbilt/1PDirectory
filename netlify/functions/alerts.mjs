@@ -45,33 +45,65 @@ export async function runAlerts({ send = sendEmail, now = Date.now() } = {}) {
       if (!!was[k] !== is[k]) {
         differs = true;
         const extra = k === "hot" && is.hot ? ` at ${d.last_health.temp_c}°C` : k === "offline" && is.offline ? `; last check-in ${new Date(d.last_seen).toLocaleString("en-US", { timeZone: "America/Chicago" })}` : "";
-        lines.push({ problem: is[k], text: `${name} ${LABEL[k][is[k] ? 0 : 1]}${extra}.` });
+        lines.push({ kind: k, problem: is[k], text: `${name} ${LABEL[k][is[k] ? 0 : 1]}${extra}.` });
       }
     }
     if (differs) changed.push({ id: d.id, state: { ...is, at: new Date(now).toISOString() } });
   }
   if (!lines.length) return { lines, sent: false };
+  // Who gets what: the recipients set in the console (Pi setup → Alert emails), each only the kinds they chose,
+  // one email per group of recipients who get the same lines; none set there → ALERT_EMAIL_TO gets everything.
+  const recipients = await db("alert_recipients?select=email,offline,power,hot&enabled=is.true").catch(() => []);
   let sent = false;
-  try { sent = (await send(lines)) === true; } catch (e) { console.log("alert email failed:", e.message); }
+  try {
+    if (!recipients.length) sent = (await send(lines)) === true;
+    else {
+      const groups = new Map();
+      for (const r of recipients) {
+        const mine = lines.filter((l) => r[l.kind]);
+        if (!mine.length) continue;
+        const key = mine.map((l) => lines.indexOf(l)).join(",");
+        groups.set(key, { lines: mine, to: [...(groups.get(key)?.to || []), r.email] });
+      }
+      sent = true;                                     // nobody wants these lines: nothing to retry
+      for (const g of groups.values()) if ((await send(g.lines, { to: g.to })) !== true) sent = false;
+    }
+  } catch (e) { console.log("alert email failed:", e.message); }
   if (!sent) return { lines, sent };           // nothing saved: the same lines come round again next run
   for (const c of changed) await db(`devices?id=eq.${enc(c.id)}`, { method: "PATCH", prefer: "return=minimal", body: { alert_state: c.state } });
   return { lines, sent };
 }
 
-/** Returns true only when the mail server (or Resend) accepted the email. */
-export async function sendEmail(lines, { tlsOptions } = {}) {
-  const { RESEND_API_KEY: key, ALERT_EMAIL_TO: to, ALERT_EMAIL_FROM: from, SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASS } = process.env;
+/** How alert email is sent, for the console (no passwords): {via: "mail server" | "Resend" | null, server, from, fallbackTo}. */
+export function senderInfo() {
+  const { RESEND_API_KEY, ALERT_EMAIL_TO, ALERT_EMAIL_FROM, SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASS } = process.env;
+  const via = SMTP_HOST && SMTP_USER && SMTP_PASS ? "mail server" : RESEND_API_KEY ? "Resend" : null;
+  return { via, server: via === "mail server" ? `${SMTP_HOST}:${Number(SMTP_PORT) || 587}` : via === "Resend" ? "api.resend.com" : null,
+           from: ALERT_EMAIL_FROM || null, fallbackTo: (ALERT_EMAIL_TO || "").split(",").map((s) => s.trim()).filter(Boolean) };
+}
+
+/** Returns true only when the mail server (or Resend) accepted the email. to: recipients (default ALERT_EMAIL_TO). */
+export async function sendEmail(lines, opts = {}) {
+  try { return await deliver(lines, opts); }
+  catch (e) { if (!e.quiet) console.log(`alert email failed${e.via ? ` (${e.via})` : ""}:`, e.message); return false; }
+}
+
+/** Sends, or throws with the reason (the console's "Send test email" shows it). */
+export async function deliver(lines, { to: toList, tlsOptions, subject: subjectOverride } = {}) {
+  const { RESEND_API_KEY: key, ALERT_EMAIL_FROM: from, SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASS } = process.env;
   const smtp = SMTP_HOST && SMTP_USER && SMTP_PASS;
-  if ((!smtp && !key) || !to || !from) { console.log("alerts (email not configured):", lines.map((l) => l.text)); return false; }
+  const recipientsIn = toList?.length ? toList : senderInfo().fallbackTo;
+  if (!smtp && !key) { console.log("alerts (email not configured):", lines.map((l) => l.text)); throw Object.assign(new Error("No mail server is set up in Netlify (SMTP_HOST, SMTP_USER, SMTP_PASS)."), { quiet: true }); }
+  if (!from) throw new Error("ALERT_EMAIL_FROM isn't set in Netlify.");
+  if (!recipientsIn.length) throw new Error("Nobody to send to: add a recipient under Alert emails.");
   const problems = lines.filter((l) => l.problem).length;
-  const subject = problems ? `Directory screens: ${problems} problem${problems === 1 ? "" : "s"}` : "Directory screens: back to normal";
+  const subject = subjectOverride || (problems ? `Directory screens: ${problems} problem${problems === 1 ? "" : "s"}` : "Directory screens: back to normal");
   const esc = (s) => s.replace(/[&<>]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" }[c]));
   const html = `<p>${lines.map((l) => `${l.problem ? "⚠️" : "✅"} ${esc(l.text)}`).join("<br>")}</p><p><a href="${process.env.URL || ""}/console.html">Open the console</a></p>`;
-  const recipients = to.split(",").map((s) => s.trim()).filter(Boolean);
+  const recipients = recipientsIn;
   if (smtp) {
-    try {
-      return await sendMail({ host: SMTP_HOST, port: Number(SMTP_PORT) || 587, user: SMTP_USER, pass: SMTP_PASS, from, to: recipients, subject, html, tlsOptions });
-    } catch (e) { console.log("alert email failed (mail server):", e.message); return false; }
+    try { return await sendMail({ host: SMTP_HOST, port: Number(SMTP_PORT) || 587, user: SMTP_USER, pass: SMTP_PASS, from, to: recipients, subject, html, tlsOptions }); }
+    catch (e) { throw Object.assign(e, { via: "mail server" }); }
   }
   const r = await fetch("https://api.resend.com/emails", {
     method: "POST",
@@ -79,7 +111,7 @@ export async function sendEmail(lines, { tlsOptions } = {}) {
     body: JSON.stringify({ from, to: recipients, subject, html }),
     signal: AbortSignal.timeout(10000),
   });
-  if (!r.ok) { console.log("alert email failed:", r.status, await r.text()); return false; }
+  if (!r.ok) throw Object.assign(new Error(`${r.status} ${(await r.text()).slice(0, 200)}`), { via: "Resend" });
   return true;
 }
 

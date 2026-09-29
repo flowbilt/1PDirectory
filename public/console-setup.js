@@ -21,6 +21,54 @@ window.ConsoleSetup = (() => {
       : `<tr><td colspan="5" class="empty-rows">None yet.</td></tr>`;
   }
 
+  // ── Alert emails: who gets them, and a test email ──
+  let mail = { recipients: [], sender: {} };
+  const KINDS = [["offline", "Offline"], ["power", "Low power"], ["hot", "Running hot"]];
+  async function loadAlerts() {
+    try { mail = await Auth.api("/api/alert-settings"); } catch (ex) { toast(ex.message, true); return; }
+    const sd = mail.sender || {};
+    $("mail-sender").textContent = sd.via
+      ? `Sent through ${sd.via === "mail server" ? `the mail server ${sd.server}` : "Resend"}, from ${sd.from || "(ALERT_EMAIL_FROM isn't set in Netlify)"}. The mail server's sign-in is kept in Netlify, not here.`
+      : "No mail server is set up in Netlify yet (SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASS), so alerts are only logged.";
+    const on = mail.recipients.filter((r) => r.enabled);
+    $("mail-summary").textContent = on.length
+      ? `${on.length} recipient${on.length === 1 ? "" : "s"}. Alerts: a Pi goes offline, reports low power or runs hot, and again when it clears.`
+      : sd.fallbackTo?.length ? `No recipients here yet, so every alert goes to ${sd.fallbackTo.join(", ")} (ALERT_EMAIL_TO in Netlify).` : "No recipients yet.";
+    $("mail-rows").innerHTML = mail.recipients.length ? mail.recipients.map((r) => `<tr>
+      <td><strong>${esc(r.name || r.email)}</strong>${r.name ? `<div class="sub">${esc(r.email)}</div>` : ""}${r.enabled ? "" : `<div class="sub">Paused</div>`}</td>
+      <td>${esc(KINDS.filter(([k]) => r[k]).map(([, l]) => l).join(", ") || "Nothing")}</td>
+      <td>${since(r.updated_at)}</td>
+      <td class="actions"><button type="button" class="ghost" data-recipient="${r.id}">Edit</button></td></tr>`).join("")
+      : `<tr><td colspan="4" class="empty-rows">None yet.</td></tr>`;
+  }
+
+  function recipientDialog(r) {
+    const { open, field } = window.ConsoleDialog;
+    open({
+      title: r ? `Alert emails: ${r.name || r.email}` : "Add recipient",
+      body: `
+        ${field("m-email", "Email", `<input id="m-email" type="email" required value="${esc(r?.email || "")}" autocomplete="off">`)}
+        ${field("m-name", "Name", `<input id="m-name" maxlength="80" value="${esc(r?.name || "")}" placeholder="e.g. Scot, or Service desk">`)}
+        <p class="sub">Gets an email when a Pi:</p>
+        ${KINDS.map(([k, l]) => `<label class="check"><input type="checkbox" id="m-${k}"${!r || r[k] ? " checked" : ""}> ${l === "Offline" ? "goes offline (and is back)" : l === "Low power" ? "reports low power (and it's normal again)" : "runs at 80°C or hotter (and cools down)"}</label>`).join("")}
+        <label class="check"><input type="checkbox" id="m-enabled"${!r || r.enabled ? " checked" : ""}> Sending (untick to pause without removing)</label>
+        ${r ? `<button type="button" id="m-delete" class="ghost danger">Remove this recipient</button>` : ""}`,
+      afterOpen() {
+        $("m-delete")?.addEventListener("click", async () => {
+          if (!confirm(`Stop sending alerts to ${r.email}?`)) return;
+          try { await Auth.api("/api/alert-settings", { method: "POST", body: { action: "delete", id: r.id } }); $("dlg").close(); toast("Removed."); loadAlerts(); }
+          catch (ex) { toast(ex.message, true); }
+        });
+      },
+      async save() {
+        await Auth.api("/api/alert-settings", { method: "POST", body: { action: "save", id: r?.id, email: $("m-email").value, name: $("m-name").value,
+          offline: $("m-offline").checked, power: $("m-power").checked, hot: $("m-hot").checked, enabled: $("m-enabled").checked } });
+        toast("Saved.");
+        loadAlerts();
+      },
+    });
+  }
+
   function dialog(n) {
     const { open, field } = window.ConsoleDialog;
     const isNew = !n;
@@ -64,6 +112,20 @@ window.ConsoleSetup = (() => {
     const edit = e.target.closest("[data-wifi]");
     if (edit) return dialog(nets.find((n) => n.id === edit.dataset.wifi));
     if (e.target.closest("#add-wifi")) return dialog(null);
+    const rec = e.target.closest("[data-recipient]");
+    if (rec) return recipientDialog(mail.recipients.find((r) => r.id === rec.dataset.recipient));
+    if (e.target.closest("#add-recipient")) return recipientDialog(null);
+    if (e.target.closest("#mail-test")) {
+      const out = $("mail-test-out"), btn = $("mail-test");
+      btn.disabled = true; out.hidden = false; out.className = "mail-test-out"; out.textContent = "Sending…";
+      try {
+        const r = await Auth.api("/api/alert-settings", { method: "POST", body: { action: "test" } });
+        out.className = `mail-test-out ${r.ok ? "ok" : "bad"}`;
+        out.textContent = r.ok ? `Sent to ${r.to.join(", ")}. Check the inbox (and spam, the first time).` : `Not sent: ${r.error}`;
+      } catch (ex) { out.className = "mail-test-out bad"; out.textContent = `Not sent: ${ex.message}`; }
+      btn.disabled = false;
+      return;
+    }
     if (e.target.closest("#prep-code")) {
       try {
         const r = await Auth.api("/api/networks", { method: "POST", body: { action: "code" } });
@@ -77,5 +139,5 @@ window.ConsoleSetup = (() => {
     }
   });
 
-  return { load };
+  return { load: () => { load(); loadAlerts(); } };
 })();

@@ -37,7 +37,7 @@ Owner users can't read a screen's hardware record (serial, MACs, IPs, the Yodeck
 | `SMTP_PORT` | No | `465` (encrypted from the start) or `587` (STARTTLS). Plain, unencrypted mail servers are refused |
 | `SMTP_USER` | No | The mailbox alerts are sent from, e.g. `directory@1pointusa.com` |
 | `SMTP_PASS` | **Yes** | That mailbox's password |
-| `ALERT_EMAIL_TO` | No | Who gets alerts, comma-separated |
+| `ALERT_EMAIL_TO` | No | Who gets alerts until recipients are added in the console (**Pi setup → Alert emails**), comma-separated |
 | `ALERT_EMAIL_FROM` | No | Sender, e.g. `Lobby Directory <directory@1pointusa.com>`: the same mailbox as `SMTP_USER` (mail servers refuse other senders) |
 | `RESEND_API_KEY` | **Yes** | Optional instead of the SMTP settings: Resend, used only when `SMTP_HOST` isn't set |
 
@@ -180,7 +180,7 @@ Uptime comes from a daily summary for each Pi (`device_daily`), kept for 400 day
 
 Only those fixed actions exist; the console can't send anything free-form. Update agent and Update Pi install code downloaded from this site over HTTPS, so whoever can change the site (its GitHub repo and Netlify) is trusted with every Pi: keep those accounts on two-factor sign-in. Actions not picked up within an hour are dropped rather than run late.
 
-**Alerts:** every 10 minutes the site checks each Pi. It sends one email when a Pi goes offline, reports under-voltage, or runs at 80°C or hotter, and another when that clears. A Pi's alert state is saved only after the email has gone out, so a failed send is retried on the next run, and problems that already exist are emailed once when the email settings are first added.
+**Alerts:** recipients and which alerts each gets (offline, low power, running hot) are set in the console, **Pi setup → Alert emails**, which also has **Send test email** (it shows the mail server's answer). The mail server's sign-in stays in Netlify. Every 10 minutes the site checks each Pi. It sends one email when a Pi goes offline, reports under-voltage, or runs at 80°C or hotter, and another when that clears. A Pi's alert state is saved only after the email has gone out, so a failed send is retried on the next run, and problems that already exist are emailed once when the email settings are first added.
 
 **Enrollment:** each Pi has its own key, stored hashed. A registered Pi with no key yet (from the Yodeck report, or after **Reset device key**) accepts its first key only while its enrollment window is open (24 hours, opened from **Pi** in the console). Anyone who knows a Pi's serial can't claim it outside that window.
 
@@ -203,9 +203,9 @@ Local sample logins: `scot@1pointusa.com / admin-pass`, `leighann@barber.test / 
 
 ```
 public/             screen (index.html, display.*), sign-in, console (+ console-devices.js, console-setup.js), editor, shared auth.js
-netlify/functions/  screen, heartbeat, users, migrate, config, weather, news, agent, devices, networks, alerts
+netlify/functions/  screen, heartbeat, users, migrate, config, weather, news, agent, devices, networks, alert-settings, alerts
 netlify/lib/        Supabase client, RSS reader, shared helpers
-supabase/           database schema (01 to 11, run in order), starting data, check queries, setup guide
+supabase/           database schema (01 to 12, run in order), starting data, check queries, setup guide
 migration/          the Yodeck/Wix transcription the starting data was built from
 public/pi/          setup-kiosk.sh and agent.py (served by the site so Pis can download them)
 tests/              function tests, fake Supabase, local test server

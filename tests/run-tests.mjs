@@ -14,6 +14,7 @@ import news from "../netlify/functions/news.mjs";
 import agent from "../netlify/functions/agent.mjs";
 import devices from "../netlify/functions/devices.mjs";
 import networks, { normalCode } from "../netlify/functions/networks.mjs";
+import alertSettings from "../netlify/functions/alert-settings.mjs";
 import { sendMail } from "../netlify/lib/smtp.mjs";
 import { fakeSmtp, CERT } from "./fake-smtp.mjs";
 import { runAlerts, evaluate, sendEmail } from "../netlify/functions/alerts.mjs";
@@ -722,6 +723,73 @@ test("alerts use the mail server when it's set up; a wrong password means not se
     for (const k of ["SMTP_HOST", "SMTP_PORT", "SMTP_USER", "SMTP_PASS", "ALERT_EMAIL_TO", "ALERT_EMAIL_FROM"]) delete process.env[k];
     Object.assign(process.env, saved);
     dev.last_health = { temp_c: 50 }; await runAlerts({ send: async () => true });
+  }
+});
+
+// ── Alert emails set in the console ──
+const alertApi = (token, { method = "GET", body } = {}, extra) => alertSettings(req("/api/alert-settings", { method, token, body }), {}, extra);
+
+test("alert recipients are 1Point-only, checked, and one address appears once", async () => {
+  const owner = await login("leighann@barber.test", "owner-pass");
+  const admin = await login("scot@1pointusa.com", "admin-pass");
+  assert.equal((await alertApi(owner)).status, 403);
+  assert.equal((await alertApi(owner, { method: "POST", body: { action: "save", email: "x@y.com" } })).status, 403);
+  const save = (b) => alertApi(admin, { method: "POST", body: { action: "save", ...b } });
+  assert.equal((await save({ email: "not an email" })).status, 400);
+  assert.equal((await save({ email: "Ops@1PointUSA.com", name: "Ops" })).status, 200);
+  assert.equal((await save({ email: "tech@1pointusa.com", name: "Tech", power: false, hot: false })).status, 200);
+  assert.equal((await save({ email: "ops@1pointusa.com" })).status, 409, "already on the list");
+  const r = await (await alertApi(admin)).json();
+  assert.deepEqual(r.recipients.map((x) => [x.email, x.offline, x.power, x.hot]), [["ops@1pointusa.com", true, true, true], ["tech@1pointusa.com", true, false, false]]);
+  assert.ok("sender" in r && !JSON.stringify(r).includes("SMTP_PASS"), "how mail is sent, without secrets");
+});
+
+test("each recipient gets only the alerts they chose; any failed email means retry", async () => {
+  const dev = fake.T.devices.find((x) => x.serial === PPI2S_SERIAL);
+  dev.last_health = { temp_c: 90 };
+  dev.last_seen = new Date(Date.now() - 60 * 60_000).toISOString();          // offline and (last known) hot
+  const calls = [];
+  let r = await runAlerts({ send: async (lines, opts) => { calls.push({ to: opts.to, kinds: lines.map((l) => l.kind).sort() }); return !opts.to.includes("tech@1pointusa.com"); } });
+  assert.deepEqual(calls.sort((a, b) => a.to.length - b.to.length || a.to[0].localeCompare(b.to[0])),
+    [{ to: ["ops@1pointusa.com"], kinds: ["hot", "offline"] }, { to: ["tech@1pointusa.com"], kinds: ["offline"] }]);
+  assert.equal(r.sent, false, "tech's email failed");
+  assert.ok(!dev.alert_state.offline, "so nothing is saved and it's retried");
+  r = await runAlerts({ send: async () => true });
+  assert.equal(r.sent, true); assert.equal(dev.alert_state.offline, true);
+  dev.last_health = { temp_c: 50 }; dev.last_seen = new Date().toISOString();
+  await runAlerts({ send: async () => true });
+});
+
+test("Send test email: sent to every recipient now, or the mail server's exact reason", async () => {
+  const admin = await login("scot@1pointusa.com", "admin-pass");
+  const srv = await fakeSmtp({ starttls: true, password: "right" });
+  const saved = { ...process.env };
+  const test = async (body = {}) => (await alertApi(admin, { method: "POST", body: { action: "test", ...body } }, { tlsOptions: { ca: CERT } })).json();
+  try {
+    for (const k of ["SMTP_HOST", "SMTP_USER", "SMTP_PASS", "RESEND_API_KEY"]) delete process.env[k];
+    const log = console.log; console.log = () => {};
+    const none = await test(); console.log = log;
+    assert.equal(none.ok, false); assert.match(none.error, /No mail server is set up/);
+    Object.assign(process.env, { SMTP_HOST: "localhost", SMTP_PORT: String(srv.port), SMTP_USER: "directory@1pointusa.com", SMTP_PASS: "wrong",
+      ALERT_EMAIL_FROM: "Lobby Directory <directory@1pointusa.com>" });
+    const bad = await test();
+    assert.equal(bad.ok, false); assert.match(bad.error, /^mail server: sign-in: 535/);
+    process.env.SMTP_PASS = "right";
+    const good = await test();
+    assert.equal(good.ok, true); assert.deepEqual(good.to.sort(), ["ops@1pointusa.com", "tech@1pointusa.com"]);
+    const m = srv.got.messages.at(-1);
+    assert.deepEqual(m.to.sort(), ["ops@1pointusa.com", "tech@1pointusa.com"]);
+    assert.match(m.data, /^Subject: Directory screens: test email$/m);
+    assert.match(decoded(m), /test email from the Lobby Directory console, sent by Scot/);
+    const one = await test({ email: "someone@example.com" });
+    assert.equal(one.ok, true); assert.deepEqual(srv.got.messages.at(-1).to, ["someone@example.com"]);
+    const info = await (await alertApi(admin)).json();
+    assert.deepEqual(info.sender, { via: "mail server", server: `localhost:${srv.port}`, from: "Lobby Directory <directory@1pointusa.com>", fallbackTo: info.sender.fallbackTo });
+  } finally {
+    srv.close();
+    for (const k of ["SMTP_HOST", "SMTP_PORT", "SMTP_USER", "SMTP_PASS", "ALERT_EMAIL_FROM"]) delete process.env[k];
+    Object.assign(process.env, saved);
+    fake.T.alert_recipients.length = 0;
   }
 });
 
