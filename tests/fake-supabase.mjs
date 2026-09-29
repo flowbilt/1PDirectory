@@ -151,7 +151,7 @@ export function createFake() {
     devices: () => ({ id: randomUUID(), screen_id: null, key_hash: null, enroll_until: null, refused_at: null, refused_why: null, status: "active", model: "", hostname: "", agent_version: "", last_seen: null, last_health: {}, screenshot: "", screenshot_at: null, alert_state: {}, created_at: now() }),
     device_daily: () => ({ id: (T.device_daily.at(-1)?.id || 0) + 1, checkins: 0, power_dips: 0, browser_down: 0, max_temp_c: null }),
     alert_recipients: () => ({ id: randomUUID(), name: "", offline: true, power: true, hot: true, enabled: true, updated_at: now(), updated_by: null }),
-    wifi_networks: () => ({ id: randomUUID(), label: "", psk: "", hidden: false, sort: 0, updated_at: now(), updated_by: null }),
+    wifi_networks: () => ({ id: randomUUID(), label: "", psk: "", hidden: false, on_cards: true, sort: 0, updated_at: now(), updated_by: null }),
     prepare_codes: () => ({ id: (T.prepare_codes.at(-1)?.id || 0) + 1, used_at: null, created_at: now() }),
     device_commands: () => ({ id: (T.device_commands.at(-1)?.id || 0) + 1, status: "pending", result: "", payload: null, created_at: now(), sent_at: null, done_at: null }),
   };

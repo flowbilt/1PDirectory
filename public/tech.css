@@ -16,7 +16,7 @@ body.tech { font-size: 17px; }
 .t-row { display: grid; grid-template-columns: 1fr auto; gap: 10px; align-items: center; }
 @media (max-width: 380px) { .t-row { grid-template-columns: 1fr; } }
 .t-row button { font-weight: 700; }
-.t-linkish { border: 0; background: none; color: var(--focus); padding: 12px 0; min-height: 0; text-decoration: underline; }
+.tech-main .t-linkish { border: 0; background: none; color: var(--focus); padding: 12px 0; min-height: 0; text-decoration: underline; }
 
 /* The list of screens */
 .t-list { list-style: none; margin: 12px 0 0; padding: 0; background: var(--panel); border: 1px solid var(--line); border-radius: 10px; }
@@ -58,7 +58,8 @@ body.tech { font-size: 17px; }
 .t-join label { font-size: 15px; font-weight: 700; }
 .t-join .t-show { display: flex; gap: 8px; align-items: center; font-weight: 400; }
 .t-join .t-show input { width: auto; }
-.t-join button { font-weight: 700; background: var(--navy); border-color: var(--navy); color: #fff; text-align: center; }
+.t-join button[type=submit] { font-weight: 700; background: var(--navy); border-color: var(--navy); color: #fff; text-align: center; }
+.t-join .t-linkish { justify-self: start; }
 
 /* Recent actions */
 .t-actions { list-style: none; margin: 0; padding: 0; font-size: 15px; }

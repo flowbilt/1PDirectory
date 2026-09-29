@@ -23,6 +23,7 @@ Do these once. The current site keeps running as it is until the new build is de
 12. For the extra screen layouts (DP-02 round 7): **before uploading that code**, new query, paste all of `11-layouts.sql`, and click **Run**. Then run `check-layouts.sql`; it should read **true**.
 13. For alert recipients in the console (DP-02 round 8): **before uploading that code**, new query, paste all of `12-alerts.sql`, and click **Run**. Then run `check-alerts.sql`; every column should read **true**.
 14. For Wi-Fi search and join from the technician page (DP-03 round 2): **before uploading that code**, new query, paste all of `13-tech.sql`, and click **Run**. Then run `check-tech.sql`; it should read **ALL 8 CHECKS PASSED** (red on purpose). (The old code never sends the new commands, so this order has no gap.)
+15. For Wi-Fi saved from the technician page (DP-03 round 3): **before uploading that code**, new query, paste all of `14-saved-wifi.sql`, and click **Run**. Then run `check-saved-wifi.sql`; every column should read **true**.
 
 If any of them shows an error (other than the expected red messages from the `check-…sql` files), copy the message (it includes a line number) and send it to Claude.
 

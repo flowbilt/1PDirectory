@@ -8,6 +8,10 @@
 //   POST {action:"command", device_id, command}       reboot | reload | screenshot | update_agent | update_pi | wifi_scan
 //   POST {action:"command", device_id, command:"wifi_join", ssid, psk, hidden}   join one network (agent 1.6.0+). The
 //                                password goes to the Pi once and is then cleared (supabase/13-tech.sql); it's never listed
+//   POST {action:"command", device_id, command:"wifi_join", ssid, saved:true}   join a saved network: the server supplies
+//                                its password, so the phone never has it (supabase/14-saved-wifi.sql)
+//   POST {action:"save_network", device_id, ssid, psk, hidden}   keep a network this Pi has just joined, for other Pis
+//                                (the technician page's "Save for other screens"); never put on cards
 //   POST {action:"layout", screen_id, orientation, restart}  set a screen's layout; restart its Pi so it turns now
 //   POST {action:"identify", screen_id}               flash the screen's name on the TV for 90 seconds
 //   POST {action:"assign", device_id, screen_id|null} which screen this Pi drives (1Point only)
@@ -129,12 +133,41 @@ export default async (req) => {
       if (!d.key_hash) throw fail(409, "This Pi hasn't enrolled yet, so there's nothing to receive that. Open its enrollment window first.");
       const wifi = body.command.startsWith("wifi_");
       if (wifi && !agentAtLeast(d.agent_version, WIFI_AGENT)) throw fail(409, `This Pi's agent (${d.agent_version || "unknown"}) can't do Wi-Fi from here yet. The office can run Update agent on it first (${WIFI_AGENT} or newer).`);
-      const payload = body.command === "wifi_join" ? wifiPayload(body) : null;
+      let payload = null;
+      if (body.command === "wifi_join" && body.saved === true) {
+        const ssid = typeof body.ssid === "string" ? body.ssid : "";
+        const [net] = await db(`wifi_networks?ssid=eq.${enc(ssid)}&select=ssid,psk,hidden&order=updated_at.desc&limit=1`);
+        if (!net) throw fail(404, `${ssid || "That network"} isn't saved. Type its password instead.`);
+        payload = { ssid: net.ssid, psk: net.psk || "", hidden: !!net.hidden };
+      } else if (body.command === "wifi_join") payload = wifiPayload(body);
       const [row] = await db("device_commands?select=id", { method: "POST", prefer: "return=representation",
         body: { device_id: d.id, command: body.command, created_by: user.id, ...(payload ? { payload } : {}) } });
       // The audit log names the network, never its password
       await audit(user.id, `device ${body.command}`, "device", d.id, { serial: d.serial, ...(payload ? { ssid: payload.ssid } : {}) });
       return json({ ok: true, queued: body.command, id: row?.id ?? null });
+    }
+
+    // Keep a network this Pi has just joined, for other Pis. Only after the Pi reported the join worked, so a
+    // mistyped password is never saved. The password comes from the phone that typed it for that join.
+    if (body.action === "save_network") {
+      const net = wifiPayload(body);
+      const since = new Date(Date.now() - 15 * 60_000).toISOString();
+      const joined = await db(`device_commands?device_id=eq.${d.id}&command=eq.wifi_join&status=eq.done&done_at=gte.${enc(since)}&select=result`);
+      if (!joined.some((c) => String(c.result).startsWith(`Joined ${net.ssid};`)))
+        throw fail(409, `This Pi hasn't joined ${net.ssid} in the last 15 minutes, so it wasn't saved. Join it first.`);
+      const [have] = await db(`wifi_networks?ssid=eq.${enc(net.ssid)}&select=id&order=updated_at.desc&limit=1`);
+      const stamp = { updated_at: new Date().toISOString(), updated_by: user.id };
+      if (have) {
+        // Already saved (from the field or the office): the password that just worked replaces the old one
+        await db(`wifi_networks?id=eq.${have.id}`, { method: "PATCH", prefer: "return=minimal", body: { psk: net.psk, hidden: net.hidden, ...stamp } });
+      } else {
+        const [s] = await db(`screens?id=eq.${enc(d.screen_id || "")}&select=directory_id`);
+        const [dir] = s ? await db(`directories?id=eq.${enc(s.directory_id || "")}&select=property_id`) : [];
+        const [prop] = dir ? await db(`properties?id=eq.${enc(dir.property_id)}&select=name`) : [];
+        await db("wifi_networks", { method: "POST", prefer: "return=minimal", body: { label: prop?.name || "", ...net, on_cards: false, ...stamp } });
+      }
+      await audit(user.id, have ? "update wifi from field" : "save wifi from field", "wifi_network", have?.id || null, { ssid: net.ssid, serial: d.serial });
+      return json({ ok: true, updated: !!have });
     }
 
     if (body.action === "assign") {

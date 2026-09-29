@@ -14,7 +14,8 @@
                   update_pi: "Update Pi", wifi_scan: "Wi-Fi search", wifi_join: "Wi-Fi join" };
   const STATES = { pending: "waiting for the Pi", sent: "running", done: "done", failed: "failed", expired: "not picked up (expired)" };
 
-  const S = { screens: [], dirs: [], props: [], devices: [], id: null, shown: null, scanId: null, joinId: null, drawnScan: null, fastUntil: 0 };
+  const S = { screens: [], dirs: [], props: [], devices: [], saved: [], id: null, shown: null, scanId: null, joinId: null, drawnScan: null, fastUntil: 0,
+              pendingSave: null };   // {joinId, ssid, psk, hidden, deviceId}: saved once the Pi says the join worked (in memory only)
   let timer = null;
 
   const agentAtLeast = (have, want) => {
@@ -37,9 +38,12 @@
       Auth.db("properties?select=id,name"),
     ]);
     Object.assign(S, { screens, dirs, props });
-    await loadDevices();
+    await Promise.all([loadDevices(), loadSaved()]);
   }
   async function loadDevices() { S.devices = (await Auth.api("/api/devices")).devices; }
+  /** The saved Wi-Fi's names (never passwords): a saved network joins with one tap. */
+  async function loadSaved() { try { S.saved = (await Auth.api("/api/networks")).networks; } catch { S.saved = []; } }
+  const savedNet = (ssid) => S.saved.find((n) => n.ssid === ssid);
 
   // ── Every screen ──
   function renderList() {
@@ -134,20 +138,36 @@
     }
     if (join && ["done", "failed", "expired"].includes(join.status) && S.drawnJoin !== join.id) {
       S.drawnJoin = join.id;
-      showResult(join.status === "done", join.status === "expired" ? "The Pi didn't pick up the join within an hour; nothing changed." : join.result);
+      const text = join.status === "expired" ? "The Pi didn't pick up the join within an hour; nothing changed." : join.result;
+      const save = S.pendingSave?.joinId === join.id ? S.pendingSave : null;
+      S.pendingSave = null;
+      showResult(join.status === "done", save && join.status !== "done" ? `${text} Nothing was saved.` : text);
+      if (save && join.status === "done") saveNetwork(save, text);
     }
 
     // The list is drawn once per search, so a password being typed is never wiped by the refresh
     if (list && S.drawnScan !== scan.id) {
       S.drawnScan = scan.id;
-      $("wifi-list").innerHTML = list.networks.length ? list.networks.map((n, i) => `<li data-i="${i}">
-        <button type="button" class="net"><strong>${esc(n.ssid)}</strong><span class="bars">${strength(n.signal)}</span>
-        <span class="sub">${n.current ? "Connected" : n.open ? "Open, no password" : "Password needed"}</span></button></li>`).join("")
+      // Saved hidden networks never show up in a search, so they're listed after it
+      const seen = new Set(list.networks.map((n) => n.ssid));
+      const nets = list.networks.map((n) => ({ ...n, saved: !!savedNet(n.ssid) }))
+        .concat(S.saved.filter((x) => x.hidden && !seen.has(x.ssid)).map((x) => ({ ssid: x.ssid, open: false, signal: null, current: false, saved: true, hidden: true })));
+      $("wifi-list").innerHTML = nets.length ? nets.map((n, i) => `<li data-i="${i}">
+        <button type="button" class="net"><strong>${esc(n.ssid)}</strong><span class="bars">${n.signal === null ? "Hidden" : strength(n.signal)}</span>
+        <span class="sub">${n.current ? "Connected" : n.saved ? "Saved: joins without typing the password" : n.open ? "Open, no password" : "Password needed"}</span></button></li>`).join("")
         : `<li class="t-empty">The Pi can't see any networks. Check it's within range, or join one by name below.</li>`;
       $("wifi-list").hidden = false; $("wifi-other").hidden = false;
-      $("wifi-list").dataset.nets = JSON.stringify(list.networks);
+      $("wifi-list").dataset.nets = JSON.stringify(nets);
       $("wifi-list").dataset.wired = list.wired ? "1" : "";
     }
+  }
+
+  async function saveNetwork(save, text) {
+    try {
+      const r = await Auth.api("/api/devices", { method: "POST", body: { action: "save_network", device_id: save.deviceId, ssid: save.ssid, psk: save.psk, hidden: save.hidden } });
+      showResult(true, `${text} ${r.updated ? "The saved password is updated" : "Saved for other screens"}: other Pis can join it with one tap.`);
+      await loadSaved();
+    } catch (ex) { showResult(true, `${text} It wasn't saved for other screens: ${ex.message}`); }
   }
 
   function showResult(good, text) {
@@ -160,18 +180,21 @@
   /** The join form, under the network that was tapped (or for a network that isn't listed). */
   function joinForm(li, net) {
     document.querySelectorAll(".t-join").forEach((f) => f.remove());
-    const other = !net;
+    const other = !net, useSaved = !!net?.saved && !net.typed;
     const wired = !!$("wifi-list").dataset.wired;
     const f = document.createElement("form");
     f.className = "t-join";
     f.innerHTML = `${other ? `<label for="j-ssid">Network name</label><input id="j-ssid" autocapitalize="off" autocorrect="off" spellcheck="false" maxlength="32" required>` : ""}
-      ${other || !net.open ? `<label for="j-psk">Password${other ? " (leave empty for an open network)" : ""}</label>
+      ${!useSaved && (other || !net.open) ? `<label for="j-psk">Password${other ? " (leave empty for an open network)" : ""}</label>
         <input id="j-psk" type="password" autocapitalize="off" autocorrect="off" spellcheck="false" autocomplete="off" maxlength="63">
         <label class="t-show"><input type="checkbox" id="j-show"> Show password</label>` : ""}
-      <button type="submit">Join ${other ? "this network" : esc(net.ssid)}</button>
+      ${useSaved ? "" : `<label class="t-show"><input type="checkbox" id="j-save"> ${net?.saved ? "Update the saved password once it works" : "Save for other screens once it works"}</label>`}
+      <button type="submit">${useSaved ? "Join with the saved password" : `Join ${other ? "this network" : esc(net.ssid)}`}</button>
+      ${useSaved ? `<button type="button" class="t-linkish" id="j-type">Type a different password</button>` : ""}
       <p class="t-hint">${wired ? "The network cable stays in charge; this Wi-Fi becomes the backup."
         : "The screen can drop offline for a minute while the Pi switches. If the new network doesn't reach the site, the Pi goes back to the one it had."}</p>`;
     (li || $("wifi-other")).insertAdjacentElement(li ? "beforeend" : "afterend", f);
+    f.querySelector("#j-type")?.addEventListener("click", () => joinForm(li, { ...net, typed: true }));
     const show = f.querySelector("#j-show");
     if (show) show.addEventListener("change", () => { f.querySelector("#j-psk").type = show.checked ? "text" : "password"; });
     (f.querySelector("#j-ssid") || f.querySelector("#j-psk") || f.querySelector("button")).focus();
@@ -179,14 +202,19 @@
       e.preventDefault();
       const ssid = other ? f.querySelector("#j-ssid").value : net.ssid;
       const psk = f.querySelector("#j-psk")?.value || "";
+      const hidden = other || !!net?.hidden;
+      const keep = !!f.querySelector("#j-save")?.checked;
       if (!ssid) return toast("Type the network's name.", true);
       if (psk && (psk.length < 8 || psk.length > 63)) return toast("A Wi-Fi password is 8 to 63 characters.", true);
       const d = piFor(S.screens.find((x) => x.id === S.id));
       const btn = f.querySelector("button[type=submit]");
       btn.disabled = true;
       try {
-        const r = await Auth.api("/api/devices", { method: "POST", body: { action: "command", device_id: d.id, command: "wifi_join", ssid, psk, hidden: other } });
+        const body = useSaved ? { action: "command", device_id: d.id, command: "wifi_join", ssid, saved: true }
+          : { action: "command", device_id: d.id, command: "wifi_join", ssid, psk, hidden };
+        const r = await Auth.api("/api/devices", { method: "POST", body });
         S.joinId = r.id; $("wifi-result").hidden = true;
+        S.pendingSave = keep ? { joinId: r.id, ssid, psk, hidden, deviceId: d.id } : null;
         f.remove(); faster(180_000);
         await refresh();
       } catch (ex) { toast(ex.message, true); btn.disabled = false; }

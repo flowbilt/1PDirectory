@@ -9,12 +9,14 @@ window.ConsoleSetup = (() => {
 
   async function load() {
     try { nets = (await Auth.api("/api/networks")).networks; } catch (ex) { toast(ex.message, true); return; }
-    $("wifi-summary").textContent = nets.length
-      ? `${nets.length} Wi-Fi network${nets.length === 1 ? "" : "s"}. Every prepared card carries all of them; a Pi joins whichever is in range, and a network cable always wins.`
-      : "No Wi-Fi networks yet. Wired Pis don't need one.";
+    const field = nets.filter((n) => n.on_cards === false).length;
+    const count = `${nets.length} Wi-Fi network${nets.length === 1 ? "" : "s"}.`;
+    $("wifi-summary").textContent = !nets.length ? "No Wi-Fi networks yet. Wired Pis don't need one."
+      : field ? `${count} ${nets.length - field} go on every card prepared from now on; ${field} saved from the technician page ${field === 1 ? "is" : "are"} offered there only. A Pi joins whichever is in range, and a network cable always wins.`
+      : `${count} Every prepared card carries all of them; a Pi joins whichever is in range, and a network cable always wins.`;
     $("wifi-rows").innerHTML = nets.length ? nets.map((n) => `<tr>
       <td><strong>${esc(n.ssid)}</strong>${n.hidden ? `<div class="sub">Hidden network</div>` : ""}</td>
-      <td>${esc(n.label || "")}</td>
+      <td>${esc(n.label || "")}${n.on_cards === false ? `<div class="sub">Saved from the technician page; not on cards</div>` : ""}</td>
       <td>${n.has_password ? "Saved" : `<span class="sub">None (open network)</span>`}</td>
       <td>${since(n.updated_at)}</td>
       <td class="actions"><button type="button" class="ghost" data-wifi="${n.id}">Edit</button></td></tr>`).join("")
@@ -82,6 +84,8 @@ window.ConsoleSetup = (() => {
         ${field("w-psk", "Password", `<input id="w-psk" type="password" maxlength="63" autocomplete="new-password" placeholder="${isNew ? "" : n.has_password ? "Saved: leave empty to keep it" : ""}">`, "It can't be shown again after saving; type a new one to replace it.")}
         <label class="check"><input type="checkbox" id="w-open"${n && !n.has_password ? " checked" : ""}> Open network (no password)</label>
         <label class="check"><input type="checkbox" id="w-hidden"${n?.hidden ? " checked" : ""}> Hidden network (doesn't broadcast its name)</label>
+        <label class="check"><input type="checkbox" id="w-cards"${!n || n.on_cards !== false ? " checked" : ""}> Put on newly prepared cards</label>
+        <p class="sub">Untick for a network that only one building uses: the technician page still offers it to that building's Pis, and a lost card doesn't carry its password.</p>
         ${isNew ? "" : `<button type="button" id="w-delete" class="ghost danger">Remove this network</button>`}`,
       afterOpen() {
         const sync = () => { $("w-psk").disabled = $("w-open").checked; if ($("w-open").checked) $("w-psk").value = ""; };
@@ -93,7 +97,7 @@ window.ConsoleSetup = (() => {
         });
       },
       async save() {
-        const body = { action: "save", id: n?.id, label: $("w-label").value.trim(), ssid: $("w-ssid").value.trim(), hidden: $("w-hidden").checked };
+        const body = { action: "save", id: n?.id, label: $("w-label").value.trim(), ssid: $("w-ssid").value.trim(), hidden: $("w-hidden").checked, on_cards: $("w-cards").checked };
         if (!body.ssid) throw new Error("Enter the network name.");
         const psk = $("w-psk").value;
         if ($("w-open").checked) body.psk = "";
@@ -102,7 +106,7 @@ window.ConsoleSetup = (() => {
           body.psk = psk;
         } else if (isNew || !n.has_password) throw new Error("Enter the password, or tick Open network.");
         await Auth.api("/api/networks", { method: "POST", body });
-        toast("Saved. Cards prepared from now on carry it.");
+        toast(body.on_cards ? "Saved. Cards prepared from now on carry it." : "Saved. It's offered on the technician page, not put on cards.");
         load();
       },
     });

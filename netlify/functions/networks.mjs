@@ -4,7 +4,9 @@
 //   POST {action:"save", id?, label, ssid, psk?, hidden}   add, or edit (psk left out = keep the saved one)
 //   POST {action:"delete", id}
 //   POST {action:"code"}                                  a one-hour, single-use prepare code, shown once
-//   POST {action:"prepare", code}                         (no sign-in) the bench Pi: every network, with passwords
+//   POST {action:"prepare", code}                         (no sign-in) the bench Pi: the networks for cards, with passwords
+// on_cards (supabase/14-saved-wifi.sql): networks added here go on cards; networks saved from the technician page
+// (devices.mjs, save_network) don't, unless the console moves them there.
 import { createHash, randomInt } from "node:crypto";
 import { json } from "../lib/common.mjs";
 import { audit, caller, db, enc } from "../lib/sb.mjs";
@@ -26,6 +28,7 @@ function clean(body) {
   const label = String(body.label ?? "").trim().slice(0, 80);
   if (!ssid || Buffer.byteLength(ssid) > 32) throw fail(400, "The network name must be 1 to 32 characters.");
   const out = { label, ssid, hidden: !!body.hidden };
+  if (typeof body.on_cards === "boolean") out.on_cards = body.on_cards;
   if (body.psk !== undefined && body.psk !== null) {
     const psk = String(body.psk);
     if (psk !== "" && (psk.length < 8 || psk.length > 63)) throw fail(400, "A Wi-Fi password is 8 to 63 characters (leave it empty for an open network).");
@@ -48,7 +51,7 @@ export default async (req) => {
         // Mark it used first, only if nobody else just did, so a code works exactly once
         const used = await db(`prepare_codes?id=eq.${row.id}&used_at=is.null`, { method: "PATCH", prefer: "return=representation", body: { used_at: now } });
         if (!used?.length) throw fail(403, "That prepare code has already been used.");
-        const networks = await db("wifi_networks?select=label,ssid,psk,hidden&order=sort.asc,label.asc,ssid.asc");
+        const networks = await db("wifi_networks?on_cards=is.true&select=label,ssid,psk,hidden&order=sort.asc,label.asc,ssid.asc");
         await audit(null, "prepare card", "prepare_code", null, { networks: networks.length });
         return json({ networks });
       }
@@ -70,7 +73,7 @@ export default async (req) => {
           if (row.psk === undefined) row.psk = "";
           await db("wifi_networks", { method: "POST", prefer: "return=minimal", body: { ...row, updated_by: user.id } });
         }
-        await audit(user.id, body.id ? "edit wifi" : "add wifi", "wifi_network", body.id || null, { ssid: row.ssid, label: row.label, password_changed: row.psk !== undefined });
+        await audit(user.id, body.id ? "edit wifi" : "add wifi", "wifi_network", body.id || null, { ssid: row.ssid, label: row.label, password_changed: row.psk !== undefined, on_cards: row.on_cards });
         return json({ ok: true });
       }
       if (body.action === "delete") {
@@ -84,7 +87,7 @@ export default async (req) => {
     if (req.method !== "GET") throw fail(405, "Method not allowed.");
     const { profile } = await caller(req);
     if (profile.role !== "platform_admin") throw fail(403, "Only 1Point can manage Pi setup.");
-    const rows = await db("wifi_networks?select=id,label,ssid,psk,hidden,updated_at&order=sort.asc,label.asc,ssid.asc");
+    const rows = await db("wifi_networks?select=id,label,ssid,psk,hidden,on_cards,updated_at&order=sort.asc,label.asc,ssid.asc");
     // Passwords never leave the server here; the console only learns whether one is saved
     return json({ networks: rows.map(({ psk, ...r }) => ({ ...r, has_password: !!psk })) });
   } catch (e) {

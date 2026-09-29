@@ -406,6 +406,56 @@ test("layout: 1Point sets a screen's layout and restarts its Pi in one step; own
   await checkin({ version: "1.6.0" });
 });
 
+test("Wi-Fi saved from the technician page: only after a Pi joined it, one tap for other Pis, never on cards", async () => {
+  const admin = await login("scot@1pointusa.com", "admin-pass");
+  const owner = await login("leighann@barber.test", "owner-pass");
+  const dev = fake.T.devices.find((x) => x.serial === PPI2S_SERIAL);
+  const post = (token, body) => devApi(token, { method: "POST", body: { device_id: dev.id, ...body } });
+  const net = { ssid: "Barber Lobby", psk: "lobby-pass-1", hidden: false };
+  const joinAndReport = async (body, result) => {
+    const { id } = await (await post(admin, { action: "command", command: "wifi_join", ...body })).json();
+    const got = (await (await checkin({ version: "1.6.0" })).json()).commands.find((c) => c.id === id);
+    await checkin({ version: "1.6.0", results: [{ id, status: result.startsWith("Joined") ? "done" : "failed", result }] });
+    return got;
+  };
+  assert.equal((await post(admin, { action: "save_network", ...net })).status, 409, "nothing is saved before the Pi has joined it");
+  await joinAndReport(net, "Couldn't join Barber Lobby: the password was refused. Still on OfficeNet.");
+  assert.equal((await post(admin, { action: "save_network", ...net })).status, 409, "a failed join isn't enough");
+  await joinAndReport(net, "Joined Barber Lobby; the directory site is reachable through it.");
+  assert.equal((await post(owner, { action: "save_network", ...net })).status, 403, "owners can't");
+  const saved = await post(admin, { action: "save_network", ...net });
+  assert.equal(saved.status, 200); assert.deepEqual(await saved.json(), { ok: true, updated: false });
+  const row = fake.T.wifi_networks.find((n) => n.ssid === "Barber Lobby");
+  assert.deepEqual([row.label, row.psk, row.on_cards], ["Perimeter Park One", "lobby-pass-1", false], "labelled with the building, kept off cards");
+  assert.ok(!JSON.stringify(fake.T.audit_log).includes("lobby-pass-1"), "the audit log names the network only");
+
+  const listed = await (await networks(req("/api/networks", { token: admin }))).json();
+  const l = listed.networks.find((n) => n.ssid === "Barber Lobby");
+  assert.equal(l.on_cards, false); assert.equal(l.psk, undefined, "the list never carries passwords");
+
+  const one = await joinAndReport({ ssid: "Barber Lobby", saved: true }, "Joined Barber Lobby; the directory site is reachable through it.");
+  assert.deepEqual(one.payload, { ssid: "Barber Lobby", psk: "lobby-pass-1", hidden: false }, "a saved network joins with its stored password, which the phone never sent");
+  assert.equal((await post(admin, { action: "command", command: "wifi_join", ssid: "Never Saved", saved: true })).status, 404);
+
+  const prep = async () => {
+    const { code } = await (await networks(req("/api/networks", { method: "POST", token: admin, body: { action: "code" } }))).json();
+    return (await (await networks(req("/api/networks", { method: "POST", body: { action: "prepare", code } }))).json()).networks.map((n) => n.ssid);
+  };
+  assert.ok(!(await prep()).includes("Barber Lobby"), "a network saved from the field never goes on a card");
+  await networks(req("/api/networks", { method: "POST", token: admin, body: { action: "save", id: row.id, label: row.label, ssid: row.ssid, hidden: false, on_cards: true } }));
+  assert.ok((await prep()).includes("Barber Lobby"), "until the office puts it on cards in Pi setup");
+  assert.equal(row.psk, "lobby-pass-1", "and moving it keeps its password");
+
+  await joinAndReport({ ssid: "Barber Lobby", psk: "new-pass-2026" }, "Joined Barber Lobby; the directory site is reachable through it.");
+  const upd = await (await post(admin, { action: "save_network", ssid: "Barber Lobby", psk: "new-pass-2026" })).json();
+  assert.deepEqual(upd, { ok: true, updated: true });
+  assert.equal(fake.T.wifi_networks.filter((n) => n.ssid === "Barber Lobby").length, 1, "one entry per network");
+  assert.deepEqual([row.psk, row.on_cards], ["new-pass-2026", true], "a changed password is updated where it's saved, which stays as the office set it");
+  const sql = readFileSync(new URL("../supabase/14-saved-wifi.sql", import.meta.url), "utf8");
+  assert.ok(sql.includes("on_cards boolean not null default true"), "14: networks already saved stay on cards");
+  fake.T.wifi_networks.splice(fake.T.wifi_networks.indexOf(row), 1);   // later tests count the saved networks
+});
+
 test("commands older than an hour are dropped, not run late", async () => {
   const dev = fake.T.devices.find((x) => x.serial === PPI2S_SERIAL);
   fake.T.device_commands.push({ id: 999, device_id: dev.id, command: "reboot", status: "pending", result: "", created_at: new Date(Date.now() - 2 * 3600_000).toISOString() });

@@ -53,9 +53,10 @@ at every start the Pi builds its screen address from its own serial (`/?device=<
 for that Pi, and the Pi names itself after its serial on the network (e.g. `lobby-a4ae272d`). So any card works in
 any Pi, and a tech can carry spares. Which screen a Pi shows is decided in the console, by serial.
 
-Every card also carries every Wi-Fi network saved in the console (**Pi setup** tab, 1Point only). A Pi joins
-whichever saved network is in range, and a network cable always wins. Passwords can be replaced in the console but
-never read back. Because every card holds every saved password, treat cards and the card image like a password.
+Every card also carries every Wi-Fi network in the console's **Pi setup** tab that's marked **Put on newly prepared
+cards** (1Point only). A Pi joins whichever saved network is in range, and a network cable always wins. Passwords can
+be replaced in the console but never read back. Because every card holds those passwords, treat cards and the card
+image like a password. Networks saved from the technician page stay off cards (see The technician page).
 
 ### Preparing cards (office, once per batch)
 
@@ -136,8 +137,17 @@ status in plain words, then:
   joins but can't reach the site within a minute, it drops it and goes back to the network it had, and the page says
   why. With a network cable plugged in, the cable stays in charge and the new Wi-Fi is its backup. The password goes
   to the Pi once and is then deleted from the database (about a minute at most); it's never shown back, and the
-  audit log records only the network's name. A network joined this way stays on that Pi only: it isn't added to the
-  console's saved Wi-Fi, so new cards don't carry it.
+  audit log records only the network's name.
+- **Save for other screens:** tick it when joining, and once the Pi reports the join worked, the network is saved
+  (labelled with the building). Every other Pi that can see it then shows it as **Saved**: one tap joins it, and the
+  server supplies the password, so no one types it again and the phone never receives it. **Type a different
+  password** (with the tick) updates a saved password that has changed. Networks saved this way are **never put on
+  cards**; they're listed in the console's **Pi setup** as saved from the technician page, and the office can remove
+  one, or tick **Put on newly prepared cards** for a network many Pis need (a very large site).
+
+**Installing on Wi-Fi, the usual way:** at the building's first Pi, join its network from the technician page with
+**Save for other screens** ticked; at every other Pi there, tap it under Saved. Cards stay the same everywhere. Put a
+network on the cards themselves only for a very large installation.
 
 Wi-Fi needs agent 1.6.0 or newer (**Pi → Update agent** in the console once); until then the page says so. Reset
 device key, Unassign and the updates stay in the console.
@@ -245,7 +255,7 @@ Local sample logins: `scot@1pointusa.com / admin-pass`, `leighann@barber.test / 
 public/             screen (index.html, display.*), sign-in, console (+ console-devices.js, console-setup.js), editor, technician page (tech.*), shared auth.js
 netlify/functions/  screen, users, config, weather, news, agent, devices, networks, alert-settings, alerts
 netlify/lib/        Supabase client, RSS reader, shared helpers
-supabase/           database schema (01 to 13, run in order), starting data, check queries, setup guide
+supabase/           database schema (01 to 14, run in order), starting data, check queries, setup guide
 migration/          the Yodeck/Wix transcription the starting data was built from
 public/pi/          setup-kiosk.sh and agent.py (served by the site so Pis can download them)
 tests/              function tests, fake Supabase, local test server
