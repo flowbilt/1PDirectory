@@ -10,7 +10,7 @@
 */
 (() => {
   "use strict";
-  const VERSION = "2.5.0";
+  const VERSION = "2.6.0";
   const q = new URLSearchParams(location.search);
   const DEVICE = (q.get("device") || "").toLowerCase();
   const CHOSEN = (q.get("screen") || q.get("key") || q.get("site") || "").toLowerCase();
@@ -68,7 +68,9 @@
     const shape = wanted.split("-")[0];                   // Pi turns the picture the other way (setup-kiosk.sh)
     const viewportPortrait = vh > vw;
     let rotate = URL_ROTATE;
-    if (rotate === null) rotate = shape === "portrait" && !viewportPortrait ? (wanted === "portrait-flipped" ? 270 : 90) : shape === "landscape" && viewportPortrait ? 90 : 0;
+    // The same direction the Pi turns its output (Wayland transform 90 is a quarter turn anticlockwise, which is
+    // rotate(-90deg) here), so the picture doesn't flip between a Layout change and the Pi's next restart.
+    if (rotate === null) rotate = shape === "portrait" && !viewportPortrait ? (wanted === "portrait-flipped" ? 90 : 270) : shape === "landscape" && viewportPortrait ? 90 : 0;
     const W = rotate ? vh : vw, H = rotate ? vw : vh;
     const landscape = W > H;
     const root = document.documentElement.style;

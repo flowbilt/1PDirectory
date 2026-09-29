@@ -322,7 +322,8 @@ if [[ -n "${WAYLAND_DISPLAY:-}" ]] && command -v wlr-randr >/dev/null; then
   ) &
 elif [[ -n "${DISPLAY:-}" ]] && command -v xrandr >/dev/null; then
   OUT="$(xrandr | awk '/ connected/ {print $1; exit}')"
-  case "$ROT" in 90) xrandr --output "$OUT" --rotate right ;; 270) xrandr --output "$OUT" --rotate left ;; 180) xrandr --output "$OUT" --rotate inverted ;; *) xrandr --output "$OUT" --rotate normal ;; esac
+  # Same directions as Wayland above (transform 90 = a quarter turn anticlockwise = xrandr "left")
+  case "$ROT" in 90) xrandr --output "$OUT" --rotate left ;; 270) xrandr --output "$OUT" --rotate right ;; 180) xrandr --output "$OUT" --rotate inverted ;; *) xrandr --output "$OUT" --rotate normal ;; esac
   xset s off; xset -dpms; xset s noblank
 fi
 
