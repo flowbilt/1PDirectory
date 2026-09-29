@@ -331,6 +331,81 @@ test("Update Pi can be sent to an enrolled Pi, and reaches it", async () => {
   for (const c of ["reboot", "reload", "screenshot", "update_agent", "update_pi"]) assert.ok(sql.includes(`'${c}'`), `09 allows ${c}`);
 });
 
+test("Wi-Fi search and join: 1Point only, new agents only, and the password reaches the Pi once and is never kept or listed", async () => {
+  const admin = await login("scot@1pointusa.com", "admin-pass");
+  const owner = await login("leighann@barber.test", "owner-pass");
+  const dev = fake.T.devices.find((x) => x.serial === PPI2S_SERIAL);
+  const send = (token, body) => devApi(token, { method: "POST", body: { action: "command", device_id: dev.id, ...body } });
+  await checkin({ version: "1.5.0" });
+  const old = await send(admin, { command: "wifi_scan" });
+  assert.equal(old.status, 409, "an agent before 1.6.0 doesn't know the Wi-Fi commands");
+  assert.match((await old.json()).error, /Update agent/);
+  await checkin({ version: "1.6.0" });
+  assert.equal((await send(owner, { command: "wifi_scan" })).status, 403, "owners can't");
+  for (const [bad, why] of [[{ ssid: "" }, "no network"], [{ ssid: "x".repeat(33) }, "too long"], [{ ssid: "Net", psk: "short" }, "password too short"],
+    [{ ssid: "Net\n", psk: "" }, "control character"], [{ ssid: "Net", psk: "p".repeat(64) }, "password too long"]])
+    assert.equal((await send(admin, { command: "wifi_join", ...bad })).status, 400, why);
+  assert.equal((await send(admin, { command: "wifi_join", ssid: "Café Wi-Fi", psk: "" })).status, 200, "an open network, and a name that isn't plain ASCII");
+  await checkin({ version: "1.6.0" });   // hand that one over, so the next is the only one waiting
+
+  const q = await send(admin, { command: "wifi_join", ssid: "PPI Lobby", psk: "correct horse", hidden: true });
+  assert.equal(q.status, 200);
+  const { id } = await q.json();
+  assert.ok(id, "the page gets the command's id, to follow it");
+  assert.equal(fake.T.device_commands.find((c) => c.id === id).payload.psk, "correct horse", "held only until the Pi's next check-in");
+  const listed = JSON.stringify(await (await devApi(admin)).json());
+  assert.ok(!listed.includes("correct horse") && !listed.includes("payload"), "never listed back, not even to 1Point");
+  assert.ok(!JSON.stringify(fake.T.audit_log).includes("correct horse"), "the audit log names the network only");
+  assert.ok(fake.T.audit_log.some((a) => a.action === "device wifi_join" && a.detail.ssid === "PPI Lobby"));
+
+  const got = await (await checkin({ version: "1.6.0" })).json();
+  assert.deepEqual(got.commands.find((c) => c.id === id), { id, command: "wifi_join", payload: { ssid: "PPI Lobby", psk: "correct horse", hidden: true } });
+  assert.equal(fake.T.device_commands.find((c) => c.id === id).payload, null, "cleared as it's handed over");
+  assert.deepEqual((await (await checkin({ version: "1.6.0" })).json()).commands, [], "delivered once");
+  await checkin({ version: "1.6.0", results: [{ id, status: "failed", result: "Couldn't join PPI Lobby: wrong password. Still on Wired connection 1." }] });
+  assert.equal(fake.T.device_commands.find((c) => c.id === id).status, "failed");
+
+  const s = await (await send(admin, { command: "wifi_scan" })).json();
+  const r = await (await checkin({ version: "1.6.0" })).json();
+  assert.ok(r.commands.some((c) => c.id === s.id && c.command === "wifi_scan" && !("payload" in c)), "a scan carries no payload");
+  const list = JSON.stringify({ networks: Array.from({ length: 40 }, (_, i) => ({ ssid: `Network number ${i}`, open: false, signal: 90 - i, current: false })), wired: true });
+  assert.ok(list.length > 2000 && list.length < 4000);
+  await checkin({ version: "1.6.0", results: [{ id: s.id, status: "done", result: list }] });
+  assert.equal(fake.T.device_commands.find((c) => c.id === s.id).result, list, "a scan's list is kept whole, past the usual 500 characters");
+
+  fake.T.device_commands.push({ id: 5998, device_id: dev.id, command: "wifi_join", payload: { ssid: "Old", psk: "old-password" }, status: "pending", result: "", created_at: new Date(Date.now() - 2 * 3600_000).toISOString() });
+  const late = await (await checkin({ version: "1.6.0" })).json();
+  assert.ok(!late.commands.some((c) => c.id === 5998), "an hour-old join is never run");
+  assert.deepEqual([fake.T.device_commands.find((c) => c.id === 5998).status, fake.T.device_commands.find((c) => c.id === 5998).payload], ["expired", null]);
+
+  const sql = readFileSync(new URL("../supabase/13-tech.sql", import.meta.url), "utf8");
+  for (const c of ["reboot", "reload", "screenshot", "update_agent", "update_pi", "wifi_scan", "wifi_join"]) assert.ok(sql.includes(`'${c}'`), `13 allows ${c}`);
+  assert.ok(sql.includes("set status = 'sent', sent_at = v_now, payload = null"), "13 clears the payload as it hands it over");
+  assert.ok(sql.includes("set status = 'expired', payload = null"), "13 clears it when a command expires");
+});
+
+test("layout: 1Point sets a screen's layout and restarts its Pi in one step; owners can't", async () => {
+  const admin = await login("scot@1pointusa.com", "admin-pass");
+  const owner = await login("leighann@barber.test", "owner-pass");
+  const dev = fake.T.devices.find((x) => x.serial === PPI2S_SERIAL);
+  const sc = fake.T.screens.find((x) => x.key === "ppi-2s");
+  const layout = (token, body) => devApi(token, { method: "POST", body: { action: "layout", screen_id: sc.id, ...body } });
+  assert.equal((await layout(owner, { orientation: "portrait" })).status, 403);
+  assert.equal((await layout(admin, { orientation: "sideways" })).status, 400);
+  const before = fake.T.device_commands.filter((c) => c.device_id === dev.id && c.command === "reboot" && c.status === "pending").length;
+  const r = await (await layout(admin, { orientation: "landscape-flipped", restart: true })).json();
+  assert.deepEqual(r, { ok: true, restarted: true });
+  assert.equal(sc.orientation, "landscape-flipped");
+  assert.equal(fake.T.device_commands.filter((c) => c.device_id === dev.id && c.command === "reboot" && c.status === "pending").length, before + 1, "its Pi is told to restart");
+  const cad = fake.T.screens.find((x) => x.key === "cadence-place");
+  const n = await (await devApi(admin, { method: "POST", body: { action: "layout", screen_id: cad.id, orientation: "portrait-flipped", restart: true } })).json();
+  assert.deepEqual(n, { ok: true, restarted: false }, "a Pi that hasn't enrolled can't be restarted; the layout is still saved");
+  assert.equal(cad.orientation, "portrait-flipped");
+  // put both back, and let the Pi collect its reboot, so later tests start clean
+  Object.assign(sc, { orientation: "landscape" }); Object.assign(cad, { orientation: "portrait" });
+  await checkin({ version: "1.6.0" });
+});
+
 test("commands older than an hour are dropped, not run late", async () => {
   const dev = fake.T.devices.find((x) => x.serial === PPI2S_SERIAL);
   fake.T.device_commands.push({ id: 999, device_id: dev.id, command: "reboot", status: "pending", result: "", created_at: new Date(Date.now() - 2 * 3600_000).toISOString() });

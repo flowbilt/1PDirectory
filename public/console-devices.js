@@ -105,6 +105,13 @@ window.ConsoleDevices = (() => {
     }
     schedule();
   }
+  // Wi-Fi search and join come from the technician page (tech.html); a search's result is its list of networks
+  const cmdName = (c) => ({ wifi_scan: "Wi-Fi search", wifi_join: "Wi-Fi join" }[c] || c.replace("_", " "));
+  function cmdResult(c) {
+    if (c.command !== "wifi_scan" || c.status !== "done") return c.result;
+    try { const n = JSON.parse(c.result).networks.length; return `found ${n} network${n === 1 ? "" : "s"}`; } catch { return c.result; }
+  }
+
   /** Why the Pi's last check-in was refused, if that's still its latest news (supabase/10-refused.sql). */
   function refusedNote(d) {
     if (!d.refused_at || Date.now() - Date.parse(d.refused_at) > 10 * 60_000) return "";
@@ -162,7 +169,7 @@ window.ConsoleDevices = (() => {
             ${d.screen_id ? `<button type="button" class="ghost" data-dev-action="unassign">Unassign from screen</button>` : ""}
           </div></details>` : ""}
           <h3>Recent actions</h3>
-          <ul class="dev-cmds">${d.commands.length ? d.commands.map((c) => `<li><strong>${esc(c.command.replace("_", " "))}</strong> · ${esc(c.status)}${c.result ? ` · ${esc(c.result)}` : ""} <span class="sub">${since(c.created_at)}</span></li>`).join("") : `<li class="sub">None yet</li>`}</ul>
+          <ul class="dev-cmds">${d.commands.length ? d.commands.map((c) => `<li><strong>${esc(cmdName(c.command))}</strong> · ${esc(c.status)}${c.result ? ` · ${esc(cmdResult(c))}` : ""} <span class="sub">${since(c.created_at)}</span></li>`).join("") : `<li class="sub">None yet</li>`}</ul>
         </div>
       </div></div>`;
     if (moreOpen) dlg.querySelector("details.hw").open = true;

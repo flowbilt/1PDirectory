@@ -1,7 +1,7 @@
 // POST /api/agent  — the Pi's agent checks in here every minute.
 //   Headers: Authorization: Bearer <this Pi's own key>
 //   Body:    {serial, model, hostname, version, health:{...}, screenshot?:"data:image/jpeg;base64,...", results?:[{id,status,result}]}
-//   Reply:   {screen, commands:[{id,command}], screenshot_every}
+//   Reply:   {screen, commands:[{id,command,payload?}], screenshot_every}
 //
 // Enrollment (supabase/06-trust.sql): a Pi's key is stored hashed, and after that the same key is required.
 // A registered Pi with no key yet (pre-registered from the Yodeck report, or after Reset device key) accepts its
@@ -12,7 +12,16 @@ import { json } from "../lib/common.mjs";
 import { rpc } from "../lib/sb.mjs";
 
 export const SERIAL_RE = /^[0-9a-f]{8,32}$/;
-export const COMMANDS = ["reboot", "reload", "screenshot", "update_agent", "update_pi"];
+export const COMMANDS = ["reboot", "reload", "screenshot", "update_agent", "update_pi", "wifi_scan", "wifi_join"];
+/** The first agent that knows wifi_scan and wifi_join (supabase/13-tech.sql). Older Pis need Update agent first. */
+export const WIFI_AGENT = "1.6.0";
+/** "1.10.0" >= "1.6.0", compared number by number; "" or junk is older than anything. */
+export const agentAtLeast = (have, want) => {
+  const a = String(have || "").split(/[.-]/).map(Number), b = want.split(".").map(Number);
+  if (!a.length || Number.isNaN(a[0])) return false;
+  for (let i = 0; i < b.length; i++) { const x = Number.isFinite(a[i]) ? a[i] : 0; if (x !== b[i]) return x > b[i]; }
+  return true;
+};
 const MAX_SHOT = 400_000; // ~300 KB JPEG
 const sha = (s) => createHash("sha256").update(s).digest("hex");
 /** Today's date in Central time, e.g. "2026-09-24": the daily summary's day. */
@@ -48,7 +57,7 @@ export default async (req) => {
   const goodShot = typeof shot === "string" && /^data:image\/jpeg;base64,[A-Za-z0-9+/=]+$/.test(shot) && shot.length <= MAX_SHOT;
   const results = (Array.isArray(body.results) ? body.results.slice(0, 20) : [])
     .filter((r) => Number.isInteger(Number(r?.id)))
-    .map((r) => ({ id: Number(r.id), status: r.status === "done" ? "done" : "failed", result: clip(r.result, 500) }));
+    .map((r) => ({ id: Number(r.id), status: r.status === "done" ? "done" : "failed", result: clip(r.result, 4000) }));   // the database keeps 500 (4,000 for a Wi-Fi scan)
 
   try {
     // Everything happens in one database call (supabase/05-tuning.sql): enrollment, health, the daily summary,
@@ -64,7 +73,11 @@ export default async (req) => {
     if (r?.refused === "key") return json({ error: "This Pi's key doesn't match. A 1Point admin can reset it in the console." }, 401);
     if (r?.refused === "enroll") return json({ error: "This Pi isn't enrolled yet. 1Point opens its enrollment window in the console (Pi → Open enrollment)." }, 403);
     if (r?.refused === "revoked") return json({ error: "This device has been switched off in the console." }, 403);
-    return json({ screen: r?.screen || null, commands: (r?.commands || []).filter((c) => COMMANDS.includes(c.command)), screenshot_every: 300 });
+    // A command's payload (a Wi-Fi join's network and password) goes to the Pi as it came from the database,
+    // which cleared it in the same call (supabase/13-tech.sql)
+    const commands = (r?.commands || []).filter((c) => COMMANDS.includes(c.command))
+      .map((c) => (c.payload ? { id: c.id, command: c.command, payload: c.payload } : { id: c.id, command: c.command }));
+    return json({ screen: r?.screen || null, commands, screenshot_every: 300 });
   } catch (e) {
     return json({ error: e.message }, e.status && e.status < 500 ? e.status : 502);
   }

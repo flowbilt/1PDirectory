@@ -171,7 +171,7 @@ echo "nmcli $*" >> "$NMLOG"
 case "$*" in
   "device wifi hotspot con-name lobby-setup-ap ssid Directory-Setup-1234 password "*) exit "${HOTSPOT_RC:-0}" ;;
   "device wifi rescan") exit 0 ;;
-  "-t -f SSID,SECURITY,SIGNAL device wifi list") printf 'Strong:WPA2:70\nWeak:WPA2:20\nOpenNet::40\nStrong:WPA2:70\nDirectory-Setup-1234:WPA2:99\n'; exit 0 ;;
+  "-t -f SSID,SECURITY,SIGNAL device wifi list") printf 'Strong:WPA2:70\nWeak:WPA2:20\nOpenNet::40\nStrong:WPA2:70\nDirectory-Setup-1234:WPA2:99\nLobby\\:East:WPA2:10\n'; exit 0 ;;
   "device wifi connect BadNet") exit 1 ;;
   "device wifi connect GoodNet password rightpass") exit 0 ;;
   "device wifi connect OpenNet") exit 0 ;;
@@ -205,7 +205,7 @@ ok "it clears any hotspot left over from an earlier attempt, first" "$(head -1 "
 ok "and tears the hotspot down again once it's done" "$(tail -2 "$NMLOG" | tr '\n' '|')" "nmcli connection down lobby-setup-ap|nmcli connection delete lobby-setup-ap|"
 
 PAGE="$(wifisetup_run curl -s http://127.0.0.1:80/)"
-has "the picker lists nearby networks, strongest first" "$PAGE" "<option value=\"Strong\">Strong (locked, 70%)</option><option value=\"OpenNet\">OpenNet (open, 40%)</option><option value=\"Weak\">Weak (locked, 20%)</option>"
+has "the picker lists nearby networks, strongest first (a name with a colon in it intact)" "$PAGE" "<option value=\"Strong\">Strong (locked, 70%)</option><option value=\"OpenNet\">OpenNet (open, 40%)</option><option value=\"Weak\">Weak (locked, 20%)</option><option value=\"Lobby:East\">Lobby:East (locked, 10%)</option>"
 ok "a network seen twice in a scan is listed once" "$(grep -c 'value=\"Strong\"' <<<"$PAGE")" "1"
 ok "the hotspot's own network never appears as something to join" "$(grep -c 'value=\"Directory-Setup-1234\"' <<<"$PAGE")" "0"
 has "the hotspot name and its code are shown for a phone to join" "$PAGE" "join <b>Directory-Setup-1234</b>"

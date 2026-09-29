@@ -41,6 +41,17 @@
     Cache-Control = "no-store"
 
 [[headers]]
+  for = "/tech.html"
+  [headers.values]
+    X-Frame-Options = "DENY"
+    Cache-Control = "no-store"
+
+[[headers]]
+  for = "/tech.webmanifest"
+  [headers.values]
+    Content-Type = "application/manifest+json"
+
+[[headers]]
   for = "/login.html"
   [headers.values]
     X-Frame-Options = "DENY"

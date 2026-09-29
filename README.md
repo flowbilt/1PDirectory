@@ -8,6 +8,7 @@ Tenant directories for lobby screens, replacing Yodeck and Wix. Hosted on Netlif
 |---|---|---|
 | `/login.html` | everyone | Sign in, forgotten password, and setting a password from an invitation or reset email |
 | `/console.html` | signed in | Screens (status, search, layout), Buildings, People, and Accounts (1Point only) |
+| `/tech.html` | 1Point | The technician page, sized for a phone: Identify, Reload screen, Reboot Pi, Layout, and Wi-Fi search and join. Add it to the phone's home screen |
 | `/edit.html?d=…` | signed in | Edit one directory's tenants, plus its building's shared settings, with a live preview |
 | `/?device=<serial>` | lobby screens | What a Pi shows: whichever screen the console assigns it to |
 | `/?screen=ppi-2s` | lobby screens | A fixed screen. Older screens use `?site=landmark-center`, which still works |
@@ -120,6 +121,27 @@ keeps the quieter behavior below (cached content, "Reconnecting…") — it neve
 screen that's already working. Not yet proven on real Wi-Fi hardware: whether the Pi's onboard chip can scan for
 networks while it's also hosting the hotspot.
 
+### The technician page
+
+`/tech.html`, for 1Point staff in the field, on a phone (**Share → Add to Home Screen** on an iPhone, **Add to home
+screen** in Chrome on Android, and it opens like an app). It signs in with the same 1Point login as the console;
+anyone else is told it's for 1Point technicians. Pick a screen from the list (or search), and its page shows the Pi's
+status in plain words, then:
+
+- **Identify**, **Reload screen**, **Reboot Pi**.
+- **Layout:** choose one and **Save and restart Pi**, so the picture turns now (dark for about a minute). With no
+  enrolled Pi, it just saves the layout.
+- **Wi-Fi:** **Search for networks** lists what the Pi can pick up, strongest first, and which one it's on. Tap one,
+  type its password, **Join**; or **Join a network that isn't listed** for a hidden one. If the Pi can't join it, or
+  joins but can't reach the site within a minute, it drops it and goes back to the network it had, and the page says
+  why. With a network cable plugged in, the cable stays in charge and the new Wi-Fi is its backup. The password goes
+  to the Pi once and is then deleted from the database (about a minute at most); it's never shown back, and the
+  audit log records only the network's name. A network joined this way stays on that Pi only: it isn't added to the
+  console's saved Wi-Fi, so new cards don't carry it.
+
+Wi-Fi needs agent 1.6.0 or newer (**Pi → Update agent** in the console once); until then the page says so. Reset
+device key, Unassign and the updates stay in the console.
+
 ### Unattended after a power cut
 
 A Pi needs no one on site after a power cut, whatever comes back first:
@@ -178,7 +200,7 @@ Each Pi runs a small agent (`public/pi/agent.py`) that checks in once a minute o
 
 Pi health is a 1Point service tool. Owner users see only each screen's Online/Offline dot. The server refuses them all device information, not just the console.
 
-In the console, the **Pi** button on each screen offers Identify, Reload screen, Take screenshot, Reboot Pi, Update agent and Update Pi (see Updating Pis in the field). The Pi actions appear only once the Pi has enrolled (the server refuses them before that). Under **More** are Reset device key, Switch off, and Unassign.
+In the console, the **Pi** button on each screen offers Identify, Reload screen, Take screenshot, Reboot Pi, Update agent and Update Pi (see Updating Pis in the field). The technician page adds Wi-Fi search and join (agent 1.6.0). The Pi actions appear only once the Pi has enrolled (the server refuses them before that). Under **More** are Reset device key, Switch off, and Unassign.
 
 The Pi panel updates itself while it's open (every 10 seconds, every 3 for two minutes after an action), so results
 and new screenshots appear without reopening it. If a Pi's check-in was refused, the panel says why and what to do:
@@ -211,7 +233,7 @@ npm install
 npm test                      # server functions, against a fake Supabase
 node tests/test-server.mjs          # the whole site locally, with sample logins
 bash tests/kiosk-rotation-test.sh    # the kiosk: address from the serial, rotation and its watcher, a card moved between Pis, field Wi-Fi setup (about 5 minutes)
-python3 tests/agent-test.py          # the Pi's agent: schedule, results, reboot, updates, keys, Update Pi (about 1.5 minutes)
+python3 tests/agent-test.py          # the Pi's agent: schedule, results, reboot, updates, keys, Update Pi, Wi-Fi search and join (about 2 minutes)
 bash tests/setup-test.sh             # setup's options, Wi-Fi import, naming, TV keeper, pointer, HDMI, quiet start, field Wi-Fi setup (seconds)
 ```
 
@@ -220,10 +242,10 @@ Local sample logins: `scot@1pointusa.com / admin-pass`, `leighann@barber.test / 
 ## Files
 
 ```
-public/             screen (index.html, display.*), sign-in, console (+ console-devices.js, console-setup.js), editor, shared auth.js
+public/             screen (index.html, display.*), sign-in, console (+ console-devices.js, console-setup.js), editor, technician page (tech.*), shared auth.js
 netlify/functions/  screen, users, config, weather, news, agent, devices, networks, alert-settings, alerts
 netlify/lib/        Supabase client, RSS reader, shared helpers
-supabase/           database schema (01 to 12, run in order), starting data, check queries, setup guide
+supabase/           database schema (01 to 13, run in order), starting data, check queries, setup guide
 migration/          the Yodeck/Wix transcription the starting data was built from
 public/pi/          setup-kiosk.sh and agent.py (served by the site so Pis can download them)
 tests/              function tests, fake Supabase, local test server

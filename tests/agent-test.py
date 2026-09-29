@@ -196,6 +196,73 @@ def main():
     try: p.wait(timeout=5)
     except subprocess.TimeoutExpired: p.kill()
 
+    # ── F. Wi-Fi from the technician page (agent 1.6.0) ──
+    # A stand-in NetworkManager: one cable (unplugged unless "wired" exists), one Wi-Fi radio on OfficeNet. Joining
+    # fails with "Secrets were required" if "join-fail" exists; curl reaches the site only if "site-ok" exists.
+    nm = os.path.join(W, "nm.log")
+    stub("nmcli", f"""echo "$*" >> {nm}
+case "$*" in
+  "-t -f DEVICE,TYPE device") printf 'eth0:ethernet\\nwlan0:wifi\\n' ;;
+  "-t -f TYPE,STATE device") [[ -f {W}/wired ]] && s=connected || s=unavailable; printf 'ethernet:%s\\nwifi:connected\\n' "$s" ;;
+  "-t -f IN-USE,SSID,SECURITY,SIGNAL device wifi list ifname wlan0 --rescan yes")
+    printf '*:OfficeNet:WPA2:62\\n:Guest:--:80\\n:OfficeNet:WPA2:40\\n::WPA2:90\\n:Lobby\\\\:East:WPA2:30\\n' ;;
+  "-t -f NAME,TYPE,DEVICE connection show --active") printf 'Wired connection 1:802-3-ethernet:eth0\\nOfficeNet:802-11-wireless:wlan0\\n' ;;
+  "--wait 45 connection up lobby-field-"*) [[ -f {W}/join-fail ]] && {{ echo "Error: Connection activation failed: Secrets were required, but not provided." >&2; exit 4; }} ;;
+esac
+exit 0
+""")
+    stub("curl", f'echo "$*" >> {W}/curl.log; [[ -f {W}/site-ok ]] && exit 0 || exit 7\n')
+    for f in ("join-fail", "site-ok", "wired"):
+        if os.path.exists(os.path.join(W, f)): os.remove(os.path.join(W, f))
+    with lock: replies.clear(); n = len(checkins)
+    p = subprocess.Popen([sys.executable, agent], env=dict(env, LOBBY_AGENT_SERIAL="10000000abcd0003", LOBBY_AGENT_JOIN_WAIT="1"), stdout=log, stderr=log)
+    wait_for(n + 1)
+
+    def ask(cid, command, payload=None):
+        c = {"id": cid, "command": command}
+        if payload is not None: c["payload"] = payload
+        open(nm, "w").close()
+        with lock: replies.append([c])
+        got = wait_result(cid)
+        return got[0][1] if got else {}
+
+    r = ask(10, "wifi_scan")
+    try: listing = json.loads(r.get("result", ""))
+    except ValueError: listing = {}
+    names = [x["ssid"] for x in listing.get("networks", [])]
+    check("Wi-Fi search: networks come back strongest first, each once, hidden ones left out", names == ["Guest", "OfficeNet", "Lobby:East"], names)
+    office = next((x for x in listing.get("networks", []) if x["ssid"] == "OfficeNet"), {})
+    check("and the network it's on is marked, at its strongest reading", office.get("current") is True and office.get("signal") == 62, office)
+    check("open networks say so; a name with a colon in it survives", [x["open"] for x in listing.get("networks", [])] == [True, False, False], listing)
+    check("and it says whether a cable is plugged in", listing.get("wired") is False, listing.get("wired"))
+
+    open(os.path.join(W, "site-ok"), "w").close()
+    r = ask(11, "wifi_join", {"ssid": "Guest", "psk": "", "hidden": False})
+    log_ = open(nm).read()
+    check("Wi-Fi join: it joins and confirms the site through that Wi-Fi", r.get("status") == "done" and "Joined Guest" in r.get("result", ""), r)
+    check("an open network is saved without a password, above the card's own networks", "con-name lobby-field-Guest ssid Guest" in log_ and "wifi-sec" not in log_ and "autoconnect-priority 100" in log_, log_)
+    check("the site is checked through the Wi-Fi itself, not a cable", "--interface wlan0" in open(os.path.join(W, "curl.log")).read())
+
+    open(os.path.join(W, "join-fail"), "w").close()
+    r = ask(12, "wifi_join", {"ssid": "PPI Lobby", "psk": "wrong password", "hidden": True})
+    log_ = open(nm).read()
+    check("a refused password is reported plainly, with where the Pi still is", r.get("status") == "failed" and "password was refused" in r.get("result", "") and "Still on OfficeNet" in r.get("result", ""), r)
+    check("the failed network is removed and the Pi goes back to the one it had",
+          "connection delete lobby-field-PPI Lobby" in log_.split("connection up lobby-field-PPI Lobby")[-1] and "--wait 45 connection up OfficeNet" in log_, log_)
+    check("a hidden network is saved as hidden", "802-11-wireless.hidden yes" in log_)
+    os.remove(os.path.join(W, "join-fail")); os.remove(os.path.join(W, "site-ok"))
+    r = ask(13, "wifi_join", {"ssid": "Walled Garden", "psk": "password123"})
+    log_ = open(nm).read()
+    check("a network that joins but can't reach the site is left, and the Pi goes back", r.get("status") == "failed" and "can't be reached" in r.get("result", "")
+          and "connection delete lobby-field-Walled Garden" in log_.split("connection up lobby-field-Walled Garden")[-1] and "connection up OfficeNet" in log_, r)
+    r = ask(14, "wifi_join", {})
+    check("a join with no network given does nothing", r.get("status") == "failed" and not open(nm).read().strip(), r)
+    shipped = re.search(r'VERSION = "([^"]+)"', open(AGENT).read()).group(1)   # section C swapped the test's copy for 9.9.9-test
+    check("the agent on the site is 1.6.0, the first that knows the Wi-Fi commands", shipped == "1.6.0", shipped)
+    p.terminate()
+    try: p.wait(timeout=5)
+    except subprocess.TimeoutExpired: p.kill()
+
     srv.shutdown()
     print(f"\n{passed}/{passed + failed} passed")
     if failed:

@@ -14,7 +14,7 @@ Runs as a systemd service (lobby-agent). Standard library only.
 """
 import base64, json, os, pwd, re, secrets, shutil, socket, subprocess, sys, tempfile, time, urllib.error, urllib.request
 
-VERSION = "1.5.0"
+VERSION = "1.6.0"
 CONFIG = os.environ.get("LOBBY_AGENT_CONFIG", "/etc/lobby-agent.json")
 STATE = os.environ.get("LOBBY_AGENT_STATE", "/var/lib/lobby-agent/pending-results.json")
 IDENTITY = os.environ.get("LOBBY_AGENT_IDENTITY", "/var/lib/lobby-agent/identity.json")
@@ -23,6 +23,7 @@ UPDATE_DIR = os.environ.get("LOBBY_AGENT_UPDATE_DIR", "/var/lib/lobby-agent/upda
 FIRST_SHOT = 120           # seconds after start before the first automatic screenshot (the browser is up by then)
 UPDATE_LIMIT = 45 * 60      # an update still running after this long is stopped and reported as failed
 INTERVAL = max(1.0, float(os.environ.get("LOBBY_AGENT_INTERVAL", "60")))   # seconds; only tests change this
+JOIN_WAIT = float(os.environ.get("LOBBY_AGENT_JOIN_WAIT", "60"))   # how long a newly joined network has to reach the site
 
 
 def log(*a):
@@ -274,7 +275,122 @@ def clear_update():
             pass
 
 
-COMMANDS = {"reload": cmd_reload, "reboot": cmd_reboot, "screenshot": cmd_screenshot, "update_agent": cmd_update_agent}
+# ── Wi-Fi from the technician page (agent 1.6.0) ──
+def nm_fields(line):
+    r"""One line of `nmcli -t` output, split on ':' the way nmcli means it (it writes a ':' inside a value as '\:')."""
+    out, cur, i = [], "", 0
+    while i < len(line):
+        ch = line[i]
+        if ch == "\\" and i + 1 < len(line):
+            cur += line[i + 1]; i += 2
+        elif ch == ":":
+            out.append(cur); cur = ""; i += 1
+        else:
+            cur += ch; i += 1
+    out.append(cur)
+    return out
+
+
+def nm_rows(*args, timeout=30):
+    r = run(["nmcli", "-t"] + list(args), timeout)
+    return r.returncode, [nm_fields(l) for l in r.stdout.decode(errors="replace").splitlines() if l], r.stderr.decode(errors="replace").strip()
+
+
+def wifi_device():
+    _, rows, _ = nm_rows("-f", "DEVICE,TYPE", "device")
+    return next((r[0] for r in rows if len(r) > 1 and r[1] == "wifi"), None)
+
+
+def wired_up():
+    _, rows, _ = nm_rows("-f", "TYPE,STATE", "device")
+    return any(len(r) > 1 and r[0] == "ethernet" and r[1].startswith("connected") for r in rows)
+
+
+def cmd_wifi_scan(cfg, payload=None):
+    """The networks this Pi can see, strongest first, as JSON for the technician page (up to 4,000 characters)."""
+    dev = wifi_device()
+    if not dev:
+        return False, "This Pi has no Wi-Fi."
+    rc, rows, err = nm_rows("-f", "IN-USE,SSID,SECURITY,SIGNAL", "device", "wifi", "list", "ifname", dev, "--rescan", "yes", timeout=45)
+    if rc != 0:
+        return False, "Couldn't search for networks: " + err[:200]
+    best = {}
+    for r in rows:
+        if len(r) < 4 or not r[1]:
+            continue                                      # hidden networks have no name to list
+        sig = int(r[3]) if r[3].isdigit() else 0
+        n = {"ssid": r[1], "open": r[2].strip() in ("", "--"), "signal": sig, "current": r[0].strip() == "*"}
+        if r[1] not in best or sig > best[r[1]]["signal"] or n["current"]:
+            n["current"] = n["current"] or best.get(r[1], {}).get("current", False)
+            best[r[1]] = n
+    nets = sorted(best.values(), key=lambda n: -n["signal"])[:30]
+    out = lambda: json.dumps({"networks": nets, "wired": wired_up()}, ensure_ascii=False, separators=(",", ":"))
+    while len(out()) > 3900 and nets:
+        nets.pop()                                        # the weakest go first if the list is too long to send
+    return True, out()
+
+
+def _reaches_site(cfg, dev):
+    """Whether the site can be reached through this Wi-Fi device itself (not through a cable that's also plugged in)."""
+    end = time.monotonic() + JOIN_WAIT
+    while True:
+        r = run(["curl", "--interface", dev, "-fsS", "--max-time", "6", "-o", "/dev/null", cfg["site"].rstrip("/") + "/login.html"], 10)
+        if r.returncode == 0:
+            return True
+        if time.monotonic() >= end:
+            return False
+        time.sleep(min(3.0, max(0.1, end - time.monotonic())))
+
+
+def cmd_wifi_join(cfg, payload=None):
+    """Joins one network. If it can't be joined, or doesn't reach the site within a minute, it's removed and the Pi goes
+    back to the connection it had, so a wrong password or a network that blocks the site never strands a Pi."""
+    p = payload or {}
+    ssid, psk, hidden = p.get("ssid"), p.get("psk") or "", p.get("hidden") is True
+    if not isinstance(ssid, str) or not ssid or len(ssid.encode()) > 32 or not isinstance(psk, str):
+        return False, "No network was given."
+    dev = wifi_device()
+    if not dev:
+        return False, "This Pi has no Wi-Fi."
+    _, rows, _ = nm_rows("-f", "NAME,TYPE,DEVICE", "connection", "show", "--active")
+    prev = next((r[0] for r in rows if len(r) > 2 and r[2] == dev and r[1] == "802-11-wireless"), None)
+    name = "lobby-field-" + ssid
+    if prev == name:
+        prev = None                                       # re-joining the same network: nothing else to go back to
+    run(["nmcli", "connection", "delete", name])
+    args = ["nmcli", "connection", "add", "type", "wifi", "ifname", dev, "con-name", name, "ssid", ssid,
+            "connection.autoconnect", "yes", "connection.autoconnect-priority", "100",   # above the card's saved networks
+            "802-11-wireless.hidden", "yes" if hidden else "no"]
+    if psk:
+        args += ["wifi-sec.key-mgmt", "wpa-psk", "wifi-sec.psk", psk]
+    r = run(args)
+    if r.returncode != 0:
+        return False, f"Couldn't save {ssid}: " + r.stderr.decode(errors="replace").strip()[:200]
+    back = f"Still on {prev}." if prev else ("Still on its network cable." if wired_up() else "")
+
+    def undo():
+        run(["nmcli", "connection", "delete", name])
+        if prev:
+            run(["nmcli", "--wait", "45", "connection", "up", prev], 60)
+
+    r = run(["nmcli", "--wait", "45", "connection", "up", name], 60)
+    if r.returncode != 0:
+        err = r.stderr.decode(errors="replace")
+        why = ("the password was refused" if re.search(r"[Ss]ecrets were required|802-1[xX]|psk", err)
+               else "it isn't in range" if re.search(r"[Nn]o network with SSID|not found", err)
+               else err.strip().replace("Error: ", "")[:160] or "it didn't connect")
+        undo()
+        return False, f"Couldn't join {ssid}: {why}. {back}".strip()
+    if not _reaches_site(cfg, dev):
+        undo()
+        return False, f"Joined {ssid}, but the directory site can't be reached through it, so the Pi left it. {back}".strip()
+    note = " A network cable is plugged in too, and is used first; this Wi-Fi is the backup." if wired_up() else ""
+    return True, f"Joined {ssid}; the directory site is reachable through it.{note}"
+
+
+COMMANDS = {"reload": cmd_reload, "reboot": cmd_reboot, "screenshot": cmd_screenshot, "update_agent": cmd_update_agent,
+            "wifi_scan": cmd_wifi_scan, "wifi_join": cmd_wifi_join}
+WITH_PAYLOAD = {"wifi_scan", "wifi_join"}
 
 
 # ── talking to the site ──
@@ -375,10 +491,17 @@ def main():
                         results.append({"id": c.get("id"), "status": "failed", "result": msg})
                     continue
                 fn = COMMANDS.get(c.get("command"))
-                ok, msg = fn(cfg) if fn else (False, "Unknown command.")
+                if not fn:
+                    ok, msg = False, "Unknown command."
+                elif c.get("command") in WITH_PAYLOAD:
+                    ok, msg = fn(cfg, c.get("payload") or {})
+                else:
+                    ok, msg = fn(cfg)
                 r = {"id": c.get("id"), "status": "done" if ok else "failed", "result": msg}
                 results.append(r)
-                log("command", c.get("command"), "->", msg)
+                log("command", c.get("command"), "->", "(network list)" if c.get("command") == "wifi_scan" and ok else msg)
+                if c.get("command") == "wifi_join":
+                    save_pending(results)            # the network changed under this check-in: keep the result until it's sent
                 if c.get("command") == "screenshot" and ok:
                     force_shot = True
                     shot_results.append(r)

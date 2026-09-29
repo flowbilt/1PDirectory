@@ -153,7 +153,7 @@ export function createFake() {
     alert_recipients: () => ({ id: randomUUID(), name: "", offline: true, power: true, hot: true, enabled: true, updated_at: now(), updated_by: null }),
     wifi_networks: () => ({ id: randomUUID(), label: "", psk: "", hidden: false, sort: 0, updated_at: now(), updated_by: null }),
     prepare_codes: () => ({ id: (T.prepare_codes.at(-1)?.id || 0) + 1, used_at: null, created_at: now() }),
-    device_commands: () => ({ id: (T.device_commands.at(-1)?.id || 0) + 1, status: "pending", result: "", created_at: now(), sent_at: null, done_at: null }),
+    device_commands: () => ({ id: (T.device_commands.at(-1)?.id || 0) + 1, status: "pending", result: "", payload: null, created_at: now(), sent_at: null, done_at: null }),
   };
   const touchDir = (did, uid) => { const d = T.directories.find((x) => x.id === did); if (d) { d.updated_at = now(); d.updated_by = uid || null; } };
   function checkRow(table, row) {
@@ -239,7 +239,7 @@ export function createFake() {
   }
 
 
-  // ── database functions (mirror of supabase/05-tuning.sql, agent_checkin as replaced by 06-trust.sql) ──
+  // ── database functions (mirror of supabase/05-tuning.sql; agent_checkin as last replaced by 13-tech.sql) ──
   const centralDay = (d = new Date()) => new Intl.DateTimeFormat("en-CA", { timeZone: "America/Chicago" }).format(d);
   // Mirror of device_credit (07-uptime.sql): {today, previous day} seconds for a check-in at `at` after one at `prev`
   function deviceCredit(prev, at) {
@@ -279,14 +279,16 @@ export function createFake() {
       }
       for (const r of p_results || []) {
         const c = T.device_commands.find((x) => x.id === Number(r.id) && x.device_id === dv.id && x.status === "sent");
-        if (c) Object.assign(c, { status: r.status === "done" ? "done" : "failed", result: String(r.result ?? "").slice(0, 500), done_at: t });
+        if (c) Object.assign(c, { status: r.status === "done" ? "done" : "failed", result: String(r.result ?? "").slice(0, c.command === "wifi_scan" ? 4000 : 500), payload: null, done_at: t });
       }
       const hourAgo = new Date(Date.parse(t) - 3600_000).toISOString();
-      T.device_commands.filter((c) => c.device_id === dv.id && ["pending", "sent"].includes(c.status) && c.created_at < hourAgo).forEach((c) => { c.status = "expired"; });
+      T.device_commands.filter((c) => c.device_id === dv.id && ["pending", "sent"].includes(c.status) && c.created_at < hourAgo).forEach((c) => { c.status = "expired"; c.payload = null; });
       const pending = T.device_commands.filter((c) => c.device_id === dv.id && c.status === "pending").sort((a, b) => a.id - b.id);
-      pending.forEach((c) => Object.assign(c, { status: "sent", sent_at: t }));
+      // 13-tech.sql: each command goes out with its payload, which is cleared as it's handed over
+      const handed = pending.map((c) => ({ id: c.id, command: c.command, ...(c.payload != null ? { payload: c.payload } : {}) }));
+      pending.forEach((c) => Object.assign(c, { status: "sent", sent_at: t, payload: null }));
       const sc = T.screens.find((s) => s.id === dv.screen_id);
-      return { screen: sc?.key ?? null, commands: pending.map((c) => ({ id: c.id, command: c.command })) };
+      return { screen: sc?.key ?? null, commands: handed };
     },
     screen_state({ p_key, p_device, p_etag, p_report }) {
       let s;

@@ -259,12 +259,26 @@ def site_reachable():
     return run("curl", "-fsS", "--max-time", "4", "-o", "/dev/null", URL, timeout=6).returncode == 0
 
 
+def nm_fields(line):
+    # nmcli -t writes a ':' inside a value as '\\:' (and a backslash as '\\\\'), so split only on bare colons
+    out, cur, i = [], "", 0
+    while i < len(line):
+        if line[i] == "\\" and i + 1 < len(line):
+            cur += line[i + 1]; i += 2
+        elif line[i] == ":":
+            out.append(cur); cur = ""; i += 1
+        else:
+            cur += line[i]; i += 1
+    out.append(cur)
+    return out
+
+
 def scan_networks():
     run("nmcli", "device", "wifi", "rescan", timeout=15)
     r = run("nmcli", "-t", "-f", "SSID,SECURITY,SIGNAL", "device", "wifi", "list", timeout=15)
     seen, nets = set(), []
     for line in r.stdout.splitlines():
-        parts = line.split(":")
+        parts = nm_fields(line)
         if len(parts) < 3:
             continue
         ssid, security, signal = parts[0], parts[1], parts[2]

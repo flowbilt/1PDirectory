@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="robots" content="noindex">
+<meta name="theme-color" content="#0d1b2e">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black">
+<meta name="apple-mobile-web-app-title" content="Directory tech">
+<title>Directory tech</title>
+<link rel="manifest" href="/tech.webmanifest">
+<link rel="apple-touch-icon" href="/tech-icon-180.png">
+<link rel="icon" type="image/png" href="/tech-icon-192.png">
+<link rel="stylesheet" href="/admin.css">
+<link rel="stylesheet" href="/tech.css">
+</head>
+<body class="tech">
+<header class="topbar">
+  <div class="topbar-left"><strong class="brand">Directory tech</strong></div>
+  <div class="topbar-right"><button type="button" id="sign-out" class="ghost">Sign out</button></div>
+</header>
+
+<main class="tech-main">
+  <p id="load-error" class="error" hidden></p>
+
+  <!-- Every screen -->
+  <section id="view-list" hidden>
+    <label for="search" class="sr-only">Find a screen</label>
+    <input id="search" type="search" placeholder="Find a screen or building" autocomplete="off">
+    <ul id="screen-list" class="t-list"></ul>
+  </section>
+
+  <!-- One screen -->
+  <section id="view-screen" hidden>
+    <a href="#" class="t-back" id="back">All screens</a>
+    <h1 id="s-name"></h1>
+    <p id="s-where" class="t-where"></p>
+    <p id="s-status" class="t-status"></p>
+    <p id="s-note" class="t-note" hidden></p>
+
+    <div class="t-buttons">
+      <button type="button" data-do="identify">Identify<span>Shows the screen's name on the TV for 90 seconds</span></button>
+      <button type="button" data-do="reload" data-pi>Reload screen<span>Restarts the browser, about 15 seconds</span></button>
+      <button type="button" data-do="reboot" data-pi>Reboot Pi<span>The screen is dark for about a minute</span></button>
+    </div>
+
+    <h2>Layout</h2>
+    <div class="t-row">
+      <label for="layout" class="sr-only">Layout</label>
+      <select id="layout"></select>
+      <button type="button" id="layout-save">Save layout</button>
+    </div>
+    <p class="t-hint" id="layout-hint"></p>
+
+    <h2>Wi-Fi</h2>
+    <p class="t-hint" id="wifi-now"></p>
+    <div id="wifi-box">
+      <button type="button" id="wifi-scan" class="t-wide">Search for networks</button>
+      <p id="wifi-wait" class="t-wait" hidden></p>
+      <ul id="wifi-list" class="t-nets" hidden></ul>
+      <button type="button" id="wifi-other" class="t-linkish" hidden>Join a network that isn't listed</button>
+      <p id="wifi-result" class="t-result" hidden></p>
+    </div>
+
+    <h2>Recent actions</h2>
+    <ul id="s-actions" class="t-actions"></ul>
+  </section>
+</main>
+
+<script src="/auth.js"></script>
+<script src="/tech.js"></script>
+</body>
+</html>

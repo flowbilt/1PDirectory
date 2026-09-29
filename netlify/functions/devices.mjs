@@ -5,19 +5,32 @@
 //   GET ?screenshot=<device id>  the latest screenshot (JPEG)
 //   GET ?hardware=<screen id>    the screen's hardware record (serial, MACs, Yodeck snapshot); signed-in users
 //                                can't read that column directly (supabase/06-trust.sql)
-//   POST {action:"command", device_id, command}       reboot | reload | screenshot | update_agent | update_pi
+//   POST {action:"command", device_id, command}       reboot | reload | screenshot | update_agent | update_pi | wifi_scan
+//   POST {action:"command", device_id, command:"wifi_join", ssid, psk, hidden}   join one network (agent 1.6.0+). The
+//                                password goes to the Pi once and is then cleared (supabase/13-tech.sql); it's never listed
+//   POST {action:"layout", screen_id, orientation, restart}  set a screen's layout; restart its Pi so it turns now
 //   POST {action:"identify", screen_id}               flash the screen's name on the TV for 90 seconds
 //   POST {action:"assign", device_id, screen_id|null} which screen this Pi drives (1Point only)
 //   POST {action:"open_enrollment" | "close_enrollment", device_id}  a Pi with no key accepts one only while open
 //   POST {action:"reset_key" | "revoke" | "activate", device_id}  reset_key also opens the enrollment window
 import { json } from "../lib/common.mjs";
 import { audit, caller, db, enc } from "../lib/sb.mjs";
-import { COMMANDS, centralDay } from "./agent.mjs";
+import { COMMANDS, WIFI_AGENT, agentAtLeast, centralDay } from "./agent.mjs";
 
 const ONLINE_MIN = 15;
 export const ENROLL_HOURS = 24;
 const enrollUntil = () => new Date(Date.now() + ENROLL_HOURS * 3600_000).toISOString();
 const fail = (status, error) => Object.assign(new Error(error), { status });
+export const LAYOUTS = ["auto", "portrait", "portrait-flipped", "landscape", "landscape-flipped"];
+
+/** A Wi-Fi join's network, checked the way the Pi and NetworkManager will need it. Throws a 400 otherwise. */
+export function wifiPayload(body) {
+  const ssid = typeof body.ssid === "string" ? body.ssid : "";
+  const psk = typeof body.psk === "string" ? body.psk : "";
+  if (!ssid || Buffer.byteLength(ssid) > 32 || /[\u0000-\u001f\u007f]/.test(ssid)) throw fail(400, "Choose a network (a name of 1 to 32 characters).");
+  if (psk && (psk.length < 8 || psk.length > 63 || /[^\x20-\x7e]/.test(psk))) throw fail(400, "A Wi-Fi password is 8 to 63 characters. Leave it empty for an open network.");
+  return { ssid, psk, hidden: body.hidden === true };
+}
 
 // Screens (id -> {key, name, org}) the caller may see
 async function visibleScreens(profile) {
@@ -37,7 +50,7 @@ async function visibleScreens(profile) {
 
 async function loadDevice(id, profile, screens) {
   if (!id) throw fail(400, "device_id is required.");
-  const [d] = await db(`devices?id=eq.${enc(id)}&select=id,serial,screen_id,status,key_hash`);
+  const [d] = await db(`devices?id=eq.${enc(id)}&select=id,serial,screen_id,status,key_hash,agent_version`);
   if (!d) throw fail(404, "No such device.");
   if (profile.role !== "platform_admin" && !screens.has(d.screen_id)) throw fail(404, "No such device.");
   return d;
@@ -92,14 +105,36 @@ export default async (req) => {
       return json({ ok: true });
     }
 
+    // The screen's layout, and (restart) a reboot for its Pi so the picture turns now rather than at its next start
+    if (body.action === "layout") {
+      if (!screens.has(body.screen_id)) throw fail(404, "No such screen.");
+      if (!LAYOUTS.includes(body.orientation)) throw fail(400, "Unknown layout.");
+      await db(`screens?id=eq.${enc(body.screen_id)}`, { method: "PATCH", prefer: "return=minimal", body: { orientation: body.orientation } });
+      let restarted = false;
+      if (body.restart) {
+        const [pi] = await db(`devices?screen_id=eq.${enc(body.screen_id)}&select=id,key_hash`);
+        if (pi?.key_hash) {
+          await db("device_commands", { method: "POST", prefer: "return=minimal", body: { device_id: pi.id, command: "reboot", created_by: user.id } });
+          restarted = true;
+        }
+      }
+      await audit(user.id, "layout", "screen", body.screen_id, { orientation: body.orientation, restarted });
+      return json({ ok: true, restarted });
+    }
+
     const d = await loadDevice(body.device_id, profile, screens);
 
     if (body.action === "command") {
       if (!COMMANDS.includes(body.command)) throw fail(400, "Unknown command.");
       if (!d.key_hash) throw fail(409, "This Pi hasn't enrolled yet, so there's nothing to receive that. Open its enrollment window first.");
-      await db("device_commands", { method: "POST", prefer: "return=minimal", body: { device_id: d.id, command: body.command, created_by: user.id } });
-      await audit(user.id, `device ${body.command}`, "device", d.id, { serial: d.serial });
-      return json({ ok: true, queued: body.command });
+      const wifi = body.command.startsWith("wifi_");
+      if (wifi && !agentAtLeast(d.agent_version, WIFI_AGENT)) throw fail(409, `This Pi's agent (${d.agent_version || "unknown"}) can't do Wi-Fi from here yet. The office can run Update agent on it first (${WIFI_AGENT} or newer).`);
+      const payload = body.command === "wifi_join" ? wifiPayload(body) : null;
+      const [row] = await db("device_commands?select=id", { method: "POST", prefer: "return=representation",
+        body: { device_id: d.id, command: body.command, created_by: user.id, ...(payload ? { payload } : {}) } });
+      // The audit log names the network, never its password
+      await audit(user.id, `device ${body.command}`, "device", d.id, { serial: d.serial, ...(payload ? { ssid: payload.ssid } : {}) });
+      return json({ ok: true, queued: body.command, id: row?.id ?? null });
     }
 
     if (body.action === "assign") {

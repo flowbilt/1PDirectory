@@ -39,7 +39,7 @@ globalThis.fetch = async (url, init = {}) => {
 };
 
 const ROUTES = { "/api/screen": screen, "/api/users": users, "/api/config": config, "/api/weather": weather, "/api/news": news, "/api/agent": agent, "/api/devices": devices, "/api/networks": networks, "/api/alert-settings": alertSettings };
-const TYPES = { ".html": "text/html", ".js": "text/javascript", ".css": "text/css", ".ttf": "font/ttf", ".svg": "image/svg+xml", ".png": "image/png", ".jpg": "image/jpeg" };
+const TYPES = { ".html": "text/html", ".js": "text/javascript", ".css": "text/css", ".ttf": "font/ttf", ".svg": "image/svg+xml", ".png": "image/png", ".jpg": "image/jpeg", ".webmanifest": "application/manifest+json" };
 const PUB = new URL("../public/", import.meta.url).pathname;
 
 createServer(async (req, res) => {
