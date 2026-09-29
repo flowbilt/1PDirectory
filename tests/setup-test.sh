@@ -156,4 +156,77 @@ quiet; ok "running setup again changes nothing" "$(cat "$W/cmdline.txt")|$(grep 
 ok "still one line" "$(wc -l < "$W/cmdline.txt")" "1"
 has "the desktop behind the browser is plain black" "$(grep -F 'labwc/autostart' "$SETUP")" "swaybg -c '#000000'"
 
+
+# ── field Wi-Fi setup (lobby-wifi-setup): the hotspot + picker a never-online Pi offers ──
+has "the sudoers rule is scoped to exactly this script, for the desktop user, no password" "$(sed -n '/^cat > \/etc\/sudoers.d\/lobby-wifi-setup/,/^SUDOERS$/p' "$SETUP")" 'NOPASSWD: /usr/local/sbin/lobby-wifi-setup'
+has "the sudoers file is checked with visudo before being trusted" "$(cat "$SETUP")" "visudo -cf /etc/sudoers.d/lobby-wifi-setup"
+has "it's installed read-only (0440), like a real sudoers drop-in" "$(cat "$SETUP")" "chmod 440 /etc/sudoers.d/lobby-wifi-setup"
+
+awk "/^cat > \/usr\/local\/sbin\/lobby-wifi-setup <<'WIFISETUP'\$/{f=1;next} /^WIFISETUP\$/{f=0} f" "$SETUP" > "$W/lobby-wifi-setup.py"
+python3 -c "import ast; ast.parse(open('$W/lobby-wifi-setup.py').read())" && echo "  ok  lobby-wifi-setup is valid Python" && pass=$((pass+1)) || { echo "  FAIL lobby-wifi-setup doesn't parse"; fail=$((fail+1)); }
+
+cat > "$W/bin/nmcli" <<'S'
+#!/usr/bin/env bash
+echo "nmcli $*" >> "$NMLOG"
+case "$*" in
+  "device wifi hotspot con-name lobby-setup-ap ssid Directory-Setup-1234 password "*) exit "${HOTSPOT_RC:-0}" ;;
+  "device wifi rescan") exit 0 ;;
+  "-t -f SSID,SECURITY,SIGNAL device wifi list") printf 'Strong:WPA2:70\nWeak:WPA2:20\nOpenNet::40\nStrong:WPA2:70\nDirectory-Setup-1234:WPA2:99\n'; exit 0 ;;
+  "device wifi connect BadNet") exit 1 ;;
+  "device wifi connect GoodNet password rightpass") exit 0 ;;
+  "device wifi connect OpenNet") exit 0 ;;
+esac
+exit 0
+S
+cat > "$W/bin/curl" <<'S'
+#!/usr/bin/env bash
+[[ -f "$SITE_UP_FLAG" ]] && exit 0 || exit 7
+S
+chmod +x "$W/bin/nmcli" "$W/bin/curl"
+
+NMLOG="$W/wifisetup-nm.log"
+wifisetup_run() {
+  # Starts lobby-wifi-setup in the background, waits for it to listen, runs "$@" against it, then stops it and
+  # waits for it to actually exit (the port must be free before the next case starts).
+  : > "$NMLOG"
+  ( PATH="$W/bin:$PATH" NMLOG="$NMLOG" SITE_UP_FLAG="$SITE_UP_FLAG" LOBBY_WIFI_SETUP_TRIES="${TRIES:-2}" LOBBY_WIFI_SETUP_SLEEP="${SLEEP_S:-0.2}" \
+      timeout 40 python3 "$W/lobby-wifi-setup.py" 10000000abcd1234 "http://x.test/site" > "$W/wifisetup.out" 2>&1 & echo $! > "$W/wifisetup.pid" )
+  for _ in $(seq 1 30); do curl -fsS -o /dev/null http://127.0.0.1:80/ 2>/dev/null && break; sleep 0.2; done
+  "$@"
+  kill -TERM "$(cat "$W/wifisetup.pid")" 2>/dev/null
+  for _ in $(seq 1 30); do kill -0 "$(cat "$W/wifisetup.pid")" 2>/dev/null || break; sleep 0.2; done
+}
+SITE_UP_FLAG="$W/site-up"; rm -f "$SITE_UP_FLAG"
+
+rm -f "$W/wifisetup.out"; wifisetup_run true
+has "it brings up a hotspot named after the Pi's own serial" "$(cat "$NMLOG")" "device wifi hotspot con-name lobby-setup-ap ssid Directory-Setup-1234"
+ok "the hotspot password is a TV-readable 8-digit code" "$(grep -oE 'password [0-9]{8}$' "$NMLOG" | grep -c .)" "1"
+ok "it clears any hotspot left over from an earlier attempt, first" "$(head -1 "$NMLOG")" "nmcli connection delete lobby-setup-ap"
+ok "and tears the hotspot down again once it's done" "$(tail -2 "$NMLOG" | tr '\n' '|')" "nmcli connection down lobby-setup-ap|nmcli connection delete lobby-setup-ap|"
+
+PAGE="$(wifisetup_run curl -s http://127.0.0.1:80/)"
+has "the picker lists nearby networks, strongest first" "$PAGE" "<option value=\"Strong\">Strong (locked, 70%)</option><option value=\"OpenNet\">OpenNet (open, 40%)</option><option value=\"Weak\">Weak (locked, 20%)</option>"
+ok "a network seen twice in a scan is listed once" "$(grep -c 'value=\"Strong\"' <<<"$PAGE")" "1"
+ok "the hotspot's own network never appears as something to join" "$(grep -c 'value=\"Directory-Setup-1234\"' <<<"$PAGE")" "0"
+has "the hotspot name and its code are shown for a phone to join" "$PAGE" "join <b>Directory-Setup-1234</b>"
+
+ERR="$(TRIES=1 SLEEP_S=0.1 wifisetup_run curl -s -X POST -d 'ssid=BadNet&password=x' http://127.0.0.1:80/connect)"
+has "a network that refuses the password says so, and offers the form again" "$ERR" 'err">'
+has "and the form is still there to retry" "$ERR" "<form method=\"post\""
+
+ERR2="$(TRIES=1 SLEEP_S=0.1 wifisetup_run curl -s -X POST -d 'ssid=GoodNet&password=rightpass' http://127.0.0.1:80/connect)"
+has "joining but still not reaching the site is reported, not silently retried forever" "$ERR2" "can't reach the directory site"
+
+touch "$SITE_UP_FLAG"
+OK1="$(TRIES=2 SLEEP_S=0.1 wifisetup_run curl -s -X POST -d 'ssid=OpenNet&password=' http://127.0.0.1:80/connect)"
+has "an open network needs no password" "$OK1" "<h1>Connected"
+rm -f "$SITE_UP_FLAG"
+
+: > "$NMLOG"
+wifisetup_run curl -s -X POST -d 'ssid=Strong&hidden_ssid=HiddenNet&password=secretpw' http://127.0.0.1:80/connect >/dev/null
+has "a typed hidden-network name wins over the dropdown selection" "$(cat "$NMLOG")" "device wifi connect HiddenNet password secretpw"
+
+HTTP_CODE="$(TRIES=1 SLEEP_S=0.1 wifisetup_run curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:80/nowhere)"
+ok "an unknown path is a plain 404, not a crash" "$HTTP_CODE" "404"
+
 echo; echo "$pass/$((pass+fail)) passed"; [[ $fail -eq 0 ]]

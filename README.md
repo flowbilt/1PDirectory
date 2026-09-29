@@ -103,6 +103,23 @@ the console once Pi settings are built.
 - **A bad Pi:** put a card in the replacement Pi. Its serial appears under New devices: assign it to the screen (the
   old Pi is unassigned automatically).
 
+### Field Wi-Fi setup
+
+A Pi that has never reached the site — wrong or missing Wi-Fi, no cable yet — offers its own setup instead of
+sitting on a blank screen. No new card and no console visit needed:
+
+1. The Pi's screen shows a hotspot name (`Directory-Setup-<last 4 of serial>`) and an 8-digit code.
+2. From a phone: join that Wi-Fi network with the code, then open a browser to any address (or open the page shown
+   on the TV) — the Pi's own setup page lists nearby networks. A keyboard at the Pi works too, on the same page.
+3. Pick a network (or type a hidden one's name), enter its password, and submit. The Pi joins it, confirms it can
+   reach the site, and starts the directory normally. A wrong password or a network that can't reach the site is
+   reported on the same page so it can be retried.
+
+This only happens for a Pi that's never gotten online at all. A Pi that's worked before and just loses its network
+keeps the quieter behavior below (cached content, "Reconnecting…") — it never puts up a surprise hotspot on a
+screen that's already working. Not yet proven on real Wi-Fi hardware: whether the Pi's onboard chip can scan for
+networks while it's also hosting the hotspot.
+
 ### Unattended after a power cut
 
 A Pi needs no one on site after a power cut, whatever comes back first:
@@ -114,11 +131,12 @@ A Pi needs no one on site after a power cut, whatever comes back first:
   on Sony). If a TV has a "power on after power loss" setting, set it to On as well. `--no-tv` leaves the TV alone.
 - **The picture:** HDMI 0 always sends a picture at 1080p, even if no TV was detected at start, and the kiosk puts the
   rotation back within 10 seconds if a TV powering up resets it.
-- **No network:** the screen shows the directory and news it last received, with "Showing saved information.
-  Reconnecting…" at the bottom. Weather shows for up to 3 hours, then disappears. The time and date are hidden until
-  the Pi has reached the site since it started: a Pi 4 has no battery-backed clock, so after a power cut its time is
-  wrong until it's online. The clock follows the site's own time, so it's right even where a building blocks the
-  usual time service (NTP). Everything returns within about a minute of the network.
+- **No network** (a Pi that's been online before): the screen shows the directory and news it last received, with
+  "Showing saved information. Reconnecting…" at the bottom. Weather shows for up to 3 hours, then disappears. The
+  time and date are hidden until the Pi has reached the site since it started: a Pi 4 has no battery-backed clock, so
+  after a power cut its time is wrong until it's online. The clock follows the site's own time, so it's right even
+  where a building blocks the usual time service (NTP). Everything returns within about a minute of the network. A
+  Pi that's never been online instead offers field Wi-Fi setup (above).
 - **No mouse pointer** on screen, with or without a mouse (an invisible pointer theme).
 - **A quiet restart:** no rainbow square, Raspberry Pi logo, boot text or desktop picture; the TV stays black until
   the directory appears (about a minute).
@@ -192,9 +210,9 @@ Only those fixed actions exist; the console can't send anything free-form. Updat
 npm install
 npm test                      # server functions, against a fake Supabase
 node tests/test-server.mjs          # the whole site locally, with sample logins
-bash tests/kiosk-rotation-test.sh    # the kiosk: address from the serial, rotation and its watcher, a card moved between Pis (about 5 minutes)
+bash tests/kiosk-rotation-test.sh    # the kiosk: address from the serial, rotation and its watcher, a card moved between Pis, field Wi-Fi setup (about 5 minutes)
 python3 tests/agent-test.py          # the Pi's agent: schedule, results, reboot, updates, keys, Update Pi (about 1.5 minutes)
-bash tests/setup-test.sh             # setup's options, Wi-Fi import, naming, TV keeper, pointer, HDMI, quiet start (seconds)
+bash tests/setup-test.sh             # setup's options, Wi-Fi import, naming, TV keeper, pointer, HDMI, quiet start, field Wi-Fi setup (seconds)
 ```
 
 Local sample logins: `scot@1pointusa.com / admin-pass`, `leighann@barber.test / owner-pass`, `editor@barber.test / editor-pass`.

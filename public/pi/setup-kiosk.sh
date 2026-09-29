@@ -17,6 +17,10 @@
 # The Pi then shows "New display" with its serial number until it's assigned to a screen in the console.
 # Pis from the Yodeck report are recognized by serial; open their enrollment window in the console on install day.
 #
+# A Pi that has never reached the site (wrong or missing Wi-Fi, no cable yet) offers field Wi-Fi setup on its own
+# screen instead of sitting blank: join the hotspot it shows from a phone (or use a keyboard on the Pi itself) and
+# pick a network. No card or console visit needed. See README: Field Wi-Fi setup.
+#
 # Options:
 #   --code CODE        Download the Wi-Fi networks saved in the console (Pi setup). Every network is saved on the
 #                      card; the Pi joins whichever is in range, and a network cable always wins.
@@ -216,6 +220,181 @@ sys.exit(1 if failed else 0)
 PY
 chmod 755 /usr/local/sbin/lobby-wifi-import
 
+echo "==> Saving the field Wi-Fi setup tool"
+cat > /usr/local/sbin/lobby-wifi-setup <<'WIFISETUP'
+#!/usr/bin/env python3
+"""Field Wi-Fi setup: run by kiosk.sh when this Pi has no network and has never reached the site. Starts a short-
+lived hotspot carrying a small setup page, so a network can be picked from a phone that joins it (or from this Pi's
+own screen, with a keyboard) without a new card or a console visit. Serves until the site can be reached, then
+tears the hotspot down and exits 0. Usage: lobby-wifi-setup <serial> <site-url>"""
+import http.server, os, secrets, signal, string, subprocess, sys, threading, time, urllib.parse
+
+SERIAL, URL = sys.argv[1], sys.argv[2]
+CONNECT_TRIES = int(os.environ.get("LOBBY_WIFI_SETUP_TRIES", "10"))   # for tests only; production keeps the default
+CONNECT_SLEEP = float(os.environ.get("LOBBY_WIFI_SETUP_SLEEP", "2"))
+AP_SSID = f"Directory-Setup-{SERIAL[-4:]}"
+AP_PASSWORD = "".join(secrets.choice(string.digits) for _ in range(8))  # a TV-friendly numeric code
+AP_CONN = "lobby-setup-ap"
+
+
+def run(*args, timeout=20):
+    try:
+        return subprocess.run(args, capture_output=True, text=True, timeout=timeout)
+    except Exception as e:
+        return subprocess.CompletedProcess(args, 1, "", str(e))
+
+
+def hotspot_up():
+    run("nmcli", "connection", "delete", AP_CONN)  # a stale one from an earlier attempt
+    r = run("nmcli", "device", "wifi", "hotspot", "con-name", AP_CONN, "ssid", AP_SSID, "password", AP_PASSWORD, timeout=30)
+    return r.returncode == 0
+
+
+def hotspot_down():
+    run("nmcli", "connection", "down", AP_CONN)
+    run("nmcli", "connection", "delete", AP_CONN)
+
+
+def site_reachable():
+    return run("curl", "-fsS", "--max-time", "4", "-o", "/dev/null", URL, timeout=6).returncode == 0
+
+
+def scan_networks():
+    run("nmcli", "device", "wifi", "rescan", timeout=15)
+    r = run("nmcli", "-t", "-f", "SSID,SECURITY,SIGNAL", "device", "wifi", "list", timeout=15)
+    seen, nets = set(), []
+    for line in r.stdout.splitlines():
+        parts = line.split(":")
+        if len(parts) < 3:
+            continue
+        ssid, security, signal = parts[0], parts[1], parts[2]
+        if not ssid or ssid == AP_SSID or ssid in seen:
+            continue
+        seen.add(ssid)
+        nets.append({"ssid": ssid, "open": security in ("", "--"), "signal": signal or "0"})
+    nets.sort(key=lambda n: -int(n["signal"]))
+    return nets
+
+
+def try_connect(ssid, password):
+    args = ["nmcli", "device", "wifi", "connect", ssid]
+    if password:
+        args += ["password", password]
+    r = run(*args, timeout=30)
+    if r.returncode != 0:
+        return False, (r.stderr.strip()[:200] or "Couldn't join that network.")
+    for _ in range(CONNECT_TRIES):
+        if site_reachable():
+            return True, ""
+        time.sleep(CONNECT_SLEEP)
+    return False, "Joined, but can't reach the directory site from there."
+
+
+PAGE = """<!doctype html><html><head><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Set up this screen's Wi-Fi</title><style>
+body{{font-family:sans-serif;background:#111;color:#eee;padding:24px;max-width:480px;margin:0 auto}}
+h1{{font-size:1.3em}}
+.code{{font-size:1.6em;letter-spacing:2px;background:#222;padding:8px 12px;border-radius:8px;display:inline-block}}
+label{{display:block;margin:14px 0 4px}}
+input,select{{width:100%;padding:10px;font-size:1em;border-radius:6px;border:1px solid #444;background:#1a1a1a;color:#eee;box-sizing:border-box}}
+button{{margin-top:18px;width:100%;padding:12px;font-size:1.1em;border-radius:8px;border:0;background:#eee;color:#111}}
+.err{{color:#f88;margin-top:10px}}
+</style></head><body>
+<h1>This screen needs Wi-Fi</h1>
+<p>From a phone: join <b>{ap_ssid}</b>, code <span class="code">{ap_password}</span>, then open this page again.
+Or use a keyboard here.</p>
+{message}
+<form method="post" action="/connect">
+<label>Network</label>
+<select name="ssid">{options}</select>
+<label>Hidden network name (only if it's not in the list above)</label>
+<input type="text" name="hidden_ssid" autocapitalize="off" autocorrect="off">
+<label>Password (leave blank for an open network)</label>
+<input type="password" name="password">
+<button type="submit">Connect</button>
+</form>
+</body></html>"""
+
+CONNECTED = """<!doctype html><html><head><meta name="viewport" content="width=device-width, initial-scale=1"></head>
+<body style="font-family:sans-serif;background:#111;color:#8f8;padding:24px;text-align:center">
+<h1>Connected</h1><p>The screen will start in a moment.</p></body></html>"""
+
+
+def render(message=""):
+    opts = "".join(
+        f'<option value="{n["ssid"]}">{n["ssid"]} ({"open" if n["open"] else "locked"}, {n["signal"]}%)</option>'
+        for n in scan_networks()
+    )
+    return PAGE.format(ap_ssid=AP_SSID, ap_password=AP_PASSWORD, message=message, options=opts).encode()
+
+
+class Handler(http.server.BaseHTTPRequestHandler):
+    def log_message(self, *a):
+        pass  # keep the kiosk log to what matters
+
+    def _send(self, body, code=200):
+        self.send_response(code)
+        self.send_header("Content-Type", "text/html; charset=utf-8")
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
+    def do_GET(self):
+        if self.path in ("/", "/index.html"):
+            self._send(render())
+        else:
+            self._send(b"Not found", 404)
+
+    def do_POST(self):
+        if self.path != "/connect":
+            self._send(b"Not found", 404)
+            return
+        length = int(self.headers.get("Content-Length", 0))
+        form = urllib.parse.parse_qs(self.rfile.read(length).decode())
+        ssid = ((form.get("hidden_ssid") or [""])[0] or (form.get("ssid") or [""])[0]).strip()
+        password = (form.get("password") or [""])[0]
+        ok, err = try_connect(ssid, password) if ssid else (False, "Choose or type a network name.")
+        if ok:
+            self._send(CONNECTED.encode())
+            threading.Thread(target=self.server.shutdown, daemon=True).start()
+        else:
+            self._send(render(f'<p class="err">{err}</p>'))
+
+
+def watch_for_network(server):
+    # Covers a cable plugged in mid-setup, without waiting for the form: the site becoming reachable ends setup
+    # even if no one ever submits the picker.
+    while True:
+        time.sleep(15)
+        if site_reachable():
+            server.shutdown()
+            return
+
+
+def main():
+    if not hotspot_up():
+        print(f"{time.strftime('%F %T')} couldn't start the setup hotspot; the picker is still reachable locally.", file=sys.stderr)
+    server = http.server.ThreadingHTTPServer(("0.0.0.0", 80), Handler)
+    # shutdown() must run on a thread other than the one in serve_forever(), or it deadlocks against itself.
+    signal.signal(signal.SIGTERM, lambda *_: threading.Thread(target=server.shutdown, daemon=True).start())
+    threading.Thread(target=watch_for_network, args=(server,), daemon=True).start()
+    try:
+        server.serve_forever()
+    finally:
+        hotspot_down()
+
+
+if __name__ == "__main__":
+    main()
+WIFISETUP
+chmod 755 /usr/local/sbin/lobby-wifi-setup
+# Runs as root (it manages Wi-Fi and binds port 80), started by kiosk.sh (which runs as the desktop user).
+cat > /etc/sudoers.d/lobby-wifi-setup <<SUDOERS
+$KUSER ALL=(root) NOPASSWD: /usr/local/sbin/lobby-wifi-setup
+SUDOERS
+chmod 440 /etc/sudoers.d/lobby-wifi-setup
+visudo -cf /etc/sudoers.d/lobby-wifi-setup >/dev/null || { echo "lobby-wifi-setup's sudoers rule didn't check out; removing it."; rm -f /etc/sudoers.d/lobby-wifi-setup; }
+
 cat > /usr/local/sbin/lobby-identity <<'ID'
 #!/usr/bin/env bash
 # Runs at every start, before the network comes up: names this Pi after its serial (e.g. lobby-a4ae272d), so each
@@ -287,8 +466,27 @@ LOOKUP="${URL/\/\?//api/screen?}"          # where to ask which way the screen f
 LAST="$HOME/kiosk/rotation-${SERIAL:-unknown}.last"   # per Pi, so a card moved to another Pi doesn't reuse its answer
 echo "$(date '+%F %T') kiosk starting, Pi ${SERIAL:-unknown}, $URL"
 
-# Wait up to 90 seconds for the network. The page works from its saved copy if it never comes.
-for _ in $(seq 1 45); do curl -fsS --max-time 3 -o /dev/null "$URL" && break; sleep 2; done
+# Wait up to 90 seconds for the network (tests shrink this with KIOSK_NET_TRIES/KIOSK_NET_SLEEP). The page works
+# from its saved copy if it never comes back later.
+MARKER="$HOME/kiosk/ever-online-${SERIAL:-unknown}"    # per Pi, like the rotation LAST file below
+ONLINE=0
+for _ in $(seq 1 "${KIOSK_NET_TRIES:-45}"); do curl -fsS --max-time 3 -o /dev/null "$URL" && { ONLINE=1; break; }; sleep "${KIOSK_NET_SLEEP:-2}"; done
+if [[ $ONLINE -eq 1 ]]; then
+  touch "$MARKER"
+elif [[ ! -f "$MARKER" ]]; then
+  # This Pi has never reached the site: offer field Wi-Fi setup (a phone-joinable hotspot) instead of sitting on a
+  # blank screen. A Pi that's worked before and just lost its network keeps the old, quieter "Reconnecting..." wait.
+  echo "$(date '+%F %T') no network and this Pi has never reached the site: starting field Wi-Fi setup"
+  SETUP_CHROME_PID=""
+  if [[ -n "${WAYLAND_DISPLAY:-}${DISPLAY:-}" && -n "$CHROME" ]]; then
+    "$CHROME" --kiosk "http://localhost/" --user-data-dir="$HOME/kiosk/setup-profile" \
+      --ozone-platform-hint=auto --noerrdialogs --disable-infobars --no-first-run >>"$LOG" 2>&1 &
+    SETUP_CHROME_PID=$!
+  fi
+  ${LOBBY_WIFI_SETUP:-sudo -n /usr/local/sbin/lobby-wifi-setup} "${SERIAL:-unknown}" "$URL" >>"$LOG" 2>&1
+  [[ -n "$SETUP_CHROME_PID" ]] && kill "$SETUP_CHROME_PID" 2>/dev/null
+  curl -fsS --max-time 3 -o /dev/null "$URL" && touch "$MARKER"
+fi
 
 # Which way to turn the picture. "auto" asks the site how this screen is set in the console:
 # portrait -> 90, anything else (landscape, automatic, new or unassigned Pi) -> 0.
@@ -501,7 +699,7 @@ if [[ $PREPARE -eq 1 ]]; then
   echo "==> Clearing everything that belongs to this bench Pi"
   systemctl stop lobby-agent.service 2>/dev/null || true
   rm -rf /var/lib/lobby-agent                                                # the agent's key and saved results
-  rm -rf "$KDIR/chromium-profile" "$KDIR/kiosk.log" "$KDIR"/rotation*.last   # browser data, log, last rotation
+  rm -rf "$KDIR/chromium-profile" "$KDIR/setup-profile" "$KDIR/kiosk.log" "$KDIR"/rotation*.last "$KDIR"/ever-online-*  # browser data, log, last rotation, last online marker
   rm -f /var/lib/NetworkManager/*.lease /var/lib/NetworkManager/*lease*       # the bench's network addresses
   : > /etc/machine-id                                                        # made fresh in each Pi at first start
   [[ -L /var/lib/dbus/machine-id ]] || rm -f /var/lib/dbus/machine-id

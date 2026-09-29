@@ -27,8 +27,16 @@ S
 cat > "$WORK/bin/chromium" <<'S'
 #!/usr/bin/env bash
 for a in "$@"; do [[ "$a" == http* ]] && echo "$a" >> "$HOME/chromium.log"; done
+if [[ "$*" == *"http://localhost/"* ]]; then
+  exec sleep 1000   # the field-setup echo: stays up until kiosk.sh kills it directly, doesn't drive the main loop
+fi
 sleep "${CHROME_WAIT:-0}"
 kill -TERM "$PPID"
+S
+cat > "$WORK/bin/lobby-wifi-setup" <<'S'
+#!/usr/bin/env bash
+echo "wifi-setup called: serial=$1 url=$2" >> "$HOME/wifisetup.log"
+exit "${WIFISETUP_EXIT:-0}"
 S
 chmod +x "$WORK/bin/"*
 
@@ -36,7 +44,7 @@ pass=0; fail=0
 # run HOME SERIAL SITE URL ROTATE: start the kiosk once, as that Pi. Returns what it told wlr-randr and chromium.
 run() {
   local H="$1" serial="$2" site="$3" url="$4" setting="$5"
-  mkdir -p "$H/kiosk"; rm -f "$H/wlr.log" "$H/chromium.log" "$H/wlr.state"
+  mkdir -p "$H/kiosk"; rm -f "$H/wlr.log" "$H/chromium.log" "$H/wlr.state" "$H/wifisetup.log"
   printf 'SITE="%s"\nURL="%s"\nROTATE="%s"\n' "$site" "$url" "$setting" > "$H/kiosk/kiosk.conf"
   env ${EXTRA:-} HOME="$H" LOBBY_SERIAL="$serial" WAYLAND_DISPLAY=wayland-0 PATH="$WORK/bin:$PATH" timeout 120 bash "$WORK/kiosk.sh" >/dev/null 2>&1
   GOT_ROT="$(cat "$H/wlr.log" 2>/dev/null)"; GOT_URL="$(cat "$H/chromium.log" 2>/dev/null)"
@@ -83,4 +91,25 @@ n="$(grep -c -- "$(T 90)" "$H/wlr.log")"
 ok "a TV that resets the screen gets it turned back (and switched on)" "$([[ $n -ge 3 && $(sort -u "$H/wlr.log" | wc -l) -eq 1 ]] && echo yes || echo "no: $n")" "yes"
 sleep 2
 ok "the watcher stops with the kiosk" "$(pgrep -f "$WORK/kiosk.sh" | wc -l)" "0"
+
+# Field Wi-Fi setup: a Pi that's never reached the site offers it; one that has, doesn't (no surprise hotspot on a
+# screen that's just lost its network). KIOSK_NET_TRIES/SLEEP shrink the 90-second wait so these run in seconds.
+FAST="LOBBY_WIFI_SETUP=$WORK/bin/lobby-wifi-setup KIOSK_NET_TRIES=2 KIOSK_NET_SLEEP=1"
+H="$WORK/n1"; EXTRA="$FAST" run "$H" 10000000fee1dead "$OFF" "" auto
+ok "a Pi that's never reached the site, and still can't, tries field Wi-Fi setup" \
+  "$(cat "$H/wifisetup.log" 2>/dev/null)" "wifi-setup called: serial=10000000fee1dead url=$OFF/?device=10000000fee1dead"
+ok "and shows the setup page on its own screen while it waits" "$(head -1 "$H/chromium.log" 2>/dev/null)" "http://localhost/"
+ok "but doesn't mark itself online, since it still can't reach the site" \
+  "$([[ -f "$H/kiosk/ever-online-10000000fee1dead" ]] && echo yes || echo no)" "no"
+H="$WORK/n2"; EXTRA="$FAST" run "$H" 10000000fee1beef "$BASE" "" auto
+ok "a Pi that reaches the site right away never needs field Wi-Fi setup" \
+  "$([[ -f "$H/wifisetup.log" ]] && echo called || echo not-called)" "not-called"
+ok "and marks itself as having been online" "$([[ -f "$H/kiosk/ever-online-10000000fee1beef" ]] && echo yes || echo no)" "yes"
+rm -f "$H/wifisetup.log"; EXTRA="$FAST" run "$H" 10000000fee1beef "$OFF" "" auto   # same Pi, later, network blips
+ok "a Pi that's worked before just waits quietly through a blip (no surprise hotspot)" \
+  "$([[ -f "$H/wifisetup.log" ]] && echo called || echo not-called)" "not-called"
+EXTRA="$FAST" run "$H" 10000000fee1c0de "$OFF" "" auto   # the same card, moved to a Pi it's never been in
+ok "the same card moved to a Pi it's new to tries setup again, even though the old Pi had worked" \
+  "$(cat "$H/wifisetup.log" 2>/dev/null)" "wifi-setup called: serial=10000000fee1c0de url=$OFF/?device=10000000fee1c0de"
+
 echo; echo "$pass/$((pass+fail)) passed"; [[ $fail -eq 0 ]]
