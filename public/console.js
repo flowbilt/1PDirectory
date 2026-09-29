@@ -157,21 +157,16 @@
             <span class="sub">${S.tenantCount[d.id] || 0} tenants · ${scr.length ? scr.map((s) => `<span class="dot ${status(s)}" title="${esc(s.name)}"></span>`).join("") : "no screen"}</span></li>`;
         }).join("") || `<li class="sub">No directories yet.</li>`}</ul>
         ${S.admin ? `<footer><button type="button" class="ghost" data-add-dir="${p.id}">Add directory</button><button type="button" class="ghost" data-edit-prop="${p.id}">Building details</button>
-          ${ds.some((d) => d.slug === "landmark-center") ? `<button type="button" class="ghost" data-import="landmark-center">Import live settings from old editor</button>` : ""}</footer>` : ""}
+</footer>` : ""}
       </article>`;
     }).join("") || `<p class="empty-rows">No buildings match.</p>`;
   }
   $("building-search").addEventListener("input", renderBuildings);
   $("add-building").addEventListener("click", () => buildingDialog(null));
   $("building-cards").addEventListener("click", async (e) => {
-    const add = e.target.closest("[data-add-dir]"), ed = e.target.closest("[data-edit-prop]"), imp = e.target.closest("[data-import]");
+    const add = e.target.closest("[data-add-dir]"), ed = e.target.closest("[data-edit-prop]");
     if (add) directoryDialog(add.dataset.addDir);
     if (ed) buildingDialog(prop(ed.dataset.editProp));
-    if (imp) {
-      if (!confirm("Copy the Landmark Center's logo, photo, contacts and tenants from the old editor? This replaces its tenant list here.")) return;
-      try { const r = await Auth.api(`/api/migrate?slug=${imp.dataset.import}`, { method: "POST" }); toast(`Imported ${r.tenants} tenants${r.logo ? ", logo" : ""}${r.background ? ", background photo" : ""}.`); await refresh(); }
-      catch (ex) { toast(ex.message, true); }
-    }
   });
 
   const orgOptions = (selected) => S.orgs.map((o) => `<option value="${o.id}"${o.id === selected ? " selected" : ""}>${esc(o.name)}</option>`).join("");

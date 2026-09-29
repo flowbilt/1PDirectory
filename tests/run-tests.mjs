@@ -3,11 +3,8 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { createFake, SERVICE_KEY, ANON_KEY } from "./fake-supabase.mjs";
-import { getStore, _reset } from "./blobs-stub.mjs";
 import screen, { toPayload } from "../netlify/functions/screen.mjs";
-import heartbeat from "../netlify/functions/heartbeat.mjs";
 import users from "../netlify/functions/users.mjs";
-import migrate from "../netlify/functions/migrate.mjs";
 import config from "../netlify/functions/config.mjs";
 import weather, { iconFor } from "../netlify/functions/weather.mjs";
 import news from "../netlify/functions/news.mjs";
@@ -132,17 +129,6 @@ test("the editor preview and real screens use the same fields", () => {
   assert.deepEqual(p.tenants[0], { name: "X", suite: "1", dir: "up", note: "" });
 });
 
-// ── Check-ins ──
-test("heartbeat records the check-in on the screen", async () => {
-  const r = await heartbeat(req("/api/heartbeat", { method: "POST", body: { key: "ppii-4e", screen: { w: 1920, h: 1080 }, version: "2.0.0" } }));
-  assert.equal(r.status, 200);
-  const s = fake.T.screens.find((x) => x.key === "ppii-4e");
-  assert.ok(s.last_seen);
-  assert.equal(s.last_report.w, 1920);
-  assert.equal((await heartbeat(req("/api/heartbeat", { method: "POST", body: { key: "ghost" } }))).status, 404);
-  assert.equal((await heartbeat(req("/api/heartbeat", { method: "POST", body: { key: "Bad Key" } }))).status, 400);
-});
-
 // ── Users and permissions ──
 test("who sees which people", async () => {
   const admin = await login("scot@1pointusa.com", "admin-pass");
@@ -200,28 +186,6 @@ test("role changes and removals respect the rules", async () => {
   assert.equal((await users(req(`/api/users?user_id=${ed.user_id}`, { method: "DELETE", token: admin }))).status, 200);
   assert.ok(!fake.T.profiles.some((x) => x.user_id === ed.user_id));
   assert.ok(fake.T.audit_log.length >= 3, "actions are logged");
-});
-
-// ── Import from the old editor ──
-test("1Point can import the Landmark Center's live settings; nobody else can", async () => {
-  await getStore({ name: "directory" }).setJSON("sites/landmark-center", {
-    propertyName: "The Landmark Center", buildingLabel: "2100 1st Avenue North, Birmingham", logo: "data:image/svg+xml;base64,PHN2Zz4=", logoReplacesName: true,
-    tenants: [{ name: "EMW Law LLC.", suite: "300", dir: "" }, { name: "New Tenant", suite: "600", dir: "right" }],
-    managedBy: { name: "Leigh Ann Kornegay" }, leasedBy: { name: "Weyman Prater" }, welcome: "Welcome!",
-    weather: { enabled: true, lat: 33.51, lon: -86.81 }, news: { enabled: true, rotateSeconds: 15 }, background: { enabled: true, image: "data:image/jpeg;base64,/9j/", visibility: 18 },
-  });
-  const owner = await login("leighann@barber.test", "owner-pass");
-  assert.equal((await migrate(req("/api/migrate?slug=landmark-center", { method: "POST", token: owner }))).status, 403);
-  const admin = await login("scot@1pointusa.com", "admin-pass");
-  const r = await migrate(req("/api/migrate?slug=landmark-center", { method: "POST", token: admin }));
-  assert.equal(r.status, 200);
-  const d = await (await screen(req("/api/screen?key=landmark-center"))).json();
-  assert.equal(d.tenants.length, 2);
-  assert.equal(d.logoReplacesName, true);
-  assert.equal(d.background.visibility, 18);
-  assert.equal(d.news.rotateSeconds, 15);
-  assert.equal(d.welcome, "Welcome!");
-  assert.equal((await migrate(req("/api/migrate?slug=ppi-2s", { method: "POST", token: admin }))).status, 404, "nothing to import");
 });
 
 // ── Agent and devices ──
@@ -830,4 +794,3 @@ for (const [name, fn] of tests) {
   catch (e) { console.log(`  FAIL ${name}\n       ${e.message}`); process.exitCode = 1; }
 }
 console.log(`\n${passed}/${tests.length} passed`);
-_reset();

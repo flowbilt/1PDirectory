@@ -7,7 +7,7 @@ set -uo pipefail
 cd "$(dirname "$0")/.."
 PORT=8897; BASE="http://localhost:$PORT"
 WORK="$(mktemp -d)"; trap 'kill $SRV 2>/dev/null; rm -rf "$WORK"' EXIT
-node --import ./tests/register-stub.mjs tests/test-server.mjs $PORT >"$WORK/server.log" 2>&1 & SRV=$!
+node tests/test-server.mjs $PORT >"$WORK/server.log" 2>&1 & SRV=$!
 for _ in $(seq 1 30); do curl -fsS -o /dev/null "$BASE/login.html" 2>/dev/null && break; sleep 0.2; done
 
 sed -n '/cat > "\$KDIR\/kiosk.sh" <<.EOF./,/^EOF$/p' public/pi/setup-kiosk.sh | sed '1d;$d' > "$WORK/kiosk.sh"

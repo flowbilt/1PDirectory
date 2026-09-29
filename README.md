@@ -14,7 +14,7 @@ Tenant directories for lobby screens, replacing Yodeck and Wix. Hosted on Netlif
 | `/?screen=ppi-2s&view=1` | anyone | Looking at a screen (the console's **View** button). Shows the same thing but doesn't count as the screen checking in |
 | `/` | anyone | A short note that no screen was chosen. (It used to show The Landmark Center.) |
 
-Lobby screens check for changes every minute (`/api/screen`). The same check records the screen as online, and the directory is sent only when something has changed; otherwise the answer is "not modified". Only real screens record check-ins: the editor's preview, the console's View button and the bare address never do. `heartbeat` only serves screens still running display 2.0.0 and can be deleted a few days after the 2.1.0 deploy.
+Lobby screens check for changes every minute (`/api/screen`). The same check records the screen as online, and the directory is sent only when something has changed; otherwise the answer is "not modified". Only real screens record check-ins: the editor's preview, the console's View button and the bare address never do.
 
 What each person sees is enforced by the database (see `supabase/01-schema.sql`):
 
@@ -191,7 +191,7 @@ Only those fixed actions exist; the console can't send anything free-form. Updat
 ```
 npm install
 npm test                      # server functions, against a fake Supabase
-node --import ./tests/register-stub.mjs tests/test-server.mjs   # the whole site locally, with sample logins
+node tests/test-server.mjs          # the whole site locally, with sample logins
 bash tests/kiosk-rotation-test.sh    # the kiosk: address from the serial, rotation and its watcher, a card moved between Pis (about 5 minutes)
 python3 tests/agent-test.py          # the Pi's agent: schedule, results, reboot, updates, keys, Update Pi (about 1.5 minutes)
 bash tests/setup-test.sh             # setup's options, Wi-Fi import, naming, TV keeper, pointer, HDMI, quiet start (seconds)
@@ -203,7 +203,7 @@ Local sample logins: `scot@1pointusa.com / admin-pass`, `leighann@barber.test / 
 
 ```
 public/             screen (index.html, display.*), sign-in, console (+ console-devices.js, console-setup.js), editor, shared auth.js
-netlify/functions/  screen, heartbeat, users, migrate, config, weather, news, agent, devices, networks, alert-settings, alerts
+netlify/functions/  screen, users, config, weather, news, agent, devices, networks, alert-settings, alerts
 netlify/lib/        Supabase client, RSS reader, shared helpers
 supabase/           database schema (01 to 12, run in order), starting data, check queries, setup guide
 migration/          the Yodeck/Wix transcription the starting data was built from

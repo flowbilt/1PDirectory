@@ -1,15 +1,12 @@
 // Local server for browser testing: the site, its functions, and a fake Supabase at /sb. No internet needed.
-// node --import ./tests/register-stub.mjs tests/test-server.mjs [port]
+// node tests/test-server.mjs [port]
 import { createServer } from "node:http";
 import { readFile } from "node:fs/promises";
 import { readFileSync } from "node:fs";
 import { extname, join, normalize } from "node:path";
 import { createFake, SERVICE_KEY, ANON_KEY } from "./fake-supabase.mjs";
-import { getStore } from "./blobs-stub.mjs";
 import screen from "../netlify/functions/screen.mjs";
-import heartbeat from "../netlify/functions/heartbeat.mjs";
 import users from "../netlify/functions/users.mjs";
-import migrate from "../netlify/functions/migrate.mjs";
 import config from "../netlify/functions/config.mjs";
 import weather from "../netlify/functions/weather.mjs";
 import news from "../netlify/functions/news.mjs";
@@ -27,7 +24,6 @@ const fake = createFake();
 globalThis.__fake = fake;
 
 // The old editor's saved Landmark Center, for the import test
-await getStore({ name: "directory" }).setJSON("sites/landmark-center", JSON.parse(readFileSync(new URL("./fixtures/landmark-old.json", import.meta.url))));
 
 const fx = (f) => readFileSync(new URL(`./fixtures/${f}`, import.meta.url), "utf8");
 const realFetch = globalThis.fetch;
@@ -42,7 +38,7 @@ globalThis.fetch = async (url, init = {}) => {
   return new Response("offline", { status: 503 });
 };
 
-const ROUTES = { "/api/screen": screen, "/api/heartbeat": heartbeat, "/api/users": users, "/api/migrate": migrate, "/api/config": config, "/api/weather": weather, "/api/news": news, "/api/agent": agent, "/api/devices": devices, "/api/networks": networks, "/api/alert-settings": alertSettings };
+const ROUTES = { "/api/screen": screen, "/api/users": users, "/api/config": config, "/api/weather": weather, "/api/news": news, "/api/agent": agent, "/api/devices": devices, "/api/networks": networks, "/api/alert-settings": alertSettings };
 const TYPES = { ".html": "text/html", ".js": "text/javascript", ".css": "text/css", ".ttf": "font/ttf", ".svg": "image/svg+xml", ".png": "image/png", ".jpg": "image/jpeg" };
 const PUB = new URL("../public/", import.meta.url).pathname;
 
