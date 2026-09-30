@@ -43,6 +43,12 @@
 #   --no-tv            Don't control the TV. By default the Pi keeps the TV switched on and showing this Pi, over HDMI-CEC
 #                      (the TV's CEC setting must be on: Anynet+, SimpLink, Bravia Sync...); use this for a TV that
 #                      misbehaves with it.
+#   --no-button        No case button. By default a button between GPIO3 (pin 5) and ground (pin 6) works: hold 3 s
+#                      for a safe shutdown, hold 10 s to reset the network (Wi-Fi joined in the field is forgotten,
+#                      then Wi-Fi setup if no card network is in range); a press powers on a Pi that's shut down.
+#                      A Pi with no button wired never sees a press, so the default is harmless.
+#   --led-gpio N|none  The case status light's GPIO (default 17, pin 11, to ground through a resistor): steady =
+#                      online, slow blink = offline, double blink = Wi-Fi setup. "none" for a case without one.
 #   --connect          Also install Raspberry Pi Connect for remote screen viewing from a browser.
 #   --no-agent         Don't install the remote-management agent.
 #   --ssh              Leave SSH on. By default SSH is switched off (from the next restart): the Pi opens no ports,
@@ -51,6 +57,7 @@ set -euo pipefail
 
 SITE="https://1pdirectory.netlify.app"; URL=""; ROTATE="auto"; TZ_NAME="America/Chicago"; COUNTRY="US"
 FORCE_1080=1; CONNECT=0; AGENT=1; SSH=0; PREPARE=0; CODE=""; TV=1; UPDATE=0; KUSER_OPT=""
+BUTTON=1; LED_GPIO=17        # the case button (GPIO3) and status light; --no-button, --led-gpio N|none
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --site) SITE="${2%/}"; shift 2 ;;
@@ -67,6 +74,8 @@ while [[ $# -gt 0 ]]; do
     --no-1080p) FORCE_1080=0; shift ;;
     --connect) CONNECT=1; shift ;;
     --no-tv) TV=0; shift ;;
+    --no-button) BUTTON=0; shift ;;
+    --led-gpio) LED_GPIO="$2"; shift 2 ;;
     --ssh) SSH=1; shift ;;
     -h|--help) sed -n '2,/^set -euo pipefail/p' "$0" | sed '$d'; exit 0 ;;
     *) echo "Unknown option: $1 (see --help)"; exit 1 ;;
@@ -77,6 +86,7 @@ done
 [[ -z "$URL" || "$URL" =~ ^https?:// ]] || { echo "--url must start with https://"; exit 1; }
 [[ "$ROTATE" =~ ^(auto|0|90|180|270)$ ]] || { echo "--rotate must be auto, 0, 90, 180 or 270"; exit 1; }
 [[ "$COUNTRY" =~ ^[A-Z]{2}$ ]] || { echo "--wifi-country must be two capital letters, like US"; exit 1; }
+[[ "$LED_GPIO" =~ ^(none|[0-9]|1[0-9]|2[0-7])$ && "$LED_GPIO" != "3" ]] || { echo "--led-gpio must be a GPIO number from 0 to 27 (not 3, the button) or none"; exit 1; }
 [[ -z "$CODE" || "$CODE" =~ ^[A-Za-z0-9\ -]{8,12}$ ]] || { echo "That doesn't look like a prepare code (like ABCD-EFGH)."; exit 1; }
 if [[ $UPDATE -eq 1 ]]; then
   [[ $PREPARE -eq 0 && -z "$CODE" ]] || { echo "--update keeps this Pi's settings and Wi-Fi; it can't be combined with --prepare or --code."; exit 1; }
@@ -112,6 +122,7 @@ echo "    Rotation: $([[ "$ROTATE" == "auto" ]] && echo "automatic (asks the sit
 echo "    Time zone: $TZ_NAME   No automatic reboots (reboots come from the console)"
 echo "    SSH: $([[ $SSH -eq 1 ]] && echo "on (--ssh)" || echo "off from the next restart (use --ssh to keep it)")"
 echo "    TV: $([[ $TV -eq 1 ]] && echo "kept on and showing this Pi (HDMI-CEC)" || echo "left alone (--no-tv)")"
+echo "    Case button: $([[ $BUTTON -eq 1 ]] && echo "GPIO3 (hold 3 s shut down, 10 s reset network); status light: $([[ $LED_GPIO == none ]] && echo "none" || echo "GPIO$LED_GPIO")" || echo "none (--no-button)")"
 
 # The saved Wi-Fi first, so a bad or used code stops setup before anything is installed
 NETS=""
@@ -186,6 +197,19 @@ if [[ -f $CMDLINE ]]; then
 fi
 if [[ -f $CONFIG_TXT ]] && ! grep -q '^disable_splash=1' "$CONFIG_TXT"; then echo 'disable_splash=1' >> "$CONFIG_TXT"; fi
 # (end of the quiet start)
+
+# The case button and status light: the kernel turns a press on GPIO3 into a key (KEY_PROG1, 148), and the light into
+# /sys/class/leds/lobby-status. Rewritten on every run, so --no-button or a new --led-gpio takes effect.
+if [[ -f $CONFIG_TXT ]]; then
+  sed -i '/^# lobby-button (setup-kiosk.sh)$/,/^# end lobby-button$/d' "$CONFIG_TXT"
+  if [[ $BUTTON -eq 1 ]]; then
+    { echo "# lobby-button (setup-kiosk.sh)"
+      echo "dtoverlay=gpio-key,gpio=3,active_low=1,gpio_pull=up,keycode=148,label=lobby-button"
+      [[ $LED_GPIO == none ]] || echo "dtoverlay=gpio-led,gpio=$LED_GPIO,label=lobby-status,trigger=none"
+      echo "# end lobby-button"; } >> "$CONFIG_TXT"
+  fi
+fi
+# (end of the case button lines)
 
 echo "==> Saving the Wi-Fi tools and the start-up naming"
 cat > /usr/local/sbin/lobby-wifi-import <<'PY'
@@ -385,7 +409,16 @@ def watch_for_network(server):
             return
 
 
+def set_status(word):
+    try:
+        with open(os.environ.get("LOBBY_STATUS_FILE", "/run/lobby-status"), "w") as fh:
+            fh.write(f"{word} {time.time()}\n")
+    except OSError:
+        pass
+
+
 def main():
+    set_status("setup")                                       # the case light double-blinks while this runs
     if not hotspot_up():
         print(f"{time.strftime('%F %T')} couldn't start the setup hotspot; the picker is still reachable locally.", file=sys.stderr)
     server = http.server.ThreadingHTTPServer(("0.0.0.0", 80), Handler)
@@ -396,6 +429,7 @@ def main():
         server.serve_forever()
     finally:
         hotspot_down()
+        set_status("offline")                                 # the agent says online at its next check-in
 
 
 if __name__ == "__main__":
@@ -408,6 +442,242 @@ $KUSER ALL=(root) NOPASSWD: /usr/local/sbin/lobby-wifi-setup
 SUDOERS
 chmod 440 /etc/sudoers.d/lobby-wifi-setup
 visudo -cf /etc/sudoers.d/lobby-wifi-setup >/dev/null || { echo "lobby-wifi-setup's sudoers rule didn't check out; removing it."; rm -f /etc/sudoers.d/lobby-wifi-setup; }
+
+echo "==> Saving the case button and status light"
+cat > /usr/local/sbin/lobby-button <<'BUTTON'
+#!/usr/bin/env python3
+"""The case button and status light (setup-kiosk.sh). Runs as root.
+Button, between GPIO3 (pin 5) and ground (pin 6); a press also powers on a Pi that's been shut down:
+  short press            nothing, so a bump or a curious visitor does nothing
+  hold 3 s, then let go  safe shutdown
+  hold 10 s, then let go network reset: forget Wi-Fi joined in the field (the card's own lobby-wifi-* networks stay),
+                         forget that this Pi has been online, restart. It comes back on a card network if one is in
+                         range, or offers Wi-Fi setup (the hotspot) if not.
+  hold 30 s or more      cancelled, so a stuck or leaned-on button never does anything
+While it's held, the board's green light and the case light blink: slowly past 3 s, fast past 10 s.
+The case light the rest of the time: steady = online, slow blink = offline, double blink = Wi-Fi setup.
+The key, enrollment and screen are never touched: those are console actions."""
+import glob, json, os, re, struct, subprocess, threading, time
+
+S = float(os.environ.get("LOBBY_BUTTON_SCALE", "1"))            # tests only: shrinks the hold times
+SHUTDOWN_S, RESET_S, CANCEL_S = 3 * S, 10 * S, 30 * S
+LEDS = os.environ.get("LOBBY_LEDS_DIR", "/sys/class/leds")
+STATUS = os.environ.get("LOBBY_STATUS_FILE", "/run/lobby-status")
+KEYCODE = 148                                                     # KEY_PROG1 (config.txt, gpio-key)
+EVENT = struct.Struct("llHHi")                                    # struct input_event, 64-bit
+held_since = None
+
+
+def log(*a):
+    print(time.strftime("%F %T"), *a, flush=True)
+
+
+def run(*args, timeout=30):
+    try:
+        return subprocess.run(args, capture_output=True, text=True, timeout=timeout)
+    except Exception as e:
+        return subprocess.CompletedProcess(args, 1, "", str(e))
+
+
+def nm_fields(line):
+    out, cur, i = [], "", 0                                       # nmcli -t writes ':' in a value as '\:'
+    while i < len(line):
+        if line[i] == "\\" and i + 1 < len(line):
+            cur += line[i + 1]; i += 2
+        elif line[i] == ":":
+            out.append(cur); cur = ""; i += 1
+        else:
+            cur += line[i]; i += 1
+    out.append(cur)
+    return out
+
+
+def find_button():
+    """The input device the gpio-key overlay made: named for a button or GPIO, with our key."""
+    if os.environ.get("LOBBY_BUTTON_DEVICE"):
+        return os.environ["LOBBY_BUTTON_DEVICE"]
+    try:
+        text = open("/proc/bus/input/devices").read()
+    except OSError:
+        return None
+    for block in text.split("\n\n"):
+        name = re.search(r'N: Name="([^"]*)"', block)
+        ev = re.search(r"H: Handlers=.*?\b(event\d+)", block)
+        keys = re.search(r"B: KEY=([0-9a-f ]+)", block)
+        if not (name and ev and keys) or not (re.search(r"button|gpio", name.group(1), re.I) or "gpio-keys" in block):
+            continue
+        words = keys.group(1).split()                             # most significant word first, 64 bits each
+        i, bit = divmod(KEYCODE, 64)
+        if i < len(words) and int(words[-1 - i], 16) >> bit & 1:
+            return "/dev/input/" + ev.group(1)
+    return None
+
+
+class Led:
+    def __init__(self, *names):
+        self.dir = next((os.path.join(LEDS, n) for n in names if os.path.isdir(os.path.join(LEDS, n))), None)
+        self.saved = None
+
+    def _write(self, f, v):
+        try:
+            with open(os.path.join(self.dir, f), "w") as fh:
+                fh.write(v)
+        except OSError:
+            pass
+
+    def take(self):                                               # from its usual job (the board's: card activity)
+        if self.dir and self.saved is None:
+            try:
+                t = open(os.path.join(self.dir, "trigger")).read()
+                m = re.search(r"\[([^\]]+)\]", t)
+                bare = t.strip()                                  # a bare name, if there are no brackets
+                self.saved = m.group(1) if m else (bare if bare and " " not in bare else "none")
+            except OSError:
+                self.saved = "none"
+            self._write("trigger", "none")
+
+    def give_back(self):
+        if self.dir and self.saved is not None:
+            self._write("trigger", self.saved); self.saved = None
+
+    def set(self, on):
+        if self.dir:
+            self._write("brightness", "1" if on else "0")
+
+
+def status():
+    try:
+        word, when = open(STATUS).read().split()[:2]
+    except (OSError, ValueError):
+        return "offline"
+    if word == "setup":
+        return "setup"
+    return "online" if word == "online" and time.time() - float(when) < 180 else "offline"
+
+
+def lit(mode, t):
+    if mode == "online":
+        return True
+    if mode == "setup":                                           # two short blinks every 1.5 s
+        p = t % 1.5
+        return p < 0.15 or 0.3 <= p < 0.45
+    if mode == "hold1":
+        return (t * 2) % 1 < 0.5
+    if mode == "hold2":
+        return (t * 8) % 1 < 0.5
+    return t % 2 < 1                                              # offline
+
+
+def lights():
+    board, case = Led("ACT", "led0"), Led("lobby-status")
+    case.take()
+    mode, checked = "offline", 0.0
+    while True:
+        now = time.monotonic()
+        if now - checked > 2:
+            mode, checked = status(), now
+        h = held_since
+        held = None if h is None else now - h
+        if held is not None and SHUTDOWN_S <= held < CANCEL_S:
+            board.take()
+            m = "hold2" if held >= RESET_S else "hold1"
+            board.set(lit(m, now)); case.set(lit(m, now))
+        else:
+            board.give_back()
+            case.set(lit(mode, now))
+        time.sleep(0.05)
+
+
+def network_reset():
+    log("network reset: forgetting Wi-Fi joined in the field")
+    r = run("nmcli", "-t", "-f", "NAME,TYPE", "connection", "show")
+    for line in r.stdout.splitlines():
+        f = nm_fields(line)
+        if len(f) > 1 and f[1] == "802-11-wireless" and not f[0].startswith("lobby-wifi-"):
+            run("nmcli", "connection", "delete", f[0])
+            log("forgot", f[0])
+    try:
+        user = json.load(open("/etc/lobby-agent.json")).get("user") or "*"
+    except (OSError, ValueError):
+        user = "*"
+    for m in glob.glob(os.environ.get("LOBBY_MARKERS", f"/home/{user}/kiosk/ever-online-*")):
+        try:
+            os.remove(m)
+        except OSError:
+            pass
+    try:
+        with open(STATUS, "w") as fh:
+            fh.write(f"offline {time.time()}\n")
+    except OSError:
+        pass
+    run("systemctl", "reboot")
+
+
+def act(held):
+    if held >= CANCEL_S:
+        log(f"held {held:.0f} s: cancelled")
+    elif held >= RESET_S:
+        network_reset()
+    elif held >= SHUTDOWN_S:
+        log("safe shutdown")
+        run("systemctl", "poweroff")
+
+
+def main():
+    global held_since
+    threading.Thread(target=lights, daemon=True).start()
+    while True:
+        dev = find_button()
+        if not dev:
+            time.sleep(10)                                        # no button wired (or not yet): keep the light going
+            continue
+        log("watching", dev)
+        try:
+            with open(dev, "rb", buffering=0) as fh:
+                while True:
+                    data = fh.read(EVENT.size)
+                    if len(data) < EVENT.size:
+                        raise EOFError
+                    _, _, typ, code, value = EVENT.unpack(data)
+                    if typ != 1 or code != KEYCODE:
+                        continue
+                    if value == 1:
+                        held_since = time.monotonic()
+                    elif value == 0 and held_since is not None:
+                        held, held_since = time.monotonic() - held_since, None
+                        act(held)
+        except (OSError, EOFError) as e:
+            held_since = None
+            log("button device closed:", e)
+            if os.environ.get("LOBBY_BUTTON_DEVICE"):
+                return
+            time.sleep(2)
+
+
+if __name__ == "__main__":
+    main()
+BUTTON
+chmod 755 /usr/local/sbin/lobby-button
+if [[ $BUTTON -eq 1 ]]; then
+  cat > /etc/systemd/system/lobby-button.service <<'UNIT'
+[Unit]
+Description=Lobby directory: the case button and status light
+
+[Service]
+ExecStart=/usr/local/sbin/lobby-button
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
+UNIT
+  systemctl daemon-reload
+  if [[ $PREPARE -eq 1 ]]; then systemctl enable lobby-button.service >/dev/null 2>&1
+  else systemctl enable --now lobby-button.service >/dev/null 2>&1; systemctl restart lobby-button.service; fi
+else
+  systemctl disable --now lobby-button.service >/dev/null 2>&1 || true
+  rm -f /etc/systemd/system/lobby-button.service
+fi
 
 cat > /usr/local/sbin/lobby-identity <<'ID'
 #!/usr/bin/env bash
@@ -702,7 +972,7 @@ UNIT
 fi
 
 # The options this Pi was set up with, so the console's Update Pi (--update) re-applies them the same way
-{ for v in SITE URL ROTATE TZ_NAME COUNTRY FORCE_1080 CONNECT AGENT SSH TV; do printf '%s=%q\n' "$v" "${!v}"; done; } > "$SETUP_CONF"
+{ for v in SITE URL ROTATE TZ_NAME COUNTRY FORCE_1080 CONNECT AGENT SSH TV BUTTON LED_GPIO; do printf '%s=%q\n' "$v" "${!v}"; done; } > "$SETUP_CONF"
 
 # No automatic reboots: they're started from the console (and, later, scheduled there). Remove the nightly
 # reboot an earlier version of this script installed, if this Pi has one.

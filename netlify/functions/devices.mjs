@@ -12,6 +12,8 @@
 //                                its password, so the phone never has it (supabase/14-saved-wifi.sql)
 //   POST {action:"save_network", device_id, ssid, psk, hidden}   keep a network this Pi has just joined, for other Pis
 //                                (the technician page's "Save for other screens"); never put on cards
+//   POST {action:"remove", device_id}                 delete an unassigned Pi's record (New devices); a Pi that's still
+//                                running enrolls again at its next check-in
 //   POST {action:"layout", screen_id, orientation, restart}  set a screen's layout; restart its Pi so it turns now
 //   POST {action:"identify", screen_id}               flash the screen's name on the TV for 90 seconds
 //   POST {action:"assign", device_id, screen_id|null} which screen this Pi drives (1Point only)
@@ -177,6 +179,13 @@ export default async (req) => {
       // An unassigned Pi keeps no screenshot (supabase/06-trust.sql), so an old one doesn't linger either
       await db(`devices?id=eq.${d.id}`, { method: "PATCH", prefer: "return=minimal", body: sid ? { screen_id: sid } : { screen_id: null, screenshot: "", screenshot_at: null } });
       await audit(user.id, "assign device", "device", d.id, { serial: d.serial, screen_id: sid });
+      return json({ ok: true });
+    }
+    // A Pi added before it was meant to be (a test Pi, a stray): its record, commands and history go (cascade)
+    if (body.action === "remove") {
+      if (d.screen_id) throw fail(409, "This Pi is assigned to a screen. Unassign it first (Pi, More).");
+      await db(`devices?id=eq.${d.id}`, { method: "DELETE", prefer: "return=minimal" });
+      await audit(user.id, "remove device", "device", d.id, { serial: d.serial });
       return json({ ok: true });
     }
     if (body.action === "open_enrollment" || body.action === "close_enrollment") {

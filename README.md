@@ -102,8 +102,35 @@ the console once Pi settings are built.
   appears under **Screens → New devices**. Check the serial matches the one on the TV, then assign it to its screen.
 - **A bad card, same Pi:** swap in a spare card, then **Pi → More → Reset device key** in the console (that opens the
   enrollment window). The Pi re-enrolls within a minute.
-- **A bad Pi:** put a card in the replacement Pi. Its serial appears under New devices: assign it to the screen (the
-  old Pi is unassigned automatically).
+- **A bad Pi:** put a card in the replacement Pi. Its serial appears under New devices: choose the screen in its
+  dropdown (screens that already have a Pi are listed as "replaces Pi …"; confirm, and the old Pi is unassigned and
+  moves to New devices).
+- **A Pi that turned up before it was meant to** (a test Pi, a stray): **Remove this Pi from the list**, the last
+  choice in its New devices dropdown. Its record and history are deleted. If it's still switched on, it checks in
+  again and reappears within a minute, so power it off or wipe its card first.
+
+### The case button and status light
+
+1Point's own cases have a button and a status light. Wiring (any Pi; a Pi without them is unaffected):
+
+- **Button:** a momentary switch between **GPIO3 (pin 5)** and **ground (pin 6)**. No resistor.
+- **Light:** an LED from **GPIO17 (pin 11)** through a **330 Ω to 1 kΩ** resistor to **ground (pin 9)**.
+
+| Button | |
+|---|---|
+| Press, Pi shut down | Powers on |
+| Short press | Nothing |
+| Hold **3 s**, let go | Safe shutdown (before pulling power or the card) |
+| Hold **10 s**, let go | **Network reset:** Wi-Fi joined in the field is forgotten (the card's own networks and a cable stay), the Pi forgets it has been online, and restarts. On a card network if one's in range; otherwise it offers field Wi-Fi setup |
+| Hold 30 s or more | Cancelled (a stuck or leaned-on button does nothing) |
+
+While it's held, the board's green light and the case light blink: slowly past 3 s, fast past 10 s, so let go when it
+blinks fast for a reset. The rest of the time the case light shows the Pi's state: **steady** online, **slow blink**
+offline, **double blink** in Wi-Fi setup.
+
+The button never touches the Pi's key, enrollment or screen: those stay console actions. Setup turns both on by
+default (`--no-button`, `--led-gpio N|none` to change them); a Pi already in the field gets them with **Update Pi**
+(agent 1.7.0), and the button works from the restart that finishes it.
 
 ### Field Wi-Fi setup
 
@@ -198,7 +225,7 @@ Rotation is automatic. Each time the Pi starts, it asks the site how its screen'
 
 SSH is switched off by setup (from the restart that finishes it), so the Pi opens no ports. The agent covers remote management. Use `--ssh` for a Pi that needs it, and re-run setup without `--ssh` to switch it off again.
 
-Options (`sudo bash setup-kiosk.sh --help` lists them all): `--rotate 0|90|180|270` to fix the turn by hand (for good; the console's Layout is the usual way), `--ssh` to leave SSH on, `--no-tv` to leave the TV alone, `--connect` for Raspberry Pi Connect, `--no-agent` to skip the agent, and `--url` to pin a fixed screen address the old way.
+Options (`sudo bash setup-kiosk.sh --help` lists them all): `--rotate 0|90|180|270` to fix the turn by hand (for good; the console's Layout is the usual way), `--ssh` to leave SSH on, `--no-tv` to leave the TV alone, `--no-button` and `--led-gpio N|none` for the case button and light, `--connect` for Raspberry Pi Connect, `--no-agent` to skip the agent, and `--url` to pin a fixed screen address the old way.
 
 ## Remote management (the agent)
 
@@ -243,7 +270,8 @@ npm install
 npm test                      # server functions, against a fake Supabase
 node tests/test-server.mjs          # the whole site locally, with sample logins
 bash tests/kiosk-rotation-test.sh    # the kiosk: address from the serial, rotation and its watcher, a card moved between Pis, field Wi-Fi setup (about 5 minutes)
-python3 tests/agent-test.py          # the Pi's agent: schedule, results, reboot, updates, keys, Update Pi, Wi-Fi search and join (about 2 minutes)
+python3 tests/agent-test.py          # the Pi's agent: schedule, results, reboot, updates, keys, Update Pi, Wi-Fi search and join, the status light (about 2 minutes)
+python3 tests/button-test.py         # the case button and status light, with key presses through a pipe (about 20 seconds)
 bash tests/setup-test.sh             # setup's options, Wi-Fi import, naming, TV keeper, pointer, HDMI, quiet start, field Wi-Fi setup (seconds)
 ```
 

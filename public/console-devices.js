@@ -66,11 +66,20 @@ window.ConsoleDevices = (() => {
   }
 
   // ── New devices (1Point) ──
+  const REMOVE = "__remove__";
   function renderNew(screens = window.ConsoleState?.screens || []) {
     const list = admin ? devices.filter((d) => !d.screen_id) : [];
     $("new-devices").hidden = !list.length;
-    const taken = new Set(devices.filter((d) => d.screen_id).map((d) => d.screen_id));
-    const opts = `<option value="">Choose a screen…</option>` + screens.filter((s) => !taken.has(s.id)).map((s) => `<option value="${s.id}">${esc(s.name)} (${esc(s.key)})</option>`).join("");
+    // Every screen: ones without a Pi first; one with a Pi can be given this Pi instead (a replacement Pi), and the
+    // last choice removes this Pi from the list
+    const holder = new Map(devices.filter((d) => d.screen_id).map((d) => [d.screen_id, d]));
+    const byName = [...screens].sort((a, b) => a.name.localeCompare(b.name));
+    const free = byName.filter((s) => !holder.has(s.id)), held = byName.filter((s) => holder.has(s.id));
+    const opt = (s) => `<option value="${s.id}">${esc(s.name)} (${esc(s.key)})${holder.has(s.id) ? `, replaces Pi ${esc(holder.get(s.id).serial.slice(-8))}` : ""}</option>`;
+    const opts = `<option value="">Choose a screen…</option>`
+      + (free.length ? `<optgroup label="Screens without a Pi">${free.map(opt).join("")}</optgroup>` : "")
+      + (held.length ? `<optgroup label="Screens that have a Pi (this one replaces it)">${held.map(opt).join("")}</optgroup>` : "")
+      + `<optgroup label="Not wanted here"><option value="${REMOVE}">Remove this Pi from the list</option></optgroup>`;
     $("new-device-rows").innerHTML = list.map((d) => `<tr>
       <td><strong>${esc(d.serial)}</strong> <button type="button" class="ghost" data-device="${d.id}">Pi</button><div class="sub">${esc(d.model || "")}${d.last_health?.ip ? ` · ${esc(d.last_health.ip)}` : ""}${d.enrolled ? "" : ` · ${esc(enrollNote(d))}`}</div></td>
       <td>${since(d.created_at)}</td><td>${since(d.last_seen)}</td>
@@ -79,11 +88,22 @@ window.ConsoleDevices = (() => {
   document.addEventListener("change", async (e) => {
     const sel = e.target.closest("[data-assign]");
     if (!sel || !sel.value) return;
+    const d = devices.find((x) => x.id === sel.dataset.assign);
+    const reset = () => { sel.value = ""; };
     try {
-      await Auth.api("/api/devices", { method: "POST", body: { action: "assign", device_id: sel.dataset.assign, screen_id: sel.value } });
-      toast("Assigned. The Pi switches to that screen within a minute.");
+      if (sel.value === REMOVE) {
+        if (!confirm(`Remove Pi ${d.serial} from the list? Its record and history are deleted.\n\nIf it's still switched on, it checks in again and reappears here within a minute, so power it off or wipe its card first.`)) return reset();
+        await Auth.api("/api/devices", { method: "POST", body: { action: "remove", device_id: d.id } });
+        toast(`Removed ${d.serial}.`);
+      } else {
+        const old = devices.find((x) => x.screen_id === sel.value);
+        const name = (window.ConsoleState?.screens || []).find((s) => s.id === sel.value)?.name || "that screen";
+        if (old && !confirm(`${name} already has Pi ${old.serial}. Give it this Pi (${d.serial}) instead?\n\nThe old Pi is unassigned: it keeps its key and appears here under New devices.`)) return reset();
+        await Auth.api("/api/devices", { method: "POST", body: { action: "assign", device_id: d.id, screen_id: sel.value } });
+        toast("Assigned. The Pi switches to that screen within a minute.");
+      }
       await window.ConsoleRefresh();
-    } catch (ex) { toast(ex.message, true); }
+    } catch (ex) { toast(ex.message, true); reset(); }
   });
 
   // ── The Pi panel ──

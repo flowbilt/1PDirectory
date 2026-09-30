@@ -14,7 +14,7 @@ Runs as a systemd service (lobby-agent). Standard library only.
 """
 import base64, json, os, pwd, re, secrets, shutil, socket, subprocess, sys, tempfile, time, urllib.error, urllib.request
 
-VERSION = "1.6.0"
+VERSION = "1.7.0"
 CONFIG = os.environ.get("LOBBY_AGENT_CONFIG", "/etc/lobby-agent.json")
 STATE = os.environ.get("LOBBY_AGENT_STATE", "/var/lib/lobby-agent/pending-results.json")
 IDENTITY = os.environ.get("LOBBY_AGENT_IDENTITY", "/var/lib/lobby-agent/identity.json")
@@ -394,6 +394,18 @@ WITH_PAYLOAD = {"wifi_scan", "wifi_join"}
 
 
 # ── talking to the site ──
+STATUS_FILE = os.environ.get("LOBBY_STATUS_FILE", "/run/lobby-status")
+
+
+def set_status(word):
+    """For the case status light (lobby-button): online or offline, with the time, after every check-in."""
+    try:
+        with open(STATUS_FILE, "w") as f:
+            f.write(f"{word} {time.time()}\n")
+    except OSError:
+        pass
+
+
 def post(cfg, body):
     req = urllib.request.Request(
         cfg["site"].rstrip("/") + "/api/agent",
@@ -475,6 +487,7 @@ def main():
         try:
             reply = post(cfg, body)
             results = []
+            set_status("online")
             save_pending([])
             if done:
                 clear_update()
@@ -525,6 +538,7 @@ def main():
             log("site refused check-in:", e.code, e.read()[:200])
         except Exception as e:
             log("check-in failed:", e)
+            set_status("offline")
         if once:
             return
         time.sleep(max(0.0, next_slot(start, time.monotonic()) - time.monotonic()))

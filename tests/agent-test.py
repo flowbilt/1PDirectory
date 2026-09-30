@@ -258,10 +258,29 @@ exit 0
     r = ask(14, "wifi_join", {})
     check("a join with no network given does nothing", r.get("status") == "failed" and not open(nm).read().strip(), r)
     shipped = re.search(r'VERSION = "([^"]+)"', open(AGENT).read()).group(1)   # section C swapped the test's copy for 9.9.9-test
-    check("the agent on the site is 1.6.0, the first that knows the Wi-Fi commands", shipped == "1.6.0", shipped)
+    check("the agent on the site knows the Wi-Fi commands (1.6.0 or newer)", tuple(map(int, shipped.split("."))) >= (1, 6, 0), shipped)
     p.terminate()
     try: p.wait(timeout=5)
     except subprocess.TimeoutExpired: p.kill()
+
+    # ── G. The case status light: the agent says online or offline after every check-in ──
+    lit = os.path.join(W, "status-online")
+    with lock: n = len(checkins)
+    p = subprocess.Popen([sys.executable, agent], env=dict(env, LOBBY_AGENT_SERIAL="10000000abcd0004", LOBBY_STATUS_FILE=lit), stdout=log, stderr=log)
+    wait_for(n + 1); time.sleep(0.5)
+    word = open(lit).read().split()[0] if os.path.exists(lit) else ""
+    check("after a good check-in the status light is told: online", word == "online", word)
+    p.terminate(); p.wait(timeout=5)
+    dead = os.path.join(W, "agent-dead.json")
+    json.dump({"site": "http://127.0.0.1:9", "key": "k" * 43, "user": "no-such-desktop-user"}, open(dead, "w"))
+    off = os.path.join(W, "status-offline")
+    p = subprocess.Popen([sys.executable, agent], env=dict(env, LOBBY_AGENT_CONFIG=dead, LOBBY_AGENT_SERIAL="10000000abcd0005", LOBBY_STATUS_FILE=off), stdout=log, stderr=log)
+    for _ in range(40):
+        if os.path.exists(off): break
+        time.sleep(0.25)
+    word = open(off).read().split()[0] if os.path.exists(off) else ""
+    check("when the site can't be reached: offline", word == "offline", word)
+    p.terminate(); p.wait(timeout=5)
 
     srv.shutdown()
     print(f"\n{passed}/{passed + failed} passed")

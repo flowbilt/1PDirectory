@@ -157,6 +157,23 @@ ok "still one line" "$(wc -l < "$W/cmdline.txt")" "1"
 has "the desktop behind the browser is plain black" "$(grep -F 'labwc/autostart' "$SETUP")" "swaybg -c '#000000'"
 
 
+# ── the case button and status light ──
+awk '/^# The case button and status light: the kernel/{f=1} f{print} /^# \(end of the case button lines\)/{exit}' "$SETUP" > "$W/button.sh"
+printf '[all]\ndtoverlay=vc4-kms-v3d\n' > "$W/bconfig.txt"
+btn() { LOBBY_CONFIG_TXT="$W/bconfig.txt" CONFIG_TXT="$W/bconfig.txt" BUTTON="$1" LED_GPIO="$2" bash -c "source '$W/button.sh'" >/dev/null; }
+btn 1 17; btn 1 17
+ok "the button and light go in the boot config once, however often setup runs" "$(grep -c '^dtoverlay=gpio-key,gpio=3,active_low=1,gpio_pull=up,keycode=148' "$W/bconfig.txt")|$(grep -c '^dtoverlay=gpio-led,gpio=17,label=lobby-status' "$W/bconfig.txt")" "1|1"
+has "the rest of the boot config is untouched" "$(cat "$W/bconfig.txt")" "dtoverlay=vc4-kms-v3d"
+btn 1 22; ok "a new --led-gpio replaces the old light" "$(grep -c 'gpio-led,gpio=17' "$W/bconfig.txt")|$(grep -c 'gpio-led,gpio=22' "$W/bconfig.txt")" "0|1"
+btn 1 none; ok "--led-gpio none: the button without a light" "$(grep -c gpio-led "$W/bconfig.txt")|$(grep -c gpio-key "$W/bconfig.txt")" "0|1"
+btn 0 17; ok "--no-button takes both out again" "$(grep -c 'lobby-button\|gpio-key\|gpio-led' "$W/bconfig.txt")" "0"
+has "--led-gpio 3 is refused (that's the button)" "$(setup --led-gpio 3)" "must be a GPIO number"
+has "--help lists --no-button and --led-gpio" "$(bash "$SETUP" --help)" "--led-gpio N|none"
+has "Update Pi keeps the button and light settings" "$(grep -F "printf '%s=%q" "$SETUP")" "TV BUTTON LED_GPIO"
+has "the button's service restarts it if it stops" "$(sed -n '/lobby-button.service <</,/^UNIT$/p' "$SETUP")" "Restart=always"
+awk "/^cat > \/usr\/local\/sbin\/lobby-button <<'BUTTON'\$/{f=1;next} /^BUTTON\$/{f=0} f" "$SETUP" > "$W/lobby-button.py"
+python3 -c "import ast; ast.parse(open('$W/lobby-button.py').read())" 2>/dev/null && { echo "  ok  lobby-button is valid Python"; pass=$((pass+1)); } || { echo "  FAIL lobby-button doesn't parse"; fail=$((fail+1)); }
+
 # ── field Wi-Fi setup (lobby-wifi-setup): the hotspot + picker a never-online Pi offers ──
 has "the sudoers rule is scoped to exactly this script, for the desktop user, no password" "$(sed -n '/^cat > \/etc\/sudoers.d\/lobby-wifi-setup/,/^SUDOERS$/p' "$SETUP")" 'NOPASSWD: /usr/local/sbin/lobby-wifi-setup'
 has "the sudoers file is checked with visudo before being trusted" "$(cat "$SETUP")" "visudo -cf /etc/sudoers.d/lobby-wifi-setup"
@@ -189,7 +206,7 @@ wifisetup_run() {
   # Starts lobby-wifi-setup in the background, waits for it to listen, runs "$@" against it, then stops it and
   # waits for it to actually exit (the port must be free before the next case starts).
   : > "$NMLOG"
-  ( PATH="$W/bin:$PATH" NMLOG="$NMLOG" SITE_UP_FLAG="$SITE_UP_FLAG" LOBBY_WIFI_SETUP_TRIES="${TRIES:-2}" LOBBY_WIFI_SETUP_SLEEP="${SLEEP_S:-0.2}" \
+  ( PATH="$W/bin:$PATH" NMLOG="$NMLOG" SITE_UP_FLAG="$SITE_UP_FLAG" LOBBY_STATUS_FILE="$W/lstatus" LOBBY_WIFI_SETUP_TRIES="${TRIES:-2}" LOBBY_WIFI_SETUP_SLEEP="${SLEEP_S:-0.2}" \
       timeout 40 python3 "$W/lobby-wifi-setup.py" 10000000abcd1234 "http://x.test/site" > "$W/wifisetup.out" 2>&1 & echo $! > "$W/wifisetup.pid" )
   for _ in $(seq 1 30); do curl -fsS -o /dev/null http://127.0.0.1:80/ 2>/dev/null && break; sleep 0.2; done
   "$@"
@@ -226,6 +243,9 @@ rm -f "$SITE_UP_FLAG"
 wifisetup_run curl -s -X POST -d 'ssid=Strong&hidden_ssid=HiddenNet&password=secretpw' http://127.0.0.1:80/connect >/dev/null
 has "a typed hidden-network name wins over the dropdown selection" "$(cat "$NMLOG")" "device wifi connect HiddenNet password secretpw"
 
+DURING="$(wifisetup_run bash -c "cut -d' ' -f1 '$W/lstatus'")"
+ok "while it runs, the case light is told: Wi-Fi setup" "$DURING" "setup"
+ok "and afterwards: offline, until the agent's next check-in says online" "$(cut -d' ' -f1 "$W/lstatus")" "offline"
 HTTP_CODE="$(TRIES=1 SLEEP_S=0.1 wifisetup_run curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:80/nowhere)"
 ok "an unknown path is a plain 404, not a crash" "$HTTP_CODE" "404"
 

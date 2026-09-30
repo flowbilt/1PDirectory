@@ -456,6 +456,26 @@ test("Wi-Fi saved from the technician page: only after a Pi joined it, one tap f
   fake.T.wifi_networks.splice(fake.T.wifi_networks.indexOf(row), 1);   // later tests count the saved networks
 });
 
+test("remove: a Pi under New devices can be removed by 1Point; an assigned one can't, and a running one comes back", async () => {
+  const admin = await login("scot@1pointusa.com", "admin-pass");
+  const owner = await login("leighann@barber.test", "owner-pass");
+  const serial = "100000005e3713aa", key = "stray-key-".padEnd(43, "x");
+  await agent(req("/api/agent", { method: "POST", token: key, body: { serial, version: "1.6.0", health: {} } }));
+  const stray = fake.T.devices.find((x) => x.serial === serial);
+  assert.ok(stray && !stray.screen_id, "a Pi nobody registered waits under New devices");
+  const rm = (token, id) => devApi(token, { method: "POST", body: { action: "remove", device_id: id } });
+  assert.equal((await rm(owner, stray.id)).status, 403);
+  const assigned = fake.T.devices.find((x) => x.serial === PPI2S_SERIAL);
+  assert.equal((await rm(admin, assigned.id)).status, 409, "a Pi on a screen must be unassigned first");
+  assert.equal((await rm(admin, stray.id)).status, 200);
+  assert.ok(!fake.T.devices.some((x) => x.serial === serial), "gone from the list");
+  assert.ok(fake.T.audit_log.some((a) => a.action === "remove device" && a.detail.serial === serial));
+  await agent(req("/api/agent", { method: "POST", token: key, body: { serial, version: "1.6.0", health: {} } }));
+  const back = fake.T.devices.find((x) => x.serial === serial);
+  assert.ok(back && !back.screen_id, "still running: it enrolls again on its next check-in");
+  fake.T.devices.splice(fake.T.devices.indexOf(back), 1);
+});
+
 test("commands older than an hour are dropped, not run late", async () => {
   const dev = fake.T.devices.find((x) => x.serial === PPI2S_SERIAL);
   fake.T.device_commands.push({ id: 999, device_id: dev.id, command: "reboot", status: "pending", result: "", created_at: new Date(Date.now() - 2 * 3600_000).toISOString() });
