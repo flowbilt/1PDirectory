@@ -255,11 +255,34 @@ import http.server, os, secrets, signal, string, subprocess, sys, threading, tim
 
 SERIAL, URL = sys.argv[1], sys.argv[2]
 LAST_SCAN = {}            # ssid -> open, from the latest scan
+FIRST_SCAN = []           # taken before the hotspot starts, while the radio is free: shown if a later scan comes up empty
 ADDRESS = "10.42.0.1"     # set once the hotspot is up
 CONNECT_TRIES = int(os.environ.get("LOBBY_WIFI_SETUP_TRIES", "10"))   # for tests only; production keeps the default
 CONNECT_SLEEP = float(os.environ.get("LOBBY_WIFI_SETUP_SLEEP", "2"))
 AP_SSID = f"Directory-Setup-{SERIAL[-4:]}"
-AP_PASSWORD = "".join(secrets.choice(string.digits) for _ in range(8))  # a TV-friendly numeric code
+def setup_code():
+    """The hotspot's 8-digit code: made once per Pi and kept, so a phone that joined before still has the right one
+    (a new code every time made iPhones fail silently with the old one). It's shown on the TV, so it only keeps out
+    someone who can't see the screen."""
+    path = os.environ.get("LOBBY_SETUP_CODE_FILE", "/var/lib/lobby-agent/setup-code")
+    try:
+        code = open(path).read().strip()
+        if len(code) == 8 and code.isdigit():
+            return code
+    except OSError:
+        pass
+    code = "".join(secrets.choice(string.digits) for _ in range(8))
+    try:
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        with open(path, "w") as fh:
+            fh.write(code + "\n")
+        os.chmod(path, 0o600)
+    except OSError:
+        pass
+    return code
+
+
+AP_PASSWORD = setup_code()
 AP_CONN = "lobby-setup-ap"
 
 
@@ -360,6 +383,7 @@ button{{margin-top:18px;width:100%;padding:12px;font-size:1.1em;border-radius:8p
 This page opens by itself; if it doesn't, open <b>http://{address}</b> in the phone's browser.
 (If the phone says the network has no internet, choose to stay connected.) A keyboard here works too.</p>
 {message}
+<p><a href="/" style="color:#9cf">Search again</a></p>
 <form method="post" action="/connect">
 <label>Network</label>
 <select name="ssid">{options}</select>
@@ -377,9 +401,15 @@ CONNECTED = """<!doctype html><html><head><meta name="viewport" content="width=d
 
 
 def render(message=""):
+    nets = scan_networks() or FIRST_SCAN
+    if nets is FIRST_SCAN:
+        LAST_SCAN.update({n["ssid"]: n["open"] for n in nets})
+    if not nets:
+        message += ('<p class="err">No networks found yet. This page searches again by itself every 15 seconds.</p>'
+                    '<meta http-equiv="refresh" content="15">')
     opts = "".join(
         f'<option value="{n["ssid"]}">{n["ssid"]} ({"open" if n["open"] else "locked"}, {n["signal"]}%)</option>'
-        for n in scan_networks()
+        for n in nets
     )
     return PAGE.format(ap_ssid=AP_SSID, ap_password=AP_PASSWORD, address=ADDRESS, message=message, options=opts).encode()
 
@@ -442,6 +472,7 @@ def set_status(word):
 def main():
     set_status("setup")                                       # the case light double-blinks while this runs
     global ADDRESS
+    FIRST_SCAN.extend(scan_networks())                    # before the hotspot takes the radio
     if not hotspot_up():
         print(f"{time.strftime('%F %T')} couldn't start the setup hotspot; the picker is still reachable locally.", file=sys.stderr)
     ADDRESS = ap_address()

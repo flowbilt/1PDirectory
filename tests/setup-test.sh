@@ -192,7 +192,9 @@ echo "nmcli $*" >> "$NMLOG"
 case "$*" in
   "device wifi hotspot con-name lobby-setup-ap ssid Directory-Setup-1234 password "*) exit "${HOTSPOT_RC:-0}" ;;
   "device wifi rescan") exit 0 ;;
-  "-t -f SSID,SECURITY,SIGNAL device wifi list") printf 'Strong:WPA2:70\nWeak:WPA2:20\nOpenNet::40\nStrong:WPA2:70\nDirectory-Setup-1234:WPA2:99\nLobby\\:East:WPA2:10\n'; exit 0 ;;
+  "-t -f SSID,SECURITY,SIGNAL device wifi list")
+    if [[ -f "${SCAN_ONCE:-/nonexistent}" ]]; then rm -f "$SCAN_ONCE"; elif [[ -f "${SCAN_EMPTY:-/nonexistent}" ]]; then exit 0; fi
+    printf 'Strong:WPA2:70\nWeak:WPA2:20\nOpenNet::40\nStrong:WPA2:70\nDirectory-Setup-1234:WPA2:99\nLobby\\:East:WPA2:10\n'; exit 0 ;;
   "device wifi connect BadNet"*) echo "Error: Connection activation failed: Secrets were required, but not provided." >&2; exit 4 ;;
   "-g IP4.ADDRESS connection show lobby-setup-ap") echo "10.42.0.1/24" ;;
   "device wifi connect GoodNet password rightpass") exit 0 ;;
@@ -211,7 +213,7 @@ wifisetup_run() {
   # Starts lobby-wifi-setup in the background, waits for it to listen, runs "$@" against it, then stops it and
   # waits for it to actually exit (the port must be free before the next case starts).
   : > "$NMLOG"
-  ( PATH="$W/bin:$PATH" NMLOG="$NMLOG" SITE_UP_FLAG="$SITE_UP_FLAG" LOBBY_STATUS_FILE="$W/lstatus" LOBBY_WIFI_SETUP_TRIES="${TRIES:-2}" LOBBY_WIFI_SETUP_SLEEP="${SLEEP_S:-0.2}" \
+  ( PATH="$W/bin:$PATH" NMLOG="$NMLOG" SITE_UP_FLAG="$SITE_UP_FLAG" LOBBY_STATUS_FILE="$W/lstatus" LOBBY_SETUP_CODE_FILE="$W/setup-code" SCAN_ONCE="$W/scan-once" SCAN_EMPTY="$W/scan-empty" LOBBY_WIFI_SETUP_TRIES="${TRIES:-2}" LOBBY_WIFI_SETUP_SLEEP="${SLEEP_S:-0.2}" \
       timeout 40 python3 "$W/lobby-wifi-setup.py" 10000000abcd1234 "http://x.test/site" > "$W/wifisetup.out" 2>&1 & echo $! > "$W/wifisetup.pid" )
   for _ in $(seq 1 30); do curl -fsS -o /dev/null http://127.0.0.1:80/ 2>/dev/null && break; sleep 0.2; done
   "$@"
@@ -223,7 +225,9 @@ SITE_UP_FLAG="$W/site-up"; rm -f "$SITE_UP_FLAG"
 rm -f "$W/wifisetup.out"; wifisetup_run true
 has "it brings up a hotspot named after the Pi's own serial" "$(cat "$NMLOG")" "device wifi hotspot con-name lobby-setup-ap ssid Directory-Setup-1234"
 ok "the hotspot password is a TV-readable 8-digit code" "$(grep -oE 'password [0-9]{8}$' "$NMLOG" | grep -c .)" "1"
-ok "it clears any hotspot left over from an earlier attempt, first" "$(head -1 "$NMLOG")" "nmcli connection delete lobby-setup-ap"
+ok "it clears any hotspot left over from an earlier attempt before starting its own" \
+  "$(grep -nE 'connection delete lobby-setup-ap|device wifi hotspot' "$NMLOG" | head -2 | cut -d: -f2 | cut -c1-36 | tr '\n' '|')" \
+  "nmcli connection delete lobby-setup-|nmcli device wifi hotspot con-name l|"
 ok "and tears the hotspot down again once it's done" "$(tail -2 "$NMLOG" | tr '\n' '|')" "nmcli connection down lobby-setup-ap|nmcli connection delete lobby-setup-ap|"
 
 PAGE="$(wifisetup_run curl -s http://127.0.0.1:80/)"
@@ -251,6 +255,18 @@ has "a typed hidden-network name wins over the dropdown selection" "$(cat "$NMLO
 DURING="$(wifisetup_run bash -c "cut -d' ' -f1 '$W/lstatus'")"
 ok "while it runs, the case light is told: Wi-Fi setup" "$DURING" "setup"
 ok "and afterwards: offline, until the agent's next check-in says online" "$(cut -d' ' -f1 "$W/lstatus")" "offline"
+# The code stays the same for a Pi, so a phone that joined before still has the right one
+rm -f "$W/setup-code"; wifisetup_run true; C1="$(grep -oE 'password [0-9]{8}$' "$NMLOG")"
+wifisetup_run true; C2="$(grep -oE 'password [0-9]{8}$' "$NMLOG")"
+ok "the hotspot keeps the same code from one run to the next" "$([[ -n "$C1" && "$C1" == "$C2" ]] && echo same || echo "$C1 / $C2")" "same"
+ok "and it's kept where only root can read it" "$(stat -c %a "$W/setup-code")" "600"
+# The first scan is taken before the hotspot starts; a page whose own scan comes up empty shows that one
+touch "$W/scan-once"; FALLBACK="$(wifisetup_run curl -s http://127.0.0.1:80/)"
+has "a scan that comes up empty while hosting falls back to the one from before the hotspot" "$FALLBACK" '<option value="Strong">'
+touch "$W/scan-empty"; EMPTY="$(wifisetup_run curl -s http://127.0.0.1:80/)"; rm -f "$W/scan-empty"
+has "nothing found at all: it says so" "$EMPTY" "No networks found yet"
+has "and the page searches again by itself" "$EMPTY" '<meta http-equiv="refresh" content="15">'
+has "a Search again link is always there" "$PAGE" '<a href="/"'
 # A phone joining the hotspot checks a known address (Apple, Google): it gets the setup page and opens it by itself
 SIGNIN="$(wifisetup_run bash -c "curl -s -H 'Host: captive.apple.com' http://127.0.0.1:80/hotspot-detect.html; printf '|'; curl -s -o /dev/null -w '%{http_code}' -H 'Host: connectivitycheck.gstatic.com' http://127.0.0.1:80/generate_204")"
 has "an iPhone's online check gets the setup page" "$SIGNIN" "This screen needs Wi-Fi"

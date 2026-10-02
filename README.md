@@ -137,11 +137,13 @@ default (`--no-button`, `--led-gpio N|none` to change them); a Pi already in the
 A Pi that has never reached the site — wrong or missing Wi-Fi, no cable yet — offers its own setup instead of
 sitting on a blank screen. No new card and no console visit needed:
 
-1. The Pi's screen shows a hotspot name (`Directory-Setup-<last 4 of serial>`) and an 8-digit code.
+1. The Pi's screen shows a hotspot name (`Directory-Setup-<last 4 of serial>`) and an 8-digit code. Both stay the
+   same for that Pi, so a phone that has joined it before still has the right code.
 2. From a phone: join that Wi-Fi network with the code. The setup page opens by itself, like a hotel Wi-Fi sign-in
    page; if it doesn't, open `http://10.42.0.1` in the phone's browser (the TV shows the address). If the phone says
    the network has no internet, choose to stay connected. A keyboard at the Pi works too, on the same page.
-3. Pick a network (or type a hidden one's name), enter its password, and submit. The Pi joins it, confirms it can
+3. Pick a network (or type a hidden one's name), enter its password, and submit. Not listed yet? **Search again**
+   (the page also searches by itself every 15 seconds while it has found nothing). The Pi joins it, confirms it can
    reach the site, and starts the directory normally. A wrong password or a network that can't reach the site is
    reported on the same page so it can be retried, and so is a locked network chosen without its password.
 
