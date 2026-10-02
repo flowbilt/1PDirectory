@@ -9,7 +9,7 @@ Tenant directories for lobby screens, replacing Yodeck and Wix. Hosted on Netlif
 | `/login.html` | everyone | Sign in, forgotten password, and setting a password from an invitation or reset email |
 | `/console.html` | signed in | Screens (status, search, layout), Buildings, People, and Accounts (1Point only) |
 | `/tech.html` | 1Point | The technician page, sized for a phone: Identify, Reload screen, Reboot Pi, Layout, and Wi-Fi search and join. Add it to the phone's home screen |
-| `/edit.html?d=…` | signed in | Edit one directory's tenants, plus its building's shared settings, with a live preview |
+| `/edit.html?d=…` | signed in | Edit one directory's tenants, plus its building's shared settings (address, logo, an owner or manager logo, background photo, contacts), with a live preview |
 | `/?device=<serial>` | lobby screens | What a Pi shows: whichever screen the console assigns it to |
 | `/?screen=ppi-2s` | lobby screens | A fixed screen. Older screens use `?site=landmark-center`, which still works |
 | `/?screen=ppi-2s&view=1` | anyone | Looking at a screen (the console's **View** button). Shows the same thing but doesn't count as the screen checking in |
@@ -138,16 +138,17 @@ A Pi that has never reached the site — wrong or missing Wi-Fi, no cable yet �
 sitting on a blank screen. No new card and no console visit needed:
 
 1. The Pi's screen shows a hotspot name (`Directory-Setup-<last 4 of serial>`) and an 8-digit code.
-2. From a phone: join that Wi-Fi network with the code, then open a browser to any address (or open the page shown
-   on the TV) — the Pi's own setup page lists nearby networks. A keyboard at the Pi works too, on the same page.
+2. From a phone: join that Wi-Fi network with the code. The setup page opens by itself, like a hotel Wi-Fi sign-in
+   page; if it doesn't, open `http://10.42.0.1` in the phone's browser (the TV shows the address). If the phone says
+   the network has no internet, choose to stay connected. A keyboard at the Pi works too, on the same page.
 3. Pick a network (or type a hidden one's name), enter its password, and submit. The Pi joins it, confirms it can
    reach the site, and starts the directory normally. A wrong password or a network that can't reach the site is
-   reported on the same page so it can be retried.
+   reported on the same page so it can be retried, and so is a locked network chosen without its password.
 
 This only happens for a Pi that's never gotten online at all. A Pi that's worked before and just loses its network
 keeps the quieter behavior below (cached content, "Reconnecting…") — it never puts up a surprise hotspot on a
-screen that's already working. Not yet proven on real Wi-Fi hardware: whether the Pi's onboard chip can scan for
-networks while it's also hosting the hotspot.
+screen that's already working; holding the case button 10 seconds (a network reset) brings it back on purpose.
+Proven on a real Pi 4 (2026-10-01): it lists nearby networks while hosting the hotspot.
 
 ### The technician page
 
@@ -283,7 +284,7 @@ Local sample logins: `scot@1pointusa.com / admin-pass`, `leighann@barber.test / 
 public/             screen (index.html, display.*), sign-in, console (+ console-devices.js, console-setup.js), editor, technician page (tech.*), shared auth.js
 netlify/functions/  screen, users, config, weather, news, agent, devices, networks, alert-settings, alerts
 netlify/lib/        Supabase client, RSS reader, shared helpers
-supabase/           database schema (01 to 14, run in order), starting data, check queries, setup guide
+supabase/           database schema (01 to 15, run in order), starting data, check queries, setup guide
 migration/          the Yodeck/Wix transcription the starting data was built from
 public/pi/          setup-kiosk.sh and agent.py (served by the site so Pis can download them)
 tests/              function tests, fake Supabase, local test server

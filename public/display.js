@@ -154,10 +154,17 @@
     label.textContent = data.buildingLabel || "";
     label.hidden = !data.buildingLabel;
 
+    // Two logos: the building's, and the owner's or manager's (companyLogo). Normally the building's sits at the top
+    // and the company's in a strip at the bottom; logoSwap puts the company's on top and the building's at the bottom.
+    const swap = !!(data.logoSwap && data.companyLogo);
+    const top = swap ? data.companyLogo : data.logo, bottom = swap ? data.logo : data.companyLogo;
     const logo = $("logo");
-    const wordmark = !!(data.logo && data.logoReplacesName);
-    if (data.logo) { if (logo.src !== data.logo) logo.src = data.logo; logo.hidden = false; logo.alt = wordmark ? data.propertyName : ""; }
+    const wordmark = !swap && !!(data.logo && data.logoReplacesName);   // only the building's own logo replaces its name
+    if (top) { if (logo.getAttribute("src") !== top) logo.src = top; logo.hidden = false; logo.alt = wordmark ? data.propertyName : ""; }
     else { logo.hidden = true; logo.removeAttribute("src"); }
+    const brand = $("brand-logo");
+    if (bottom) { if (brand.getAttribute("src") !== bottom) brand.src = bottom; } else brand.removeAttribute("src");
+    $("brand").hidden = !bottom;
     stage.classList.toggle("wordmark", wordmark);
     $("property").hidden = wordmark;
 

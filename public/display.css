@@ -148,6 +148,16 @@ body { font-family: "Instrument Sans", "Segoe UI", Arial, sans-serif; color: var
   padding: 0 var(--pad) calc(var(--u) * 2.8);
 }
 
+/* The bottom logo strip: the owner's or manager's logo (or the building's, when they're swapped) */
+.brand {
+  display: flex; justify-content: center; align-items: center;
+  background: var(--navy-deep); padding: calc(var(--u) * 1.4) var(--pad) calc(var(--u) * 2.4);
+}
+.brand img { display: block; max-height: calc(var(--u) * 6); max-width: min(70%, calc(var(--u) * 46)); object-fit: contain; }
+#stage.has-bg .brand { background: rgba(8, 19, 34, 0.82); }
+#stage.landscape .brand { grid-column: 1 / -1; padding-top: calc(var(--u) * 1); padding-bottom: calc(var(--u) * 1.6); }
+#stage.landscape .brand img { max-height: calc(var(--u) * 5); }
+
 .offline {
   position: absolute; right: calc(var(--u) * 2); bottom: calc(var(--u) * 1); 
   font-size: calc(var(--u) * 1.4); color: var(--muted); opacity: 0.7;
@@ -161,7 +171,7 @@ body { font-family: "Instrument Sans", "Segoe UI", Arial, sans-serif; color: var
 #stage.landscape {
   display: grid;
   grid-template-columns: minmax(0, 1fr) calc(var(--u) * 64);
-  grid-template-rows: auto minmax(0, 1fr) auto auto;
+  grid-template-rows: auto minmax(0, 1fr) auto auto auto;
 }
 #stage.landscape .masthead { grid-column: 1 / -1; }
 #stage.landscape .property { font-size: calc(var(--u) * 6); }

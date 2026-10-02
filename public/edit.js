@@ -59,6 +59,7 @@
     p.lat = Number.isFinite(lat) ? lat : null; p.lon = Number.isFinite(lon) ? lon : null;
     p.timezone = $("timezone").value;
     p.logo_replaces_name = !!p.logo && $("logo-replaces-name").checked;
+    p.logo_swap = !!p.company_logo && $("clogo-swap").checked;
     const bg = p.background || {};
     p.background = { image: bg.image || "", enabled: !!bg.image && $("bg-on").checked, visibility: parseInt($("bg-vis").value, 10) || 15, position: parseInt($("bg-pos").value, 10), size: parseInt($("bg-size").value, 10) || 190, offset: parseInt($("bg-offset").value, 10) || 0 };
     $("bg-vis-val").textContent = `${p.background.visibility}%`;
@@ -139,6 +140,10 @@
     $("logo-remove").hidden = !p.logo;
     $("logo-name-row").hidden = !p.logo;
     $("logo-replaces-name").checked = !!p.logo_replaces_name;
+    $("clogo-preview").innerHTML = p.company_logo ? `<img src="${esc(p.company_logo)}" alt="Current owner or manager logo">` : "<span>No logo</span>";
+    $("clogo-remove").hidden = !p.company_logo;
+    $("clogo-swap-row").hidden = !p.company_logo;
+    $("clogo-swap").checked = !!p.logo_swap;
   }
   const readAsDataURL = (file) => new Promise((res, rej) => { const r = new FileReader(); r.onload = () => res(r.result); r.onerror = () => rej(new Error("Could not read that file.")); r.readAsDataURL(file); });
   const loadImage = (src) => new Promise((res, rej) => { const i = new Image(); i.onload = () => res(i); i.onerror = () => rej(new Error("That file isn't an image this browser can open.")); i.src = src; });
@@ -162,6 +167,13 @@
     try { read(); S.prop.logo = await shrinkLogo(file); renderLogo(); setDirty(true); pushPreview(); } catch (ex) { toast(ex.message, true); }
   });
   $("logo-remove").addEventListener("click", () => { read(); S.prop.logo = ""; S.prop.logo_replaces_name = false; renderLogo(); setDirty(true); pushPreview(); });
+  $("clogo-file").addEventListener("change", async (e) => {
+    const file = e.target.files[0]; e.target.value = "";
+    if (!file) return;
+    try { read(); S.prop.company_logo = await shrinkLogo(file); renderLogo(); setDirty(true); pushPreview(); } catch (ex) { toast(ex.message, true); }
+  });
+  $("clogo-remove").addEventListener("click", () => { read(); S.prop.company_logo = ""; S.prop.logo_swap = false; renderLogo(); setDirty(true); pushPreview(); });
+  $("clogo-swap").addEventListener("change", () => { read(); setDirty(true); pushPreview(); });
 
   // ── Background photo ──
   function renderBg() {
@@ -202,6 +214,7 @@
       key: scr?.key || d.slug, orientation: scr?.orientation || "auto",
       propertyName: d.title, buildingLabel: d.subtitle || p.address || "",
       logo: p.logo || "", logoReplacesName: !!(p.logo && p.logo_replaces_name),
+      companyLogo: p.company_logo || "", logoSwap: !!(p.company_logo && p.logo_swap),
       tenants: S.tenants.filter((t) => t.name).map((t) => ({ name: t.name, suite: t.suite, dir: t.arrow, note: t.note })),
       managedBy: p.managed_by || {}, leasedBy: p.leased_by || {},
       welcome: d.footer_override ?? p.footer ?? "",
@@ -252,6 +265,7 @@
       } });
       await Auth.db(`properties?id=eq.${p.id}`, { method: "PATCH", prefer: "return=minimal", body: {
         address: p.address, logo: p.logo || "", logo_replaces_name: !!p.logo_replaces_name, background: p.background || {},
+        company_logo: p.company_logo || "", logo_swap: !!(p.company_logo && p.logo_swap),
         managed_by: p.managed_by, leased_by: p.leased_by, footer: p.footer || "", lat: p.lat, lon: p.lon, timezone: p.timezone,
       } });
       // Tenants: save every row first, then remove the ones deleted here. A failure part-way never loses rows.

@@ -254,6 +254,8 @@ tears the hotspot down and exits 0. Usage: lobby-wifi-setup <serial> <site-url>"
 import http.server, os, secrets, signal, string, subprocess, sys, threading, time, urllib.parse
 
 SERIAL, URL = sys.argv[1], sys.argv[2]
+LAST_SCAN = {}            # ssid -> open, from the latest scan
+ADDRESS = "10.42.0.1"     # set once the hotspot is up
 CONNECT_TRIES = int(os.environ.get("LOBBY_WIFI_SETUP_TRIES", "10"))   # for tests only; production keeps the default
 CONNECT_SLEEP = float(os.environ.get("LOBBY_WIFI_SETUP_SLEEP", "2"))
 AP_SSID = f"Directory-Setup-{SERIAL[-4:]}"
@@ -272,6 +274,15 @@ def hotspot_up():
     run("nmcli", "connection", "delete", AP_CONN)  # a stale one from an earlier attempt
     r = run("nmcli", "device", "wifi", "hotspot", "con-name", AP_CONN, "ssid", AP_SSID, "password", AP_PASSWORD, timeout=30)
     return r.returncode == 0
+
+
+def ap_address():
+    """The Pi's own address on its hotspot (NetworkManager uses 10.42.0.1 unless that's taken)."""
+    r = run("nmcli", "-g", "IP4.ADDRESS", "connection", "show", AP_CONN)
+    for part in r.stdout.replace("|", "\n").split():
+        if "/" in part and part.split("/")[0].count(".") == 3:
+            return part.split("/")[0]
+    return "10.42.0.1"
 
 
 def hotspot_down():
@@ -311,6 +322,7 @@ def scan_networks():
         seen.add(ssid)
         nets.append({"ssid": ssid, "open": security in ("", "--"), "signal": signal or "0"})
     nets.sort(key=lambda n: -int(n["signal"]))
+    LAST_SCAN.clear(); LAST_SCAN.update({n["ssid"]: n["open"] for n in nets})
     return nets
 
 
@@ -320,7 +332,12 @@ def try_connect(ssid, password):
         args += ["password", password]
     r = run(*args, timeout=30)
     if r.returncode != 0:
-        return False, (r.stderr.strip()[:200] or "Couldn't join that network.")
+        err = r.stderr
+        if "Secrets were required" in err or "802-11-wireless-security" in err:
+            return False, f"{ssid} refused that password. Check it and try again."
+        if "No network with SSID" in err:
+            return False, f"{ssid} isn't in range of this screen."
+        return False, (err.strip()[:200] or "Couldn't join that network.")
     for _ in range(CONNECT_TRIES):
         if site_reachable():
             return True, ""
@@ -339,8 +356,9 @@ button{{margin-top:18px;width:100%;padding:12px;font-size:1.1em;border-radius:8p
 .err{{color:#f88;margin-top:10px}}
 </style></head><body>
 <h1>This screen needs Wi-Fi</h1>
-<p>From a phone: join <b>{ap_ssid}</b>, code <span class="code">{ap_password}</span>, then open this page again.
-Or use a keyboard here.</p>
+<p>From a phone: join the Wi-Fi network <b>{ap_ssid}</b> with the code <span class="code">{ap_password}</span>.
+This page opens by itself; if it doesn't, open <b>http://{address}</b> in the phone's browser.
+(If the phone says the network has no internet, choose to stay connected.) A keyboard here works too.</p>
 {message}
 <form method="post" action="/connect">
 <label>Network</label>
@@ -363,7 +381,7 @@ def render(message=""):
         f'<option value="{n["ssid"]}">{n["ssid"]} ({"open" if n["open"] else "locked"}, {n["signal"]}%)</option>'
         for n in scan_networks()
     )
-    return PAGE.format(ap_ssid=AP_SSID, ap_password=AP_PASSWORD, message=message, options=opts).encode()
+    return PAGE.format(ap_ssid=AP_SSID, ap_password=AP_PASSWORD, address=ADDRESS, message=message, options=opts).encode()
 
 
 class Handler(http.server.BaseHTTPRequestHandler):
@@ -378,10 +396,9 @@ class Handler(http.server.BaseHTTPRequestHandler):
         self.wfile.write(body)
 
     def do_GET(self):
-        if self.path in ("/", "/index.html"):
-            self._send(render())
-        else:
-            self._send(b"Not found", 404)
+        # Every address leads here: a phone joining the hotspot checks a known web address to see whether it's online,
+        # gets this page instead, and opens it as a Wi-Fi sign-in page (the hotspot answers every name with the Pi)
+        self._send(render())
 
     def do_POST(self):
         if self.path != "/connect":
@@ -391,7 +408,12 @@ class Handler(http.server.BaseHTTPRequestHandler):
         form = urllib.parse.parse_qs(self.rfile.read(length).decode())
         ssid = ((form.get("hidden_ssid") or [""])[0] or (form.get("ssid") or [""])[0]).strip()
         password = (form.get("password") or [""])[0]
-        ok, err = try_connect(ssid, password) if ssid else (False, "Choose or type a network name.")
+        if not ssid:
+            ok, err = False, "Choose or type a network name."
+        elif not password and LAST_SCAN.get(ssid) is False:
+            ok, err = False, f"{ssid} needs its password. Type it in the Password box."
+        else:
+            ok, err = try_connect(ssid, password)
         if ok:
             self._send(CONNECTED.encode())
             threading.Thread(target=self.server.shutdown, daemon=True).start()
@@ -419,8 +441,10 @@ def set_status(word):
 
 def main():
     set_status("setup")                                       # the case light double-blinks while this runs
+    global ADDRESS
     if not hotspot_up():
         print(f"{time.strftime('%F %T')} couldn't start the setup hotspot; the picker is still reachable locally.", file=sys.stderr)
+    ADDRESS = ap_address()
     server = http.server.ThreadingHTTPServer(("0.0.0.0", 80), Handler)
     # shutdown() must run on a thread other than the one in serve_forever(), or it deadlocks against itself.
     signal.signal(signal.SIGTERM, lambda *_: threading.Thread(target=server.shutdown, daemon=True).start())
@@ -436,6 +460,10 @@ if __name__ == "__main__":
     main()
 WIFISETUP
 chmod 755 /usr/local/sbin/lobby-wifi-setup
+# On the setup hotspot only (NetworkManager's shared mode reads this folder), every name a phone looks up points at the
+# Pi, so the phone's "am I online?" check lands on the setup page and it opens it by itself, like a hotel sign-in page.
+mkdir -p /etc/NetworkManager/dnsmasq-shared.d
+echo 'address=/#/10.42.0.1' > /etc/NetworkManager/dnsmasq-shared.d/lobby-setup.conf
 # Runs as root (it manages Wi-Fi and binds port 80), started by kiosk.sh (which runs as the desktop user).
 cat > /etc/sudoers.d/lobby-wifi-setup <<SUDOERS
 $KUSER ALL=(root) NOPASSWD: /usr/local/sbin/lobby-wifi-setup
@@ -764,7 +792,7 @@ elif [[ ! -f "$MARKER" ]]; then
   SETUP_CHROME_PID=""
   if [[ -n "${WAYLAND_DISPLAY:-}${DISPLAY:-}" && -n "$CHROME" ]]; then
     "$CHROME" --kiosk "http://localhost/" --user-data-dir="$HOME/kiosk/setup-profile" \
-      --ozone-platform-hint=auto --noerrdialogs --disable-infobars --no-first-run >>"$LOG" 2>&1 &
+      --ozone-platform-hint=auto --noerrdialogs --disable-infobars --no-first-run --password-store=basic >>"$LOG" 2>&1 &
     SETUP_CHROME_PID=$!
   fi
   ${LOBBY_WIFI_SETUP:-sudo -n /usr/local/sbin/lobby-wifi-setup} "${SERIAL:-unknown}" "$URL" >>"$LOG" 2>&1

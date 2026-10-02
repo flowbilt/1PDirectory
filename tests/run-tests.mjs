@@ -476,6 +476,19 @@ test("remove: a Pi under New devices can be removed by 1Point; an assigned one c
   fake.T.devices.splice(fake.T.devices.indexOf(back), 1);
 });
 
+test("a second logo: the owner's or manager's, at the bottom, or swapped to the top", async () => {
+  const lm = fake.T.properties.find((x) => x.name === "The Landmark Center");
+  const shape = async () => (await (await screen(req("/api/screen?screen=landmark-center&view=1"))).json());
+  let d = await shape();
+  assert.deepEqual([d.companyLogo, d.logoSwap], ["", false], "none until one is uploaded");
+  Object.assign(lm, { logo: "data:image/png;base64,QkxE", company_logo: "data:image/png;base64,QkFS", logo_swap: true, updated_at: new Date().toISOString() });
+  d = await shape();
+  assert.deepEqual([d.logo, d.companyLogo, d.logoSwap], ["data:image/png;base64,QkxE", "data:image/png;base64,QkFS", true]);
+  const sql = readFileSync(new URL("../supabase/15-logos.sql", import.meta.url), "utf8");
+  assert.ok(sql.includes("company_logo text not null default ''") && sql.includes("logo_swap boolean not null default false"));
+  Object.assign(lm, { logo: "", company_logo: "", logo_swap: false, updated_at: new Date().toISOString() });
+});
+
 test("commands older than an hour are dropped, not run late", async () => {
   const dev = fake.T.devices.find((x) => x.serial === PPI2S_SERIAL);
   fake.T.device_commands.push({ id: 999, device_id: dev.id, command: "reboot", status: "pending", result: "", created_at: new Date(Date.now() - 2 * 3600_000).toISOString() });

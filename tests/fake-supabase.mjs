@@ -27,7 +27,7 @@ export function createFake() {
       T.organizations.push({ id: oid, name: o.name, kind: o.kind, notes: "", created_at: now() });
       for (const p of o.properties) {
         const pid = randomUUID();
-        T.properties.push({ id: pid, org_id: oid, name: p.name, address: p.address || "", timezone: "America/Chicago", lat: p.lat, lon: p.lon, logo: "", logo_replaces_name: false, background: {}, managed_by: p.managed_by || {}, leased_by: p.leased_by || {}, footer: p.footer || "", created_at: now(), updated_at: now(), updated_by: null });
+        T.properties.push({ id: pid, org_id: oid, name: p.name, address: p.address || "", timezone: "America/Chicago", lat: p.lat, lon: p.lon, logo: "", logo_replaces_name: false, company_logo: "", logo_swap: false, background: {}, managed_by: p.managed_by || {}, leased_by: p.leased_by || {}, footer: p.footer || "", created_at: now(), updated_at: now(), updated_by: null });
         for (const d of p.directories) {
           const did = randomUUID();
           T.directories.push({ id: did, property_id: pid, slug: d.slug, title: d.title, subtitle: d.subtitle, footer_override: null, news_enabled: true, rotate_seconds: 12, weather_enabled: true, created_at: now(), updated_at: now(), updated_by: null });
@@ -39,7 +39,7 @@ export function createFake() {
     // A second customer, to prove Barber users can't see it.
     const other = randomUUID(), op = randomUUID(), od = randomUUID();
     T.organizations.push({ id: other, name: "Other Owner LLC", kind: "owner", notes: "", created_at: now() });
-    T.properties.push({ id: op, org_id: other, name: "Other Tower", address: "", timezone: "America/Chicago", lat: 33.5, lon: -86.8, logo: "", logo_replaces_name: false, background: {}, managed_by: {}, leased_by: {}, footer: "", created_at: now(), updated_at: now() });
+    T.properties.push({ id: op, org_id: other, name: "Other Tower", address: "", timezone: "America/Chicago", lat: 33.5, lon: -86.8, logo: "", logo_replaces_name: false, company_logo: "", logo_swap: false, background: {}, managed_by: {}, leased_by: {}, footer: "", created_at: now(), updated_at: now() });
     T.directories.push({ id: od, property_id: op, slug: "other-tower", title: "Other Tower", subtitle: "", footer_override: null, news_enabled: true, rotate_seconds: 12, weather_enabled: true, created_at: now(), updated_at: now() });
     T.tenants.push({ id: randomUUID(), directory_id: od, sort: 0, name: "Secret Tenant Inc.", suite: "100", arrow: "", note: "" });
     T.screens.push({ id: randomUUID(), directory_id: od, key: "other-tower", name: "Other Tower Lobby", location_note: "", orientation: "landscape", hardware: {}, last_seen: null, last_report: {}, created_at: now() });
@@ -142,7 +142,7 @@ export function createFake() {
   }
   const defaults = {
     organizations: () => ({ id: randomUUID(), kind: "owner", notes: "", created_at: now() }),
-    properties: () => ({ id: randomUUID(), address: "", timezone: "America/Chicago", lat: null, lon: null, logo: "", logo_replaces_name: false, background: {}, managed_by: {}, leased_by: {}, footer: "", created_at: now(), updated_at: now() }),
+    properties: () => ({ id: randomUUID(), address: "", timezone: "America/Chicago", lat: null, lon: null, logo: "", logo_replaces_name: false, company_logo: "", logo_swap: false, background: {}, managed_by: {}, leased_by: {}, footer: "", created_at: now(), updated_at: now() }),
     directories: () => ({ id: randomUUID(), subtitle: "", footer_override: null, news_enabled: true, rotate_seconds: 12, weather_enabled: true, created_at: now(), updated_at: now() }),
     tenants: () => ({ id: randomUUID(), sort: 0, suite: "", arrow: "", note: "" }),
     screens: () => ({ id: randomUUID(), directory_id: null, location_note: "", orientation: "auto", hardware: {}, last_seen: null, last_report: {}, created_at: now() }),

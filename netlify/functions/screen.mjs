@@ -55,6 +55,8 @@ export function toPayload(screen, dir, prop, tenants) {
     buildingLabel: dir ? (dir.subtitle || prop?.address || "") : "",
     logo: prop?.logo || "",
     logoReplacesName: !!(prop?.logo && prop?.logo_replaces_name),
+    companyLogo: prop?.company_logo || "",                 // the owner's or manager's logo (supabase/15-logos.sql)
+    logoSwap: !!prop?.logo_swap,                           // true: company logo on top, building logo at the bottom
     tenants: (tenants || []).map((t) => ({ name: t.name, suite: t.suite, dir: t.arrow || "", note: t.note || "" })),
     managedBy: prop?.managed_by || {},
     leasedBy: prop?.leased_by || {},

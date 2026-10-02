@@ -174,6 +174,10 @@ has "the button's service restarts it if it stops" "$(sed -n '/lobby-button.serv
 awk "/^cat > \/usr\/local\/sbin\/lobby-button <<'BUTTON'\$/{f=1;next} /^BUTTON\$/{f=0} f" "$SETUP" > "$W/lobby-button.py"
 python3 -c "import ast; ast.parse(open('$W/lobby-button.py').read())" 2>/dev/null && { echo "  ok  lobby-button is valid Python"; pass=$((pass+1)); } || { echo "  FAIL lobby-button doesn't parse"; fail=$((fail+1)); }
 
+# Every browser the kiosk starts skips the desktop's password keyring, or it asks for a keyring password on screen
+ok "both kiosk browsers (the directory and the Wi-Fi setup page) skip the keyring prompt" \
+  "$(grep -c -- '--password-store=basic' "$SETUP")" "2"
+
 # ── field Wi-Fi setup (lobby-wifi-setup): the hotspot + picker a never-online Pi offers ──
 has "the sudoers rule is scoped to exactly this script, for the desktop user, no password" "$(sed -n '/^cat > \/etc\/sudoers.d\/lobby-wifi-setup/,/^SUDOERS$/p' "$SETUP")" 'NOPASSWD: /usr/local/sbin/lobby-wifi-setup'
 has "the sudoers file is checked with visudo before being trusted" "$(cat "$SETUP")" "visudo -cf /etc/sudoers.d/lobby-wifi-setup"
@@ -189,7 +193,8 @@ case "$*" in
   "device wifi hotspot con-name lobby-setup-ap ssid Directory-Setup-1234 password "*) exit "${HOTSPOT_RC:-0}" ;;
   "device wifi rescan") exit 0 ;;
   "-t -f SSID,SECURITY,SIGNAL device wifi list") printf 'Strong:WPA2:70\nWeak:WPA2:20\nOpenNet::40\nStrong:WPA2:70\nDirectory-Setup-1234:WPA2:99\nLobby\\:East:WPA2:10\n'; exit 0 ;;
-  "device wifi connect BadNet") exit 1 ;;
+  "device wifi connect BadNet"*) echo "Error: Connection activation failed: Secrets were required, but not provided." >&2; exit 4 ;;
+  "-g IP4.ADDRESS connection show lobby-setup-ap") echo "10.42.0.1/24" ;;
   "device wifi connect GoodNet password rightpass") exit 0 ;;
   "device wifi connect OpenNet") exit 0 ;;
 esac
@@ -225,7 +230,7 @@ PAGE="$(wifisetup_run curl -s http://127.0.0.1:80/)"
 has "the picker lists nearby networks, strongest first (a name with a colon in it intact)" "$PAGE" "<option value=\"Strong\">Strong (locked, 70%)</option><option value=\"OpenNet\">OpenNet (open, 40%)</option><option value=\"Weak\">Weak (locked, 20%)</option><option value=\"Lobby:East\">Lobby:East (locked, 10%)</option>"
 ok "a network seen twice in a scan is listed once" "$(grep -c 'value=\"Strong\"' <<<"$PAGE")" "1"
 ok "the hotspot's own network never appears as something to join" "$(grep -c 'value=\"Directory-Setup-1234\"' <<<"$PAGE")" "0"
-has "the hotspot name and its code are shown for a phone to join" "$PAGE" "join <b>Directory-Setup-1234</b>"
+has "the hotspot name and its code are shown for a phone to join" "$PAGE" "join the Wi-Fi network <b>Directory-Setup-1234</b> with the code"
 
 ERR="$(TRIES=1 SLEEP_S=0.1 wifisetup_run curl -s -X POST -d 'ssid=BadNet&password=x' http://127.0.0.1:80/connect)"
 has "a network that refuses the password says so, and offers the form again" "$ERR" 'err">'
@@ -246,7 +251,16 @@ has "a typed hidden-network name wins over the dropdown selection" "$(cat "$NMLO
 DURING="$(wifisetup_run bash -c "cut -d' ' -f1 '$W/lstatus'")"
 ok "while it runs, the case light is told: Wi-Fi setup" "$DURING" "setup"
 ok "and afterwards: offline, until the agent's next check-in says online" "$(cut -d' ' -f1 "$W/lstatus")" "offline"
-HTTP_CODE="$(TRIES=1 SLEEP_S=0.1 wifisetup_run curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:80/nowhere)"
-ok "an unknown path is a plain 404, not a crash" "$HTTP_CODE" "404"
+# A phone joining the hotspot checks a known address (Apple, Google): it gets the setup page and opens it by itself
+SIGNIN="$(wifisetup_run bash -c "curl -s -H 'Host: captive.apple.com' http://127.0.0.1:80/hotspot-detect.html; printf '|'; curl -s -o /dev/null -w '%{http_code}' -H 'Host: connectivitycheck.gstatic.com' http://127.0.0.1:80/generate_204")"
+has "an iPhone's online check gets the setup page" "$SIGNIN" "This screen needs Wi-Fi"
+has "an Android phone's check gets a page, not the 204 that would mean 'online'" "$SIGNIN" "|200"
+has "the page says where it is, for a phone that doesn't open it by itself" "$PAGE" "open <b>http://10.42.0.1</b>"
+has "the hotspot answers every name with the Pi (setup hotspot only)" "$(grep -A1 'mkdir -p /etc/NetworkManager/dnsmasq-shared.d' "$SETUP")" "address=/#/10.42.0.1"
+: > "$NMLOG"
+LOCKED="$(wifisetup_run bash -c "curl -s http://127.0.0.1:80/ >/dev/null; curl -s -X POST -d 'ssid=Strong&password=' http://127.0.0.1:80/connect")"
+has "a locked network with no password says it needs one" "$LOCKED" "Strong needs its password"
+ok "and doesn't even try to join it" "$(grep -c 'device wifi connect Strong' "$NMLOG")" "0"
+has "a refused password is said plainly, not as nmcli's message" "$ERR" "BadNet refused that password"
 
 echo; echo "$pass/$((pass+fail)) passed"; [[ $fail -eq 0 ]]
