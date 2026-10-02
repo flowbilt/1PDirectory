@@ -240,7 +240,9 @@ Each Pi runs a small agent (`public/pi/agent.py`) that checks in once a minute o
 
 Pi health is a 1Point service tool. Owner users see only each screen's Online/Offline dot. The server refuses them all device information, not just the console.
 
-In the console, the **Pi** button on each screen offers Identify, Reload screen, Take screenshot, Reboot Pi, Update agent and Update Pi (see Updating Pis in the field). The technician page adds Wi-Fi search and join (agent 1.6.0). The Pi actions appear only once the Pi has enrolled (the server refuses them before that). Under **More** are Reset device key, Switch off, and Unassign.
+In the console, the **Pi** button on each screen offers Identify, Reload screen, Take screenshot, Reboot Pi, Update agent and Update Pi (see Updating Pis in the field). The technician page adds Wi-Fi search and join (agent 1.6.0).
+
+**Remote support** (agent 1.8.0; Pi → More → **Remote support on**): the Pi installs Raspberry Pi Connect if needed, switches it on, and the sign-in link appears under Recent actions. Open it and sign in with 1Point's Raspberry Pi account; the Pi then appears at connect.raspberrypi.com for screen sharing and a remote shell. Connect, like the agent, only connects outward, so no ports open. **Remote support off** when finished. The master card stays without Connect or SSH: one password on every card, and Connect's sign-in is per Pi, so neither belongs on a copied image. The Pi actions appear only once the Pi has enrolled (the server refuses them before that). Under **More** are Reset device key, Switch off, and Unassign.
 
 The Pi panel updates itself while it's open (every 10 seconds, every 3 for two minutes after an action), so results
 and new screenshots appear without reopening it. If a Pi's check-in was refused, the panel says why and what to do:
@@ -286,7 +288,7 @@ Local sample logins: `scot@1pointusa.com / admin-pass`, `leighann@barber.test / 
 public/             screen (index.html, display.*), sign-in, console (+ console-devices.js, console-setup.js), editor, technician page (tech.*), shared auth.js
 netlify/functions/  screen, users, config, weather, news, agent, devices, networks, alert-settings, alerts
 netlify/lib/        Supabase client, RSS reader, shared helpers
-supabase/           database schema (01 to 15, run in order), starting data, check queries, setup guide
+supabase/           database schema (01 to 16, run in order), starting data, check queries, setup guide
 migration/          the Yodeck/Wix transcription the starting data was built from
 public/pi/          setup-kiosk.sh and agent.py (served by the site so Pis can download them)
 tests/              function tests, fake Supabase, local test server

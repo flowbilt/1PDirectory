@@ -282,6 +282,42 @@ exit 0
     check("when the site can't be reached: offline", word == "offline", word)
     p.terminate(); p.wait(timeout=5)
 
+    # ── H. Remote support (agent 1.8.0): Raspberry Pi Connect on and off ──
+    rc_log = os.path.join(W, "rpi-connect.log")
+    rc_body = f"""echo "$*" >> {rc_log}
+case "$1" in
+  status) [[ -f {W}/rc-signed-in ]] && echo "Signed in: yes" || echo "Signed in: no" ;;
+  signin) echo "Complete sign in by visiting https://connect.raspberrypi.com/verify/ABCD-1234"; sleep 5 ;;
+esac
+exit 0
+"""
+    rc_path = os.path.join(W, "bin", "rpi-connect")
+    if os.path.exists(rc_path): os.remove(rc_path)
+    open(os.path.join(W, "rc-body"), "w").write("#!/usr/bin/env bash\n" + rc_body)
+    stub("apt-get", f'echo "apt-get $*" >> {rc_log}; cp {W}/rc-body {rc_path}; chmod +x {rc_path}\n')
+    with lock: replies.clear(); n = len(checkins)
+    p = subprocess.Popen([sys.executable, agent], env=dict(env, LOBBY_AGENT_SERIAL="10000000abcd0006"), stdout=log, stderr=log)
+    wait_for(n + 1)
+    def ask2(cid, command):
+        with lock: replies.append([{"id": cid, "command": command}])
+        got = wait_result(cid)
+        return got[0][1] if got else {}
+    r = ask2(30, "remote_on")
+    calls = open(rc_log).read() if os.path.exists(rc_log) else ""
+    check("remote support on: Raspberry Pi Connect is installed the first time", "apt-get install -y rpi-connect" in calls, calls)
+    check("then switched on and the sign-in started", "on" in calls.split() and "signin" in calls, calls)
+    check("and the sign-in link comes back for the console", r.get("status") == "done" and "https://connect.raspberrypi.com/verify/ABCD-1234" in r.get("result", ""), r)
+    open(os.path.join(W, "rc-signed-in"), "w").close(); open(rc_log, "w").close()
+    r = ask2(31, "remote_on")
+    calls = open(rc_log).read()
+    check("a Pi already signed in just says so: no second install, no new sign-in", "already" not in r.get("result", "") and "signed in" in r.get("result", "") and "apt-get" not in calls and "signin" not in calls, (r, calls))
+    r = ask2(32, "remote_off")
+    check("remote support off switches it off", r.get("status") == "done" and "off" in open(rc_log).read().split(), r)
+    check("the agent on the site is 1.8.0", re.search(r'VERSION = "([^"]+)"', open(AGENT).read()).group(1) == "1.8.0")
+    p.terminate()
+    try: p.wait(timeout=5)
+    except subprocess.TimeoutExpired: p.kill()
+
     srv.shutdown()
     print(f"\n{passed}/{passed + failed} passed")
     if failed:

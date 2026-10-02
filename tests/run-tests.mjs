@@ -489,6 +489,24 @@ test("a second logo: the owner's or manager's, at the bottom, or swapped to the 
   Object.assign(lm, { logo: "", company_logo: "", logo_swap: false, updated_at: new Date().toISOString() });
 });
 
+test("remote support: 1Point only, agent 1.8.0 or newer, and in 16-remote.sql", async () => {
+  const admin = await login("scot@1pointusa.com", "admin-pass");
+  const owner = await login("leighann@barber.test", "owner-pass");
+  const dev = fake.T.devices.find((x) => x.serial === PPI2S_SERIAL);
+  const send = (token, command) => devApi(token, { method: "POST", body: { action: "command", device_id: dev.id, command } });
+  await checkin({ version: "1.7.0" });
+  const old = await send(admin, "remote_on");
+  assert.equal(old.status, 409, "an agent before 1.8.0 doesn't know it");
+  assert.match((await old.json()).error, /Update agent/);
+  await checkin({ version: "1.8.0" });
+  assert.equal((await send(owner, "remote_on")).status, 403, "owners can't");
+  for (const c of ["remote_on", "remote_off"]) assert.equal((await send(admin, c)).status, 200, c);
+  const got = (await (await checkin({ version: "1.8.0" })).json()).commands.map((c) => c.command);
+  assert.deepEqual(got.filter((c) => c.startsWith("remote_")), ["remote_on", "remote_off"]);
+  const sql = readFileSync(new URL("../supabase/16-remote.sql", import.meta.url), "utf8");
+  for (const c of ["reboot", "update_pi", "wifi_scan", "wifi_join", "remote_on", "remote_off"]) assert.ok(sql.includes(`'${c}'`), `16 allows ${c}`);
+});
+
 test("commands older than an hour are dropped, not run late", async () => {
   const dev = fake.T.devices.find((x) => x.serial === PPI2S_SERIAL);
   fake.T.device_commands.push({ id: 999, device_id: dev.id, command: "reboot", status: "pending", result: "", created_at: new Date(Date.now() - 2 * 3600_000).toISOString() });

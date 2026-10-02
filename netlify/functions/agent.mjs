@@ -12,7 +12,9 @@ import { json } from "../lib/common.mjs";
 import { rpc } from "../lib/sb.mjs";
 
 export const SERIAL_RE = /^[0-9a-f]{8,32}$/;
-export const COMMANDS = ["reboot", "reload", "screenshot", "update_agent", "update_pi", "wifi_scan", "wifi_join"];
+export const COMMANDS = ["reboot", "reload", "screenshot", "update_agent", "update_pi", "wifi_scan", "wifi_join", "remote_on", "remote_off"];
+/** The first agent that knows remote_on and remote_off (supabase/16-remote.sql). */
+export const REMOTE_AGENT = "1.8.0";
 /** The first agent that knows wifi_scan and wifi_join (supabase/13-tech.sql). Older Pis need Update agent first. */
 export const WIFI_AGENT = "1.6.0";
 /** "1.10.0" >= "1.6.0", compared number by number; "" or junk is older than anything. */

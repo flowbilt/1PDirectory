@@ -12,9 +12,9 @@ card works in any Pi. The agent makes its own key the first time it starts in a 
 belongs to (/var/lib/lobby-agent/identity.json); if the card turns up in a different Pi, it makes a new key there.
 Runs as a systemd service (lobby-agent). Standard library only.
 """
-import base64, json, os, pwd, re, secrets, shutil, socket, subprocess, sys, tempfile, time, urllib.error, urllib.request
+import base64, json, os, pwd, re, secrets, shutil, socket, subprocess, sys, tempfile, threading, time, urllib.error, urllib.request
 
-VERSION = "1.7.0"
+VERSION = "1.8.0"
 CONFIG = os.environ.get("LOBBY_AGENT_CONFIG", "/etc/lobby-agent.json")
 STATE = os.environ.get("LOBBY_AGENT_STATE", "/var/lib/lobby-agent/pending-results.json")
 IDENTITY = os.environ.get("LOBBY_AGENT_IDENTITY", "/var/lib/lobby-agent/identity.json")
@@ -388,8 +388,59 @@ def cmd_wifi_join(cfg, payload=None):
     return True, f"Joined {ssid}; the directory site is reachable through it.{note}"
 
 
+# ── Remote support (agent 1.8.0): Raspberry Pi Connect, on only while 1Point asks for it ──
+CONNECT_LINK = re.compile(r"https://connect\.raspberrypi\.com/\S+")
+
+
+def cmd_remote_on(cfg):
+    """Installs Raspberry Pi Connect if it isn't there, switches it on for the desktop user, and returns the link to
+    sign it in to 1Point's Raspberry Pi account (or says it's already signed in). Connect only ever connects outward,
+    like the agent: the Pi opens no ports."""
+    if not shutil.which("rpi-connect"):
+        r = run(["apt-get", "install", "-y", "rpi-connect"], 900, env=dict(os.environ, DEBIAN_FRONTEND="noninteractive"))
+        if r.returncode != 0 or not shutil.which("rpi-connect"):
+            return False, "Couldn't install Raspberry Pi Connect: " + (r.stderr or r.stdout).decode(errors="replace").strip()[-200:]
+    r = as_user(cfg, ["rpi-connect", "on"], 60)
+    if r.returncode != 0:
+        return False, "Couldn't switch Raspberry Pi Connect on: " + (r.stderr or r.stdout).decode(errors="replace").strip()[-200:]
+    st = as_user(cfg, ["rpi-connect", "status"], 20).stdout.decode(errors="replace")
+    if re.search(r"^\s*signed in:\s*yes", st, re.I | re.M):
+        return True, "Remote support is on and this Pi is signed in: open connect.raspberrypi.com."
+    # Signing in waits until someone finishes it in a browser, so it runs on in the background; its link is read here
+    pw, env = session_env(cfg.get("user", ""))
+    cmd = ["rpi-connect", "signin"]
+    if pw and os.geteuid() == 0:
+        cmd = ["runuser", "-u", pw.pw_name, "--"] + cmd
+    try:
+        p = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, env=env or None, text=True, start_new_session=True)
+    except OSError as e:
+        return False, f"Couldn't start the sign-in: {e}"
+    seen, found = [], []
+    def reader():
+        for line in p.stdout:
+            seen.append(line)
+            m = CONNECT_LINK.search(line)
+            if m:
+                found.append(m.group(0).rstrip(".,)"))
+                return
+    t = threading.Thread(target=reader, daemon=True); t.start(); t.join(30)
+    if found:
+        return True, f"Remote support is on. Sign this Pi in (link valid for a while): {found[0]}"
+    p.kill()
+    return False, "Remote support is on, but no sign-in link came back: " + "".join(seen).strip()[-200:]
+
+
+def cmd_remote_off(cfg):
+    if not shutil.which("rpi-connect"):
+        return True, "Remote support is off (Raspberry Pi Connect isn't installed)."
+    r = as_user(cfg, ["rpi-connect", "off"], 60)
+    if r.returncode != 0:
+        return False, "Couldn't switch Raspberry Pi Connect off: " + (r.stderr or r.stdout).decode(errors="replace").strip()[-200:]
+    return True, "Remote support is off."
+
+
 COMMANDS = {"reload": cmd_reload, "reboot": cmd_reboot, "screenshot": cmd_screenshot, "update_agent": cmd_update_agent,
-            "wifi_scan": cmd_wifi_scan, "wifi_join": cmd_wifi_join}
+            "wifi_scan": cmd_wifi_scan, "wifi_join": cmd_wifi_join, "remote_on": cmd_remote_on, "remote_off": cmd_remote_off}
 WITH_PAYLOAD = {"wifi_scan", "wifi_join"}
 
 

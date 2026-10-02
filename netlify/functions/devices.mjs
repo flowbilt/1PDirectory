@@ -21,7 +21,7 @@
 //   POST {action:"reset_key" | "revoke" | "activate", device_id}  reset_key also opens the enrollment window
 import { json } from "../lib/common.mjs";
 import { audit, caller, db, enc } from "../lib/sb.mjs";
-import { COMMANDS, WIFI_AGENT, agentAtLeast, centralDay } from "./agent.mjs";
+import { COMMANDS, WIFI_AGENT, REMOTE_AGENT, agentAtLeast, centralDay } from "./agent.mjs";
 
 const ONLINE_MIN = 15;
 export const ENROLL_HOURS = 24;
@@ -135,6 +135,7 @@ export default async (req) => {
       if (!d.key_hash) throw fail(409, "This Pi hasn't enrolled yet, so there's nothing to receive that. Open its enrollment window first.");
       const wifi = body.command.startsWith("wifi_");
       if (wifi && !agentAtLeast(d.agent_version, WIFI_AGENT)) throw fail(409, `This Pi's agent (${d.agent_version || "unknown"}) can't do Wi-Fi from here yet. The office can run Update agent on it first (${WIFI_AGENT} or newer).`);
+      if (body.command.startsWith("remote_") && !agentAtLeast(d.agent_version, REMOTE_AGENT)) throw fail(409, `This Pi's agent (${d.agent_version || "unknown"}) can't do remote support yet. Run Update agent on it first (${REMOTE_AGENT} or newer).`);
       let payload = null;
       if (body.command === "wifi_join" && body.saved === true) {
         const ssid = typeof body.ssid === "string" ? body.ssid : "";

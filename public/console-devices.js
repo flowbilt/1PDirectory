@@ -126,7 +126,10 @@ window.ConsoleDevices = (() => {
     schedule();
   }
   // Wi-Fi search and join come from the technician page (tech.html); a search's result is its list of networks
-  const cmdName = (c) => ({ wifi_scan: "Wi-Fi search", wifi_join: "Wi-Fi join" }[c] || c.replace("_", " "));
+  const cmdName = (c) => ({ wifi_scan: "Wi-Fi search", wifi_join: "Wi-Fi join", remote_on: "Remote support on", remote_off: "Remote support off" }[c] || c.replace("_", " "));
+  // A remote-support result carries Raspberry Pi Connect's sign-in link: only that site's links become clickable
+  const linkify = (c, html) => c.command !== "remote_on" ? html
+    : html.replace(/https:\/\/connect\.raspberrypi\.com\/[^\s<&"]+/g, (u) => `<a href="${u}" target="_blank" rel="noopener noreferrer">${u}</a>`);
   function cmdResult(c) {
     if (c.command !== "wifi_scan" || c.status !== "done") return c.result;
     try { const n = JSON.parse(c.result).networks.length; return `found ${n} network${n === 1 ? "" : "s"}`; } catch { return c.result; }
@@ -187,9 +190,11 @@ window.ConsoleDevices = (() => {
             <button type="button" class="ghost" data-dev-action="reset_key" title="Use if this Pi was reflashed and now gets 'key doesn't match'. Opens enrollment for 24 hours.">Reset device key</button>
             <button type="button" class="ghost danger" data-dev-action="${d.status === "revoked" ? "activate" : "revoke"}">${d.status === "revoked" ? "Switch back on" : "Switch off (refuse this Pi)"}</button>
             ${d.screen_id ? `<button type="button" class="ghost" data-dev-action="unassign">Unassign from screen</button>` : ""}
+            ${d.enrolled ? `<button type="button" class="ghost" data-cmd="remote_on" title="Raspberry Pi Connect: screen sharing and a remote shell from connect.raspberrypi.com. The sign-in link appears under Recent actions.">Remote support on</button>
+            <button type="button" class="ghost" data-cmd="remote_off" title="Switches Raspberry Pi Connect off on this Pi.">Remote support off</button>` : ""}
           </div></details>` : ""}
           <h3>Recent actions</h3>
-          <ul class="dev-cmds">${d.commands.length ? d.commands.map((c) => `<li><strong>${esc(cmdName(c.command))}</strong> · ${esc(c.status)}${c.result ? ` · ${esc(cmdResult(c))}` : ""} <span class="sub">${since(c.created_at)}</span></li>`).join("") : `<li class="sub">None yet</li>`}</ul>
+          <ul class="dev-cmds">${d.commands.length ? d.commands.map((c) => `<li><strong>${esc(cmdName(c.command))}</strong> · ${esc(c.status)}${c.result ? ` · ${linkify(c, esc(cmdResult(c)))}` : ""} <span class="sub">${since(c.created_at)}</span></li>`).join("") : `<li class="sub">None yet</li>`}</ul>
         </div>
       </div></div>`;
     if (moreOpen) dlg.querySelector("details.hw").open = true;
@@ -207,6 +212,7 @@ window.ConsoleDevices = (() => {
       try {
         if (cmd) {
           if (cmd === "reboot" && !confirm("Reboot this Pi? The screen will be blank for about a minute.")) return;
+          if (cmd === "remote_on" && !confirm("Switch on remote support for this Pi? It installs Raspberry Pi Connect if needed (a few minutes the first time), then a sign-in link appears under Recent actions. Switch it off when you're done.")) return;
           if (cmd === "update_pi" && !confirm("Update this Pi? It installs the latest setup and system updates (5 to 20 minutes, the screen keeps running), then restarts: the screen is dark for about a minute. Try one Pi before the rest.")) return;
           await Auth.api("/api/devices", { method: "POST", body: { action: "command", device_id: d.id, command: cmd } });
           toast("Sent. The Pi picks it up within a minute; this panel updates as it does.");
