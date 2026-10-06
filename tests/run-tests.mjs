@@ -14,8 +14,8 @@ import networks, { normalCode } from "../netlify/functions/networks.mjs";
 import alertSettings from "../netlify/functions/alert-settings.mjs";
 import { sendMail } from "../netlify/lib/smtp.mjs";
 import { fakeSmtp, CERT } from "./fake-smtp.mjs";
-import { runAlerts, evaluate, sendEmail } from "../netlify/functions/alerts.mjs";
-import { computeSummary } from "../netlify/functions/devices.mjs";
+import alertsJob, { runAlerts, evaluate, sendEmail } from "../netlify/functions/alerts.mjs";
+import { computeSummary, windowsFromDaily } from "../netlify/functions/devices.mjs";
 import { centralDay } from "../netlify/functions/agent.mjs";
 import { parseFeed, isBlocked } from "../netlify/lib/rss.mjs";
 
@@ -962,6 +962,102 @@ test("news merges feeds and drops blocked stories", async () => {
   delete process.env.NEWS_FEEDS;
   assert.ok(!items.some((i) => /killed/i.test(i.title)));
   assert.equal(errors.length, 1);
+});
+
+// ── Hardening (DP-04 round 2, 17-hardening.sql) ──
+// Made-up Pis for these tests, removed afterwards so the alert and health tests elsewhere aren't affected
+const scratchPis = (n, prefix) => Array.from({ length: n }, (_, i) => {
+  const d = { id: `${prefix}-${i}`, serial: `${prefix.replace(/[^0-9a-f]/g, "").padEnd(8, "0").slice(0, 8)}${String(i).padStart(8, "0")}`, screen_id: null, status: "active",
+    model: "", hostname: "", agent_version: "1.8.1", last_seen: new Date().toISOString(), last_health: {}, key_hash: "h", created_at: new Date().toISOString() };
+  fake.T.devices.push(d); return d;
+});
+const dropPis = (ids) => {
+  for (const t of ["device_commands", "device_daily", "devices"]) {
+    const list = fake.T[t];
+    for (let i = list.length - 1; i >= 0; i--) if (ids.has(t === "devices" ? list[i].id : list[i].device_id)) list.splice(i, 1);
+  }
+};
+const shiftDay = (day, n) => new Date(Date.parse(day + "T12:00:00Z") + n * 86400_000).toISOString().slice(0, 10);
+
+test("Health counts every Pi's whole month past 33 Pis (Supabase returns at most 1,000 rows)", async () => {
+  const pis = scratchPis(40, "aaaa");
+  const today = centralDay();
+  for (const d of pis) for (let i = 0; i < 30; i++)
+    fake.T.device_daily.push({ id: fake.T.device_daily.length + 100000, device_id: d.id, day: shiftDay(today, -i), checkins: 1440, online_s: 86400, power_dips: i < 7 ? 1 : 0, browser_down: 0, max_temp_c: 50, first_at: `${shiftDay(today, -29)}T05:00:00Z` });
+  try {
+    // The old way, 30 daily rows a Pi: 1,200 rows, of which only 1,000 come back
+    const raw = await fake.handle(new Request(`${SB}/rest/v1/device_daily?day=gte.${shiftDay(today, -29)}&select=device_id`, { headers: { apikey: SERVICE_KEY, Authorization: `Bearer ${SERVICE_KEY}` } }));
+    assert.ok((await raw.json()).length <= 1000, "the fake caps rows as Supabase does");
+    const admin = await login("scot@1pointusa.com", "admin-pass");
+    const before = fake.rpcCalls.length;
+    const r = await (await devApi(admin, { qs: "?summary=1" })).json();
+    assert.ok(fake.rpcCalls.slice(before).includes("health_window"), "totals come from the database, one row per Pi");
+    for (const d of pis) {
+      const row = r.devices.find((x) => x.id === d.id);
+      assert.equal(row.uptime.d30, 100, `${d.serial} has its whole month counted`);
+      assert.equal(row.dips.d7, 7); assert.equal(row.dips.d30, 7); assert.equal(row.max_temp_7d, 50);
+      assert.equal(row.history_from, shiftDay(today, -29));
+    }
+  } finally { dropPis(new Set(pis.map((d) => d.id))); }
+});
+
+test("the site's 30-day totals match the database function's on the same history", async () => {
+  const today = "2026-10-06", rows = [];
+  for (const id of ["A", "B", "C"]) for (let i = 0; i < 40; i++) {
+    if ((i * 7 + id.charCodeAt(0)) % 5 === 0) continue;                  // gaps: days a Pi was off
+    rows.push({ device_id: id, day: shiftDay(today, -i), checkins: 30 + i, online_s: i % 9 === 0 ? null : 1000 * i + 17,
+      power_dips: i % 3, browser_down: i % 4 === 0 ? 1 : 0, max_temp_c: i % 6 === 0 ? null : 40 + (i % 11), first_at: `${shiftDay(today, -i)}T1${i % 10}:00:00Z` });
+  }
+  const saved = fake.T.device_daily.splice(0);
+  try {
+    fake.T.device_daily.push(...rows);
+    const db = await (await fake.handle(new Request(`${SB}/rest/v1/rpc/health_window`, { method: "POST", headers: { apikey: SERVICE_KEY, Authorization: `Bearer ${SERVICE_KEY}` }, body: JSON.stringify({ p_today: today }) }))).json();
+    const site = windowsFromDaily(rows, today);
+    const sort = (l) => [...l].sort((a, b) => a.device_id.localeCompare(b.device_id));
+    assert.deepEqual(sort(site), sort(db));
+    assert.equal(db.length, 3);
+  } finally { fake.T.device_daily.splice(0, fake.T.device_daily.length, ...saved); }
+});
+
+test("the console reads only each Pi's latest five actions", async () => {
+  const [d] = scratchPis(1, "bbbb");
+  const sc = fake.T.screens.find((x) => !fake.T.devices.some((v) => v.screen_id === x.id));
+  d.screen_id = sc.id;
+  for (let i = 1; i <= 12; i++)
+    fake.T.device_commands.push({ id: 900000 + i, device_id: d.id, command: "reload", status: "done", result: `r${i}`, payload: null, created_at: new Date(Date.now() - (13 - i) * 60000).toISOString(), sent_at: null, done_at: null });
+  try {
+    const admin = await login("scot@1pointusa.com", "admin-pass");
+    const before = fake.restCalls.length, rpcBefore = fake.rpcCalls.length;
+    const r = await (await devApi(admin)).json();
+    const mine = r.devices.find((x) => x.id === d.id);
+    assert.deepEqual(mine.commands.map((c) => c.result), ["r12", "r11", "r10", "r9", "r8"]);
+    assert.ok(!("payload" in mine.commands[0]), "a join's password field never reaches the console");
+    assert.ok(fake.rpcCalls.slice(rpcBefore).includes("recent_device_commands"));
+    assert.ok(!fake.restCalls.slice(before).includes("GET device_commands"), "the whole action history isn't read");
+  } finally { dropPis(new Set([d.id])); }
+});
+
+test("old actions and history are trimmed by the alert check; each Pi's latest five stay", async () => {
+  const [d, e] = scratchPis(2, "cccc");
+  const old = new Date(Date.now() - 100 * 86400_000).toISOString(), fresh = new Date().toISOString();
+  for (let i = 1; i <= 8; i++)
+    fake.T.device_commands.push({ id: 910000 + i, device_id: d.id, command: "reload", status: "done", result: "", payload: null, created_at: i <= 6 ? old : fresh, sent_at: null, done_at: null });
+  fake.T.device_commands.push({ id: 910100, device_id: e.id, command: "reboot", status: "done", result: "", payload: null, created_at: old, sent_at: null, done_at: null });
+  const today = centralDay();
+  fake.T.device_daily.push({ device_id: d.id, day: shiftDay(today, -401), checkins: 1 }, { device_id: d.id, day: shiftDay(today, -399), checkins: 1 });
+  const saved = { SMTP_HOST: process.env.SMTP_HOST, RESEND_API_KEY: process.env.RESEND_API_KEY };
+  delete process.env.SMTP_HOST; delete process.env.RESEND_API_KEY;
+  try {
+    await alertsJob();
+    const left = fake.T.device_commands.filter((c) => c.device_id === d.id).map((c) => c.id - 910000).sort((a, b) => a - b);
+    assert.deepEqual(left, [4, 5, 6, 7, 8], "over 90 days old goes, unless it's one of the Pi's latest five");
+    assert.ok(fake.T.device_commands.some((c) => c.device_id === e.id), "a Pi's only action stays however old");
+    const days = fake.T.device_daily.filter((x) => x.device_id === d.id).map((x) => x.day);
+    assert.deepEqual(days, [shiftDay(today, -399)], "daily history older than 400 days goes");
+  } finally {
+    for (const [k, v] of Object.entries(saved)) if (v !== undefined) process.env[k] = v;
+    dropPis(new Set([d.id, e.id]));
+  }
 });
 
 let passed = 0;

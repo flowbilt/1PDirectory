@@ -27,6 +27,8 @@ Do these once. The current site keeps running as it is until the new build is de
 16. For the owner or manager logo (DP-03 round 5): **before uploading that code**, new query, paste all of `15-logos.sql`, and click **Run**. Then run `check-logos.sql`; every column should read **true**.
 17. For remote support (Raspberry Pi Connect from the console): **before uploading that code**, new query, paste all of `16-remote.sql`, and click **Run**. Then run `check-remote.sql`; every column should read **true**. Then **Update agent** on each Pi that needs it (agent 1.8.0).
 
+18. For the hardening round (DP-04 round 2): **before uploading that code**, new query, paste all of `17-hardening.sql`, and click **Run**. Then new query, paste all of `check-hardening.sql`, and click **Run**; it should read **ALL 8 CHECKS PASSED** (red on purpose). (The old code doesn't call the new functions, so this order has no gap.)
+
 If any of them shows an error (other than the expected red messages from the `check-…sql` files), copy the message (it includes a line number) and send it to Claude.
 
 ## 3. Lock down sign-ups

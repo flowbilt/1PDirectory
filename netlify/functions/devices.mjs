@@ -20,7 +20,7 @@
 //   POST {action:"open_enrollment" | "close_enrollment", device_id}  a Pi with no key accepts one only while open
 //   POST {action:"reset_key" | "revoke" | "activate", device_id}  reset_key also opens the enrollment window
 import { json } from "../lib/common.mjs";
-import { audit, caller, db, enc } from "../lib/sb.mjs";
+import { audit, caller, db, enc, rpc } from "../lib/sb.mjs";
 import { COMMANDS, WIFI_AGENT, REMOTE_AGENT, agentAtLeast, centralDay } from "./agent.mjs";
 
 const ONLINE_MIN = 15;
@@ -91,12 +91,14 @@ export default async (req) => {
       const devices = await db("devices?select=id,serial,screen_id,status,model,hostname,agent_version,last_seen,last_health,screenshot_at,key_hash,enroll_until,refused_at,refused_why,created_at&order=serial.asc");
       const mine = devices.filter((d) => admin || screens.has(d.screen_id));
       const ids = mine.map((d) => d.id);
-      const cmds = ids.length ? await db(`device_commands?device_id=in.(${ids.join(",")})&select=id,device_id,command,status,result,created_at,done_at&order=id.desc`) : [];
+      // Each Pi's latest five actions, one row per Pi (17-hardening.sql), not every action ever sent
+      const recent = ids.length ? await rpc("recent_device_commands", { p_device_ids: ids, p_per: 5 }) : [];
+      const cmds = new Map(recent.map((r) => [r.device_id, r.commands || []]));
       return json({
         devices: mine.map(({ key_hash, ...d }) => ({
           ...d, enrolled: !!key_hash,
           screen_key: screens.get(d.screen_id)?.key || null,
-          commands: cmds.filter((c) => c.device_id === d.id).slice(0, 5),
+          commands: cmds.get(d.id) || [],
         })),
       });
     }
@@ -219,8 +221,28 @@ export const upSeconds = (r) => (r.online_s === null || r.online_s === undefined
 const DAY_MS = 86400_000;
 const shiftDay = (day, n) => new Date(Date.parse(day + "T12:00:00Z") + n * DAY_MS).toISOString().slice(0, 10);
 
-export function computeSummary({ devices, daily, screens, dirs, props, orgs, now = Date.now() }) {
+// Each Pi's 30-day totals from its daily rows: the same numbers health_window (17-hardening.sql) returns from the
+// database, one row per Pi. Used by tests and the local test server; the live site asks the database.
+export function windowsFromDaily(daily, today) {
+  const from = (n) => shiftDay(today, -(n - 1));
+  const out = new Map();
+  for (const r of [...daily].filter((x) => x.day >= from(30)).sort((a, b) => a.day.localeCompare(b.day))) {
+    const w = out.get(r.device_id) || out.set(r.device_id, { device_id: r.device_id, first_day: r.day, first_at: r.first_at || null,
+      up_s_1: 0, up_s_7: 0, up_s_30: 0, dips_7: 0, dips_30: 0, browser_down_7: 0, max_temp_7: null }).get(r.device_id);
+    const up = upSeconds(r);
+    w.up_s_30 += up; w.dips_30 += r.power_dips || 0;
+    if (r.day >= from(7)) {
+      w.up_s_7 += up; w.dips_7 += r.power_dips || 0; w.browser_down_7 += r.browser_down || 0;
+      if (typeof r.max_temp_c === "number") w.max_temp_7 = w.max_temp_7 === null ? r.max_temp_c : Math.max(w.max_temp_7, r.max_temp_c);
+    }
+    if (r.day >= today) w.up_s_1 += up;
+  }
+  return [...out.values()];
+}
+
+export function computeSummary({ devices, windows, daily, screens, dirs, props, orgs, now = Date.now() }) {
   const today = centralDay(new Date(now));
+  const byDevice = new Map((windows || windowsFromDaily(daily || [], today)).map((w) => [w.device_id, w]));
   // minutes elapsed today in Central time
   const parts = Object.fromEntries(new Intl.DateTimeFormat("en-US", { timeZone: "America/Chicago", hour: "numeric", minute: "numeric", hourCycle: "h23" }).formatToParts(new Date(now)).map((p) => [p.type, p.value]));
   const minutesToday = Math.max(1, Number(parts.hour) * 60 + Number(parts.minute));
@@ -233,27 +255,24 @@ export function computeSummary({ devices, daily, screens, dirs, props, orgs, now
   const pct = (x) => (x === null ? null : Math.round(x * 1000) / 10);
 
   const rows = devices.map((d) => {
-    const mine = daily.filter((r) => r.device_id === d.id);
-    const firstRow = [...mine].sort((a, b) => a.day.localeCompare(b.day))[0];
-    const firstDay = firstRow?.day || null;
+    const w = byDevice.get(d.id);
+    const firstDay = w?.first_day || null;
     // On its first day a Pi is only expected from its first check-in, not from midnight
     const dayMinutes = (day) => {
       const full = day === today ? minutesToday : 1440;
-      if (day !== firstDay || !firstRow?.first_at) return full;
-      return Math.max(1, full - minuteOfDay(firstRow.first_at));
+      if (day !== firstDay || !w?.first_at) return full;
+      return Math.max(1, full - minuteOfDay(w.first_at));
     };
     const stat = (n) => {
       const days = range(n).filter((day) => firstDay && day >= firstDay);
       if (!days.length) return { uptime: null, dips: 0, browserDown: 0, maxTemp: null };
       const expected = days.reduce((m, day) => m + dayMinutes(day), 0);
-      const inRange = mine.filter((r) => days.includes(r.day));
-      const upMinutes = inRange.reduce((m, r) => m + upSeconds(r), 0) / 60;
-      const temps = inRange.map((r) => r.max_temp_c).filter((t) => typeof t === "number");
+      const upMinutes = Number(w[`up_s_${n}`] || 0) / 60;
       return {
         uptime: pct(Math.min(1, upMinutes / expected)),
-        dips: inRange.reduce((m, r) => m + r.power_dips, 0),
-        browserDown: inRange.reduce((m, r) => m + r.browser_down, 0),
-        maxTemp: temps.length ? Math.max(...temps) : null,
+        dips: Number(w[`dips_${n}`] || 0),
+        browserDown: n === 7 ? Number(w.browser_down_7 || 0) : 0,
+        maxTemp: n === 7 && typeof w.max_temp_7 === "number" ? w.max_temp_7 : null,
       };
     };
     const s = screens.find((x) => x.id === d.screen_id);
@@ -298,14 +317,15 @@ export function computeSummary({ devices, daily, screens, dirs, props, orgs, now
 }
 
 async function summary() {
-  const since = shiftDay(centralDay(), -29);
-  const [devices, daily, screens, dirs, props, orgs] = await Promise.all([
+  // 30-day totals come back one row per Pi (17-hardening.sql): Supabase returns at most 1,000 rows a request, and
+  // 30 daily rows per Pi would pass that at about 33 Pis
+  const [devices, windows, screens, dirs, props, orgs] = await Promise.all([
     db("devices?select=id,serial,screen_id,status,model,agent_version,last_seen,last_health&order=serial.asc"),
-    db(`device_daily?day=gte.${since}&select=device_id,day,checkins,online_s,power_dips,browser_down,max_temp_c,first_at`),
+    rpc("health_window", { p_today: centralDay() }),
     db("screens?select=id,name,key,directory_id"),
     db("directories?select=id,property_id"),
     db("properties?select=id,name,org_id"),
     db("organizations?select=id,name"),
   ]);
-  return computeSummary({ devices, daily, screens, dirs, props, orgs });
+  return computeSummary({ devices, windows, screens, dirs, props, orgs });
 }

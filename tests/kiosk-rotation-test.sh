@@ -36,6 +36,9 @@ S
 cat > "$WORK/bin/lobby-wifi-setup" <<'S'
 #!/usr/bin/env bash
 echo "wifi-setup called: serial=$1 url=$2" >> "$HOME/wifisetup.log"
+# The real one runs until a network is picked (minutes); a moment here lets the setup page's browser start before
+# the kiosk closes it, as it always has time to on a Pi (without this the check races on a slow machine)
+sleep 1.5
 exit "${WIFISETUP_EXIT:-0}"
 S
 chmod +x "$WORK/bin/"*

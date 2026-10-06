@@ -183,7 +183,7 @@ export function createFake() {
 
     if (req.method === "GET") {
       const rows = T[table].filter((r) => canSee(table, r, who) && match(r));
-      return out(order(rows, params.get("order")).map(pick));
+      return out(order(rows, params.get("order")).slice(0, Math.min(Number(params.get("limit")) || MAX_ROWS, MAX_ROWS)).map(pick));
     }
     if (req.method === "POST") {
       let body = await req.json();
@@ -249,7 +249,48 @@ export function createFake() {
     const intoToday = Math.floor(p.hour * 3600 + p.minute * 60 + p.second + (Date.parse(at) % 1000) / 1000);
     return [Math.min(total, intoToday), total - Math.min(total, intoToday)];
   }
+  // Supabase hands back at most 1,000 rows a request (tables and functions alike); so does this fake
+  const MAX_ROWS = 1000;
+  const addDays = (day, n) => new Date(Date.parse(day + "T12:00:00Z") + n * 86400_000).toISOString().slice(0, 10);
   const FUNCS = {
+    // Mirrors of 17-hardening.sql, written from the SQL (not from the site's code), so the tests compare the two
+    recent_device_commands({ p_device_ids = [], p_per = 5 }) {
+      const per = Math.max(1, Math.min(p_per ?? 5, 20));
+      return p_device_ids.map((id) => {
+        const mine = T.device_commands.filter((c) => c.device_id === id).sort((a, b) => b.id - a.id).slice(0, per);
+        return mine.length ? { device_id: id, commands: mine.map(({ id, device_id, command, status, result, created_at, done_at }) => ({ id, device_id, command, status, result, created_at, done_at })) } : null;
+      }).filter(Boolean);
+    },
+    health_window({ p_today }) {
+      const rows = T.device_daily.filter((d) => d.day >= addDays(p_today, -29));
+      const ids = [...new Set(rows.map((d) => d.device_id))];
+      const sum = (list, f) => list.reduce((m, d) => m + f(d), 0);
+      const up = (d) => (d.online_s ?? d.checkins * 60);
+      return ids.map((id) => {
+        const mine = rows.filter((d) => d.device_id === id).sort((a, b) => a.day.localeCompare(b.day));
+        const wk = mine.filter((d) => d.day >= addDays(p_today, -6));
+        const temps = wk.map((d) => d.max_temp_c).filter((t) => t !== null && t !== undefined);
+        return { device_id: id, first_day: mine[0].day, first_at: mine[0].first_at ?? null,
+          up_s_1: sum(mine.filter((d) => d.day >= p_today), up), up_s_7: sum(wk, up), up_s_30: sum(mine, up),
+          dips_7: sum(wk, (d) => d.power_dips || 0), dips_30: sum(mine, (d) => d.power_dips || 0),
+          browser_down_7: sum(wk, (d) => d.browser_down || 0), max_temp_7: temps.length ? Math.max(...temps) : null };
+      });
+    },
+    trim_device_history() {
+      const keep = new Set();
+      const byDev = new Map();
+      for (const c of [...T.device_commands].sort((a, b) => b.id - a.id)) {
+        const n = (byDev.get(c.device_id) || 0) + 1; byDev.set(c.device_id, n);
+        if (n <= 5) keep.add(c.id);
+      }
+      const at = Date.parse(now());
+      const cutoff = new Date(at - 90 * 86400_000).toISOString();
+      const before = [T.device_commands.length, T.device_daily.length];
+      const prune = (list, keepIt) => { for (let i = list.length - 1; i >= 0; i--) if (!keepIt(list[i])) list.splice(i, 1); };
+      prune(T.device_commands, (c) => keep.has(c.id) || ["pending", "sent"].includes(c.status) || c.created_at >= cutoff);
+      prune(T.device_daily, (d) => d.day >= addDays(centralDay(new Date(at)), -400));
+      return { commands: before[0] - T.device_commands.length, days: before[1] - T.device_daily.length };
+    },
     agent_checkin({ p_serial, p_key_hash, p_info = {}, p_health = {}, p_screenshot = null, p_results = [] }) {
       const t = now();
       let dv = T.devices.find((d) => d.serial === p_serial);
@@ -316,7 +357,8 @@ export function createFake() {
     if (!who.service) return err(403, `permission denied for function ${name}`);
     if (req.method !== "POST") return err(405, "Method not allowed");
     rpcCalls.push(name);
-    return out(FUNCS[name](await req.json()));
+    const result = FUNCS[name](await req.json());
+    return out(Array.isArray(result) ? result.slice(0, MAX_ROWS) : result);
   }
 
   async function authApi(req, path, url) {

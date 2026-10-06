@@ -8,7 +8,7 @@
 // (SMTP_HOST, SMTP_PORT 465 or 587, SMTP_USER, SMTP_PASS, e.g. Rackspace) or, if that isn't set, RESEND_API_KEY.
 // Without them it only logs.
 import { sendMail } from "../lib/smtp.mjs";
-import { db, enc } from "../lib/sb.mjs";
+import { db, enc, rpc } from "../lib/sb.mjs";
 
 const OFFLINE_MIN = 15;
 const HOT_C = 80;
@@ -117,11 +117,9 @@ export async function deliver(lines, { to: toList, tlsOptions, subject: subjectO
 
 export default async () => {
   try { await runAlerts(); } catch (e) { console.log("alert check failed:", e.message); }
-  // Keep 400 days of daily health history (checked each run; deletes nothing most of the time)
-  try {
-    const cutoff = new Date(Date.now() - 400 * 86400_000).toISOString().slice(0, 10);
-    await db(`device_daily?day=lt.${cutoff}`, { method: "DELETE", prefer: "return=minimal" });
-  } catch (e) { console.log("history trim failed:", e.message); }
+  // Keep 400 days of daily health history and 90 days of Pi actions (each Pi's latest five always stay):
+  // 17-hardening.sql. Checked each run; deletes nothing most of the time.
+  try { await rpc("trim_device_history", {}); } catch (e) { console.log("history trim failed:", e.message); }
 };
 
 export const config = { schedule: "*/10 * * * *" };
