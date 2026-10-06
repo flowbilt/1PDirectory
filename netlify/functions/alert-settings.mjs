@@ -3,10 +3,16 @@
 //   POST {action:"save", id?, email, name, offline, power, hot, enabled}
 //   POST {action:"delete", id}
 //   POST {action:"test", email?}   one test email now, to email or to every enabled recipient; {ok} or {ok:false, error}
-// The mail server's sign-in stays in Netlify's environment variables (SMTP_*), never in the database.
+//   POST {action:"mail-save", host, port, secure, user, password?, from_address, from_name}
+//        the mail server's sign-in (19-mail.sql). The password is write-only: sealed with SETTINGS_KEY (Netlify only)
+//        before it's stored, never sent back; left empty, the saved one is kept. Wins over Netlify's SMTP_* variables.
+//   POST {action:"mail-clear"}     forget the console's mail server: Netlify's SMTP_* variables are used again
 import { json } from "../lib/common.mjs";
 import { audit, caller, db, enc } from "../lib/sb.mjs";
-import { deliver, senderInfo } from "./alerts.mjs";
+import { seal } from "../lib/secret.mjs";
+import { deliver, savedMail, senderInfo } from "./alerts.mjs";
+
+const HOST = /^[A-Za-z0-9.-]{1,253}$/;
 
 const EMAIL = /^[^@\s]+@[^@\s]+\.[^@\s]+$/;
 const fail = (status, error) => Object.assign(new Error(error), { status });
@@ -17,7 +23,7 @@ export default async (req, context, { tlsOptions } = {}) => {
     if (profile.role !== "platform_admin") throw fail(403, "Only 1Point can manage alert emails.");
     if (req.method === "GET") {
       const recipients = await db("alert_recipients?select=id,email,name,offline,power,hot,enabled,updated_at&order=email.asc");
-      return json({ recipients, sender: senderInfo() });
+      return json({ recipients, sender: await senderInfo() });
     }
     if (req.method !== "POST") throw fail(405, "Method not allowed.");
     const body = await req.json().catch(() => ({}));
@@ -40,6 +46,31 @@ export default async (req, context, { tlsOptions } = {}) => {
       await audit(user.id, "remove alert recipient", "alert_recipient", body.id);
       return json({ ok: true });
     }
+    if (body.action === "mail-save") {
+      const host = String(body.host || "").trim().toLowerCase();
+      if (!HOST.test(host)) throw fail(400, "Enter the mail server's name, e.g. secure.emailsrvr.com.");
+      const secure = body.secure !== false;
+      const port = body.port === "" || body.port == null ? (secure ? 465 : 587) : Number(body.port);
+      if (!Number.isInteger(port) || port < 1 || port > 65535) throw fail(400, "The port is a number, usually 465 (ticked) or 587.");
+      const username = String(body.user || "").trim();
+      if (!username || username.length > 254) throw fail(400, "Enter the sign-in name (usually the full email address).");
+      const fromAddress = String(body.from_address || "").trim();
+      if (!EMAIL.test(fromAddress) || /[<>]/.test(fromAddress)) throw fail(400, "The from address doesn't look like an email address.");
+      const fromName = String(body.from_name || "").replace(/[<>"\r\n]/g, "").trim().slice(0, 80);
+      const password = String(body.password ?? "");
+      const existing = await savedMail();
+      if (!password && !existing) throw fail(400, "Enter the mail server's password.");
+      const row = { id: true, host, port, secure, username, from_address: fromAddress, from_name: fromName,
+                    password_enc: password ? seal(password) : existing.password_enc, updated_at: new Date().toISOString(), updated_by: user.id };
+      await db("mail_settings?on_conflict=id", { method: "POST", prefer: "resolution=merge-duplicates,return=minimal", body: row });
+      await audit(user.id, "set alert mail server", "mail_settings", null, { host, port, secure, user: username, from: fromAddress, password_changed: !!password });
+      return json({ ok: true, sender: await senderInfo() });
+    }
+    if (body.action === "mail-clear") {
+      await db("mail_settings?id=eq.true", { method: "DELETE", prefer: "return=minimal" });
+      await audit(user.id, "remove alert mail server", "mail_settings", null);
+      return json({ ok: true, sender: await senderInfo() });
+    }
     if (body.action === "test") {
       let to;
       if (body.email) {
@@ -47,7 +78,7 @@ export default async (req, context, { tlsOptions } = {}) => {
         if (!EMAIL.test(to[0])) throw fail(400, "That doesn't look like an email address.");
       } else {
         to = (await db("alert_recipients?select=email&enabled=is.true")).map((r) => r.email);
-        if (!to.length) to = senderInfo().fallbackTo;
+        if (!to.length) to = (await senderInfo()).fallbackTo;
       }
       const who = profile.full_name || profile.email || "1Point";
       try {

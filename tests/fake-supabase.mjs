@@ -7,8 +7,8 @@ export const SERVICE_KEY = "test-service-key";
 export const ANON_KEY = "test-anon-key";
 
 export function createFake() {
-  const T = { organizations: [], profiles: [], properties: [], directories: [], tenants: [], screens: [], audit_log: [], devices: [], device_commands: [], device_daily: [], wifi_networks: [], prepare_codes: [], alert_recipients: [] };
-  const SERVICE_ONLY = new Set(["devices", "device_commands", "device_daily", "wifi_networks", "prepare_codes", "alert_recipients"]); // row-level security on, no policies: server key only
+  const T = { organizations: [], profiles: [], properties: [], directories: [], tenants: [], screens: [], audit_log: [], devices: [], device_commands: [], device_daily: [], wifi_networks: [], prepare_codes: [], alert_recipients: [], mail_settings: [] };
+  const SERVICE_ONLY = new Set(["devices", "device_commands", "device_daily", "wifi_networks", "prepare_codes", "alert_recipients", "mail_settings"]); // row-level security on, no policies: server key only
   // Columns of screens signed-in users may read (supabase/06-trust.sql). hardware is server-only.
   const SCREEN_COLS = new Set(["id", "directory_id", "key", "name", "location_note", "orientation", "last_seen", "last_report", "identify_until", "created_at", "sizes"]);
   const users = new Map(); // id -> {id,email,password,last_sign_in_at,invited_at,user_metadata}
@@ -160,6 +160,8 @@ export function createFake() {
     if (table === "directories" && T.directories.some((d) => d.slug === row.slug && d.id !== row.id)) return "duplicate key value violates unique constraint \"directories_slug_key\"";
     if (table === "screens" && T.screens.some((s) => s.key === row.key && s.id !== row.id)) return "duplicate key value violates unique constraint \"screens_key_key\"";
     if (table === "tenants" && !String(row.name || "").trim()) return "new row violates check constraint \"tenants_name_check\"";
+    // 19-mail.sql: one row, and only sealed passwords
+    if (table === "mail_settings" && (row.id !== true || !String(row.password_enc || "").startsWith("v1:"))) return "new row violates check constraint \"mail_settings_check\"";
     return null;
   }
 

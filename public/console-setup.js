@@ -29,9 +29,9 @@ window.ConsoleSetup = (() => {
   async function loadAlerts() {
     try { mail = await Auth.api("/api/alert-settings"); } catch (ex) { toast(ex.message, true); return; }
     const sd = mail.sender || {};
-    $("mail-sender").textContent = sd.via
-      ? `Sent through ${sd.via === "mail server" ? `the mail server ${sd.server}` : "Resend"}, from ${sd.from || "(ALERT_EMAIL_FROM isn't set in Netlify)"}. The mail server's sign-in is kept in Netlify, not here.`
-      : "No mail server is set up in Netlify yet (SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASS), so alerts are only logged.";
+    $("mail-sender").textContent = !sd.via ? "No mail server is set up yet, so alerts are only logged."
+      : `Sent through ${sd.via === "mail server" ? `the mail server ${sd.server}` : "Resend"}, from ${sd.from || "(no from address yet)"}. `
+        + (sd.source === "console" ? "Set here in the console; the password is stored encrypted." : sd.source === "netlify" ? "Set in Netlify (SMTP_*); you can set it here instead." : "");
     const on = mail.recipients.filter((r) => r.enabled);
     $("mail-summary").textContent = on.length
       ? `${on.length} recipient${on.length === 1 ? "" : "s"}. Alerts: a Pi goes offline, reports low power or runs hot, and again when it clears.`
@@ -42,6 +42,47 @@ window.ConsoleSetup = (() => {
       <td>${since(r.updated_at)}</td>
       <td class="actions"><button type="button" class="ghost" data-recipient="${r.id}">Edit</button></td></tr>`).join("")
       : `<tr><td colspan="4" class="empty-rows">None yet.</td></tr>`;
+  }
+
+  // The mail server's sign-in (19-mail.sql). The password is write-only: the server encrypts it with SETTINGS_KEY
+  // (kept only in Netlify) and never sends it back.
+  function mailServerDialog() {
+    const { open, field } = window.ConsoleDialog;
+    const sd = mail.sender || {}, mine = sd.source === "console";
+    const pre = mine ? sd : { host: sd.host || "", port: sd.port || 465, secure: sd.secure ?? true, user: "", fromAddress: "", fromName: "" };
+    open({
+      title: "Alert emails: mail server",
+      body: `
+        ${sd.keySet ? "" : `<p class="mail-test-out bad">SETTINGS_KEY isn't set in Netlify yet, so a password can't be saved here. Add it under Site configuration → Environment variables (any long random text, at least 24 characters), redeploy, then come back.</p>`}
+        ${!mine && sd.source === "netlify" ? `<p class="sub">Alerts now use Netlify's settings (${esc(sd.server)}). Saving here takes over from them; Netlify's stay as a fallback.</p>` : ""}
+        ${field("ms-host", "Mail server", `<input id="ms-host" required value="${esc(pre.host)}" placeholder="secure.emailsrvr.com" autocomplete="off" spellcheck="false">`)}
+        <label class="check"><input type="checkbox" id="ms-secure"${pre.secure !== false ? " checked" : ""}> Encrypted from the start (SSL/TLS, usually port 465)</label>
+        <p class="sub">Untick for STARTTLS (usually port 587). A server that offers no encryption is always refused.</p>
+        ${field("ms-port", "Port", `<input id="ms-port" type="number" min="1" max="65535" value="${esc(String(pre.port || ""))}">`)}
+        ${field("ms-user", "Sign-in name", `<input id="ms-user" required value="${esc(pre.user || "")}" autocomplete="off" spellcheck="false">`, "Usually the full email address.")}
+        ${field("ms-pass", "Password", `<input id="ms-pass" type="password" autocomplete="new-password" placeholder="${mine ? "Saved: leave empty to keep it" : ""}">`, "It can't be shown again after saving; type a new one to replace it.")}
+        ${field("ms-from", "From address", `<input id="ms-from" type="email" required value="${esc(pre.fromAddress || "")}" placeholder="directory@1pointusa.com">`)}
+        ${field("ms-name", "From name", `<input id="ms-name" maxlength="80" value="${esc(pre.fromName || "")}" placeholder="e.g. 1Point Directory">`, "Optional.")}
+        ${mine ? `<button type="button" id="ms-clear" class="ghost danger">Remove these settings${sd.netlifyServer ? " (go back to Netlify's)" : ""}</button>` : ""}`,
+      afterOpen() {
+        // Ticking or unticking moves the usual port along, unless someone typed a different one
+        $("ms-secure").addEventListener("change", () => {
+          const p = $("ms-port").value;
+          if (!p || p === "465" || p === "587") $("ms-port").value = $("ms-secure").checked ? "465" : "587";
+        });
+        $("ms-clear")?.addEventListener("click", async () => {
+          if (!confirm(sd.netlifyServer ? "Remove the console's mail server? Alerts go back to Netlify's settings." : "Remove the console's mail server? Alerts will only be logged until one is set again.")) return;
+          try { await Auth.api("/api/alert-settings", { method: "POST", body: { action: "mail-clear" } }); $("dlg").close(); toast("Removed."); loadAlerts(); }
+          catch (ex) { toast(ex.message, true); }
+        });
+      },
+      async save() {
+        await Auth.api("/api/alert-settings", { method: "POST", body: { action: "mail-save", host: $("ms-host").value, secure: $("ms-secure").checked,
+          port: $("ms-port").value, user: $("ms-user").value, password: $("ms-pass").value, from_address: $("ms-from").value, from_name: $("ms-name").value } });
+        toast("Saved. Send a test email to check it.");
+        loadAlerts();
+      },
+    });
   }
 
   function recipientDialog(r) {
@@ -119,6 +160,7 @@ window.ConsoleSetup = (() => {
     const rec = e.target.closest("[data-recipient]");
     if (rec) return recipientDialog(mail.recipients.find((r) => r.id === rec.dataset.recipient));
     if (e.target.closest("#add-recipient")) return recipientDialog(null);
+    if (e.target.closest("#mail-server")) return mailServerDialog();
     if (e.target.closest("#mail-test")) {
       const out = $("mail-test-out"), btn = $("mail-test");
       btn.disabled = true; out.hidden = false; out.className = "mail-test-out"; out.textContent = "Sending…";

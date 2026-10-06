@@ -4,10 +4,11 @@
 // Each problem is emailed once when it starts and once when it clears, never every 10 minutes.
 // A Pi's alert state is saved only after the email has actually gone out. So a failed send is retried on the
 // next run, and problems that already exist are emailed once when the email settings are first added.
-// Needs ALERT_EMAIL_TO (comma-separated) and ALERT_EMAIL_FROM, and a way to send: the company mail server
-// (SMTP_HOST, SMTP_PORT 465 or 587, SMTP_USER, SMTP_PASS, e.g. Rackspace) or, if that isn't set, RESEND_API_KEY.
-// Without them it only logs.
+// How it sends (mailConfig): the mail server set in the console (Pi setup → Alert emails; 19-mail.sql, password
+// encrypted with SETTINGS_KEY) wins; otherwise Netlify's SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASS and
+// ALERT_EMAIL_FROM; otherwise RESEND_API_KEY. Recipients: the console's list, or ALERT_EMAIL_TO. Without any, it logs.
 import { sendMail } from "../lib/smtp.mjs";
+import { open, settingsKey } from "../lib/secret.mjs";
 import { db, enc, rpc } from "../lib/sb.mjs";
 
 const OFFLINE_MIN = 15;
@@ -74,12 +75,45 @@ export async function runAlerts({ send = sendEmail, now = Date.now() } = {}) {
   return { lines, sent };
 }
 
-/** How alert email is sent, for the console (no passwords): {via: "mail server" | "Resend" | null, server, from, fallbackTo}. */
-export function senderInfo() {
+/** The console's mail server row (19-mail.sql), or null. Never sent anywhere as is: it holds the sealed password. */
+export async function savedMail() {
+  try { return (await db("mail_settings?select=host,port,secure,username,password_enc,from_address,from_name,updated_at"))[0] || null; }
+  catch { return null; }                              // before 19-mail.sql has run: Netlify's settings, as before
+}
+
+/**
+ * The settings in force. source: "console" | "netlify" | "resend" | null. The password only with withPassword
+ * (sending); it throws if the console's saved password can't be opened, so a test email says why.
+ */
+export async function mailConfig({ withPassword = false } = {}) {
   const { RESEND_API_KEY, ALERT_EMAIL_TO, ALERT_EMAIL_FROM, SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASS } = process.env;
-  const via = SMTP_HOST && SMTP_USER && SMTP_PASS ? "mail server" : RESEND_API_KEY ? "Resend" : null;
-  return { via, server: via === "mail server" ? `${SMTP_HOST}:${Number(SMTP_PORT) || 587}` : via === "Resend" ? "api.resend.com" : null,
-           from: ALERT_EMAIL_FROM || null, fallbackTo: (ALERT_EMAIL_TO || "").split(",").map((s) => s.trim()).filter(Boolean) };
+  const fallbackTo = (ALERT_EMAIL_TO || "").split(",").map((x) => x.trim()).filter(Boolean);
+  const row = await savedMail();
+  if (row) {
+    const from = row.from_name ? `${row.from_name} <${row.from_address}>` : row.from_address;
+    return { source: "console", host: row.host, port: row.port, secure: row.secure, user: row.username, from, fromAddress: row.from_address,
+             fromName: row.from_name, updatedAt: row.updated_at, fallbackTo, ...(withPassword ? { pass: open(row.password_enc) } : {}) };
+  }
+  if (SMTP_HOST && SMTP_USER && SMTP_PASS) {
+    const port = Number(SMTP_PORT) || 587;
+    return { source: "netlify", host: SMTP_HOST, port, secure: port === 465, user: SMTP_USER, from: ALERT_EMAIL_FROM || null, fallbackTo,
+             ...(withPassword ? { pass: SMTP_PASS } : {}) };
+  }
+  if (RESEND_API_KEY) return { source: "resend", from: ALERT_EMAIL_FROM || null, fallbackTo };
+  return { source: null, from: ALERT_EMAIL_FROM || null, fallbackTo };
+}
+
+/** How alert email is sent, for the console: never a password. */
+export async function senderInfo() {
+  const c = await mailConfig();
+  return {
+    via: c.source === "resend" ? "Resend" : c.source ? "mail server" : null, source: c.source,
+    server: c.host ? `${c.host}:${c.port}` : c.source === "resend" ? "api.resend.com" : null,
+    host: c.host || "", port: c.port || null, secure: c.secure ?? true, user: c.source === "console" ? c.user : "",
+    fromAddress: c.source === "console" ? c.fromAddress : "", fromName: c.source === "console" ? c.fromName : "",
+    from: c.from, fallbackTo: c.fallbackTo, updatedAt: c.updatedAt || null,
+    keySet: !!settingsKey(), netlifyServer: !!(process.env.SMTP_HOST && process.env.SMTP_USER && process.env.SMTP_PASS),
+  };
 }
 
 /** Returns true only when the mail server (or Resend) accepted the email. to: recipients (default ALERT_EMAIL_TO). */
@@ -90,11 +124,13 @@ export async function sendEmail(lines, opts = {}) {
 
 /** Sends, or throws with the reason (the console's "Send test email" shows it). */
 export async function deliver(lines, { to: toList, tlsOptions, subject: subjectOverride } = {}) {
-  const { RESEND_API_KEY: key, ALERT_EMAIL_FROM: from, SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASS } = process.env;
-  const smtp = SMTP_HOST && SMTP_USER && SMTP_PASS;
-  const recipientsIn = toList?.length ? toList : senderInfo().fallbackTo;
-  if (!smtp && !key) { console.log("alerts (email not configured):", lines.map((l) => l.text)); throw Object.assign(new Error("No mail server is set up in Netlify (SMTP_HOST, SMTP_USER, SMTP_PASS)."), { quiet: true }); }
-  if (!from) throw new Error("ALERT_EMAIL_FROM isn't set in Netlify.");
+  let cfg;
+  try { cfg = await mailConfig({ withPassword: true }); }
+  catch (e) { throw Object.assign(e, { via: "mail server" }); }
+  const key = process.env.RESEND_API_KEY, from = cfg.from, smtp = cfg.source === "console" || cfg.source === "netlify";
+  const recipientsIn = toList?.length ? toList : cfg.fallbackTo;
+  if (!smtp && !key) { console.log("alerts (email not configured):", lines.map((l) => l.text)); throw Object.assign(new Error("No mail server is set up yet: add one under Pi setup → Alert emails."), { quiet: true }); }
+  if (!from) throw new Error("No from address: add one under Pi setup → Alert emails (or ALERT_EMAIL_FROM in Netlify).");
   if (!recipientsIn.length) throw new Error("Nobody to send to: add a recipient under Alert emails.");
   const problems = lines.filter((l) => l.problem).length;
   const subject = subjectOverride || (problems ? `Directory screens: ${problems} problem${problems === 1 ? "" : "s"}` : "Directory screens: back to normal");
@@ -102,7 +138,7 @@ export async function deliver(lines, { to: toList, tlsOptions, subject: subjectO
   const html = `<p>${lines.map((l) => `${l.problem ? "⚠️" : "✅"} ${esc(l.text)}`).join("<br>")}</p><p><a href="${process.env.URL || ""}/console.html">Open the console</a></p>`;
   const recipients = recipientsIn;
   if (smtp) {
-    try { return await sendMail({ host: SMTP_HOST, port: Number(SMTP_PORT) || 587, user: SMTP_USER, pass: SMTP_PASS, from, to: recipients, subject, html, tlsOptions }); }
+    try { return await sendMail({ host: cfg.host, port: cfg.port, secure: cfg.secure, user: cfg.user, pass: cfg.pass, from, to: recipients, subject, html, tlsOptions }); }
     catch (e) { throw Object.assign(e, { via: "mail server" }); }
   }
   const r = await fetch("https://api.resend.com/emails", {

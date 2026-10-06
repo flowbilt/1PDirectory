@@ -196,6 +196,7 @@ td.thumb { width: 96px; padding: 6px 8px; }
 
 /* Pi setup: alert emails */
 .section-title { margin: 28px 0 4px; font-size: 18px; }
+.link-btn { background: none; border: 0; padding: 0; color: var(--accent, #1a5fb4); text-decoration: underline; cursor: pointer; font: inherit; }
 .mail-test-out { margin: 0 0 12px; padding: 10px 12px; border-radius: 6px; background: var(--bg); border: 1px solid var(--line); }
 .mail-test-out.ok { border-color: #2e7d4f; color: #1f5c39; background: #eef7f1; }
 .mail-test-out.bad { border-color: #b3261e; color: #8c1d18; background: #fcefee; }

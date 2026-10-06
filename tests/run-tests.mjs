@@ -18,6 +18,8 @@ import alertsJob, { runAlerts, evaluate, sendEmail } from "../netlify/functions/
 import { computeSummary, windowsFromDaily } from "../netlify/functions/devices.mjs";
 import { centralDay } from "../netlify/functions/agent.mjs";
 import { parseFeed, isBlocked } from "../netlify/lib/rss.mjs";
+import { seal, open as unseal } from "../netlify/lib/secret.mjs";
+import { DISPLAY_VERSION } from "../netlify/lib/version.mjs";
 
 const SB = "http://fake.supabase.test";
 Object.assign(process.env, { SUPABASE_URL: SB, SUPABASE_SERVICE_KEY: SERVICE_KEY, SUPABASE_ANON_KEY: ANON_KEY });
@@ -931,7 +933,9 @@ test("Send test email: sent to every recipient now, or the mail server's exact r
     const one = await test({ email: "someone@example.com" });
     assert.equal(one.ok, true); assert.deepEqual(srv.got.messages.at(-1).to, ["someone@example.com"]);
     const info = await (await alertApi(admin)).json();
-    assert.deepEqual(info.sender, { via: "mail server", server: `localhost:${srv.port}`, from: "Lobby Directory <directory@1pointusa.com>", fallbackTo: info.sender.fallbackTo });
+    assert.equal(info.sender.via, "mail server"); assert.equal(info.sender.source, "netlify");
+    assert.equal(info.sender.server, `localhost:${srv.port}`); assert.equal(info.sender.from, "Lobby Directory <directory@1pointusa.com>");
+    assert.ok(!/pass|enc/i.test(Object.keys(info.sender).join(",")) && !JSON.stringify(info).includes(process.env.SMTP_PASS), "never a password");
   } finally {
     srv.close();
     for (const k of ["SMTP_HOST", "SMTP_PORT", "SMTP_USER", "SMTP_PASS", "ALERT_EMAIL_FROM"]) delete process.env[k];
@@ -1136,6 +1140,85 @@ test("the editor preview and the screen send sizes the same way", () => {
   const p = toPayload({ key: "k", name: "n", orientation: "portrait", sizes: { logo: 150 } }, { title: "T", updated_at: "x" }, { name: "B" }, []);
   assert.deepEqual(p.sizes, { logo: 150 });
   assert.deepEqual(toPayload({ key: "k", name: "n" }, null, null, []).sizes, {});
+});
+
+// ── Mail server sign-in in the console (DP-04 round 5, 19-mail.sql) ──
+const SKEY = "test-settings-key-0123456789-abcdefghij";
+test("sealed secrets: only the right SETTINGS_KEY opens them", () => {
+  const a = seal("hunter2!", SKEY), b = seal("hunter2!", SKEY);
+  assert.match(a, /^v1:/); assert.notEqual(a, b, "a fresh nonce each time");
+  assert.ok(!a.includes("hunter2"));
+  assert.equal(unseal(a, SKEY), "hunter2!");
+  assert.throws(() => unseal(a, SKEY + "x"), /SETTINGS_KEY in Netlify has changed/);
+  const raw = Buffer.from(a.slice(3), "base64"); raw[raw.length - 1] ^= 1;
+  assert.throws(() => unseal("v1:" + raw.toString("base64"), SKEY), /changed|damaged/, "tampering is caught");
+  assert.throws(() => seal("x", null), /SETTINGS_KEY isn't set/);
+});
+
+test("1Point sets the mail server in the console: sealed, write-only, and it wins over Netlify's", async () => {
+  const admin = await login("scot@1pointusa.com", "admin-pass");
+  const owner = await login("leighann@barber.test", "owner-pass");
+  const good = await fakeSmtp({ starttls: true, password: "console-pass" });
+  const saved = { ...process.env };
+  const post = async (body, token = admin) => (await alertApi(token, { method: "POST", body }, { tlsOptions: { ca: CERT } }));
+  const form = { action: "mail-save", host: "localhost", port: String(good.port), secure: false, user: "alerts@1pointusa.com", password: "console-pass", from_address: "directory@1pointusa.com", from_name: "1Point Directory" };
+  try {
+    // Netlify's settings point at a server that refuses everything
+    Object.assign(process.env, { SMTP_HOST: "localhost", SMTP_PORT: "1", SMTP_USER: "old", SMTP_PASS: "netlify-pass", ALERT_EMAIL_FROM: "old@1pointusa.com" });
+    delete process.env.SETTINGS_KEY;
+    assert.equal((await post(form, owner)).status, 403, "1Point only");
+    const nokey = await post(form);
+    assert.equal(nokey.status, 409); assert.match((await nokey.json()).error, /SETTINGS_KEY isn't set/);
+    assert.equal(fake.T.mail_settings.length, 0);
+    process.env.SETTINGS_KEY = SKEY;
+    assert.equal((await post({ ...form, host: "not a host" })).status, 400);
+    assert.equal((await post({ ...form, password: "" })).status, 400, "a first save needs the password");
+    assert.equal((await post(form)).status, 200);
+    const row = fake.T.mail_settings[0];
+    assert.match(row.password_enc, /^v1:/); assert.ok(!row.password_enc.includes("console-pass"), "never stored as typed");
+    const info = await (await alertApi(admin)).json();
+    assert.equal(info.sender.source, "console"); assert.equal(info.sender.user, "alerts@1pointusa.com");
+    assert.ok(!JSON.stringify(info).includes("console-pass") && !JSON.stringify(info).includes(row.password_enc), "the password never comes back");
+    assert.ok(!fake.T.audit_log.some((a) => JSON.stringify(a).includes("console-pass")), "nor into the audit log");
+    // the test email goes through the console's server, signing in with the saved password, over STARTTLS
+    const t1 = await (await post({ action: "test", email: "ops@1pointusa.com" })).json();
+    assert.equal(t1.ok, true, t1.error);
+    assert.deepEqual(good.got.auth.at(-1), { user: "alerts@1pointusa.com", pass: "console-pass", secure: true });
+    assert.match(good.got.messages.at(-1).data, /From: 1Point Directory <directory@1pointusa\.com>/);
+    // saving again with the password left empty keeps it
+    assert.equal((await post({ ...form, password: "", from_name: "" })).status, 200);
+    assert.equal(unseal(fake.T.mail_settings[0].password_enc, SKEY), "console-pass");
+    // a changed SETTINGS_KEY: the test email says exactly what to do
+    process.env.SETTINGS_KEY = SKEY + "-rotated";
+    const t2 = await (await post({ action: "test", email: "ops@1pointusa.com" })).json();
+    assert.equal(t2.ok, false); assert.match(t2.error, /SETTINGS_KEY in Netlify has changed.*Enter the password again/);
+    process.env.SETTINGS_KEY = SKEY;
+    // removing the console's settings goes back to Netlify's
+    assert.equal((await post({ action: "mail-clear" })).status, 200);
+    assert.equal(fake.T.mail_settings.length, 0);
+    assert.equal((await (await alertApi(admin)).json()).sender.source, "netlify");
+  } finally {
+    for (const k of Object.keys(process.env)) if (!(k in saved)) delete process.env[k];
+    Object.assign(process.env, saved);
+    fake.T.mail_settings.length = 0;
+    good.close?.();
+  }
+});
+
+// ── Screens reload themselves for a new display (DP-04 round 5) ──
+test("the site and the display agree on the live display version", () => {
+  const js = readFileSync(new URL("../public/display.js", import.meta.url), "utf8");
+  assert.equal(js.match(/const VERSION = "([^"]+)"/)[1], DISPLAY_VERSION);
+});
+test("a display deploy gives every screen a fresh answer that names the live version", async () => {
+  const first = await screen(req("/api/screen?key=ppi-1s"));
+  const etag = first.headers.get("ETag");
+  assert.ok(etag.includes(`-${DISPLAY_VERSION}-`), etag);
+  assert.equal((await first.json()).display, DISPLAY_VERSION);
+  assert.equal((await screen(req("/api/screen?key=ppi-1s", { headers: { "If-None-Match": etag } }))).status, 304);
+  // a tag from before the deploy (another display version) is never "not modified"
+  const old = etag.replace(`-${DISPLAY_VERSION}-`, "-2.7.0-");
+  assert.equal((await screen(req("/api/screen?key=ppi-1s", { headers: { "If-None-Match": old } }))).status, 200);
 });
 
 let passed = 0;

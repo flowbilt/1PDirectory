@@ -10,7 +10,7 @@
 */
 (() => {
   "use strict";
-  const VERSION = "2.7.0";
+  const VERSION = "2.8.0";   // = netlify/lib/version.mjs (a test keeps them equal)
   const q = new URLSearchParams(location.search);
   const DEVICE = (q.get("device") || "").toLowerCase();
   const CHOSEN = (q.get("screen") || q.get("key") || q.get("site") || "").toLowerCase();
@@ -256,12 +256,27 @@
         if (!clockTrusted) { clockTrusted = true; tick(); }
       }
       $("offline").hidden = !fromCache;
+      if (!fromCache) reloadIfOutdated(d.display);
       apply(d);
     } catch (e) {
       console.warn("Directory fetch failed", e);
       if (!data) { const c = cache.get("directory"); if (c) apply(c); }
       $("offline").hidden = !data;
     }
+  }
+
+  // A newer display is live (the site says which with every directory): fetch the new code fresh, then reload, once.
+  // The note in localStorage stops a loop if a reload somehow still gets the old code: it tries again after 30 minutes.
+  async function reloadIfOutdated(live) {
+    if (PREVIEW || !CHECKS_IN || !live || live === VERSION || reloadIfOutdated.busy) return;
+    let last = null;
+    try { last = JSON.parse(localStorage.getItem("display-reload") || "null"); } catch { /* storage off: no guard needed */ }
+    if (last && last.to === live && Date.now() - last.at < 30 * 60000) return;
+    reloadIfOutdated.busy = true;
+    try { localStorage.setItem("display-reload", JSON.stringify({ to: live, at: Date.now() })); } catch { /* ignore */ }
+    console.info(`Display ${live} is live (this is ${VERSION}): reloading`);
+    await Promise.all(["/display.js", "/display.css", "/"].map((u) => fetch(u, { cache: "reload" }).catch(() => null)));
+    location.reload();
   }
 
   function apply(d) {
