@@ -28,6 +28,14 @@
   const building = (s) => { const d = S.dirs.find((x) => x.id === s.directory_id); return d ? S.props.find((p) => p.id === d.property_id)?.name || "" : ""; };
   const piFor = (s) => S.devices.find((d) => d.screen_id === s.id);
   const parseScan = (c) => { try { return JSON.parse(c.result); } catch { return null; } };
+  // A successful join sent after the search shown: the Pi is on that network now, whatever the search said.
+  // The agent's result starts "Joined <network>; the directory site is reachable…".
+  const joinedSince = (d, scan) => {
+    const j = d?.commands.filter((c) => c.command === "wifi_join" && c.status === "done" && (!scan || c.created_at > scan.created_at))
+      .sort((a, b) => (a.created_at < b.created_at ? 1 : -1))[0];
+    const m = j && /^Joined (.+?); the directory site is reachable/.exec(j.result || "");
+    return m ? m[1] : null;
+  };
   const strength = (n) => (n >= 67 ? "Strong" : n >= 40 ? "Good" : "Weak");
 
   // ── Loading ──
@@ -116,13 +124,14 @@
     $("wifi-scan").disabled = !ok;
     const scan = S.scanId && d?.commands.find((c) => c.id === S.scanId);
     const list = scan?.status === "done" ? parseScan(scan) : null;
+    const joined = list ? joinedSince(d, scan) : null;   // moves "On Wi-Fi" and Connected without a new search
     if (!d?.enrolled) $("wifi-now").textContent = "Available once a Pi is assigned and enrolled.";
     else if (!ok) $("wifi-now").textContent = `This Pi's agent (${d.agent_version || "unknown"}) can't do Wi-Fi from here yet. Ask the office to run Update agent on it.`;
     else if (list) {
-      const cur = list.networks.find((n) => n.current);
+      const curSsid = joined || list.networks.find((n) => n.current)?.ssid;
       $("wifi-now").textContent = list.wired
-        ? `On a network cable${cur ? `, and on Wi-Fi ${cur.ssid} as a backup` : ""}. The cable is always used first.`
-        : cur ? `On Wi-Fi: ${cur.ssid}.` : "Not on any Wi-Fi network.";
+        ? `On a network cable${curSsid ? `, and on Wi-Fi ${curSsid} as a backup` : ""}. The cable is always used first.`
+        : curSsid ? `On Wi-Fi: ${curSsid}.` : "Not on any Wi-Fi network.";
     } else $("wifi-now").textContent = "Search to see the networks this Pi can pick up, and which one it's on.";
 
     // Waiting on a search or a join
@@ -132,7 +141,8 @@
     if (waiting) $("wifi-wait").textContent = waiting.command === "wifi_scan"
       ? (waiting.status === "pending" ? "Sent. The Pi picks it up within a minute…" : "The Pi is searching…")
       : (waiting.status === "pending" ? "Sent. The Pi picks it up within a minute, then takes up to two more to join and check it reaches the site…"
-        : "The Pi is joining and checking it reaches the site…");
+        : "The Pi is joining and checking it reaches the site…")
+        + (waiting.command === "wifi_join" && S.pendingSave?.joinId === waiting.id ? " Keep this page open until the result shows, so the network gets saved for other screens." : "");
     if (scan && ["failed", "expired"].includes(scan.status) && S.drawnScan !== `x${scan.id}`) {
       S.drawnScan = `x${scan.id}`; showResult(false, scan.status === "expired" ? "The Pi didn't pick up the search within an hour." : scan.result);
     }
@@ -145,12 +155,14 @@
       if (save && join.status === "done") saveNetwork(save, text);
     }
 
-    // The list is drawn once per search, so a password being typed is never wiped by the refresh
-    if (list && S.drawnScan !== scan.id) {
-      S.drawnScan = scan.id;
+    // The list is drawn once per search (and again after a join moves the Pi), so a password being typed is never
+    // wiped by the refresh
+    const drawKey = `${scan?.id}|${joined || ""}`;
+    if (list && S.drawnScan !== drawKey) {
+      S.drawnScan = drawKey;
       // Saved hidden networks never show up in a search, so they're listed after it
       const seen = new Set(list.networks.map((n) => n.ssid));
-      const nets = list.networks.map((n) => ({ ...n, saved: !!savedNet(n.ssid) }))
+      const nets = list.networks.map((n) => ({ ...n, current: joined ? n.ssid === joined : n.current, saved: !!savedNet(n.ssid) }))
         .concat(S.saved.filter((x) => x.hidden && !seen.has(x.ssid)).map((x) => ({ ssid: x.ssid, open: false, signal: null, current: false, saved: true, hidden: true })));
       $("wifi-list").innerHTML = nets.length ? nets.map((n, i) => `<li data-i="${i}">
         <button type="button" class="net"><strong>${esc(n.ssid)}</strong><span class="bars">${n.signal === null ? "Hidden" : strength(n.signal)}</span>
@@ -165,14 +177,17 @@
   async function saveNetwork(save, text) {
     try {
       const r = await Auth.api("/api/devices", { method: "POST", body: { action: "save_network", device_id: save.deviceId, ssid: save.ssid, psk: save.psk, hidden: save.hidden } });
-      showResult(true, `${text} ${r.updated ? "The saved password is updated" : "Saved for other screens"}: other Pis can join it with one tap.`);
+      const what = r.updated ? "The saved password is updated" : "Saved for other screens";
+      showResult(true, text, `${what}: other Pis can join ${save.ssid} with one tap.`);
+      toast(`${what}.`);
       await loadSaved();
     } catch (ex) { showResult(true, `${text} It wasn't saved for other screens: ${ex.message}`); }
   }
 
-  function showResult(good, text) {
+  function showResult(good, text, saved) {
     const r = $("wifi-result");
     r.textContent = text || (good ? "Done." : "That didn't work.");
+    if (saved) { const b = document.createElement("strong"); b.className = "t-saved"; b.textContent = saved; r.append(b); }
     r.className = `t-result ${good ? "good" : "bad"}`;
     r.hidden = false;
   }

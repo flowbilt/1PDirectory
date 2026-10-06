@@ -45,6 +45,7 @@ body.tech { font-size: 17px; }
 .t-result { margin: 12px 0 0; padding: 10px 12px; border-radius: 8px; font-size: 15px; border: 1px solid var(--line); background: #fff; }
 .t-result.good { border-color: var(--ok); color: var(--ok); }
 .t-result.bad { border-color: var(--danger); color: var(--danger); }
+.t-saved { display: block; margin-top: 8px; padding-top: 8px; border-top: 1px solid currentColor; }
 
 /* Networks the Pi can see */
 .t-nets { list-style: none; margin: 12px 0 0; padding: 0; background: var(--panel); border: 1px solid var(--line); border-radius: 10px; }

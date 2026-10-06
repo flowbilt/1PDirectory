@@ -164,7 +164,8 @@ td.thumb { width: 96px; padding: 6px 8px; }
 .dev-body { display: grid; grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr); gap: 20px; padding: 20px; }
 @media (max-width: 760px) { .dev-body { grid-template-columns: 1fr; } }
 .dev-shot { margin: 0; display: grid; gap: 6px; align-content: start; }
-.dev-shot img { width: 100%; border-radius: 6px; background: var(--navy); border: 1px solid var(--line); }
+/* A portrait screen's picture is tall: cap it so the whole picture shows beside the facts, letterboxed */
+.dev-shot img { width: 100%; max-height: min(420px, 60vh); object-fit: contain; border-radius: 6px; background: var(--navy); border: 1px solid var(--line); }
 .dev-facts { display: grid; grid-template-columns: max-content 1fr; gap: 4px 14px; margin: 0 0 14px; font-size: 14px; }
 .dev-facts dt { color: var(--muted); }
 .dev-facts dd { margin: 0; }

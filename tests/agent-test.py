@@ -14,7 +14,7 @@ What it proves:
   - Update Pi runs the latest setup as its own job (check-ins carry on), reports when it's done, then restarts the
     Pi; a failed update reports its error and doesn't restart
 """
-import json, os, re, shutil, subprocess, sys, tempfile, threading, time
+import json, os, pwd, re, shutil, subprocess, sys, tempfile, threading, time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -206,13 +206,17 @@ case "$*" in
   "-t -f TYPE,STATE device") [[ -f {W}/wired ]] && s=connected || s=unavailable; printf 'ethernet:%s\\nwifi:connected\\n' "$s" ;;
   "-t -f IN-USE,SSID,SECURITY,SIGNAL device wifi list ifname wlan0 --rescan yes")
     printf '*:OfficeNet:WPA2:62\\n:Guest:--:80\\n:OfficeNet:WPA2:40\\n::WPA2:90\\n:Lobby\\\\:East:WPA2:30\\n' ;;
-  "-t -f NAME,TYPE,DEVICE connection show --active") printf 'Wired connection 1:802-3-ethernet:eth0\\nOfficeNet:802-11-wireless:wlan0\\n' ;;
+  "-t -f NAME,TYPE,DEVICE connection show --active") a=OfficeNet; [[ -f {W}/active-wifi ]] && a="$(cat {W}/active-wifi)"
+    printf 'Wired connection 1:802-3-ethernet:eth0\\n%s:802-11-wireless:wlan0\\n' "$a" ;;
+  "-g 802-11-wireless.ssid connection show preconfigured") echo OfficeNet ;;
+  "-g 802-11-wireless.ssid connection show lobby-field-"*) n="$*"; echo "${{n#*show lobby-field-}}" ;;
+  "-g 802-11-wireless.ssid connection show OfficeNet") echo OfficeNet ;;
   "--wait 45 connection up lobby-field-"*) [[ -f {W}/join-fail ]] && {{ echo "Error: Connection activation failed: Secrets were required, but not provided." >&2; exit 4; }} ;;
 esac
 exit 0
 """)
     stub("curl", f'echo "$*" >> {W}/curl.log; [[ -f {W}/site-ok ]] && exit 0 || exit 7\n')
-    for f in ("join-fail", "site-ok", "wired"):
+    for f in ("join-fail", "site-ok", "wired", "active-wifi"):
         if os.path.exists(os.path.join(W, f)): os.remove(os.path.join(W, f))
     with lock: replies.clear(); n = len(checkins)
     p = subprocess.Popen([sys.executable, agent], env=dict(env, LOBBY_AGENT_SERIAL="10000000abcd0003", LOBBY_AGENT_JOIN_WAIT="1"), stdout=log, stderr=log)
@@ -250,6 +254,13 @@ exit 0
     check("the failed network is removed and the Pi goes back to the one it had",
           "connection delete lobby-field-PPI Lobby" in log_.split("connection up lobby-field-PPI Lobby")[-1] and "--wait 45 connection up OfficeNet" in log_, log_)
     check("a hidden network is saved as hidden", "802-11-wireless.hidden yes" in log_)
+    # 1.8.1: the refusal names the network the Pi is still on, not its connection ("lobby-field-…", "preconfigured")
+    for i, (active, shown) in enumerate((("lobby-field-1PointUSA", "1PointUSA"), ("preconfigured", "OfficeNet"))):
+        open(os.path.join(W, "active-wifi"), "w").write(active)
+        r = ask(40 + i, "wifi_join", {"ssid": "PPI Lobby", "psk": "wrong password", "hidden": False})
+        check(f"a refusal says 'Still on {shown}', not the connection's name '{active}'",
+              f"Still on {shown}." in r.get("result", "") and active not in r.get("result", "").replace(f"Still on {shown}", ""), r)
+    os.remove(os.path.join(W, "active-wifi"))
     os.remove(os.path.join(W, "join-fail")); os.remove(os.path.join(W, "site-ok"))
     r = ask(13, "wifi_join", {"ssid": "Walled Garden", "psk": "password123"})
     log_ = open(nm).read()
@@ -282,9 +293,13 @@ exit 0
     check("when the site can't be reached: offline", word == "offline", word)
     p.terminate(); p.wait(timeout=5)
 
-    # ── H. Remote support (agent 1.8.0): Raspberry Pi Connect on and off ──
+    # ── H. Remote support (agent 1.8.0; the session bus, 1.8.1): Raspberry Pi Connect on and off ──
     rc_log = os.path.join(W, "rpi-connect.log")
+    # Like the real one: refuses without the desktop user's session bus (the 1.8.0 bug seen on a real Pi)
     rc_body = f"""echo "$*" >> {rc_log}
+if [[ -z "$XDG_RUNTIME_DIR" || "$DBUS_SESSION_BUS_ADDRESS" != "unix:path=$XDG_RUNTIME_DIR/bus" ]]; then
+  echo "✗ Cannot start Raspberry Pi Connect as no D-Bus session bus is set, please see the man page for rpi-connect-on(1)" >&2; exit 1
+fi
 case "$1" in
   status) [[ -f {W}/rc-signed-in ]] && echo "Signed in: yes" || echo "Signed in: no" ;;
   signin) echo "Complete sign in by visiting https://connect.raspberrypi.com/verify/ABCD-1234"; sleep 5 ;;
@@ -295,8 +310,12 @@ exit 0
     if os.path.exists(rc_path): os.remove(rc_path)
     open(os.path.join(W, "rc-body"), "w").write("#!/usr/bin/env bash\n" + rc_body)
     stub("apt-get", f'echo "apt-get $*" >> {rc_log}; cp {W}/rc-body {rc_path}; chmod +x {rc_path}\n')
+    bare = dict(os.environ); bare.pop("DBUS_SESSION_BUS_ADDRESS", None)
+    check("the stand-in Connect refuses without a session bus, as the real one did", subprocess.run(["bash", os.path.join(W, "rc-body"), "on"], env=bare, capture_output=True).returncode != 0)
+    me = os.path.join(W, "agent-me.json")                # a desktop user that exists, so the session is really set up
+    json.dump({"site": f"http://127.0.0.1:{srv.server_port}", "key": "k" * 43, "user": pwd.getpwuid(os.getuid()).pw_name}, open(me, "w"))
     with lock: replies.clear(); n = len(checkins)
-    p = subprocess.Popen([sys.executable, agent], env=dict(env, LOBBY_AGENT_SERIAL="10000000abcd0006"), stdout=log, stderr=log)
+    p = subprocess.Popen([sys.executable, agent], env=dict(env, LOBBY_AGENT_CONFIG=me, LOBBY_AGENT_SERIAL="10000000abcd0006"), stdout=log, stderr=log)
     wait_for(n + 1)
     def ask2(cid, command):
         with lock: replies.append([{"id": cid, "command": command}])
@@ -313,7 +332,7 @@ exit 0
     check("a Pi already signed in just says so: no second install, no new sign-in", "already" not in r.get("result", "") and "signed in" in r.get("result", "") and "apt-get" not in calls and "signin" not in calls, (r, calls))
     r = ask2(32, "remote_off")
     check("remote support off switches it off", r.get("status") == "done" and "off" in open(rc_log).read().split(), r)
-    check("the agent on the site is 1.8.0", re.search(r'VERSION = "([^"]+)"', open(AGENT).read()).group(1) == "1.8.0")
+    check("the agent on the site is 1.8.1", re.search(r'VERSION = "([^"]+)"', open(AGENT).read()).group(1) == "1.8.1")
     p.terminate()
     try: p.wait(timeout=5)
     except subprocess.TimeoutExpired: p.kill()

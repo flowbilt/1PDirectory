@@ -14,7 +14,7 @@ Runs as a systemd service (lobby-agent). Standard library only.
 """
 import base64, json, os, pwd, re, secrets, shutil, socket, subprocess, sys, tempfile, threading, time, urllib.error, urllib.request
 
-VERSION = "1.8.0"
+VERSION = "1.8.1"
 CONFIG = os.environ.get("LOBBY_AGENT_CONFIG", "/etc/lobby-agent.json")
 STATE = os.environ.get("LOBBY_AGENT_STATE", "/var/lib/lobby-agent/pending-results.json")
 IDENTITY = os.environ.get("LOBBY_AGENT_IDENTITY", "/var/lib/lobby-agent/identity.json")
@@ -136,7 +136,9 @@ def session_env(user):
     except KeyError:
         return None, {}
     runtime = f"/run/user/{pw.pw_uid}"
-    env = dict(os.environ, HOME=pw.pw_dir, XDG_RUNTIME_DIR=runtime, DISPLAY=":0")
+    env = dict(os.environ, HOME=pw.pw_dir, XDG_RUNTIME_DIR=runtime, DISPLAY=":0",
+               # the desktop user's session bus: Raspberry Pi Connect refuses to start without it (1.8.1)
+               DBUS_SESSION_BUS_ADDRESS=f"unix:path={runtime}/bus")
     for name in ("wayland-0", "wayland-1"):
         if os.path.exists(os.path.join(runtime, name)):
             env["WAYLAND_DISPLAY"] = name
@@ -342,6 +344,13 @@ def _reaches_site(cfg, dev):
         time.sleep(min(3.0, max(0.1, end - time.monotonic())))
 
 
+def ssid_of(conn):
+    """The network a saved connection is for, by name, for messages: "1PointUSA", not "lobby-field-1PointUSA"."""
+    r = run(["nmcli", "-g", "802-11-wireless.ssid", "connection", "show", conn])
+    ssid = r.stdout.decode(errors="replace").strip().replace("\\:", ":") if r.returncode == 0 else ""
+    return ssid or re.sub(r"^lobby-(field|wifi)-", "", conn)
+
+
 def cmd_wifi_join(cfg, payload=None):
     """Joins one network. If it can't be joined, or doesn't reach the site within a minute, it's removed and the Pi goes
     back to the connection it had, so a wrong password or a network that blocks the site never strands a Pi."""
@@ -366,7 +375,7 @@ def cmd_wifi_join(cfg, payload=None):
     r = run(args)
     if r.returncode != 0:
         return False, f"Couldn't save {ssid}: " + r.stderr.decode(errors="replace").strip()[:200]
-    back = f"Still on {prev}." if prev else ("Still on its network cable." if wired_up() else "")
+    back = f"Still on {ssid_of(prev)}." if prev else ("Still on its network cable." if wired_up() else "")
 
     def undo():
         run(["nmcli", "connection", "delete", name])

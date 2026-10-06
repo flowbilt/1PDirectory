@@ -165,11 +165,13 @@ status in plain words, then:
 - **Wi-Fi:** **Search for networks** lists what the Pi can pick up, strongest first, and which one it's on. Tap one,
   type its password, **Join**; or **Join a network that isn't listed** for a hidden one. If the Pi can't join it, or
   joins but can't reach the site within a minute, it drops it and goes back to the network it had, and the page says
-  why. With a network cable plugged in, the cable stays in charge and the new Wi-Fi is its backup. The password goes
+  why. An answer takes 2 to 3 minutes (the Pi picks it up at its next one-minute check-in). Once a join works, the
+  page shows the Pi on the new network straight away, without another search. With a network cable plugged in, the cable stays in charge and the new Wi-Fi is its backup. The password goes
   to the Pi once and is then deleted from the database (about a minute at most); it's never shown back, and the
   audit log records only the network's name.
 - **Save for other screens:** tick it when joining, and once the Pi reports the join worked, the network is saved
-  (labelled with the building). Every other Pi that can see it then shows it as **Saved**: one tap joins it, and the
+  (labelled with the building); the page says so on its own line. **Keep the page open until the result shows**: the
+  save is made from the page when the Pi's answer arrives. Every other Pi that can see it then shows it as **Saved**: one tap joins it, and the
   server supplies the password, so no one types it again and the phone never receives it. **Type a different
   password** (with the tick) updates a saved password that has changed. Networks saved this way are **never put on
   cards**; they're listed in the console's **Pi setup** as saved from the technician page, and the office can remove
@@ -242,7 +244,7 @@ Pi health is a 1Point service tool. Owner users see only each screen's Online/Of
 
 In the console, the **Pi** button on each screen offers Identify, Reload screen, Take screenshot, Reboot Pi, Update agent and Update Pi (see Updating Pis in the field). The technician page adds Wi-Fi search and join (agent 1.6.0).
 
-**Remote support** (agent 1.8.0; Pi → More → **Remote support on**): the Pi installs Raspberry Pi Connect if needed, switches it on, and the sign-in link appears under Recent actions. Open it and sign in with 1Point's Raspberry Pi account; the Pi then appears at connect.raspberrypi.com for screen sharing and a remote shell. Connect, like the agent, only connects outward, so no ports open. **Remote support off** when finished. The master card stays without Connect or SSH: one password on every card, and Connect's sign-in is per Pi, so neither belongs on a copied image. The Pi actions appear only once the Pi has enrolled (the server refuses them before that). Under **More** are Reset device key, Switch off, and Unassign.
+**Remote support** (agent 1.8.1 or newer; 1.8.0 couldn't start Connect on a real Pi. Pi → More → **Remote support on**): the Pi installs Raspberry Pi Connect if needed, switches it on, and the sign-in link appears under Recent actions. Open it and sign in with 1Point's Raspberry Pi account; the Pi then appears at connect.raspberrypi.com for screen sharing and a remote shell. Connect, like the agent, only connects outward, so no ports open. **Remote support off** when finished. The master card stays without Connect or SSH: one password on every card, and Connect's sign-in is per Pi, so neither belongs on a copied image. The Pi actions appear only once the Pi has enrolled (the server refuses them before that). Under **More** are Reset device key, Switch off, and Unassign.
 
 The Pi panel updates itself while it's open (every 10 seconds, every 3 for two minutes after an action), so results
 and new screenshots appear without reopening it. If a Pi's check-in was refused, the panel says why and what to do:
@@ -271,11 +273,10 @@ Only those fixed actions exist; the console can't send anything free-form. Updat
 ## Tests
 
 ```
-npm install
-npm test                      # server functions, against a fake Supabase
+npm test                      # server functions, against a fake Supabase (no npm install needed: no dependencies)
 node tests/test-server.mjs          # the whole site locally, with sample logins
 bash tests/kiosk-rotation-test.sh    # the kiosk: address from the serial, rotation and its watcher, a card moved between Pis, field Wi-Fi setup (about 5 minutes)
-python3 tests/agent-test.py          # the Pi's agent: schedule, results, reboot, updates, keys, Update Pi, Wi-Fi search and join, the status light (about 2 minutes)
+python3 tests/agent-test.py          # the Pi's agent: schedule, results, reboot, updates, keys, Update Pi, Wi-Fi search and join, the status light, remote support (about 2 minutes)
 python3 tests/button-test.py         # the case button and status light, with key presses through a pipe (about 20 seconds)
 bash tests/setup-test.sh             # setup's options, Wi-Fi import, naming, TV keeper, pointer, HDMI, quiet start, field Wi-Fi setup (seconds)
 ```

@@ -126,7 +126,10 @@ window.ConsoleDevices = (() => {
     schedule();
   }
   // Wi-Fi search and join come from the technician page (tech.html); a search's result is its list of networks
-  const cmdName = (c) => ({ wifi_scan: "Wi-Fi search", wifi_join: "Wi-Fi join", remote_on: "Remote support on", remote_off: "Remote support off" }[c] || c.replace("_", " "));
+  // The same names as the buttons and the technician page, for every command
+  const CMD_NAMES = { reload: "Reload screen", screenshot: "Screenshot", reboot: "Reboot Pi", update_agent: "Update agent",
+    update_pi: "Update Pi", wifi_scan: "Wi-Fi search", wifi_join: "Wi-Fi join", remote_on: "Remote support on", remote_off: "Remote support off" };
+  const cmdName = (c) => CMD_NAMES[c] || c.replace(/_/g, " ");
   // A remote-support result carries Raspberry Pi Connect's sign-in link: only that site's links become clickable
   const linkify = (c, html) => c.command !== "remote_on" ? html
     : html.replace(/https:\/\/connect\.raspberrypi\.com\/[^\s<&"]+/g, (u) => `<a href="${u}" target="_blank" rel="noopener noreferrer">${u}</a>`);
