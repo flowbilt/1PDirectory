@@ -33,7 +33,7 @@ Owner users can't read a screen's hardware record (serial, MACs, IPs, the Yodeck
 | `SUPABASE_ANON_KEY` | No | Supabase publishable (or legacy anon) key |
 | `SUPABASE_SERVICE_KEY` | **Yes**, Production + Functions only | Supabase secret (or legacy service_role) key |
 | `NWS_CONTACT` | No | Email address for the National Weather Service |
-| `NEWS_FEEDS`, `NEWS_BLOCKLIST` | No | Optional news settings |
+| `NEWS_FEEDS`, `NEWS_BLOCKLIST` | No | Optional news settings. `NEWS_FEEDS`: comma-separated feed addresses. `NEWS_BLOCKLIST`: comma-separated words **added to** the built-in list (in `netlify/functions/news.mjs`). A word also blocks its usual forms ("murder" → murders, murderer, murdered; "body" → bodies) but not other words that start the same way ("dead" doesn't block "deadline"); end a word with `*` to block every word starting with it (`terror*`); several words match as a phrase (`mass shooting`). Headline and description are both checked. |
 | `SMTP_HOST` | No | Company mail server for alert emails, e.g. `secure.emailsrvr.com` (Rackspace) |
 | `SMTP_PORT` | No | `465` (encrypted from the start) or `587` (STARTTLS). Plain, unencrypted mail servers are refused |
 | `SMTP_USER` | No | The mailbox alerts are sent from, e.g. `directory@1pointusa.com` |

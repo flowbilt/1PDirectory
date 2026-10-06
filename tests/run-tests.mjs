@@ -34,6 +34,12 @@ globalThis.fetch = async (url, init = {}) => {
   if (u.includes("bbci")) return ok(fx("bbc.xml"));
   if (u.includes("npr")) return ok(fx("npr.xml"));
   if (u.includes("broken")) return new Response("nope", { status: 500 });
+  if (u.includes("desc-test")) return ok(`<rss><channel><title>Bham Now</title>
+    <item><title>Police update on downtown incident</title><description>&lt;p&gt;Two people were &lt;b&gt;killed&lt;/b&gt; overnight.&lt;/p&gt;</description><pubDate>Mon, 05 Oct 2026 10:00:00 GMT</pubDate></item>
+    <item><title>Neighborhood flooding closes roads</title><description>Crews are out.</description><pubDate>Mon, 05 Oct 2026 11:00:00 GMT</pubDate></item>
+    <item><title>Convicted murderers appeal sentence</title><description>The court hears it today.</description><pubDate>Mon, 05 Oct 2026 12:00:00 GMT</pubDate></item>
+    <item><title>New deadline set for the city's diet program</title><description>Downtown San Diego style.</description><pubDate>Mon, 05 Oct 2026 13:00:00 GMT</pubDate></item>
+  </channel></rss>`);
   throw new Error("unexpected fetch " + u);
 };
 
@@ -1058,6 +1064,35 @@ test("old actions and history are trimmed by the alert check; each Pi's latest f
     for (const [k, v] of Object.entries(saved)) if (v !== undefined) process.env[k] = v;
     dropPis(new Set([d.id, e.id]));
   }
+});
+
+// ── News blocklist (DP-04 round 3) ──
+test("a blocked word catches its forms, not words that merely start the same way", () => {
+  const L = ["murder", "dead", "die", "war", "body", "stab", "kill", "abuse", "mass shooting"];
+  for (const t of ["Murders rise", "Murderer caught", "The murderer’s trial", "Murderous plot", "Murdered at home", "Warring factions",
+    "Bodies found", "Stabbing downtown", "Killings continue", "Abusing power", "Dying patient", "Two dead", "Mass shootings rise", "MURDER TRIAL"])
+    assert.equal(isBlocked(t, L), true, t);
+  for (const t of ["Deadline extended", "Diet tips", "San Diego Padres", "Diesel prices", "Warm weather", "Warriors win", "Warning issued",
+    "Killarney festival", "Massive shooting star display"])
+    assert.equal(isBlocked(t, L), false, t);
+  assert.equal(isBlocked("Terrorism hearing", ["terror"]), true);
+  assert.equal(isBlocked("Bombshell report", ["bomb"]), false, "without * only the word's forms");
+  assert.equal(isBlocked("Bombshell report", ["bomb*"]), true, "with * every word starting with it");
+  assert.equal(isBlocked("Anything", []), false);
+});
+
+test("Netlify's blocklist adds to the built-in one, and descriptions are checked too", async () => {
+  process.env.NEWS_FEEDS = "https://desc-test.example/rss";
+  process.env.NEWS_BLOCKLIST = "flooding";
+  try {
+    const { items } = await (await news(req("/api/news"))).json();
+    const titles = items.map((i) => i.title);
+    assert.ok(!titles.includes("Police update on downtown incident"), "blocked by its description ('killed')");
+    assert.ok(!titles.includes("Neighborhood flooding closes roads"), "blocked by Netlify's own word");
+    assert.ok(!titles.includes("Convicted murderers appeal sentence"), "the built-in list still applies, with word forms");
+    assert.deepEqual(titles, ["New deadline set for the city's diet program"]);
+    assert.ok(!("summary" in items[0]), "descriptions aren't sent to the screens");
+  } finally { delete process.env.NEWS_FEEDS; delete process.env.NEWS_BLOCKLIST; }
 });
 
 let passed = 0;

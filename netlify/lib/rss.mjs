@@ -59,12 +59,43 @@ export function parseFeed(xml, fallbackSource = "") {
       const title = stripTags(decode(tag(b, "title")));
       const dateRaw = stripTags(decode(tag(b, "pubDate") || tag(b, "published") || tag(b, "updated") || tag(b, "dc:date")));
       const t = Date.parse(dateRaw);
-      return { title, image: findImage(b), source, published: Number.isFinite(t) ? new Date(t).toISOString() : null };
+      // The story's own text, for the blocklist only (never sent to the screens)
+      const summary = stripTags(decode(tag(b, "description") || tag(b, "summary") || tag(b, "content"))).slice(0, 600);
+      return { title, summary, image: findImage(b), source, published: Number.isFinite(t) ? new Date(t).toISOString() : null };
     })
     .filter((i) => i.title.length > 8);
 }
 
-export function isBlocked(title, words) {
-  const t = ` ${title.toLowerCase()} `;
-  return words.some((w) => new RegExp("\\b" + w.replace(/[.*+?^${}()|[\]\\]/g, "\\$&") + "\\b", "i").test(t));
+// A blocklist word also catches its usual forms, so the list needn't spell them all out:
+//   murder -> murders, murdered, murderer(s), murdering, murderous, murderer's;  kill -> killer, killings
+//   body -> bodies;  die -> dies, died, dying;  stab -> stabbed, stabbing;  terror -> terrorist, terrorism
+// but not other words that merely start the same way ("dead" never blocks "deadline", "die" never "diet" or
+// "San Diego", "war" never "warm" or "Warriors"). Ending a word with * blocks every word starting with it
+// ("terror*"). Several words ("mass shooting") match as a phrase, with forms on the last word.
+const ENDINGS = "s|es|d|ed|er|ers|ing|ings|ism|ist|ists|ous";
+const esc = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+function forms(word) {
+  const alts = [`${esc(word)}(?:${ENDINGS})?`];
+  if (/[^aeiou]e$/.test(word)) alts.push(`${esc(word.slice(0, -1))}(?:ing|er|ers|ist|ists|ism)`);   // abuse -> abusing
+  if (/ie$/.test(word)) alts.push(`${esc(word.slice(0, -2))}ying`);                                 // die -> dying
+  if (/[^aeiou]y$/.test(word)) alts.push(`${esc(word.slice(0, -1))}i(?:es|ed|er|ers)`);             // body -> bodies
+  if (/[^aeiou][aeiou][^aeiouwxy]$/.test(word)) alts.push(`${esc(word)}${word.slice(-1)}(?:ed|ing|ings|er|ers)`); // stab -> stabbed
+  return alts.join("|");
+}
+export function blockPattern(words) {
+  const terms = words.map((w) => w.trim().toLowerCase()).filter(Boolean).map((w) => {
+    const prefix = w.endsWith("*");
+    const parts = w.replace(/\*$/, "").split(/\s+/).filter(Boolean);
+    if (!parts.length) return null;
+    const last = parts.pop();
+    const head = parts.map((p) => esc(p) + "\\s+").join("");
+    return prefix ? `${head}${esc(last)}[\\w'’-]*` : `${head}(?:${forms(last)})(?:['’]s)?(?![\\w'’-])`;
+  }).filter(Boolean);
+  return terms.length ? new RegExp(`(?<![\\w'’-])(?:${terms.join("|")})`, "i") : null;
+}
+// True if any of the texts (a headline, its description) contains a blocked word. `words` can be a list or a
+// pattern from blockPattern (faster when checking many stories).
+export function isBlocked(text, words) {
+  const re = words instanceof RegExp ? words : blockPattern(words);
+  return !!re && [].concat(text).some((t) => re.test(t || ""));
 }
