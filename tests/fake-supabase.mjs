@@ -10,7 +10,7 @@ export function createFake() {
   const T = { organizations: [], profiles: [], properties: [], directories: [], tenants: [], screens: [], audit_log: [], devices: [], device_commands: [], device_daily: [], wifi_networks: [], prepare_codes: [], alert_recipients: [] };
   const SERVICE_ONLY = new Set(["devices", "device_commands", "device_daily", "wifi_networks", "prepare_codes", "alert_recipients"]); // row-level security on, no policies: server key only
   // Columns of screens signed-in users may read (supabase/06-trust.sql). hardware is server-only.
-  const SCREEN_COLS = new Set(["id", "directory_id", "key", "name", "location_note", "orientation", "last_seen", "last_report", "identify_until", "created_at"]);
+  const SCREEN_COLS = new Set(["id", "directory_id", "key", "name", "location_note", "orientation", "last_seen", "last_report", "identify_until", "created_at", "sizes"]);
   const users = new Map(); // id -> {id,email,password,last_sign_in_at,invited_at,user_metadata}
   const tokens = new Map(); // token -> user id
   const outbox = [];
@@ -32,7 +32,7 @@ export function createFake() {
           const did = randomUUID();
           T.directories.push({ id: did, property_id: pid, slug: d.slug, title: d.title, subtitle: d.subtitle, footer_override: null, news_enabled: true, rotate_seconds: 12, weather_enabled: true, created_at: now(), updated_at: now(), updated_by: null });
           d.tenants.forEach((t, i) => T.tenants.push({ id: randomUUID(), directory_id: did, sort: i * 10, name: t.name, suite: t.suite, arrow: t.arrow, note: t.note }));
-          T.screens.push({ id: randomUUID(), directory_id: did, key: d.screen.key, name: d.screen.name, location_note: "", orientation: d.screen.orientation, hardware: d.screen.hardware, last_seen: null, last_report: {}, created_at: now() });
+          T.screens.push({ id: randomUUID(), directory_id: did, key: d.screen.key, name: d.screen.name, location_note: "", orientation: d.screen.orientation, hardware: d.screen.hardware, last_seen: null, last_report: {}, sizes: {}, created_at: now() });
         }
       }
     }
@@ -42,7 +42,7 @@ export function createFake() {
     T.properties.push({ id: op, org_id: other, name: "Other Tower", address: "", timezone: "America/Chicago", lat: 33.5, lon: -86.8, logo: "", logo_replaces_name: false, company_logo: "", logo_swap: false, background: {}, managed_by: {}, leased_by: {}, footer: "", created_at: now(), updated_at: now() });
     T.directories.push({ id: od, property_id: op, slug: "other-tower", title: "Other Tower", subtitle: "", footer_override: null, news_enabled: true, rotate_seconds: 12, weather_enabled: true, created_at: now(), updated_at: now() });
     T.tenants.push({ id: randomUUID(), directory_id: od, sort: 0, name: "Secret Tenant Inc.", suite: "100", arrow: "", note: "" });
-    T.screens.push({ id: randomUUID(), directory_id: od, key: "other-tower", name: "Other Tower Lobby", location_note: "", orientation: "landscape", hardware: {}, last_seen: null, last_report: {}, created_at: now() });
+    T.screens.push({ id: randomUUID(), directory_id: od, key: "other-tower", name: "Other Tower Lobby", location_note: "", orientation: "landscape", hardware: {}, last_seen: null, last_report: {}, sizes: {}, created_at: now() });
 
     for (const sc of T.screens) {
       const serial = String(sc.hardware?.serial || "").toLowerCase();
@@ -145,7 +145,7 @@ export function createFake() {
     properties: () => ({ id: randomUUID(), address: "", timezone: "America/Chicago", lat: null, lon: null, logo: "", logo_replaces_name: false, company_logo: "", logo_swap: false, background: {}, managed_by: {}, leased_by: {}, footer: "", created_at: now(), updated_at: now() }),
     directories: () => ({ id: randomUUID(), subtitle: "", footer_override: null, news_enabled: true, rotate_seconds: 12, weather_enabled: true, created_at: now(), updated_at: now() }),
     tenants: () => ({ id: randomUUID(), sort: 0, suite: "", arrow: "", note: "" }),
-    screens: () => ({ id: randomUUID(), directory_id: null, location_note: "", orientation: "auto", hardware: {}, last_seen: null, last_report: {}, created_at: now() }),
+    screens: () => ({ id: randomUUID(), directory_id: null, location_note: "", orientation: "auto", hardware: {}, last_seen: null, last_report: {}, sizes: {}, created_at: now() }),
     profiles: () => ({ full_name: "", created_at: now() }),
     audit_log: () => ({ id: T.audit_log.length + 1, at: now(), detail: {} }),
     devices: () => ({ id: randomUUID(), screen_id: null, key_hash: null, enroll_until: null, refused_at: null, refused_why: null, status: "active", model: "", hostname: "", agent_version: "", last_seen: null, last_health: {}, screenshot: "", screenshot_at: null, alert_state: {}, created_at: now() }),
@@ -252,7 +252,25 @@ export function createFake() {
   // Supabase hands back at most 1,000 rows a request (tables and functions alike); so does this fake
   const MAX_ROWS = 1000;
   const addDays = (day, n) => new Date(Date.parse(day + "T12:00:00Z") + n * 86400_000).toISOString().slice(0, 10);
+  // Functions signed-in users may call (they check access themselves); the rest are server-only
+  const USER_FUNCS = new Set(["set_screen_sizes"]);
+  const SIZE_RANGES = { title: [50, 120], logo: [60, 200], brand: [60, 250], welcome: [80, 160] };
   const FUNCS = {
+    // Mirror of 18-sizes.sql
+    set_screen_sizes({ p_screen, p_sizes = {} }, who) {
+      const s = T.screens.find((x) => x.id === p_screen);
+      const me = who.profile;
+      const ok = s && (who.service || me?.role === "platform_admin" || (me && s.directory_id && dirOrg(s.directory_id) === me.org_id));
+      if (!ok) throw Object.assign(new Error("That screen doesn't exist, or you don't have access to it."), { status: 403 });
+      const outSizes = {};
+      for (const [name, [lo, hi]] of Object.entries(SIZE_RANGES)) {
+        if (typeof p_sizes?.[name] !== "number") continue;
+        const v = Math.min(hi, Math.max(lo, Math.round(p_sizes[name])));
+        if (v !== 100) outSizes[name] = v;
+      }
+      s.sizes = outSizes;
+      return outSizes;
+    },
     // Mirrors of 17-hardening.sql, written from the SQL (not from the site's code), so the tests compare the two
     recent_device_commands({ p_device_ids = [], p_per = 5 }) {
       const per = Math.max(1, Math.min(p_per ?? 5, 20));
@@ -344,20 +362,21 @@ export function createFake() {
       if (p_report && (!s.last_seen || Date.parse(s.last_seen) < Date.now() - 4 * 60000)) Object.assign(s, { last_seen: now(), last_report: p_report });
       const d = s.directory_id ? T.directories.find((x) => x.id === s.directory_id) : null;
       const p = d ? T.properties.find((x) => x.id === d.property_id) : null;
-      const etag = createHash("md5").update([s.key, s.name, s.orientation, s.directory_id || "-", s.identify_until || "-", d?.updated_at || "-", p?.updated_at || "-"].join("|")).digest("hex");
+      const etag = createHash("md5").update([s.key, s.name, s.orientation, s.directory_id || "-", s.identify_until || "-", d?.updated_at || "-", p?.updated_at || "-", JSON.stringify(s.sizes || {})].join("|")).digest("hex");
       if (etag === p_etag) return { etag, not_modified: true };
       const tenants = d ? order(T.tenants.filter((t) => t.directory_id === d.id), "sort,name").map(({ name, suite, arrow, note, sort }) => ({ name, suite, arrow, note, sort })) : [];
-      return { etag, screen: { key: s.key, name: s.name, orientation: s.orientation, identify_until: s.identify_until ?? null }, dir: d ? { ...d } : null, prop: p ? { ...p } : null, tenants };
+      return { etag, screen: { key: s.key, name: s.name, orientation: s.orientation, identify_until: s.identify_until ?? null, sizes: s.sizes || {} }, dir: d ? { ...d } : null, prop: p ? { ...p } : null, tenants };
     },
   };
   async function rpc(req, name) {
     const who = whoFrom(req);
     if (!who) return err(401, "Invalid API key");
     if (!FUNCS[name]) return err(404, `Could not find the function public.${name}`);
-    if (!who.service) return err(403, `permission denied for function ${name}`);
+    if (!who.service && !(USER_FUNCS.has(name) && who.uid)) return err(403, `permission denied for function ${name}`);
     if (req.method !== "POST") return err(405, "Method not allowed");
     rpcCalls.push(name);
-    const result = FUNCS[name](await req.json());
+    let result;
+    try { result = FUNCS[name](await req.json(), who); } catch (e) { return err(e.status || 400, e.message); }
     return out(Array.isArray(result) ? result.slice(0, MAX_ROWS) : result);
   }
 

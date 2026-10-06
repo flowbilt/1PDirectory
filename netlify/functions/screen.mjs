@@ -11,7 +11,7 @@ import { SITE_RE } from "../lib/common.mjs";
 import { rpc } from "../lib/sb.mjs";
 
 // Bump when toPayload's output changes shape, so every screen re-downloads once after the deploy.
-const PAYLOAD_V = "p2";
+const PAYLOAD_V = "p3";
 const HEADERS = { "Content-Type": "application/json; charset=utf-8", "Cache-Control": "no-cache" };
 
 const send = (obj, status = 200, etag) => new Response(JSON.stringify(obj), { status, headers: { ...HEADERS, ...(etag ? { ETag: etag } : {}) } });
@@ -65,13 +65,14 @@ export function toPayload(screen, dir, prop, tenants) {
     timezone: prop?.timezone || "America/Chicago",
     news: { enabled: dir ? dir.news_enabled !== false : false, rotateSeconds: dir?.rotate_seconds || 12 },
     background: prop?.background || {},
+    sizes: screen.sizes || {},                             // this screen's sizes, % of standard (supabase/18-sizes.sql)
     assigned: !!dir,
     identifyUntil: screen.identify_until || null,
     updatedAt: updated,
   };
 }
 
-export const NEW_DEVICE = (device) => ({ key: null, device, assigned: false, newDevice: true, orientation: "auto", propertyName: "New display", buildingLabel: "", tenants: [], managedBy: {}, leasedBy: {}, welcome: "", weather: { enabled: false }, news: { enabled: false }, background: {}, logo: "", timezone: "America/Chicago" });
+export const NEW_DEVICE = (device) => ({ key: null, device, assigned: false, newDevice: true, orientation: "auto", propertyName: "New display", buildingLabel: "", tenants: [], managedBy: {}, leasedBy: {}, welcome: "", weather: { enabled: false }, news: { enabled: false }, background: {}, sizes: {}, logo: "", timezone: "America/Chicago" });
 
 export default async (req) => {
   const url = new URL(req.url);

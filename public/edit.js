@@ -4,7 +4,10 @@
   const { esc, toast, since } = window.UI;
   const params = new URLSearchParams(location.search);
 
-  const S = { dir: null, prop: null, tenants: [], screens: [], siblings: 0, dirty: false };
+  const S = { dir: null, prop: null, tenants: [], screens: [], siblings: 0, dirty: false, sel: 0 };
+  // Per-screen sizes, % of standard (supabase/18-sizes.sql); 100 = standard and isn't stored
+  const SIZES = ["title", "logo", "brand", "welcome"];
+  const sizeOf = (scr, k) => Number(scr?.sizes?.[k]) || 100;
 
   // ── Load ──
   async function load() {
@@ -15,10 +18,15 @@
     const [[prop], tenants, screens, siblings] = await Promise.all([
       Auth.db(`properties?id=eq.${dir.property_id}&select=*`),
       Auth.db(`tenants?directory_id=eq.${dir.id}&select=*&order=sort.asc,name.asc`),
-      Auth.db(`screens?directory_id=eq.${dir.id}&select=key,name,orientation,last_seen&order=name.asc`),
+      Auth.db(`screens?directory_id=eq.${dir.id}&select=id,key,name,orientation,last_seen,sizes&order=name.asc`),
       Auth.db(`directories?property_id=eq.${dir.property_id}&select=id`),
     ]);
+    const keepKey = S.screens[S.sel]?.key;
+    for (const s of screens) s.saved = JSON.stringify(s.sizes || {});
     Object.assign(S, { dir, prop, tenants: tenants.map((t) => ({ ...t })), screens, siblings: siblings.length });
+    // The screen opened from the console (?s=), else the one shown before publishing, else the first
+    const want = keepKey ? screens.findIndex((s) => s.key === keepKey) : screens.findIndex((s) => s.id === params.get("s"));
+    S.sel = Math.max(0, want);
   }
 
   // ── Form <-> state ──
@@ -40,7 +48,7 @@
     if (![...$("timezone").options].some((o) => o.value === tz)) $("timezone").add(new Option(tz, tz));
     $("timezone").value = tz;
     $("shared-note").textContent = S.siblings > 1 ? `shared by all ${S.siblings} directories in ${p.name}` : "";
-    renderLogo(); renderBg(); renderTenants(); renderStatus();
+    renderLogo(); renderBg(); renderTenants(); renderStatus(); renderSizes();
   }
 
   function read() {
@@ -63,6 +71,8 @@
     const bg = p.background || {};
     p.background = { image: bg.image || "", enabled: !!bg.image && $("bg-on").checked, visibility: parseInt($("bg-vis").value, 10) || 15, position: parseInt($("bg-pos").value, 10), size: parseInt($("bg-size").value, 10) || 190, offset: parseInt($("bg-offset").value, 10) || 0 };
     $("bg-vis-val").textContent = `${p.background.visibility}%`;
+    const scr = S.screens[S.sel];
+    if (scr) scr.sizes = Object.fromEntries(SIZES.map((k) => [k, parseInt($(`sz-${k}`).value, 10)]).filter(([, v]) => v && v !== 100));
     S.tenants = [...$("tenant-rows").querySelectorAll(".tenant-row")].map((row) => ({
       id: row.dataset.id,
       name: row.querySelector(".t-name").value.trim(),
@@ -73,8 +83,9 @@
   }
 
   function setDirty(v) { S.dirty = v; $("dirty").hidden = !v; }
-  function changed() { read(); setDirty(true); pushPreview(); }
-  $("editor").addEventListener("input", (e) => { if (!e.target.matches("[type=file]")) changed(); });
+  function changed() { read(); setDirty(true); renderSizes(); pushPreview(); }
+  // The Sizes screen picker isn't an edit: it has its own handler (below)
+  $("editor").addEventListener("input", (e) => { if (!e.target.matches("[type=file], #sz-screen")) changed(); });
   $("editor").addEventListener("change", (e) => { if (e.target.matches("select, input[type=checkbox]")) changed(); });
 
   function renderStatus() {
@@ -207,9 +218,41 @@
   $("bg-remove").addEventListener("click", () => { read(); S.prop.background = { ...S.prop.background, image: "", enabled: false }; renderBg(); setDirty(true); pushPreview(); });
   for (const id of ["bg-vis", "bg-pos", "bg-size", "bg-offset"]) $(id).addEventListener("input", () => { read(); renderBg(); pushPreview(); });
 
+  // ── Sizes (per screen) ──
+  function renderSizes() {
+    const has = S.screens.length > 0, scr = S.screens[S.sel], p = S.prop || {};
+    $("sz-screen-row").hidden = S.screens.length < 2;
+    $("sz-none").hidden = has;
+    $("sz-reset").hidden = !has;
+    $("sizes-note").textContent = S.screens.length > 1 ? "each screen has its own" : "for this screen only";
+    const sel = $("sz-screen");
+    if (sel.options.length !== S.screens.length) sel.innerHTML = S.screens.map((s, i) => `<option value="${i}">${esc(s.name)}</option>`).join("");
+    sel.value = String(S.sel);
+    const swap = !!(p.logo_swap && p.company_logo), top = swap ? p.company_logo : p.logo, bottom = swap ? p.logo : p.company_logo;
+    const wordmark = !swap && !!(p.logo && p.logo_replaces_name);
+    const welcome = S.dir?.footer_override ?? p.footer ?? "";
+    // Only the parts this screen actually shows
+    const shows = { title: !wordmark, logo: !!top, brand: !!bottom, welcome: !!welcome };
+    for (const k of SIZES) {
+      $(`sz-${k}-row`).hidden = !has || !shows[k];
+      $(`sz-${k}`).value = sizeOf(scr, k);
+      $(`sz-${k}-val`).textContent = `${sizeOf(scr, k)}%`;
+    }
+  }
+  $("sz-screen").addEventListener("change", (e) => {
+    e.stopPropagation(); read();
+    S.sel = Number(e.target.value) || 0;
+    renderSizes(); loadPreview();               // the other screen may be turned the other way
+  });
+  $("sz-reset").addEventListener("click", () => {
+    const scr = S.screens[S.sel]; if (!scr) return;
+    for (const k of SIZES) $(`sz-${k}`).value = 100;
+    changed();
+  });
+
   // ── Preview (same shape /api/screen sends to real screens) ──
   function payload() {
-    const d = S.dir, p = S.prop, scr = S.screens[0];
+    const d = S.dir, p = S.prop, scr = S.screens[S.sel];
     return {
       key: scr?.key || d.slug, orientation: scr?.orientation || "auto",
       propertyName: d.title, buildingLabel: d.subtitle || p.address || "",
@@ -221,11 +264,11 @@
       weather: { enabled: d.weather_enabled !== false && p.lat != null, lat: p.lat, lon: p.lon },
       timezone: p.timezone || "America/Chicago",
       news: { enabled: d.news_enabled !== false, rotateSeconds: d.rotate_seconds || 12 },
-      background: p.background || {}, assigned: true, updatedAt: d.updated_at,
+      background: p.background || {}, sizes: scr?.sizes || {}, assigned: true, updatedAt: d.updated_at,
     };
   }
   function previewShape() {
-    const o = S.screens[0]?.orientation || "auto";
+    const o = S.screens[S.sel]?.orientation || "auto";
     return o.startsWith("landscape") ? "landscape" : "portrait";
   }
   function scalePreview() {
@@ -239,10 +282,11 @@
   function loadPreview() {
     const f = $("preview-frame");
     f.onload = () => pushPreview();
-    f.src = `/?screen=${encodeURIComponent(S.screens[0]?.key || S.dir.slug)}&preview=1`;
+    f.src = `/?screen=${encodeURIComponent(S.screens[S.sel]?.key || S.dir.slug)}&preview=1`;
     scalePreview();
   }
   function pushPreview() {
+    if (S.dir) renderSizes();                   // a logo or bottom line added or removed changes which sliders apply
     const w = $("preview-frame").contentWindow;
     if (w) w.postMessage({ type: "draft", data: payload() }, location.origin);
   }
@@ -273,6 +317,10 @@
       if (rows.length) await Auth.db("tenants", { method: "POST", prefer: "resolution=merge-duplicates,return=minimal", body: rows });
       const keep = rows.map((r) => r.id);
       await Auth.db(`tenants?directory_id=eq.${d.id}${keep.length ? `&id=not.in.(${keep.join(",")})` : ""}`, { method: "DELETE", prefer: "return=minimal" });
+      // Each screen whose sizes changed (the server checks access and keeps them in range)
+      for (const s of S.screens) {
+        if (JSON.stringify(s.sizes || {}) !== s.saved) await Auth.db("rpc/set_screen_sizes", { method: "POST", body: { p_screen: s.id, p_sizes: s.sizes || {} } });
+      }
       await load(); fill(); setDirty(false); pushPreview();
       toast(S.screens.length ? "Published. Screens update within a minute." : "Saved. No screen shows this directory yet.");
     } catch (ex) {

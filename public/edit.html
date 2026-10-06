@@ -91,6 +91,20 @@
         </div>
       </section>
 
+      <section class="panel" id="sizes-panel">
+        <h2>Sizes <span class="hint" id="sizes-note">for this screen only</span></h2>
+        <div class="field" id="sz-screen-row" hidden><label for="sz-screen">Screen</label><select id="sz-screen"></select></div>
+        <div class="bg-controls">
+            <div class="field" id="sz-title-row"><label for="sz-title">Title <span class="hint" id="sz-title-val"></span> <span class="hint">smaller fits more of the name on one line</span></label><input id="sz-title" type="range" min="50" max="120" step="5"></div>
+            <div class="field" id="sz-logo-row"><label for="sz-logo">Top logo <span class="hint" id="sz-logo-val"></span> <span class="hint">stays beside the clock and weather</span></label><input id="sz-logo" type="range" min="60" max="200" step="5"></div>
+            <div class="field" id="sz-brand-row"><label for="sz-brand">Bottom logo <span class="hint" id="sz-brand-val"></span> <span class="hint">stays within its strip</span></label><input id="sz-brand" type="range" min="60" max="250" step="5"></div>
+            <div class="field" id="sz-welcome-row"><label for="sz-welcome">Bottom line <span class="hint" id="sz-welcome-val"></span> <span class="hint">larger may wrap to two lines</span></label><input id="sz-welcome" type="range" min="80" max="160" step="5"></div>
+          <p class="hint" id="sz-none" hidden>No screen shows this directory yet.</p>
+          <div class="logo-actions"><button type="button" id="sz-reset" class="ghost">Back to standard sizes</button></div>
+          <p class="hint">Larger items leave less room for the tenant list, which shrinks its own text to fit. Changes reach the screen when you publish.</p>
+        </div>
+      </section>
+
 
 
       <section class="panel">

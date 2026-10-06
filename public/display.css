@@ -14,6 +14,8 @@
   --u: 10.8px;
   --pad: calc(var(--u) * 5);
   --tf: calc(var(--u) * 4.6); /* tenant font size, fitted by display.js */
+  /* Per-screen sizes (editor → Sizes; 1 = standard). display.js sets them from the screen's sizes. */
+  --title-scale: 1; --logo-scale: 1; --brand-scale: 1; --welcome-scale: 1;
 }
 
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
@@ -63,13 +65,14 @@ body { font-family: "Instrument Sans", "Segoe UI", Arial, sans-serif; color: var
   border-bottom: 2px solid var(--steel);
 }
 .masthead-id { min-width: 0; flex: 1 1 auto; }
-.logo { display: block; max-height: calc(var(--u) * 8); max-width: calc(var(--u) * 40); object-fit: contain; object-position: left center; margin-bottom: calc(var(--u) * 2.6); }
+/* Every logo stays inside its own column (min(100%, …)), so a larger one never pushes the clock and weather aside */
+.logo { display: block; max-height: calc(var(--u) * 8 * var(--logo-scale)); max-width: min(100%, calc(var(--u) * 40 * var(--logo-scale))); object-fit: contain; object-position: left center; margin-bottom: calc(var(--u) * 2.6); }
 /* Logo standing in for the property name: larger, and no gap below it */
-#stage.wordmark .logo { width: 100%; max-width: calc(var(--u) * 58); height: auto; max-height: calc(var(--u) * 11); margin-bottom: 0; }
+#stage.wordmark .logo { width: 100%; max-width: min(100%, calc(var(--u) * 58 * var(--logo-scale))); height: auto; max-height: calc(var(--u) * 11 * var(--logo-scale)); margin-bottom: 0; }
 #stage.wordmark .label { margin-top: calc(var(--u) * 1.6); }
 .property {
   font-family: "Lora", Georgia, serif; font-weight: 700;
-  font-size: calc(var(--u) * 7.2); line-height: 1.02; letter-spacing: -0.01em;
+  font-size: calc(var(--u) * 7.2 * var(--title-scale)); line-height: 1.02; letter-spacing: -0.01em;
   text-wrap: balance;
 }
 .label { margin-top: calc(var(--u) * 1.2); font-size: calc(var(--u) * 2.7); color: var(--muted); }
@@ -144,19 +147,21 @@ body { font-family: "Instrument Sans", "Segoe UI", Arial, sans-serif; color: var
 
 .welcome {
   background: var(--navy-deep); color: var(--muted);
-  font-size: calc(var(--u) * 2.3); text-align: center; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  font-size: calc(var(--u) * 2.3 * var(--welcome-scale)); text-align: center; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
   padding: 0 var(--pad) calc(var(--u) * 2.8);
 }
+/* Made larger than standard: wraps to a second line rather than being cut off with … */
+.welcome.wrap { white-space: normal; text-wrap: balance; line-height: 1.25; }
 
 /* The bottom logo strip: the owner's or manager's logo (or the building's, when they're swapped) */
 .brand {
   display: flex; justify-content: center; align-items: center;
   background: var(--navy-deep); padding: calc(var(--u) * 1.4) var(--pad) calc(var(--u) * 2.4);
 }
-.brand img { display: block; max-height: calc(var(--u) * 6); max-width: min(70%, calc(var(--u) * 46)); object-fit: contain; }
+.brand img { display: block; max-height: calc(var(--u) * 6 * var(--brand-scale)); max-width: min(100%, calc(70% * var(--brand-scale)), calc(var(--u) * 46 * var(--brand-scale))); object-fit: contain; }
 #stage.has-bg .brand { background: rgba(8, 19, 34, 0.82); }
 #stage.landscape .brand { grid-column: 1 / -1; padding-top: calc(var(--u) * 1); padding-bottom: calc(var(--u) * 1.6); }
-#stage.landscape .brand img { max-height: calc(var(--u) * 5); }
+#stage.landscape .brand img { max-height: calc(var(--u) * 5 * var(--brand-scale)); }
 
 .offline {
   position: absolute; right: calc(var(--u) * 2); bottom: calc(var(--u) * 1); 
@@ -174,7 +179,7 @@ body { font-family: "Instrument Sans", "Segoe UI", Arial, sans-serif; color: var
   grid-template-rows: auto minmax(0, 1fr) auto auto auto;
 }
 #stage.landscape .masthead { grid-column: 1 / -1; }
-#stage.landscape .property { font-size: calc(var(--u) * 6); }
+#stage.landscape .property { font-size: calc(var(--u) * 6 * var(--title-scale)); }
 #stage.landscape .listing { grid-column: 1; grid-row: 2; }
 #stage.landscape.no-news .listing { grid-column: 1 / -1; }
 #stage.landscape .news { grid-column: 2; grid-row: 2; display: flex; padding: calc(var(--u) * 3.6) var(--pad) calc(var(--u) * 2) 0; }

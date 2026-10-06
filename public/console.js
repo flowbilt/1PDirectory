@@ -80,7 +80,7 @@
         <td>${esc({ ...LAYOUTS, auto: "Automatic" }[s.orientation] || s.orientation)}${rep.w ? `<div class="sub">${rep.w}×${rep.h}</div>` : ""}</td>
         <td>${since(s.last_seen)}</td>
         <td class="actions">
-          ${d ? `<a class="ghost" href="/edit.html?d=${d.id}">Edit tenants</a>` : ""}
+          ${d ? `<a class="ghost" href="/edit.html?d=${d.id}&s=${s.id}">Edit tenants</a>` : ""}
           <a class="ghost" href="/?screen=${encodeURIComponent(s.key)}&view=1" target="_blank" rel="noopener">View</a>
           ${Dev.actionButton(s)}
           ${S.admin ? `<button type="button" class="ghost" data-screen="${s.id}">Settings</button>` : ""}

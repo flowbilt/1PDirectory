@@ -10,7 +10,7 @@
 */
 (() => {
   "use strict";
-  const VERSION = "2.6.0";
+  const VERSION = "2.7.0";
   const q = new URLSearchParams(location.search);
   const DEVICE = (q.get("device") || "").toLowerCase();
   const CHOSEN = (q.get("screen") || q.get("key") || q.get("site") || "").toLowerCase();
@@ -183,16 +183,30 @@
     document.querySelector(".contacts").hidden = !(m || l);
 
     renderBackground();
+    const sz = applySizes(data.sizes);
 
     const w = $("welcome");
     w.textContent = data.welcome || "";
     w.hidden = !data.welcome;
+    w.classList.toggle("wrap", sz.welcome > 100);
 
     if (data.weather?.enabled === false) $("weather").hidden = true;
 
     tick();
     // Fit after fonts are ready so measurements use the real typeface.
     document.fonts.ready.then(() => { fitTenants(); stage.classList.remove("is-loading"); });
+  }
+
+  // This screen's sizes, each a percentage of the standard (missing = 100). Ranges match supabase/18-sizes.sql.
+  const SIZE_RANGES = { title: [50, 120], logo: [60, 200], brand: [60, 250], welcome: [80, 160] };
+  function applySizes(sizes) {
+    const out = {};
+    for (const [name, [lo, hi]] of Object.entries(SIZE_RANGES)) {
+      const v = Number(sizes?.[name]);
+      out[name] = Number.isFinite(v) ? Math.min(hi, Math.max(lo, v)) : 100;
+      stage.style.setProperty(`--${name}-scale`, String(out[name] / 100));
+    }
+    return out;
   }
 
   let draftMode = false; // admin preview: show unsaved edits instead of polling

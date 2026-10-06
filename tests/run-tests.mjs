@@ -694,7 +694,8 @@ test("nobody reads screens.hardware from the database; 1Point gets it through th
   assert.equal(hw.hardware.yodeck_id, "194292");
   assert.equal(ppi2s.name, "TBC - PPI - 2 S - 194292", "the name matches its Yodeck ID");
   const edit = readFileSync(new URL("../public/edit.js", import.meta.url), "utf8").match(/screens\?directory_id=eq\.\$\{dir\.id\}&select=([\w,]+)/)[1];
-  assert.ok(edit.split(",").every((c) => cols.split(",").includes(c)), "the editor asks only for readable columns");
+  const readable = [...cols.split(","), "sizes"];                           // sizes: granted in 18-sizes.sql
+  assert.ok(edit.split(",").every((c) => readable.includes(c)), "the editor asks only for readable columns");
   const granted = readFileSync(new URL("../supabase/06-trust.sql", import.meta.url), "utf8").match(/grant select \(([^)]+)\)/)[1].split(",").map((c) => c.trim());
   assert.deepEqual([...granted].sort(), cols.split(",").sort(), "06-trust.sql grants exactly the console's columns");
 });
@@ -1093,6 +1094,48 @@ test("Netlify's blocklist adds to the built-in one, and descriptions are checked
     assert.deepEqual(titles, ["New deadline set for the city's diet program"]);
     assert.ok(!("summary" in items[0]), "descriptions aren't sent to the screens");
   } finally { delete process.env.NEWS_FEEDS; delete process.env.NEWS_BLOCKLIST; }
+});
+
+// ── Per-screen sizes (DP-04 round 4, 18-sizes.sql) ──
+const setSizes = (token, screenId, sizes) => fake.handle(new Request(`${SB}/rest/v1/rpc/set_screen_sizes`, { method: "POST",
+  headers: { apikey: ANON_KEY, ...(token ? { Authorization: `Bearer ${token}` } : {}), "Content-Type": "application/json" }, body: JSON.stringify({ p_screen: screenId, p_sizes: sizes }) }));
+
+test("anyone with the screen's account can size it; the screen picks it up at once", async () => {
+  const scr = fake.T.screens.find((x) => x.key === "ppi-1s");
+  const first = await screen(req("/api/screen?key=ppi-1s"));
+  const etag = first.headers.get("ETag");
+  assert.deepEqual((await first.json()).sizes, {}, "standard until someone changes it");
+  try {
+    const editor = await login("editor@barber.test", "editor-pass");       // a front-desk editor, not only the owner
+    const r = await setSizes(editor, scr.id, { title: 80, logo: 100, brand: 999, welcome: 40, news: 70, bogus: "x" });
+    assert.equal(r.status, 200);
+    assert.deepEqual(await r.json(), { title: 80, brand: 250, welcome: 80 }, "100 isn't stored; out of range is clamped; unknown names ignored");
+    const next = await screen(req("/api/screen?key=ppi-1s", { headers: { "If-None-Match": etag } }));
+    assert.equal(next.status, 200, "a size change changes the screen's version");
+    assert.deepEqual((await next.json()).sizes, { title: 80, brand: 250, welcome: 80 });
+    const other = await screen(req("/api/screen?key=ppi-2s"));
+    assert.deepEqual((await other.json()).sizes, {}, "per screen: another screen of the same owner is untouched");
+  } finally { scr.sizes = {}; }
+});
+
+test("nobody outside the screen's account can size it", async () => {
+  const scr = fake.T.screens.find((x) => x.key === "ppi-1s");
+  const otherScreen = fake.T.screens.find((x) => x.key === "other-tower");
+  const owner = await login("leighann@barber.test", "owner-pass");
+  assert.equal((await setSizes(owner, otherScreen.id, { title: 60 })).status, 403, "another owner's screen");
+  assert.equal((await setSizes(null, scr.id, { title: 60 })).status, 403, "not signed in");
+  assert.deepEqual(otherScreen.sizes, {}); assert.deepEqual(scr.sizes, {});
+  // and sizing is the only screen change an owner can make
+  const patch = await fake.handle(new Request(`${SB}/rest/v1/screens?id=eq.${scr.id}`, { method: "PATCH",
+    headers: { apikey: ANON_KEY, Authorization: `Bearer ${owner}`, "Content-Type": "application/json", Prefer: "return=representation" }, body: JSON.stringify({ sizes: { title: 60 }, name: "Renamed" }) }));
+  assert.ok(patch.status >= 400 || (await patch.json()).length === 0, "screens stay 1Point-only to write directly");
+  assert.notEqual(scr.name, "Renamed");
+});
+
+test("the editor preview and the screen send sizes the same way", () => {
+  const p = toPayload({ key: "k", name: "n", orientation: "portrait", sizes: { logo: 150 } }, { title: "T", updated_at: "x" }, { name: "B" }, []);
+  assert.deepEqual(p.sizes, { logo: 150 });
+  assert.deepEqual(toPayload({ key: "k", name: "n" }, null, null, []).sizes, {});
 });
 
 let passed = 0;
