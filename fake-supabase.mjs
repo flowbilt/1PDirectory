@@ -7,16 +7,17 @@ export const SERVICE_KEY = "test-service-key";
 export const ANON_KEY = "test-anon-key";
 
 export function createFake() {
-  const T = { organizations: [], profiles: [], properties: [], directories: [], tenants: [], screens: [], audit_log: [], devices: [], device_commands: [], device_daily: [] };
-  const SERVICE_ONLY = new Set(["devices", "device_commands", "device_daily"]); // row-level security on, no policies: server key only
+  const T = { organizations: [], profiles: [], properties: [], directories: [], tenants: [], screens: [], audit_log: [], devices: [], device_commands: [], device_daily: [], wifi_networks: [], prepare_codes: [], alert_recipients: [], mail_settings: [] };
+  const SERVICE_ONLY = new Set(["devices", "device_commands", "device_daily", "wifi_networks", "prepare_codes", "alert_recipients", "mail_settings"]); // row-level security on, no policies: server key only
   // Columns of screens signed-in users may read (supabase/06-trust.sql). hardware is server-only.
-  const SCREEN_COLS = new Set(["id", "directory_id", "key", "name", "location_note", "orientation", "last_seen", "last_report", "identify_until", "created_at"]);
+  const SCREEN_COLS = new Set(["id", "directory_id", "key", "name", "location_note", "orientation", "last_seen", "last_report", "identify_until", "created_at", "sizes"]);
   const users = new Map(); // id -> {id,email,password,last_sign_in_at,invited_at,user_metadata}
   const tokens = new Map(); // token -> user id
   const outbox = [];
   const rpcCalls = []; // which database functions were called, for tests that count trips
   const restCalls = [];
-  const now = () => new Date().toISOString();
+  let clock = null;                                   // tests can fix "now" with setClock(date)
+  const now = () => (clock ? new Date(clock) : new Date()).toISOString();
 
   // ── seed from the migration data ──
   function seed() {
@@ -26,22 +27,22 @@ export function createFake() {
       T.organizations.push({ id: oid, name: o.name, kind: o.kind, notes: "", created_at: now() });
       for (const p of o.properties) {
         const pid = randomUUID();
-        T.properties.push({ id: pid, org_id: oid, name: p.name, address: p.address || "", timezone: "America/Chicago", lat: p.lat, lon: p.lon, logo: "", logo_replaces_name: false, background: {}, managed_by: p.managed_by || {}, leased_by: p.leased_by || {}, footer: p.footer || "", created_at: now(), updated_at: now(), updated_by: null });
+        T.properties.push({ id: pid, org_id: oid, name: p.name, address: p.address || "", timezone: "America/Chicago", lat: p.lat, lon: p.lon, logo: "", logo_replaces_name: false, company_logo: "", logo_swap: false, background: {}, managed_by: p.managed_by || {}, leased_by: p.leased_by || {}, footer: p.footer || "", created_at: now(), updated_at: now(), updated_by: null });
         for (const d of p.directories) {
           const did = randomUUID();
           T.directories.push({ id: did, property_id: pid, slug: d.slug, title: d.title, subtitle: d.subtitle, footer_override: null, news_enabled: true, rotate_seconds: 12, weather_enabled: true, created_at: now(), updated_at: now(), updated_by: null });
           d.tenants.forEach((t, i) => T.tenants.push({ id: randomUUID(), directory_id: did, sort: i * 10, name: t.name, suite: t.suite, arrow: t.arrow, note: t.note }));
-          T.screens.push({ id: randomUUID(), directory_id: did, key: d.screen.key, name: d.screen.name, location_note: "", orientation: d.screen.orientation, hardware: d.screen.hardware, last_seen: null, last_report: {}, created_at: now() });
+          T.screens.push({ id: randomUUID(), directory_id: did, key: d.screen.key, name: d.screen.name, location_note: "", orientation: d.screen.orientation, hardware: d.screen.hardware, last_seen: null, last_report: {}, sizes: {}, created_at: now() });
         }
       }
     }
     // A second customer, to prove Barber users can't see it.
     const other = randomUUID(), op = randomUUID(), od = randomUUID();
     T.organizations.push({ id: other, name: "Other Owner LLC", kind: "owner", notes: "", created_at: now() });
-    T.properties.push({ id: op, org_id: other, name: "Other Tower", address: "", timezone: "America/Chicago", lat: 33.5, lon: -86.8, logo: "", logo_replaces_name: false, background: {}, managed_by: {}, leased_by: {}, footer: "", created_at: now(), updated_at: now() });
+    T.properties.push({ id: op, org_id: other, name: "Other Tower", address: "", timezone: "America/Chicago", lat: 33.5, lon: -86.8, logo: "", logo_replaces_name: false, company_logo: "", logo_swap: false, background: {}, managed_by: {}, leased_by: {}, footer: "", created_at: now(), updated_at: now() });
     T.directories.push({ id: od, property_id: op, slug: "other-tower", title: "Other Tower", subtitle: "", footer_override: null, news_enabled: true, rotate_seconds: 12, weather_enabled: true, created_at: now(), updated_at: now() });
     T.tenants.push({ id: randomUUID(), directory_id: od, sort: 0, name: "Secret Tenant Inc.", suite: "100", arrow: "", note: "" });
-    T.screens.push({ id: randomUUID(), directory_id: od, key: "other-tower", name: "Other Tower Lobby", location_note: "", orientation: "landscape", hardware: {}, last_seen: null, last_report: {}, created_at: now() });
+    T.screens.push({ id: randomUUID(), directory_id: od, key: "other-tower", name: "Other Tower Lobby", location_note: "", orientation: "landscape", hardware: {}, last_seen: null, last_report: {}, sizes: {}, created_at: now() });
 
     for (const sc of T.screens) {
       const serial = String(sc.hardware?.serial || "").toLowerCase();
@@ -141,21 +142,26 @@ export function createFake() {
   }
   const defaults = {
     organizations: () => ({ id: randomUUID(), kind: "owner", notes: "", created_at: now() }),
-    properties: () => ({ id: randomUUID(), address: "", timezone: "America/Chicago", lat: null, lon: null, logo: "", logo_replaces_name: false, background: {}, managed_by: {}, leased_by: {}, footer: "", created_at: now(), updated_at: now() }),
+    properties: () => ({ id: randomUUID(), address: "", timezone: "America/Chicago", lat: null, lon: null, logo: "", logo_replaces_name: false, company_logo: "", logo_swap: false, background: {}, managed_by: {}, leased_by: {}, footer: "", created_at: now(), updated_at: now() }),
     directories: () => ({ id: randomUUID(), subtitle: "", footer_override: null, news_enabled: true, rotate_seconds: 12, weather_enabled: true, created_at: now(), updated_at: now() }),
     tenants: () => ({ id: randomUUID(), sort: 0, suite: "", arrow: "", note: "" }),
-    screens: () => ({ id: randomUUID(), directory_id: null, location_note: "", orientation: "auto", hardware: {}, last_seen: null, last_report: {}, created_at: now() }),
+    screens: () => ({ id: randomUUID(), directory_id: null, location_note: "", orientation: "auto", hardware: {}, last_seen: null, last_report: {}, sizes: {}, created_at: now() }),
     profiles: () => ({ full_name: "", created_at: now() }),
     audit_log: () => ({ id: T.audit_log.length + 1, at: now(), detail: {} }),
-    devices: () => ({ id: randomUUID(), screen_id: null, key_hash: null, enroll_until: null, status: "active", model: "", hostname: "", agent_version: "", last_seen: null, last_health: {}, screenshot: "", screenshot_at: null, alert_state: {}, created_at: now() }),
+    devices: () => ({ id: randomUUID(), screen_id: null, key_hash: null, enroll_until: null, refused_at: null, refused_why: null, status: "active", model: "", hostname: "", agent_version: "", last_seen: null, last_health: {}, screenshot: "", screenshot_at: null, alert_state: {}, created_at: now() }),
     device_daily: () => ({ id: (T.device_daily.at(-1)?.id || 0) + 1, checkins: 0, power_dips: 0, browser_down: 0, max_temp_c: null }),
-    device_commands: () => ({ id: (T.device_commands.at(-1)?.id || 0) + 1, status: "pending", result: "", created_at: now(), sent_at: null, done_at: null }),
+    alert_recipients: () => ({ id: randomUUID(), name: "", offline: true, power: true, hot: true, enabled: true, updated_at: now(), updated_by: null }),
+    wifi_networks: () => ({ id: randomUUID(), label: "", psk: "", hidden: false, on_cards: true, sort: 0, updated_at: now(), updated_by: null }),
+    prepare_codes: () => ({ id: (T.prepare_codes.at(-1)?.id || 0) + 1, used_at: null, created_at: now() }),
+    device_commands: () => ({ id: (T.device_commands.at(-1)?.id || 0) + 1, status: "pending", result: "", payload: null, created_at: now(), sent_at: null, done_at: null }),
   };
   const touchDir = (did, uid) => { const d = T.directories.find((x) => x.id === did); if (d) { d.updated_at = now(); d.updated_by = uid || null; } };
   function checkRow(table, row) {
     if (table === "directories" && T.directories.some((d) => d.slug === row.slug && d.id !== row.id)) return "duplicate key value violates unique constraint \"directories_slug_key\"";
     if (table === "screens" && T.screens.some((s) => s.key === row.key && s.id !== row.id)) return "duplicate key value violates unique constraint \"screens_key_key\"";
     if (table === "tenants" && !String(row.name || "").trim()) return "new row violates check constraint \"tenants_name_check\"";
+    // 19-mail.sql: one row, and only sealed passwords
+    if (table === "mail_settings" && (row.id !== true || !String(row.password_enc || "").startsWith("v1:"))) return "new row violates check constraint \"mail_settings_check\"";
     return null;
   }
 
@@ -179,7 +185,7 @@ export function createFake() {
 
     if (req.method === "GET") {
       const rows = T[table].filter((r) => canSee(table, r, who) && match(r));
-      return out(order(rows, params.get("order")).map(pick));
+      return out(order(rows, params.get("order")).slice(0, Math.min(Number(params.get("limit")) || MAX_ROWS, MAX_ROWS)).map(pick));
     }
     if (req.method === "POST") {
       let body = await req.json();
@@ -235,38 +241,115 @@ export function createFake() {
   }
 
 
-  // ── database functions (mirror of supabase/05-tuning.sql, agent_checkin as replaced by 06-trust.sql) ──
+  // ── database functions (mirror of supabase/05-tuning.sql; agent_checkin as last replaced by 13-tech.sql) ──
   const centralDay = (d = new Date()) => new Intl.DateTimeFormat("en-CA", { timeZone: "America/Chicago" }).format(d);
+  // Mirror of device_credit (07-uptime.sql): {today, previous day} seconds for a check-in at `at` after one at `prev`
+  function deviceCredit(prev, at) {
+    const gap = prev ? (Date.parse(at) - Date.parse(prev)) / 1000 : 0;
+    const total = gap > 0 && gap <= 180 ? Math.round(gap) : 0;
+    const p = Object.fromEntries(new Intl.DateTimeFormat("en-US", { timeZone: "America/Chicago", hour: "numeric", minute: "numeric", second: "numeric", hourCycle: "h23" }).formatToParts(new Date(at)).map((x) => [x.type, Number(x.value)]));
+    const intoToday = Math.floor(p.hour * 3600 + p.minute * 60 + p.second + (Date.parse(at) % 1000) / 1000);
+    return [Math.min(total, intoToday), total - Math.min(total, intoToday)];
+  }
+  // Supabase hands back at most 1,000 rows a request (tables and functions alike); so does this fake
+  const MAX_ROWS = 1000;
+  const addDays = (day, n) => new Date(Date.parse(day + "T12:00:00Z") + n * 86400_000).toISOString().slice(0, 10);
+  // Functions signed-in users may call (they check access themselves); the rest are server-only
+  const USER_FUNCS = new Set(["set_screen_sizes"]);
+  const SIZE_RANGES = { title: [50, 120], logo: [60, 200], brand: [60, 250], welcome: [80, 160] };
   const FUNCS = {
+    // Mirror of 18-sizes.sql
+    set_screen_sizes({ p_screen, p_sizes = {} }, who) {
+      const s = T.screens.find((x) => x.id === p_screen);
+      const me = who.profile;
+      const ok = s && (who.service || me?.role === "platform_admin" || (me && s.directory_id && dirOrg(s.directory_id) === me.org_id));
+      if (!ok) throw Object.assign(new Error("That screen doesn't exist, or you don't have access to it."), { status: 403 });
+      const outSizes = {};
+      for (const [name, [lo, hi]] of Object.entries(SIZE_RANGES)) {
+        if (typeof p_sizes?.[name] !== "number") continue;
+        const v = Math.min(hi, Math.max(lo, Math.round(p_sizes[name])));
+        if (v !== 100) outSizes[name] = v;
+      }
+      s.sizes = outSizes;
+      return outSizes;
+    },
+    // Mirrors of 17-hardening.sql, written from the SQL (not from the site's code), so the tests compare the two
+    recent_device_commands({ p_device_ids = [], p_per = 5 }) {
+      const per = Math.max(1, Math.min(p_per ?? 5, 20));
+      return p_device_ids.map((id) => {
+        const mine = T.device_commands.filter((c) => c.device_id === id).sort((a, b) => b.id - a.id).slice(0, per);
+        return mine.length ? { device_id: id, commands: mine.map(({ id, device_id, command, status, result, created_at, done_at }) => ({ id, device_id, command, status, result, created_at, done_at })) } : null;
+      }).filter(Boolean);
+    },
+    health_window({ p_today }) {
+      const rows = T.device_daily.filter((d) => d.day >= addDays(p_today, -29));
+      const ids = [...new Set(rows.map((d) => d.device_id))];
+      const sum = (list, f) => list.reduce((m, d) => m + f(d), 0);
+      const up = (d) => (d.online_s ?? d.checkins * 60);
+      return ids.map((id) => {
+        const mine = rows.filter((d) => d.device_id === id).sort((a, b) => a.day.localeCompare(b.day));
+        const wk = mine.filter((d) => d.day >= addDays(p_today, -6));
+        const temps = wk.map((d) => d.max_temp_c).filter((t) => t !== null && t !== undefined);
+        return { device_id: id, first_day: mine[0].day, first_at: mine[0].first_at ?? null,
+          up_s_1: sum(mine.filter((d) => d.day >= p_today), up), up_s_7: sum(wk, up), up_s_30: sum(mine, up),
+          dips_7: sum(wk, (d) => d.power_dips || 0), dips_30: sum(mine, (d) => d.power_dips || 0),
+          browser_down_7: sum(wk, (d) => d.browser_down || 0), max_temp_7: temps.length ? Math.max(...temps) : null };
+      });
+    },
+    trim_device_history() {
+      const keep = new Set();
+      const byDev = new Map();
+      for (const c of [...T.device_commands].sort((a, b) => b.id - a.id)) {
+        const n = (byDev.get(c.device_id) || 0) + 1; byDev.set(c.device_id, n);
+        if (n <= 5) keep.add(c.id);
+      }
+      const at = Date.parse(now());
+      const cutoff = new Date(at - 90 * 86400_000).toISOString();
+      const before = [T.device_commands.length, T.device_daily.length];
+      const prune = (list, keepIt) => { for (let i = list.length - 1; i >= 0; i--) if (!keepIt(list[i])) list.splice(i, 1); };
+      prune(T.device_commands, (c) => keep.has(c.id) || ["pending", "sent"].includes(c.status) || c.created_at >= cutoff);
+      prune(T.device_daily, (d) => d.day >= addDays(centralDay(new Date(at)), -400));
+      return { commands: before[0] - T.device_commands.length, days: before[1] - T.device_daily.length };
+    },
     agent_checkin({ p_serial, p_key_hash, p_info = {}, p_health = {}, p_screenshot = null, p_results = [] }) {
       const t = now();
       let dv = T.devices.find((d) => d.serial === p_serial);
       if (!dv) { dv = { ...defaults.devices(), serial: p_serial, key_hash: p_key_hash }; T.devices.push(dv); } // not registered: enrolls, waits under New devices
-      if (dv.status === "revoked") return { refused: "revoked" };
+      const refuse = (why) => (Object.assign(dv, { refused_at: t, refused_why: why }), { refused: why });   // 10-refused.sql
+      if (dv.status === "revoked") return refuse("revoked");
       if (!dv.key_hash) {
-        if (!dv.enroll_until || dv.enroll_until < t) return { refused: "enroll" };  // registered, no key: needs the window
+        if (!dv.enroll_until || dv.enroll_until < t) return refuse("enroll");  // registered, no key: needs the window
         Object.assign(dv, { key_hash: p_key_hash, enroll_until: null });
-      } else if (dv.key_hash !== p_key_hash) return { refused: "key" };
-      Object.assign(dv, { last_seen: t, last_health: p_health || {}, model: p_info?.model ?? "", hostname: p_info?.hostname ?? "", agent_version: p_info?.version ?? "" });
+      } else if (dv.key_hash !== p_key_hash) return refuse("key");
+      const prevSeen = dv.last_seen;
+      Object.assign(dv, { last_seen: t, refused_at: null, refused_why: null, last_health: p_health || {}, model: p_info?.model ?? "", hostname: p_info?.hostname ?? "", agent_version: p_info?.version ?? "" });
       if (p_screenshot != null && dv.screen_id) Object.assign(dv, { screenshot: p_screenshot, screenshot_at: t }); // none while unassigned
-      const day = centralDay(), h = p_health || {};
+      const cred = deviceCredit(prevSeen, t);
+      const day = centralDay(new Date(t)), h = p_health || {};
       const temp = typeof h.temp_c === "number" ? h.temp_c : null;
       const row = T.device_daily.find((r) => r.device_id === dv.id && r.day === day);
-      if (row) Object.assign(row, { checkins: row.checkins + 1, power_dips: row.power_dips + (h.under_voltage_now === true ? 1 : 0),
+      if (row) Object.assign(row, { checkins: row.checkins + 1, online_s: (row.online_s ?? 0) + cred[0], power_dips: row.power_dips + (h.under_voltage_now === true ? 1 : 0),
         browser_down: row.browser_down + (h.browser_running === false ? 1 : 0),
         max_temp_c: row.max_temp_c == null ? temp : temp == null ? row.max_temp_c : Math.max(row.max_temp_c, temp), last_at: t });
-      else T.device_daily.push({ ...defaults.device_daily(), device_id: dv.id, day, checkins: 1, power_dips: h.under_voltage_now === true ? 1 : 0,
+      else T.device_daily.push({ ...defaults.device_daily(), device_id: dv.id, day, checkins: 1, online_s: cred[0], power_dips: h.under_voltage_now === true ? 1 : 0,
         browser_down: h.browser_running === false ? 1 : 0, max_temp_c: temp, first_at: t, last_at: t });
+      if (cred[1] > 0) {
+        const yday = centralDay(new Date(Date.parse(t) - cred[0] * 1000 - 1000));
+        const y = T.device_daily.find((r) => r.device_id === dv.id && r.day === yday);
+        if (y) y.online_s = (y.online_s ?? 0) + cred[1];
+      }
       for (const r of p_results || []) {
         const c = T.device_commands.find((x) => x.id === Number(r.id) && x.device_id === dv.id && x.status === "sent");
-        if (c) Object.assign(c, { status: r.status === "done" ? "done" : "failed", result: String(r.result ?? "").slice(0, 500), done_at: t });
+        if (c) Object.assign(c, { status: r.status === "done" ? "done" : "failed", result: String(r.result ?? "").slice(0, c.command === "wifi_scan" ? 4000 : 500), payload: null, done_at: t });
       }
-      const hourAgo = new Date(Date.now() - 3600_000).toISOString();
-      T.device_commands.filter((c) => c.device_id === dv.id && ["pending", "sent"].includes(c.status) && c.created_at < hourAgo).forEach((c) => { c.status = "expired"; });
+      const hourAgo = new Date(Date.parse(t) - 3600_000).toISOString();
+      T.device_commands.filter((c) => c.device_id === dv.id && ["pending", "sent"].includes(c.status) && c.created_at < hourAgo).forEach((c) => { c.status = "expired"; c.payload = null; });
       const pending = T.device_commands.filter((c) => c.device_id === dv.id && c.status === "pending").sort((a, b) => a.id - b.id);
-      pending.forEach((c) => Object.assign(c, { status: "sent", sent_at: t }));
+      // 13-tech.sql: each command goes out with its payload, which is cleared as it's handed over
+      const handed = pending.map((c) => ({ id: c.id, command: c.command, ...(c.payload != null ? { payload: c.payload } : {}) }));
+      pending.forEach((c) => Object.assign(c, { status: "sent", sent_at: t, payload: null }));
       const sc = T.screens.find((s) => s.id === dv.screen_id);
-      return { screen: sc?.key ?? null, commands: pending.map((c) => ({ id: c.id, command: c.command })) };
+      return { screen: sc?.key ?? null, commands: handed };
     },
     screen_state({ p_key, p_device, p_etag, p_report }) {
       let s;
@@ -281,20 +364,22 @@ export function createFake() {
       if (p_report && (!s.last_seen || Date.parse(s.last_seen) < Date.now() - 4 * 60000)) Object.assign(s, { last_seen: now(), last_report: p_report });
       const d = s.directory_id ? T.directories.find((x) => x.id === s.directory_id) : null;
       const p = d ? T.properties.find((x) => x.id === d.property_id) : null;
-      const etag = createHash("md5").update([s.key, s.name, s.orientation, s.directory_id || "-", s.identify_until || "-", d?.updated_at || "-", p?.updated_at || "-"].join("|")).digest("hex");
+      const etag = createHash("md5").update([s.key, s.name, s.orientation, s.directory_id || "-", s.identify_until || "-", d?.updated_at || "-", p?.updated_at || "-", JSON.stringify(s.sizes || {})].join("|")).digest("hex");
       if (etag === p_etag) return { etag, not_modified: true };
       const tenants = d ? order(T.tenants.filter((t) => t.directory_id === d.id), "sort,name").map(({ name, suite, arrow, note, sort }) => ({ name, suite, arrow, note, sort })) : [];
-      return { etag, screen: { key: s.key, name: s.name, orientation: s.orientation, identify_until: s.identify_until ?? null }, dir: d ? { ...d } : null, prop: p ? { ...p } : null, tenants };
+      return { etag, screen: { key: s.key, name: s.name, orientation: s.orientation, identify_until: s.identify_until ?? null, sizes: s.sizes || {} }, dir: d ? { ...d } : null, prop: p ? { ...p } : null, tenants };
     },
   };
   async function rpc(req, name) {
     const who = whoFrom(req);
     if (!who) return err(401, "Invalid API key");
     if (!FUNCS[name]) return err(404, `Could not find the function public.${name}`);
-    if (!who.service) return err(403, `permission denied for function ${name}`);
+    if (!who.service && !(USER_FUNCS.has(name) && who.uid)) return err(403, `permission denied for function ${name}`);
     if (req.method !== "POST") return err(405, "Method not allowed");
     rpcCalls.push(name);
-    return out(FUNCS[name](await req.json()));
+    let result;
+    try { result = FUNCS[name](await req.json(), who); } catch (e) { return err(e.status || 400, e.message); }
+    return out(Array.isArray(result) ? result.slice(0, MAX_ROWS) : result);
   }
 
   async function authApi(req, path, url) {
@@ -358,5 +443,5 @@ export function createFake() {
   }
 
   seed();
-  return { handle, T, users, outbox, addUser, rpcCalls, restCalls };
+  return { handle, T, users, outbox, addUser, rpcCalls, restCalls, deviceCredit, setClock: (d) => { clock = d ? new Date(d) : null; } };
 }

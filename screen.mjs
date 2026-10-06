@@ -9,9 +9,12 @@
 import { createHash } from "node:crypto";
 import { SITE_RE } from "../lib/common.mjs";
 import { rpc } from "../lib/sb.mjs";
+import { DISPLAY_VERSION } from "../lib/version.mjs";
 
-// Bump when toPayload's output changes shape, so every screen re-downloads once after the deploy.
-const PAYLOAD_V = "p2";
+// Bump when toPayload's output changes shape, so every screen re-downloads once after the deploy. The live display
+// version is part of the tag too (TAG), so a display deploy also gives every screen a fresh answer.
+const PAYLOAD_V = "p3";
+const TAG = `${PAYLOAD_V}-${DISPLAY_VERSION.replace(/[^0-9.]/g, "")}`;
 const HEADERS = { "Content-Type": "application/json; charset=utf-8", "Cache-Control": "no-cache" };
 
 const send = (obj, status = 200, etag) => new Response(JSON.stringify(obj), { status, headers: { ...HEADERS, ...(etag ? { ETag: etag } : {}) } });
@@ -27,7 +30,7 @@ const sendHashed = (req, obj) => {
 /** The version the screen already has, from If-None-Match, if it's one of ours. */
 function knownVersion(req) {
   for (const tag of (req.headers.get("if-none-match") || "").split(/\s*,\s*/)) {
-    const m = tag.replace(/^W\//, "").match(new RegExp(`^"${PAYLOAD_V}-([0-9a-f]{32})"$`));
+    const m = tag.replace(/^W\//, "").match(new RegExp(`^"${TAG.replace(/\./g, "\\.")}-([0-9a-f]{32})"$`));
     if (m) return m[1];
   }
   return null;
@@ -55,6 +58,8 @@ export function toPayload(screen, dir, prop, tenants) {
     buildingLabel: dir ? (dir.subtitle || prop?.address || "") : "",
     logo: prop?.logo || "",
     logoReplacesName: !!(prop?.logo && prop?.logo_replaces_name),
+    companyLogo: prop?.company_logo || "",                 // the owner's or manager's logo (supabase/15-logos.sql)
+    logoSwap: !!prop?.logo_swap,                           // true: company logo on top, building logo at the bottom
     tenants: (tenants || []).map((t) => ({ name: t.name, suite: t.suite, dir: t.arrow || "", note: t.note || "" })),
     managedBy: prop?.managed_by || {},
     leasedBy: prop?.leased_by || {},
@@ -63,13 +68,15 @@ export function toPayload(screen, dir, prop, tenants) {
     timezone: prop?.timezone || "America/Chicago",
     news: { enabled: dir ? dir.news_enabled !== false : false, rotateSeconds: dir?.rotate_seconds || 12 },
     background: prop?.background || {},
+    sizes: screen.sizes || {},                             // this screen's sizes, % of standard (supabase/18-sizes.sql)
+    display: DISPLAY_VERSION,                              // the live display code; an older screen reloads itself
     assigned: !!dir,
     identifyUntil: screen.identify_until || null,
     updatedAt: updated,
   };
 }
 
-export const NEW_DEVICE = (device) => ({ key: null, device, assigned: false, newDevice: true, orientation: "auto", propertyName: "New display", buildingLabel: "", tenants: [], managedBy: {}, leasedBy: {}, welcome: "", weather: { enabled: false }, news: { enabled: false }, background: {}, logo: "", timezone: "America/Chicago" });
+export const NEW_DEVICE = (device) => ({ key: null, device, assigned: false, newDevice: true, orientation: "auto", propertyName: "New display", buildingLabel: "", tenants: [], managedBy: {}, leasedBy: {}, welcome: "", weather: { enabled: false }, news: { enabled: false }, background: {}, sizes: {}, display: DISPLAY_VERSION, logo: "", timezone: "America/Chicago" });
 
 export default async (req) => {
   const url = new URL(req.url);
@@ -82,7 +89,7 @@ export default async (req) => {
     const r = await rpc("screen_state", { p_key: device ? null : key, p_device: device || null, p_etag: knownVersion(req), p_report: report(req) });
     if (r?.new_device) return sendHashed(req, NEW_DEVICE(device));
     if (r?.missing) return send({ error: `No screen named "${key}".` }, 404);
-    const etag = `"${PAYLOAD_V}-${r.etag}"`;
+    const etag = `"${TAG}-${r.etag}"`;
     if (r.not_modified) return new Response(null, { status: 304, headers: { ...HEADERS, ETag: etag } });
     return send(toPayload(r.screen, r.dir, r.prop, r.tenants), 200, etag);
   } catch (e) {

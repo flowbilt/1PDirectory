@@ -10,7 +10,7 @@
 */
 (() => {
   "use strict";
-  const VERSION = "2.2.0";
+  const VERSION = "2.8.0";   // = netlify/lib/version.mjs (a test keeps them equal)
   const q = new URLSearchParams(location.search);
   const DEVICE = (q.get("device") || "").toLowerCase();
   const CHOSEN = (q.get("screen") || q.get("key") || q.get("site") || "").toLowerCase();
@@ -29,6 +29,12 @@
   const SCREEN_URL = DEVICE ? `/api/screen?device=${encodeURIComponent(DEVICE)}` : `/api/screen?key=${encodeURIComponent(SITE)}`;
   const URL_ROTATE = ["90", "270"].includes(q.get("rotate")) ? Number(q.get("rotate")) : null;
   const CHECKS_IN = !PREVIEW && !VIEW; // only a real screen records a check-in
+  // A Pi 4 has no battery-backed clock: after a power cut it starts at the last time it saved and corrects itself only
+  // once it's online. So a real screen shows the time and date only after it has reached the site since it started.
+  let clockTrusted = !CHECKS_IN;
+  // The site's own time comes with every answer, so the clock is right even where a building's network blocks the
+  // time service the Pi normally sets itself from (NTP).
+  let clockOffset = 0;
 
   const POLL_DIRECTORY_MS = 60 * 1000;
   const POLL_WEATHER_MS = 10 * 60 * 1000;
@@ -58,10 +64,13 @@
   // TV is being driven, the page rotates itself 90 degrees. ?rotate= in the address overrides that.
   function sizeStage() {
     const vw = window.innerWidth, vh = window.innerHeight;
-    const wanted = data?.orientation || "auto";
+    const wanted = data?.orientation || "auto";           // portrait-flipped / landscape-flipped: the same layouts, the
+    const shape = wanted.split("-")[0];                   // Pi turns the picture the other way (setup-kiosk.sh)
     const viewportPortrait = vh > vw;
     let rotate = URL_ROTATE;
-    if (rotate === null) rotate = (wanted === "portrait" && !viewportPortrait) || (wanted === "landscape" && viewportPortrait) ? 90 : 0;
+    // The same direction the Pi turns its output (Wayland transform 90 is a quarter turn anticlockwise, which is
+    // rotate(-90deg) here), so the picture doesn't flip between a Layout change and the Pi's next restart.
+    if (rotate === null) rotate = shape === "portrait" && !viewportPortrait ? (wanted === "portrait-flipped" ? 90 : 270) : shape === "landscape" && viewportPortrait ? 90 : 0;
     const W = rotate ? vh : vw, H = rotate ? vw : vh;
     const landscape = W > H;
     const root = document.documentElement.style;
@@ -145,10 +154,17 @@
     label.textContent = data.buildingLabel || "";
     label.hidden = !data.buildingLabel;
 
+    // Two logos: the building's, and the owner's or manager's (companyLogo). Normally the building's sits at the top
+    // and the company's in a strip at the bottom; logoSwap puts the company's on top and the building's at the bottom.
+    const swap = !!(data.logoSwap && data.companyLogo);
+    const top = swap ? data.companyLogo : data.logo, bottom = swap ? data.logo : data.companyLogo;
     const logo = $("logo");
-    const wordmark = !!(data.logo && data.logoReplacesName);
-    if (data.logo) { if (logo.src !== data.logo) logo.src = data.logo; logo.hidden = false; logo.alt = wordmark ? data.propertyName : ""; }
+    const wordmark = !swap && !!(data.logo && data.logoReplacesName);   // only the building's own logo replaces its name
+    if (top) { if (logo.getAttribute("src") !== top) logo.src = top; logo.hidden = false; logo.alt = wordmark ? data.propertyName : ""; }
     else { logo.hidden = true; logo.removeAttribute("src"); }
+    const brand = $("brand-logo");
+    if (bottom) { if (brand.getAttribute("src") !== bottom) brand.src = bottom; } else brand.removeAttribute("src");
+    $("brand").hidden = !bottom;
     stage.classList.toggle("wordmark", wordmark);
     $("property").hidden = wordmark;
 
@@ -167,16 +183,30 @@
     document.querySelector(".contacts").hidden = !(m || l);
 
     renderBackground();
+    const sz = applySizes(data.sizes);
 
     const w = $("welcome");
     w.textContent = data.welcome || "";
     w.hidden = !data.welcome;
+    w.classList.toggle("wrap", sz.welcome > 100);
 
     if (data.weather?.enabled === false) $("weather").hidden = true;
 
     tick();
     // Fit after fonts are ready so measurements use the real typeface.
     document.fonts.ready.then(() => { fitTenants(); stage.classList.remove("is-loading"); });
+  }
+
+  // This screen's sizes, each a percentage of the standard (missing = 100). Ranges match supabase/18-sizes.sql.
+  const SIZE_RANGES = { title: [50, 120], logo: [60, 200], brand: [60, 250], welcome: [80, 160] };
+  function applySizes(sizes) {
+    const out = {};
+    for (const [name, [lo, hi]] of Object.entries(SIZE_RANGES)) {
+      const v = Number(sizes?.[name]);
+      out[name] = Number.isFinite(v) ? Math.min(hi, Math.max(lo, v)) : 100;
+      stage.style.setProperty(`--${name}-scale`, String(out[name] / 100));
+    }
+    return out;
   }
 
   let draftMode = false; // admin preview: show unsaved edits instead of polling
@@ -219,14 +249,34 @@
       if (!res.ok) throw new Error(`directory ${res.status}`);
       const d = await res.json();
       const fromCache = res.headers.get("X-Served-From") === "offline-cache";
-      if (!fromCache) cache.set("directory", d);
+      if (!fromCache) {
+        cache.set("directory", d);
+        const siteNow = Date.parse(res.headers.get("Date") || "");
+        if (siteNow) clockOffset = Math.abs(siteNow - Date.now()) > 2000 ? siteNow - Date.now() : 0;
+        if (!clockTrusted) { clockTrusted = true; tick(); }
+      }
       $("offline").hidden = !fromCache;
+      if (!fromCache) reloadIfOutdated(d.display);
       apply(d);
     } catch (e) {
       console.warn("Directory fetch failed", e);
       if (!data) { const c = cache.get("directory"); if (c) apply(c); }
       $("offline").hidden = !data;
     }
+  }
+
+  // A newer display is live (the site says which with every directory): fetch the new code fresh, then reload, once.
+  // The note in localStorage stops a loop if a reload somehow still gets the old code: it tries again after 30 minutes.
+  async function reloadIfOutdated(live) {
+    if (PREVIEW || !CHECKS_IN || !live || live === VERSION || reloadIfOutdated.busy) return;
+    let last = null;
+    try { last = JSON.parse(localStorage.getItem("display-reload") || "null"); } catch { /* storage off: no guard needed */ }
+    if (last && last.to === live && Date.now() - last.at < 30 * 60000) return;
+    reloadIfOutdated.busy = true;
+    try { localStorage.setItem("display-reload", JSON.stringify({ to: live, at: Date.now() })); } catch { /* ignore */ }
+    console.info(`Display ${live} is live (this is ${VERSION}): reloading`);
+    await Promise.all(["/display.js", "/display.css", "/"].map((u) => fetch(u, { cache: "reload" }).catch(() => null)));
+    location.reload();
   }
 
   function apply(d) {
@@ -254,7 +304,9 @@
   function tick() {
     showIdentify();
     const tz = data?.timezone || "America/Chicago";
-    const now = new Date();
+    $("time").hidden = $("date").hidden = !clockTrusted;
+    if (!clockTrusted) return;
+    const now = new Date(Date.now() + clockOffset);
     let timeParts;
     try { timeParts = new Intl.DateTimeFormat("en-US", { hour: "numeric", minute: "2-digit", hour12: true, timeZone: tz }).formatToParts(now); }
     catch { timeParts = new Intl.DateTimeFormat("en-US", { hour: "numeric", minute: "2-digit", hour12: true }).formatToParts(now); }

@@ -9,7 +9,7 @@ Tenant directories for lobby screens, replacing Yodeck and Wix. Hosted on Netlif
 | `/login.html` | everyone | Sign in, forgotten password, and setting a password from an invitation or reset email |
 | `/console.html` | signed in | Screens (status, search, layout), Buildings, People, and Accounts (1Point only) |
 | `/tech.html` | 1Point | The technician page, sized for a phone: Identify, Reload screen, Reboot Pi, Layout, and Wi-Fi search and join. Add it to the phone's home screen |
-| `/edit.html?d=…` | signed in | Edit one directory's tenants, plus its building's shared settings (address, logo, an owner or manager logo, background photo, contacts), with a live preview. **Sizes** (per screen; `&s=` picks the screen, as the console's Edit tenants link does): title, top logo, bottom logo and Bottom line, each 50–250% of standard within limits (`supabase/18-sizes.sql`). Standard is unchanged; anyone who can see the screen can change them; the screen picks them up within a minute of publishing (with display 2.7.0, which screens load at their 3 a.m. reload or on Reload screen) |
+| `/edit.html?d=…` | signed in | Edit one directory's tenants, plus its building's shared settings (address, logo, an owner or manager logo, background photo, contacts), with a live preview. **Sizes** (per screen; `&s=` picks the screen, as the console's Edit tenants link does): title, top logo, bottom logo and Bottom line, each 50–250% of standard within limits (`supabase/18-sizes.sql`). Standard is unchanged; anyone who can see the screen can change them; the screen picks them up within a minute of publishing |
 | `/?device=<serial>` | lobby screens | What a Pi shows: whichever screen the console assigns it to |
 | `/?screen=ppi-2s` | lobby screens | A fixed screen. Older screens use `?site=landmark-center`, which still works |
 | `/?screen=ppi-2s&view=1` | anyone | Looking at a screen (the console's **View** button). Shows the same thing but doesn't count as the screen checking in |
@@ -34,7 +34,8 @@ Owner users can't read a screen's hardware record (serial, MACs, IPs, the Yodeck
 | `SUPABASE_SERVICE_KEY` | **Yes**, Production + Functions only | Supabase secret (or legacy service_role) key |
 | `NWS_CONTACT` | No | Email address for the National Weather Service |
 | `NEWS_FEEDS`, `NEWS_BLOCKLIST` | No | Optional news settings. `NEWS_FEEDS`: comma-separated feed addresses. `NEWS_BLOCKLIST`: comma-separated words **added to** the built-in list (in `netlify/functions/news.mjs`). A word also blocks its usual forms ("murder" → murders, murderer, murdered; "body" → bodies) but not other words that start the same way ("dead" doesn't block "deadline"); end a word with `*` to block every word starting with it (`terror*`); several words match as a phrase (`mass shooting`). Headline and description are both checked. |
-| `SMTP_HOST` | No | Company mail server for alert emails, e.g. `secure.emailsrvr.com` (Rackspace) |
+| `SETTINGS_KEY` | **Yes** | Any long random text (24+ characters). Encrypts the mail server password saved in the console (**Pi setup → Alert emails → Mail server settings**; `supabase/19-mail.sql`). Set once and keep it: changing it makes the saved password unreadable (the console then asks for it again) |
+| `SMTP_HOST` | No | Company mail server for alert emails, e.g. `secure.emailsrvr.com` (Rackspace). **Fallback only** once a mail server is saved in the console, which wins |
 | `SMTP_PORT` | No | `465` (encrypted from the start) or `587` (STARTTLS). Plain, unencrypted mail servers are refused |
 | `SMTP_USER` | No | The mailbox alerts are sent from, e.g. `directory@1pointusa.com` |
 | `SMTP_PASS` | **Yes** | That mailbox's password |
@@ -209,8 +210,10 @@ A Pi needs no one on site after a power cut, whatever comes back first:
 
 Nothing needs a site visit or a new card:
 
-- **What the screen shows** (the display's code) comes from the site: every Pi reloads it at 3 a.m., or at once with
-  **Pi → Reload screen**. Content (tenants, logos, photos) is live within a minute of saving.
+- **What the screen shows** (the display's code) comes from the site. From display 2.8.0 a screen notices a new
+  version within a minute or two of a deploy (`/api/screen` names the live one, `netlify/lib/version.mjs`) and reloads
+  itself once; it also reloads at 3 a.m., and **Pi → Reload screen** does it at once. Content (tenants, logos,
+  photos, sizes) is live within a minute of saving.
 - **Pi → Update Pi** (1Point): the Pi downloads the latest setup from the site and re-applies it in place, with the
   options it was set up with (`/etc/lobby-setup.conf`), installs Raspberry Pi OS updates, then restarts. Its
   identity, key and Wi-Fi stay as they are. The screen keeps running during the update (5 to 20 minutes) and is dark
