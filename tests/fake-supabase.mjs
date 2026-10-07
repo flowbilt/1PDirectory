@@ -153,7 +153,7 @@ export function createFake() {
     alert_recipients: () => ({ id: randomUUID(), name: "", offline: true, power: true, hot: true, enabled: true, updated_at: now(), updated_by: null }),
     wifi_networks: () => ({ id: randomUUID(), label: "", psk: "", hidden: false, on_cards: true, sort: 0, updated_at: now(), updated_by: null }),
     prepare_codes: () => ({ id: (T.prepare_codes.at(-1)?.id || 0) + 1, used_at: null, created_at: now() }),
-    device_commands: () => ({ id: (T.device_commands.at(-1)?.id || 0) + 1, status: "pending", result: "", payload: null, created_at: now(), sent_at: null, done_at: null }),
+    device_commands: () => ({ id: (T.device_commands.at(-1)?.id || 0) + 1, status: "pending", result: "", payload: null, save: null, created_at: now(), sent_at: null, done_at: null }),
   };
   const touchDir = (did, uid) => { const d = T.directories.find((x) => x.id === did); if (d) { d.updated_at = now(); d.updated_by = uid || null; } };
   function checkRow(table, row) {
@@ -241,7 +241,7 @@ export function createFake() {
   }
 
 
-  // ── database functions (mirror of supabase/05-tuning.sql; agent_checkin as last replaced by 13-tech.sql) ──
+  // ── database functions (mirror of supabase/05-tuning.sql; agent_checkin as last replaced by 20-save-wifi.sql) ──
   const centralDay = (d = new Date()) => new Intl.DateTimeFormat("en-CA", { timeZone: "America/Chicago" }).format(d);
   // Mirror of device_credit (07-uptime.sql): {today, previous day} seconds for a check-in at `at` after one at `prev`
   function deviceCredit(prev, at) {
@@ -340,12 +340,33 @@ export function createFake() {
       }
       for (const r of p_results || []) {
         const c = T.device_commands.find((x) => x.id === Number(r.id) && x.device_id === dv.id && x.status === "sent");
-        if (c) Object.assign(c, { status: r.status === "done" ? "done" : "failed", result: String(r.result ?? "").slice(0, c.command === "wifi_scan" ? 4000 : 500), payload: null, done_at: t });
+        if (!c) continue;
+        // 20-save-wifi.sql: a join with Save ticked is saved here, only if the Pi says it worked, and the result says so
+        let note = "";
+        if (c.command === "wifi_join" && c.save) {
+          if (r.status !== "done") note = " Nothing was saved.";
+          else {
+            const sv = c.save, have = order(T.wifi_networks.filter((n) => n.ssid === sv.ssid), "updated_at.desc")[0];
+            if (have) {
+              Object.assign(have, { psk: sv.psk || "", hidden: !!sv.hidden, updated_at: t, updated_by: c.created_by ?? null });
+              T.audit_log.push({ ...defaults.audit_log(), user_id: c.created_by ?? null, action: "update wifi from field", entity: "wifi_network", entity_id: have.id, detail: { ssid: sv.ssid, serial: dv.serial } });
+              note = ` The saved password is updated: other Pis can join ${sv.ssid} with one tap.`;
+            } else {
+              const sc = T.screens.find((x) => x.id === dv.screen_id), dd = sc && T.directories.find((x) => x.id === sc.directory_id);
+              const pp = dd && T.properties.find((x) => x.id === dd.property_id);
+              const row = { ...defaults.wifi_networks(), label: pp?.name || "", ssid: sv.ssid, psk: sv.psk || "", hidden: !!sv.hidden, on_cards: false, updated_at: t, updated_by: c.created_by ?? null };
+              T.wifi_networks.push(row);
+              T.audit_log.push({ ...defaults.audit_log(), user_id: c.created_by ?? null, action: "save wifi from field", entity: "wifi_network", entity_id: row.id, detail: { ssid: sv.ssid, serial: dv.serial } });
+              note = ` Saved for other screens: other Pis can join ${sv.ssid} with one tap.`;
+            }
+          }
+        }
+        Object.assign(c, { status: r.status === "done" ? "done" : "failed", result: String(r.result ?? "").slice(0, c.command === "wifi_scan" ? 4000 : 500) + note, payload: null, save: null, done_at: t });
       }
       const hourAgo = new Date(Date.parse(t) - 3600_000).toISOString();
-      T.device_commands.filter((c) => c.device_id === dv.id && ["pending", "sent"].includes(c.status) && c.created_at < hourAgo).forEach((c) => { c.status = "expired"; c.payload = null; });
+      T.device_commands.filter((c) => c.device_id === dv.id && ["pending", "sent"].includes(c.status) && c.created_at < hourAgo).forEach((c) => { c.status = "expired"; c.payload = null; c.save = null; });
       const pending = T.device_commands.filter((c) => c.device_id === dv.id && c.status === "pending").sort((a, b) => a.id - b.id);
-      // 13-tech.sql: each command goes out with its payload, which is cleared as it's handed over
+      // 13-tech.sql: each command goes out with its payload, which is cleared as it's handed over (20: save stays, never sent)
       const handed = pending.map((c) => ({ id: c.id, command: c.command, ...(c.payload != null ? { payload: c.payload } : {}) }));
       pending.forEach((c) => Object.assign(c, { status: "sent", sent_at: t, payload: null }));
       const sc = T.screens.find((s) => s.id === dv.screen_id);

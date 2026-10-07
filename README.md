@@ -171,8 +171,9 @@ status in plain words, then:
   to the Pi once and is then deleted from the database (about a minute at most); it's never shown back, and the
   audit log records only the network's name.
 - **Save for other screens:** tick it when joining, and once the Pi reports the join worked, the network is saved
-  (labelled with the building); the page says so on its own line. **Keep the page open until the result shows**: the
-  save is made from the page when the Pi's answer arrives. Every other Pi that can see it then shows it as **Saved**: one tap joins it, and the
+  (labelled with the building); the page says so on its own line, and Recent actions says so too. The site saves it
+  when the Pi reports the join, so the phone can be locked or the page closed while it waits (`supabase/20-save-wifi.sql`).
+  A join that fails saves nothing and says so. Every other Pi that can see it then shows it as **Saved**: one tap joins it, and the
   server supplies the password, so no one types it again and the phone never receives it. **Type a different
   password** (with the tick) updates a saved password that has changed. Networks saved this way are **never put on
   cards**; they're listed in the console's **Pi setup** as saved from the technician page, and the office can remove
@@ -292,7 +293,7 @@ Local sample logins: `scot@1pointusa.com / admin-pass`, `leighann@barber.test / 
 public/             screen (index.html, display.*), sign-in, console (+ console-devices.js, console-setup.js), editor, technician page (tech.*), shared auth.js
 netlify/functions/  screen, users, config, weather, news, agent, devices, networks, alert-settings, alerts
 netlify/lib/        Supabase client, RSS reader, shared helpers
-supabase/           database schema (01 to 16, run in order), starting data, check queries, setup guide
+supabase/           database schema (01 to 20, run in order), starting data, check queries, setup guide
 migration/          the Yodeck/Wix transcription the starting data was built from
 public/pi/          setup-kiosk.sh and agent.py (served by the site so Pis can download them)
 tests/              function tests, fake Supabase, local test server

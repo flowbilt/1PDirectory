@@ -464,6 +464,89 @@ test("Wi-Fi saved from the technician page: only after a Pi joined it, one tap f
   fake.T.wifi_networks.splice(fake.T.wifi_networks.indexOf(row), 1);   // later tests count the saved networks
 });
 
+test("Save for other screens is done by the server when the Pi reports the join worked, so the phone can be closed", async () => {
+  const admin = await login("scot@1pointusa.com", "admin-pass");
+  const dev = fake.T.devices.find((x) => x.serial === PPI2S_SERIAL);
+  const post = (body) => devApi(admin, { method: "POST", body: { device_id: dev.id, ...body } });
+  const queue = async (body) => (await (await post({ action: "command", command: "wifi_join", ...body })).json()).id;
+  const hand = async (id) => (await (await checkin({ version: "1.8.1" })).json()).commands.find((c) => c.id === id);
+  const report = (id, status, result) => checkin({ version: "1.8.1", results: [{ id, status, result }] });
+  const cmd = (id) => fake.T.device_commands.find((c) => c.id === id);
+  const consoleSees = async () => JSON.stringify(await (await devApi(admin)).json());
+  const nets = fake.T.wifi_networks.length;
+
+  // A wrong password, Save ticked: the Pi gets the network, never the save copy; nothing is saved; the result says so
+  const bad = await queue({ ssid: "Lobby Six", psk: "wrong-pass-6", save: true });
+  assert.deepEqual(cmd(bad).save, { ssid: "Lobby Six", psk: "wrong-pass-6", hidden: false }, "the save copy waits on the server");
+  const got = await hand(bad);
+  assert.ok(got.payload && !("save" in got), "the Pi receives the network to join, not the save copy");
+  assert.equal(cmd(bad).payload, null, "the join's payload is still cleared at the handover");
+  assert.ok(cmd(bad).save, "the save copy stays until the Pi's result");
+  assert.ok(!(await consoleSees()).includes("wrong-pass-6"), "the console never sees the password while it waits");
+  await report(bad, "failed", "Couldn't join Lobby Six: the password was refused. Still on OfficeNet.");
+  assert.equal(cmd(bad).result, "Couldn't join Lobby Six: the password was refused. Still on OfficeNet. Nothing was saved.");
+  assert.equal(cmd(bad).save, null);
+  assert.equal(fake.T.wifi_networks.length, nets, "a failed join saves nothing");
+
+  // The right password, Save ticked, and nobody calls save_network afterwards (the phone was locked): saved anyway
+  const good = await queue({ ssid: "Lobby Six", psk: "right-pass-6", save: true });
+  await hand(good);
+  const rest = fake.restCalls.length, calls = fake.rpcCalls.length;
+  await report(good, "done", "Joined Lobby Six; the directory site is reachable through it.");
+  assert.deepEqual(fake.rpcCalls.slice(calls), ["agent_checkin"], "the save rides on the Pi's check-in");
+  assert.equal(fake.restCalls.length - rest, 0, "still one trip to the database per check-in");
+  const row = fake.T.wifi_networks.find((n) => n.ssid === "Lobby Six");
+  assert.deepEqual([row.label, row.psk, row.on_cards], ["Perimeter Park One", "right-pass-6", false], "labelled with the building, kept off cards");
+  assert.equal(cmd(good).result, "Joined Lobby Six; the directory site is reachable through it. Saved for other screens: other Pis can join Lobby Six with one tap.");
+  assert.equal(cmd(good).save, null, "the save copy is gone once it's saved");
+  const recent = await consoleSees();
+  assert.ok(recent.includes("Saved for other screens: other Pis can join Lobby Six"), "Recent actions shows it was saved");
+  assert.ok(!recent.includes("right-pass-6"), "and never the password");
+  assert.ok(!JSON.stringify(fake.T.audit_log).includes("right-pass-6"), "the audit log names the network only");
+  assert.ok(fake.T.audit_log.some((a) => a.action === "save wifi from field" && a.detail.ssid === "Lobby Six" && a.detail.serial === PPI2S_SERIAL));
+
+  // Joined again with a new password after the office put it on cards: the one entry is updated and stays on cards
+  row.on_cards = true;
+  const again = await queue({ ssid: "Lobby Six", psk: "newer-pass-6", save: true });
+  await hand(again);
+  await report(again, "done", "Joined Lobby Six; the directory site is reachable through it.");
+  assert.equal(fake.T.wifi_networks.filter((n) => n.ssid === "Lobby Six").length, 1, "one entry per network");
+  assert.deepEqual([row.psk, row.on_cards], ["newer-pass-6", true]);
+  assert.match(cmd(again).result, / The saved password is updated: other Pis can join Lobby Six with one tap\.$/);
+
+  // A join with a saved network, or without Save ticked, carries no save copy and saves nothing
+  const one = await queue({ ssid: "Lobby Six", saved: true, save: true });
+  assert.equal(cmd(one).save, null, "a saved network is already saved");
+  const plain = await queue({ ssid: "Lobby Plain", psk: "plain-pass-6" });
+  assert.equal(cmd(plain).save, null);
+  await hand(plain);
+  await report(one, "done", "Joined Lobby Six; the directory site is reachable through it.");
+  await report(plain, "done", "Joined Lobby Plain; the directory site is reachable through it.");
+  assert.equal(cmd(plain).result, "Joined Lobby Plain; the directory site is reachable through it.", "no note without Save");
+  assert.ok(!fake.T.wifi_networks.some((n) => n.ssid === "Lobby Plain"));
+
+  // A join the Pi never picks up expires after an hour, and its save copy with it
+  const lost = await queue({ ssid: "Lobby Lost", psk: "lost-pass-66", save: true });
+  cmd(lost).created_at = new Date(Date.now() - 2 * 3600_000).toISOString();
+  await checkin({ version: "1.8.1" });
+  assert.deepEqual([cmd(lost).status, cmd(lost).save, cmd(lost).payload], ["expired", null, null]);
+  assert.ok(!fake.T.wifi_networks.some((n) => n.ssid === "Lobby Lost"));
+
+  // 20-save-wifi.sql says the same things the fake does
+  const sql = readFileSync(new URL("../supabase/20-save-wifi.sql", import.meta.url), "utf8");
+  for (const s of ["Saved for other screens: other Pis can join %s with one tap.", "The saved password is updated: other Pis can join %s with one tap.",
+                   "' Nothing was saved.'", "save    = null", "payload = null, save = null", "'save wifi from field'", "'update wifi from field'"])
+    assert.ok(sql.includes(s), `20: ${s}`);
+  fake.T.wifi_networks.splice(fake.T.wifi_networks.indexOf(row), 1);   // later tests count the saved networks
+});
+
+test("the technician page sends Save with the join and no longer saves from the phone", async () => {
+  const js = readFileSync(new URL("../public/tech.js", import.meta.url), "utf8");
+  assert.ok(/command: "wifi_join", ssid, psk, hidden, \.\.\.\(keep \? \{ save: true \} : \{\}\)/.test(js), "Save ticked goes with the join");
+  assert.ok(!js.includes('action: "save_network"'), "the page never saves after the result itself");
+  assert.ok(!js.includes("Keep this page open"), "nor asks to be kept open");
+});
+
 test("remove: a Pi under New devices can be removed by 1Point; an assigned one can't, and a running one comes back", async () => {
   const admin = await login("scot@1pointusa.com", "admin-pass");
   const owner = await login("leighann@barber.test", "owner-pass");

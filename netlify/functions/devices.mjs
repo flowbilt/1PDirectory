@@ -10,8 +10,12 @@
 //                                password goes to the Pi once and is then cleared (supabase/13-tech.sql); it's never listed
 //   POST {action:"command", device_id, command:"wifi_join", ssid, saved:true}   join a saved network: the server supplies
 //                                its password, so the phone never has it (supabase/14-saved-wifi.sql)
-//   POST {action:"save_network", device_id, ssid, psk, hidden}   keep a network this Pi has just joined, for other Pis
-//                                (the technician page's "Save for other screens"); never put on cards
+//   POST {action:"command", device_id, command:"wifi_join", ssid, psk, hidden, save:true}   the same, and keep the
+//                                network for other Pis once this Pi reports the join worked (the technician page's
+//                                "Save for other screens"): the database does it at that check-in, so the phone can be
+//                                locked or the page closed meanwhile (supabase/20-save-wifi.sql); never put on cards
+//   POST {action:"save_network", device_id, ssid, psk, hidden}   the same save, made by the phone after the result
+//                                (technician pages from before DP-05 round 6, still open on a phone; kept for them)
 //   POST {action:"remove", device_id}                 delete an unassigned Pi's record (New devices); a Pi that's still
 //                                running enrolls again at its next check-in
 //   POST {action:"layout", screen_id, orientation, restart}  set a screen's layout; restart its Pi so it turns now
@@ -145,15 +149,20 @@ export default async (req) => {
         if (!net) throw fail(404, `${ssid || "That network"} isn't saved. Type its password instead.`);
         payload = { ssid: net.ssid, psk: net.psk || "", hidden: !!net.hidden };
       } else if (body.command === "wifi_join") payload = wifiPayload(body);
+      // Save for other screens: a second copy that the handover to the Pi doesn't clear, kept until the Pi's result
+      // and saved by the database only if the join worked (20-save-wifi.sql). A saved network is already saved.
+      const save = body.command === "wifi_join" && body.save === true && body.saved !== true ? payload : null;
       const [row] = await db("device_commands?select=id", { method: "POST", prefer: "return=representation",
-        body: { device_id: d.id, command: body.command, created_by: user.id, ...(payload ? { payload } : {}) } });
+        body: { device_id: d.id, command: body.command, created_by: user.id, ...(payload ? { payload } : {}), ...(save ? { save } : {}) } });
       // The audit log names the network, never its password
-      await audit(user.id, `device ${body.command}`, "device", d.id, { serial: d.serial, ...(payload ? { ssid: payload.ssid } : {}) });
+      await audit(user.id, `device ${body.command}`, "device", d.id, { serial: d.serial, ...(payload ? { ssid: payload.ssid } : {}), ...(save ? { save: true } : {}) });
       return json({ ok: true, queued: body.command, id: row?.id ?? null });
     }
 
     // Keep a network this Pi has just joined, for other Pis. Only after the Pi reported the join worked, so a
     // mistyped password is never saved. The password comes from the phone that typed it for that join.
+    // Since DP-05 round 6 the technician page sends save:true with the join instead and the database saves it; this
+    // stays for a page loaded before that deploy and still open on a phone.
     if (body.action === "save_network") {
       const net = wifiPayload(body);
       const since = new Date(Date.now() - 15 * 60_000).toISOString();

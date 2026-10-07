@@ -15,7 +15,7 @@
   const STATES = { pending: "waiting for the Pi", sent: "running", done: "done", failed: "failed", expired: "not picked up (expired)" };
 
   const S = { screens: [], dirs: [], props: [], devices: [], saved: [], id: null, shown: null, scanId: null, joinId: null, drawnScan: null, fastUntil: 0,
-              pendingSave: null };   // {joinId, ssid, psk, hidden, deviceId}: saved once the Pi says the join worked (in memory only)
+              saveJoin: null };   // the join sent with Save ticked; the server saves it when the Pi says it worked
   let timer = null;
 
   const agentAtLeast = (have, want) => {
@@ -142,17 +142,21 @@
       ? (waiting.status === "pending" ? "Sent. The Pi picks it up within a minute…" : "The Pi is searching…")
       : (waiting.status === "pending" ? "Sent. The Pi picks it up within a minute, then takes up to two more to join and check it reaches the site…"
         : "The Pi is joining and checking it reaches the site…")
-        + (waiting.command === "wifi_join" && S.pendingSave?.joinId === waiting.id ? " Keep this page open until the result shows, so the network gets saved for other screens." : "");
+        + (waiting.command === "wifi_join" && S.saveJoin === waiting.id ? " It's saved for other screens as soon as the Pi confirms the join, even if you lock the phone or close this page." : "");
     if (scan && ["failed", "expired"].includes(scan.status) && S.drawnScan !== `x${scan.id}`) {
       S.drawnScan = `x${scan.id}`; showResult(false, scan.status === "expired" ? "The Pi didn't pick up the search within an hour." : scan.result);
     }
     if (join && ["done", "failed", "expired"].includes(join.status) && S.drawnJoin !== join.id) {
       S.drawnJoin = join.id;
       const text = join.status === "expired" ? "The Pi didn't pick up the join within an hour; nothing changed." : join.result;
-      const save = S.pendingSave?.joinId === join.id ? S.pendingSave : null;
-      S.pendingSave = null;
-      showResult(join.status === "done", save && join.status !== "done" ? `${text} Nothing was saved.` : text);
-      if (save && join.status === "done") saveNetwork(save, text);
+      // The server adds what the save did to the join's result (supabase/20-save-wifi.sql)
+      const m = /^(.*?) (Saved for other screens|The saved password is updated)(: .*)$/s.exec(text || "");
+      if (m) {
+        showResult(true, m[1], `${m[2]}${m[3]}`);
+        toast(`${m[2]}.`);
+        loadSaved().catch(() => {});
+      } else showResult(join.status === "done", S.saveJoin === join.id && join.status === "expired" ? `${text} Nothing was saved.` : text);
+      if (S.saveJoin === join.id) S.saveJoin = null;
     }
 
     // The list is drawn once per search (and again after a join moves the Pi), so a password being typed is never
@@ -172,16 +176,6 @@
       $("wifi-list").dataset.nets = JSON.stringify(nets);
       $("wifi-list").dataset.wired = list.wired ? "1" : "";
     }
-  }
-
-  async function saveNetwork(save, text) {
-    try {
-      const r = await Auth.api("/api/devices", { method: "POST", body: { action: "save_network", device_id: save.deviceId, ssid: save.ssid, psk: save.psk, hidden: save.hidden } });
-      const what = r.updated ? "The saved password is updated" : "Saved for other screens";
-      showResult(true, text, `${what}: other Pis can join ${save.ssid} with one tap.`);
-      toast(`${what}.`);
-      await loadSaved();
-    } catch (ex) { showResult(true, `${text} It wasn't saved for other screens: ${ex.message}`); }
   }
 
   function showResult(good, text, saved) {
@@ -226,10 +220,10 @@
       btn.disabled = true;
       try {
         const body = useSaved ? { action: "command", device_id: d.id, command: "wifi_join", ssid, saved: true }
-          : { action: "command", device_id: d.id, command: "wifi_join", ssid, psk, hidden };
+          : { action: "command", device_id: d.id, command: "wifi_join", ssid, psk, hidden, ...(keep ? { save: true } : {}) };
         const r = await Auth.api("/api/devices", { method: "POST", body });
         S.joinId = r.id; $("wifi-result").hidden = true;
-        S.pendingSave = keep ? { joinId: r.id, ssid, psk, hidden, deviceId: d.id } : null;
+        S.saveJoin = keep ? r.id : null;
         f.remove(); faster(180_000);
         await refresh();
       } catch (ex) { toast(ex.message, true); btn.disabled = false; }

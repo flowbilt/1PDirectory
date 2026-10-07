@@ -33,6 +33,8 @@ Do these once. The current site keeps running as it is until the new build is de
 
 20. For the mail server sign-in in the console (DP-04 round 5): **before uploading that code**, new query, paste all of `19-mail.sql`, and click **Run**. Then run `check-mail.sql`; every column should read **true**. Then set `SETTINGS_KEY` in Netlify before saving a password in the console.
 
+21. For Save for other screens done by the site (DP-05 round 6): **before uploading that code**, new query, paste all of `20-save-wifi.sql`, and click **Run**. Then new query, paste all of `check-save-wifi.sql`, and click **Run**; it should read **ALL 9 CHECKS PASSED** (red on purpose). (A technician page loaded before the upload still saves from the phone as before, so this order has no gap.)
+
 If any of them shows an error (other than the expected red messages from the `check-…sql` files), copy the message (it includes a line number) and send it to Claude.
 
 ## 3. Lock down sign-ups
