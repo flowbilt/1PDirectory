@@ -174,7 +174,7 @@ window.ConsoleDevices = (() => {
             ${row("Temperature", typeof h.temp_c === "number" ? `${h.temp_c}°C` : "")}
             ${row("Power", h.under_voltage_now ? "Under-voltage now: replace the power supply" : h.under_voltage_seen ? "Dipped since last boot" : h.throttled !== undefined ? "Normal" : "")}
             ${row("Browser", h.browser_running === false ? "Not running" : h.browser_running ? "Running" : "")}
-            ${row("TV", { on: "On", standby: "Off (standby): the Pi is turning it on", "not-answering": "Not answering over HDMI (TV unplugged, or its CEC setting is off)", "no-cec": "Not controlled (no HDMI-CEC)" }[h.tv] || "")}
+            ${row("TV", s?.no_cec ? "Not checked: this display has no HDMI-CEC (Screen settings)" : { on: "On", standby: "Off (standby): the Pi is turning it on", "not-answering": "Not answering over HDMI (TV unplugged, or its CEC setting is off)", "no-cec": "Not controlled (no HDMI-CEC)" }[h.tv] || "")}
             ${row("Up for", up)}
             ${row("Storage used", h.disk_used_pct != null ? `${h.disk_used_pct}%` : "")}
             ${row("Address", h.ip)}

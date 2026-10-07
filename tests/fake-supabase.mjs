@@ -9,8 +9,8 @@ export const ANON_KEY = "test-anon-key";
 export function createFake() {
   const T = { organizations: [], profiles: [], properties: [], directories: [], tenants: [], screens: [], audit_log: [], devices: [], device_commands: [], device_daily: [], wifi_networks: [], prepare_codes: [], alert_recipients: [], mail_settings: [] };
   const SERVICE_ONLY = new Set(["devices", "device_commands", "device_daily", "wifi_networks", "prepare_codes", "alert_recipients", "mail_settings"]); // row-level security on, no policies: server key only
-  // Columns of screens signed-in users may read (supabase/06-trust.sql). hardware is server-only.
-  const SCREEN_COLS = new Set(["id", "directory_id", "key", "name", "location_note", "orientation", "last_seen", "last_report", "identify_until", "created_at", "sizes"]);
+  // Columns of screens signed-in users may read (supabase/06-trust.sql, plus sizes from 18 and no_cec from 21). hardware is server-only.
+  const SCREEN_COLS = new Set(["id", "directory_id", "key", "name", "location_note", "orientation", "last_seen", "last_report", "identify_until", "created_at", "sizes", "no_cec"]);
   const users = new Map(); // id -> {id,email,password,last_sign_in_at,invited_at,user_metadata}
   const tokens = new Map(); // token -> user id
   const outbox = [];
@@ -32,7 +32,7 @@ export function createFake() {
           const did = randomUUID();
           T.directories.push({ id: did, property_id: pid, slug: d.slug, title: d.title, subtitle: d.subtitle, footer_override: null, news_enabled: true, rotate_seconds: 12, weather_enabled: true, created_at: now(), updated_at: now(), updated_by: null });
           d.tenants.forEach((t, i) => T.tenants.push({ id: randomUUID(), directory_id: did, sort: i * 10, name: t.name, suite: t.suite, arrow: t.arrow, note: t.note }));
-          T.screens.push({ id: randomUUID(), directory_id: did, key: d.screen.key, name: d.screen.name, location_note: "", orientation: d.screen.orientation, hardware: d.screen.hardware, last_seen: null, last_report: {}, sizes: {}, created_at: now() });
+          T.screens.push({ id: randomUUID(), directory_id: did, key: d.screen.key, name: d.screen.name, location_note: "", orientation: d.screen.orientation, hardware: d.screen.hardware, last_seen: null, last_report: {}, sizes: {}, no_cec: false, created_at: now() });
         }
       }
     }
@@ -42,7 +42,7 @@ export function createFake() {
     T.properties.push({ id: op, org_id: other, name: "Other Tower", address: "", timezone: "America/Chicago", lat: 33.5, lon: -86.8, logo: "", logo_replaces_name: false, company_logo: "", logo_swap: false, background: {}, managed_by: {}, leased_by: {}, footer: "", created_at: now(), updated_at: now() });
     T.directories.push({ id: od, property_id: op, slug: "other-tower", title: "Other Tower", subtitle: "", footer_override: null, news_enabled: true, rotate_seconds: 12, weather_enabled: true, created_at: now(), updated_at: now() });
     T.tenants.push({ id: randomUUID(), directory_id: od, sort: 0, name: "Secret Tenant Inc.", suite: "100", arrow: "", note: "" });
-    T.screens.push({ id: randomUUID(), directory_id: od, key: "other-tower", name: "Other Tower Lobby", location_note: "", orientation: "landscape", hardware: {}, last_seen: null, last_report: {}, sizes: {}, created_at: now() });
+    T.screens.push({ id: randomUUID(), directory_id: od, key: "other-tower", name: "Other Tower Lobby", location_note: "", orientation: "landscape", hardware: {}, last_seen: null, last_report: {}, sizes: {}, no_cec: false, created_at: now() });
 
     for (const sc of T.screens) {
       const serial = String(sc.hardware?.serial || "").toLowerCase();
@@ -145,7 +145,7 @@ export function createFake() {
     properties: () => ({ id: randomUUID(), address: "", timezone: "America/Chicago", lat: null, lon: null, logo: "", logo_replaces_name: false, company_logo: "", logo_swap: false, background: {}, managed_by: {}, leased_by: {}, footer: "", created_at: now(), updated_at: now() }),
     directories: () => ({ id: randomUUID(), subtitle: "", footer_override: null, news_enabled: true, rotate_seconds: 12, weather_enabled: true, created_at: now(), updated_at: now() }),
     tenants: () => ({ id: randomUUID(), sort: 0, suite: "", arrow: "", note: "" }),
-    screens: () => ({ id: randomUUID(), directory_id: null, location_note: "", orientation: "auto", hardware: {}, last_seen: null, last_report: {}, sizes: {}, created_at: now() }),
+    screens: () => ({ id: randomUUID(), directory_id: null, location_note: "", orientation: "auto", hardware: {}, last_seen: null, last_report: {}, sizes: {}, no_cec: false, created_at: now() }),
     profiles: () => ({ full_name: "", created_at: now() }),
     audit_log: () => ({ id: T.audit_log.length + 1, at: now(), detail: {} }),
     devices: () => ({ id: randomUUID(), screen_id: null, key_hash: null, enroll_until: null, refused_at: null, refused_why: null, status: "active", model: "", hostname: "", agent_version: "", last_seen: null, last_health: {}, screenshot: "", screenshot_at: null, alert_state: {}, created_at: now() }),

@@ -35,6 +35,8 @@ Do these once. The current site keeps running as it is until the new build is de
 
 21. For Save for other screens done by the site (DP-05 round 6): **before uploading that code**, new query, paste all of `20-save-wifi.sql`, and click **Run**. Then new query, paste all of `check-save-wifi.sql`, and click **Run**; it should read **ALL 9 CHECKS PASSED** (red on purpose). (A technician page loaded before the upload still saves from the phone as before, so this order has no gap.)
 
+22. For the "This display has no HDMI-CEC" screen setting (DP-05 round 7): **before uploading that code**, new query, paste all of `21-no-cec.sql`, and click **Run**. Then new query, paste all of `check-no-cec.sql`, and click **Run**; every column should read **true**. (The new console asks for the new column, so it must exist first; the old console never asks for it.)
+
 If any of them shows an error (other than the expected red messages from the `check-…sql` files), copy the message (it includes a line number) and send it to Claude.
 
 ## 3. Lock down sign-ups

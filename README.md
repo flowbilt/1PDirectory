@@ -195,6 +195,10 @@ A Pi needs no one on site after a power cut, whatever comes back first:
   for 5 minutes (a TV can come up after the Pi), then checks every 2 minutes, so a TV switched off, or one that lost
   power on its own, comes back on. The TV's CEC setting must be on (Anynet+ on Samsung, SimpLink on LG, Bravia Sync
   on Sony). If a TV has a "power on after power loss" setting, set it to On as well. `--no-tv` leaves the TV alone.
+  A display with no usable HDMI-CEC (most computer monitors and touch displays, e.g. the Beetronics 13") can't be
+  switched on or asked, so it always reads "not answering": tick **This display has no HDMI-CEC** in the console's
+  **Screen settings** (`supabase/21-no-cec.sql`) and Health stops counting its TV state as a problem (everything else
+  still counts). Set that display's own power-on-after-power-loss.
 - **The picture:** HDMI 0 always sends a picture at 1080p, even if no TV was detected at start, and the kiosk puts the
   rotation back within 10 seconds if a TV powering up resets it.
 - **No network** (a Pi that's been online before): the screen shows the directory and news it last received, with
@@ -293,7 +297,7 @@ Local sample logins: `scot@1pointusa.com / admin-pass`, `leighann@barber.test / 
 public/             screen (index.html, display.*), sign-in, console (+ console-devices.js, console-setup.js), editor, technician page (tech.*), shared auth.js
 netlify/functions/  screen, users, config, weather, news, agent, devices, networks, alert-settings, alerts
 netlify/lib/        Supabase client, RSS reader, shared helpers
-supabase/           database schema (01 to 20, run in order), starting data, check queries, setup guide
+supabase/           database schema (01 to 21, run in order), starting data, check queries, setup guide
 migration/          the Yodeck/Wix transcription the starting data was built from
 public/pi/          setup-kiosk.sh and agent.py (served by the site so Pis can download them)
 tests/              function tests, fake Supabase, local test server

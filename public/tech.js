@@ -41,7 +41,7 @@
   // ── Loading ──
   async function loadAll() {
     const [screens, dirs, props] = await Promise.all([
-      Auth.db("screens?select=id,directory_id,key,name,orientation&order=name.asc"),
+      Auth.db("screens?select=id,directory_id,key,name,orientation,no_cec&order=name.asc"),
       Auth.db("directories?select=id,property_id"),
       Auth.db("properties?select=id,name"),
     ]);
@@ -97,8 +97,9 @@
       status.className = "t-status bad";
       note = "Anything you send waits for the Pi's next check-in, and is dropped if it isn't picked up within an hour.";
     }
-    if (d && h.tv === "standby") note += `${note ? " " : ""}The TV is off; the Pi is turning it back on.`;
-    if (d && h.tv === "not-answering") note += `${note ? " " : ""}The TV isn't answering over HDMI: it's unplugged, or its CEC setting (SimpLink on LG) is off.`;
+    // A display with no HDMI-CEC (console, Screen settings) can't be switched on or asked, so its TV state means nothing
+    if (d && !s.no_cec && h.tv === "standby") note += `${note ? " " : ""}The TV is off; the Pi is turning it back on.`;
+    if (d && !s.no_cec && h.tv === "not-answering") note += `${note ? " " : ""}The TV isn't answering over HDMI: it's unplugged, or its CEC setting (SimpLink on LG) is off.`;
     if (d && h.under_voltage_now) note += `${note ? " " : ""}The Pi's power supply is too weak right now: replace it.`;
     $("s-note").textContent = note; $("s-note").hidden = !note;
     const facts = d ? [d.serial && `Pi ${d.serial}`, h.ip && `address ${h.ip}`, d.agent_version && `agent ${d.agent_version}`].filter(Boolean).join(", ") : "";

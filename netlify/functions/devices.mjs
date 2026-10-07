@@ -297,14 +297,15 @@ export function computeSummary({ devices, windows, daily, screens, dirs, props, 
       typeof h.temp_c === "number" && h.temp_c >= 80 ? "hot" : null,
       online && h.browser_running === false ? "browser not running" : null,
       d.status === "revoked" ? "switched off" : null,
-      online && h.tv === "standby" ? "TV off" : online && h.tv === "not-answering" ? "TV not answering" : null,
+      // A display marked as having no HDMI-CEC (21-no-cec.sql) can't be switched on or asked, so its TV state isn't a problem
+      s?.no_cec ? null : online && h.tv === "standby" ? "TV off" : online && h.tv === "not-answering" ? "TV not answering" : null,
     ].filter(Boolean);
     return {
       id: d.id, serial: d.serial, status: d.status, online, last_seen: d.last_seen,
-      screen: s ? { id: s.id, name: s.name, key: s.key } : null,
+      screen: s ? { id: s.id, name: s.name, key: s.key, no_cec: !!s.no_cec } : null,
       building: prop?.name || null, account: org?.name || null, org_id: org?.id || null,
       temp_now: typeof h.temp_c === "number" ? h.temp_c : null, power_now: !!h.under_voltage_now,
-      browser_running: h.browser_running !== false, tv: h.tv || null, ip: h.ip || null, agent_version: d.agent_version || null, model: d.model || null,
+      browser_running: h.browser_running !== false, tv: h.tv || null, no_cec: !!s?.no_cec, ip: h.ip || null, agent_version: d.agent_version || null, model: d.model || null,
       uptime: { d1: d1.uptime, d7: d7.uptime, d30: d30.uptime },
       dips: { d7: d7.dips, d30: d30.dips }, max_temp_7d: d7.maxTemp, browser_down_7d: d7.browserDown,
       history_from: firstDay, problems,
@@ -331,7 +332,7 @@ async function summary() {
   const [devices, windows, screens, dirs, props, orgs] = await Promise.all([
     db("devices?select=id,serial,screen_id,status,model,agent_version,last_seen,last_health&order=serial.asc"),
     rpc("health_window", { p_today: centralDay() }),
-    db("screens?select=id,name,key,directory_id"),
+    db("screens?select=id,name,key,directory_id,no_cec"),
     db("directories?select=id,property_id"),
     db("properties?select=id,name,org_id"),
     db("organizations?select=id,name"),

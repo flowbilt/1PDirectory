@@ -1,7 +1,7 @@
 // Run with: npm test
 // Every server function, against a fake Supabase with the same access rules as the real one. No network needed.
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { readFileSync, readdirSync } from "node:fs";
 import { createFake, SERVICE_KEY, ANON_KEY } from "./fake-supabase.mjs";
 import screen, { toPayload } from "../netlify/functions/screen.mjs";
 import users from "../netlify/functions/users.mjs";
@@ -779,10 +779,54 @@ test("nobody reads screens.hardware from the database; 1Point gets it through th
   assert.equal(hw.hardware.yodeck_id, "194292");
   assert.equal(ppi2s.name, "TBC - PPI - 2 S - 194292", "the name matches its Yodeck ID");
   const edit = readFileSync(new URL("../public/edit.js", import.meta.url), "utf8").match(/screens\?directory_id=eq\.\$\{dir\.id\}&select=([\w,]+)/)[1];
-  const readable = [...cols.split(","), "sizes"];                           // sizes: granted in 18-sizes.sql
+  const readable = [...cols.split(","), "sizes"];                           // sizes: granted in 18-sizes.sql, read by the editor
   assert.ok(edit.split(",").every((c) => readable.includes(c)), "the editor asks only for readable columns");
-  const granted = readFileSync(new URL("../supabase/06-trust.sql", import.meta.url), "utf8").match(/grant select \(([^)]+)\)/)[1].split(",").map((c) => c.trim());
-  assert.deepEqual([...granted].sort(), cols.split(",").sort(), "06-trust.sql grants exactly the console's columns");
+  // Every "grant select (...) on public.screens to authenticated" in the numbered SQL files, in order: 06, 18, 21...
+  const dir = new URL("../supabase/", import.meta.url);
+  const granted = readdirSync(dir).filter((f) => /^\d\d-.*\.sql$/.test(f)).sort()
+    .flatMap((f) => [...readFileSync(new URL(f, dir), "utf8").matchAll(/grant select \(([^)]+)\)\s+on public\.screens to authenticated/g)])
+    .flatMap((m) => m[1].split(",").map((c) => c.trim()));
+  assert.deepEqual([...new Set(granted)].sort(), [...readable].sort(), "the SQL grants exactly the console's columns plus sizes");
+  assert.ok(!granted.includes("hardware"));
+});
+
+test("a screen marked as having no HDMI-CEC isn't flagged for its TV; everything else still is", async () => {
+  const owner = await login("leighann@barber.test", "owner-pass");
+  const admin = await login("scot@1pointusa.com", "admin-pass");
+  const rest = (token, q, init = {}) => fake.handle(new Request(`${SB}/rest/v1/screens?${q}`, { ...init, headers: { apikey: ANON_KEY, Authorization: `Bearer ${token}`, "Content-Type": "application/json", Prefer: "return=minimal" } }));
+  const dev = fake.T.devices.find((x) => x.serial === PPI2S_SERIAL);
+  const sc = fake.T.screens.find((x) => x.id === dev.screen_id);
+  const saved = { last_seen: dev.last_seen, last_health: dev.last_health };
+  Object.assign(dev, { last_seen: new Date().toISOString(), last_health: { tv: "not-answering", temp_c: 50 } });
+  const row = async () => (await (await devApi(admin, { qs: "?summary=1" })).json()).devices.find((d) => d.id === dev.id);
+
+  const before = (await row()).problems;
+  assert.ok(before.includes("TV not answering"), "a display that doesn't answer is flagged by default");
+  assert.equal(sc.no_cec, false, "every screen starts as before");
+
+  assert.equal((await rest(owner, `id=eq.${sc.id}`, { method: "PATCH", body: JSON.stringify({ no_cec: true }) })).status >= 400 || !sc.no_cec, true, "owners can't set it");
+  assert.equal(sc.no_cec, false);
+  const r = await rest(admin, `id=eq.${sc.id}`, { method: "PATCH", body: JSON.stringify({ no_cec: true }) });
+  assert.ok(r.status < 300 && sc.no_cec === true, "1Point sets it in Screen settings");
+  const read = await (await rest(owner, `select=id,no_cec&id=eq.${sc.id}`)).json();
+  assert.deepEqual(read, [{ id: sc.id, no_cec: true }], "signed-in users can read it, like the other screen settings");
+
+  let h = await row();
+  assert.ok(!h.problems.some((p) => /^TV/.test(p)), "no TV problem for a display without HDMI-CEC");
+  assert.deepEqual(h.problems, before.filter((p) => p !== "TV not answering"), "only the TV problem goes");
+  assert.equal(h.no_cec, true); assert.equal(h.screen.no_cec, true);
+  dev.last_health = { tv: "not-answering", under_voltage_now: true, temp_c: 85 };
+  h = await row();
+  assert.ok(h.problems.includes("power low now") && h.problems.includes("hot") && !h.problems.some((p) => /^TV/.test(p)), "every other check still counts");
+
+  const js = (f) => readFileSync(new URL(`../public/${f}`, import.meta.url), "utf8");
+  assert.ok(js("console.js").includes('no_cec: $("s-nocec").checked'), "the console's Screen settings save it");
+  assert.ok(js("console-devices.js").includes("s?.no_cec ?"), "the Pi panel says so instead of a warning");
+  assert.ok(/screens\?select=[\w,]*no_cec/.test(js("tech.js")) && js("tech.js").includes("!s.no_cec && h.tv"), "the technician page doesn't ask for the TV's CEC setting");
+  const sql = readFileSync(new URL("../supabase/21-no-cec.sql", import.meta.url), "utf8");
+  assert.ok(sql.includes("no_cec boolean not null default false") && sql.includes("grant select (no_cec) on public.screens to authenticated"));
+
+  Object.assign(sc, { no_cec: false }); Object.assign(dev, saved);
 });
 
 test("alerts email once when a Pi goes offline, and once when it's back", async () => {
