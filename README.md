@@ -218,7 +218,7 @@ A Pi needs no one on site after a power cut, whatever comes back first:
   are black; then the **start-up picture** (the waytugo logo with "Starting…", `public/pi/startup.png`, centred on
   black in every layout) shows until the directory appears, including the network wait of up to 90 seconds when
   offline (DP-07 round 9). Setup downloads it and checks it's a PNG of at most 5 MB; without one the background stays
-  black. To change it, replace `public/pi/startup.png` on GitHub (a PNG on black, ideally 3:2 or wider), then
+  black. To change it, replace `public/pi/startup.png` on GitHub (a 1920×1080 PNG on black, so a 1080p screen shows it pixel for pixel), then
   Update Pi on each Pi, and make a new card image for new cards.
 
 ### Updating Pis in the field
