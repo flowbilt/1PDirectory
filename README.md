@@ -214,12 +214,17 @@ A Pi needs no one on site after a power cut, whatever comes back first:
 - **No desktop pop-ups:** the desktop's panel and file manager (which Raspberry Pi OS starts anyway) are stopped
   every 10 seconds by the kiosk, since the panel's network plugin is what asked for Wi-Fi passwords on screen; the
   polkit password prompts and pprompt are switched off for the desktop user (DP-05).
-- **A quiet restart:** no rainbow square, Raspberry Pi logo, boot text or desktop picture. The first 10–20 seconds
-  are black; then the **start-up picture** (the waytugo logo with "Starting…", `public/pi/startup.png`, centred on
-  black in every layout) shows until the directory appears, including the network wait of up to 90 seconds when
-  offline (DP-07 round 9). Setup downloads it and checks it's a PNG of at most 5 MB; without one the background stays
-  black. To change it, replace `public/pi/startup.png` on GitHub (a 1920×1080 PNG on black, so a 1080p screen shows it pixel for pixel), then
-  Update Pi on each Pi, and make a new card image for new cards.
+- **A quiet restart:** no rainbow square, Raspberry Pi logo or desktop picture (the Pi's own firmware lines may show
+  briefly). Then the **start-up animation** (DP-07 round 9c, `public/pi/startup/`): the waytugo logo sweeps in once
+  along its road, from far to front, settles exactly as the logo is, and "Starting" appears with dots counting to
+  three, over and over, until the directory's window opens over it. It plays from the card in its own browser window,
+  so it needs no network, and the screen is turned the way it was last time before it starts (a card new to a Pi
+  starts landscape and turns once the site answers). The two pictures are the logo split in two (the road and the
+  wordmark), so together they are the original pixel for pixel; the font is inside the page.
+  If a Pi doesn't have the animation, it shows the **start-up picture** instead (`public/pi/startup.png`, the same logo
+  with "Starting…", centred on black; DP-07 round 9), or black. Setup downloads both and checks them (PNGs of at most
+  5 MB; the page at most 1 MB and ours; all three animation files or none), and a Pi keeps what it has if a download
+  fails. To change them, replace the files on GitHub, then Update Pi on each Pi, and make a new card image.
 
 ### Updating Pis in the field
 
@@ -293,10 +298,10 @@ Only those fixed actions exist; the console can't send anything free-form. Updat
 ```
 npm test                      # server functions, against a fake Supabase (no npm install needed: no dependencies)
 node tests/test-server.mjs          # the whole site locally, with sample logins
-bash tests/kiosk-rotation-test.sh    # the kiosk: address from the serial, rotation and its watcher, a card moved between Pis, field Wi-Fi setup (about 5 minutes)
+bash tests/kiosk-rotation-test.sh    # the kiosk: address from the serial, rotation and its watcher, a card moved between Pis, field Wi-Fi setup, the start-up animation (about 5 minutes)
 python3 tests/agent-test.py          # the Pi's agent: schedule, results, reboot, updates, keys, Update Pi, Wi-Fi search and join, the status light, remote support (about 2 minutes)
 python3 tests/button-test.py         # the case button and status light, with key presses through a pipe (about 20 seconds)
-bash tests/setup-test.sh             # setup's options, Wi-Fi import, naming, TV keeper, pointer, HDMI, quiet start, start-up picture, field Wi-Fi setup (seconds)
+bash tests/setup-test.sh             # setup's options, Wi-Fi import, naming, TV keeper, pointer, HDMI, quiet start, start-up picture and animation, field Wi-Fi setup (seconds)
 ```
 
 Local sample logins: `scot@1pointusa.com / admin-pass`, `leighann@barber.test / owner-pass`, `editor@barber.test / editor-pass`.
@@ -309,6 +314,6 @@ netlify/functions/  screen, users, config, weather, news, agent, devices, networ
 netlify/lib/        Supabase client, RSS reader, shared helpers
 supabase/           database schema (01 to 21, run in order), starting data, check queries, setup guide
 migration/          the Yodeck/Wix transcription the starting data was built from
-public/pi/          setup-kiosk.sh, agent.py and startup.png, the start-up picture (served by the site so Pis can download them)
+public/pi/          setup-kiosk.sh, agent.py, startup.png (the start-up picture) and startup/ (the start-up animation), served by the site so Pis can download them
 tests/              function tests, fake Supabase, local test server
 ```

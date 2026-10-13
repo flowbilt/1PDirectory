@@ -21,12 +21,15 @@ cat > "$WORK/bin/wlr-randr" <<'S'
 if [[ $# -eq 0 ]]; then
   printf 'HDMI-A-1 "Test TV"\n  Enabled: yes\n  Transform: %s\n' "$( [[ -z "${WLR_FORGET:-}" ]] && cat "$HOME/wlr.state" 2>/dev/null || echo normal)"
 else
-  echo "$*" >> "$HOME/wlr.log"; echo "${@: -1}" > "$HOME/wlr.state"
+  echo "$*" >> "$HOME/wlr.log"; echo "${@: -1}" > "$HOME/wlr.state"; echo "turn ${@: -1}" >> "$HOME/events.log"
 fi
 S
 cat > "$WORK/bin/chromium" <<'S'
 #!/usr/bin/env bash
-for a in "$@"; do [[ "$a" == http* ]] && echo "$a" >> "$HOME/chromium.log"; done
+for a in "$@"; do [[ "$a" == http* ]] && echo "$a" >> "$HOME/chromium.log"; [[ "$a" == http* || "$a" == file:* ]] && echo "open $a" >> "$HOME/events.log"; done
+if [[ "$*" == *"file://"* ]]; then
+  echo $$ > "$HOME/startup.pid"; exec sleep 1000   # the start-up animation: up until kiosk.sh closes it
+fi
 if [[ "$*" == *"http://localhost/"* ]]; then
   exec sleep 1000   # the field-setup echo: stays up until kiosk.sh kills it directly, doesn't drive the main loop
 fi
@@ -47,10 +50,10 @@ pass=0; fail=0
 # run HOME SERIAL SITE URL ROTATE: start the kiosk once, as that Pi. Returns what it told wlr-randr and chromium.
 run() {
   local H="$1" serial="$2" site="$3" url="$4" setting="$5"
-  mkdir -p "$H/kiosk"; rm -f "$H/wlr.log" "$H/chromium.log" "$H/wlr.state" "$H/wifisetup.log"
+  mkdir -p "$H/kiosk"; rm -f "$H/wlr.log" "$H/chromium.log" "$H/wlr.state" "$H/wifisetup.log" "$H/events.log" "$H/startup.pid"
   printf 'SITE="%s"\nURL="%s"\nROTATE="%s"\n' "$site" "$url" "$setting" > "$H/kiosk/kiosk.conf"
-  env KIOSK_QUIET_SECONDS=1 ${EXTRA:-} HOME="$H" LOBBY_SERIAL="$serial" WAYLAND_DISPLAY=wayland-0 PATH="$WORK/bin:$PATH" timeout 120 bash "$WORK/kiosk.sh" >/dev/null 2>&1
-  GOT_ROT="$(cat "$H/wlr.log" 2>/dev/null)"; GOT_URL="$(cat "$H/chromium.log" 2>/dev/null)"
+  env KIOSK_QUIET_SECONDS=1 KIOSK_STARTUP_OVERLAP=0.3 LOBBY_STARTUP_PAGE="${PAGE-$WORK/startup.html}" ${EXTRA:-} HOME="$H" LOBBY_SERIAL="$serial" WAYLAND_DISPLAY=wayland-0 PATH="$WORK/bin:$PATH" timeout 120 bash "$WORK/kiosk.sh" >/dev/null 2>&1
+  GOT_ROT="$(tail -n 1 "$H/wlr.log" 2>/dev/null)"; GOT_URL="$(cat "$H/chromium.log" 2>/dev/null)"
 }
 ok() { if [[ "$2" == "$3" ]]; then echo "  ok  $1"; pass=$((pass+1)); else echo "  FAIL $1: wanted '$3', got '$2'"; fail=$((fail+1)); fi; }
 T() { echo "--output HDMI-A-1 --on --transform $1"; }
@@ -91,7 +94,7 @@ H="$WORK/j"; EXTRA="CHROME_WAIT=4 KIOSK_WATCH_SECONDS=1" run "$H" 10000000a4ae27
 ok "the watcher leaves a correctly turned screen alone" "$GOT_ROT" "$(T 90)"
 H="$WORK/k"; EXTRA="CHROME_WAIT=4 KIOSK_WATCH_SECONDS=1 WLR_FORGET=1" run "$H" 10000000a4ae272d "$BASE" "" auto
 n="$(grep -c -- "$(T 90)" "$H/wlr.log")"
-ok "a TV that resets the screen gets it turned back (and switched on)" "$([[ $n -ge 3 && $(sort -u "$H/wlr.log" | wc -l) -eq 1 ]] && echo yes || echo "no: $n")" "yes"
+ok "a TV that resets the screen gets it turned back (and switched on)" "$([[ $n -ge 3 && $(tail -n +2 "$H/wlr.log" | sort -u | wc -l) -eq 1 ]] && echo yes || echo "no: $n")" "yes"
 sleep 2
 ok "the watcher stops with the kiosk" "$(pgrep -f "$WORK/kiosk.sh" | wc -l)" "0"
 
@@ -114,5 +117,26 @@ ok "a Pi that's worked before just waits quietly through a blip (no surprise hot
 EXTRA="$FAST" run "$H" 10000000fee1c0de "$OFF" "" auto   # the same card, moved to a Pi it's never been in
 ok "the same card moved to a Pi it's new to tries setup again, even though the old Pi had worked" \
   "$(cat "$H/wifisetup.log" 2>/dev/null)" "wifi-setup called: serial=10000000fee1c0de url=$OFF/?device=10000000fee1c0de"
+
+# DP-07 round 9c: the start-up animation, and the screen turned before the network wait
+echo '<!-- waytugo start-up animation -->' > "$WORK/startup.html"
+alive() {   # a killed process waiting to be reaped (state Z) counts as closed
+  local st; st="$(ps -o stat= -p "$(cat "$1/startup.pid" 2>/dev/null)" 2>/dev/null)"
+  [[ -n "$st" && "$st" != Z* ]] && echo open || echo closed
+}
+H="$WORK/s1"; run "$H" 10000000a4ae272d "$BASE" "" auto; sleep 1
+ok "a portrait Pi new to this card: the animation opens (from the card) before anything else, then the screen turns once the site answers, then the directory" \
+  "$(tr '\n' '|' < "$H/events.log")" "turn normal|open file://$WORK/startup.html|turn 90|open $BASE/?device=10000000a4ae272d|"
+ok "and the animation's window is closed once the directory's is up" "$(alive "$H")" "closed"
+run "$H" 10000000a4ae272d "$BASE" "" auto; sleep 1
+ok "next start: turned to portrait straight away, before the network wait and the animation" "$(head -n 2 "$H/events.log" | tr '\n' '|')" "turn 90|open file://$WORK/startup.html|"
+H="$WORK/s2"; run "$H" 100000008294ba46 "$BASE" "" 270
+ok "a fixed --rotate is used straight away too" "$(head -n 1 "$H/events.log")" "turn 270"
+H="$WORK/s3"; EXTRA="$FAST" run "$H" 10000000fee1face "$OFF" "" auto; sleep 1
+ok "a Pi going into field Wi-Fi setup: the animation first, then the setup page over it" \
+  "$(grep '^open' "$H/events.log" | tr '\n' '|')" "open file://$WORK/startup.html|open http://localhost/|open $OFF/?device=10000000fee1face|"
+ok "and the animation's window is closed" "$(alive "$H")" "closed"
+H="$WORK/s4"; PAGE="$WORK/none.html" run "$H" 100000008294ba46 "$BASE" "" auto
+ok "a card without the animation goes straight to the directory, as before" "$(grep -c 'file://' "$H/events.log")|$GOT_URL" "0|$BASE/?device=100000008294ba46"
 
 echo; echo "$pass/$((pass+fail)) passed"; [[ $fail -eq 0 ]]

@@ -152,6 +152,13 @@ fi
 STARTUP_PNG="$(mktemp)"
 if [[ -f "$HERE/startup.png" ]]; then cp "$HERE/startup.png" "$STARTUP_PNG"
 elif ! curl -fsSL --max-time 60 "$SITE/pi/startup.png" -o "$STARTUP_PNG"; then : > "$STARTUP_PNG"; fi
+# And the start-up animation (DP-07 round 9c): the logo sweeping in along its road, then "Starting" and its dots.
+# All three files or none; optional like the picture.
+STARTUP_ANIM="$(mktemp -d)"
+for f in startup.html road.png mark.png; do
+  if [[ -f "$HERE/startup/$f" ]]; then cp "$HERE/startup/$f" "$STARTUP_ANIM/$f"
+  elif ! curl -fsSL --max-time 60 "$SITE/pi/startup/$f" -o "$STARTUP_ANIM/$f"; then rm -f "$STARTUP_ANIM"/*; break; fi
+done
 
 echo "==> Installing packages"
 apt-get update -qq
@@ -891,6 +898,35 @@ quiet_desktop() {
 quiet_desktop
 ( while sleep "${KIOSK_QUIET_SECONDS:-10}"; do kill -0 $$ 2>/dev/null || exit 0; quiet_desktop; done ) &
 
+# Turning the screen (Wayland): used straight away below with this Pi's last answer, so the start-up animation is the
+# right way up during the network wait (DP-07 round 9c), and again once the site has answered.
+turn() {
+  [[ -n "${WAYLAND_DISPLAY:-}" ]] && command -v wlr-randr >/dev/null || return 0
+  local out; out="$(wlr-randr 2>/dev/null | awk '/^HDMI/ {print $1; exit}')"
+  [[ -n "$out" ]] && wlr-randr --output "$out" --on --transform "$WANT"
+}
+EARLY="$ROTATE"; [[ "$EARLY" == "auto" ]] && EARLY="$(cat "$LAST" 2>/dev/null || echo 0)"
+WANT="$([[ "$EARLY" == "0" ]] && echo normal || echo "$EARLY")"; turn
+
+# The start-up animation (DP-07 round 9c), from the card, so it needs no network: its own browser window from now until
+# the next window (the directory, or the field Wi-Fi setup page) is up, which then covers it before it's closed.
+STARTUP_PAGE="${LOBBY_STARTUP_PAGE:-/usr/local/share/lobby/startup/startup.html}"
+STARTUP_CHROME_PID=""
+if [[ -n "${WAYLAND_DISPLAY:-}${DISPLAY:-}" && -n "$CHROME" && -s "$STARTUP_PAGE" ]]; then
+  SPREFS="$HOME/kiosk/startup-profile/Default/Preferences"   # it's always closed by force: no "Restore pages?" bar
+  [[ -f "$SPREFS" ]] && sed -i 's/"exited_cleanly":false/"exited_cleanly":true/; s/"exit_type":"[^"]*"/"exit_type":"Normal"/' "$SPREFS"
+  "$CHROME" --kiosk "file://$STARTUP_PAGE" --user-data-dir="$HOME/kiosk/startup-profile" --ozone-platform-hint=auto \
+    --noerrdialogs --disable-infobars --disable-session-crashed-bubble --no-first-run --password-store=basic \
+    --disable-features=Translate,TranslateUI --autoplay-policy=no-user-gesture-required >>"$LOG" 2>&1 &
+  STARTUP_CHROME_PID=$!
+  echo "$(date '+%F %T') start-up animation showing"
+fi
+end_startup() {   # close it once the next window has had time to come up over it
+  [[ -n "$STARTUP_CHROME_PID" ]] || return 0
+  local pid="$STARTUP_CHROME_PID"; STARTUP_CHROME_PID=""
+  ( sleep "${KIOSK_STARTUP_OVERLAP:-8}"; kill "$pid" 2>/dev/null ) &
+}
+
 # Wait up to 90 seconds for the network (tests shrink this with KIOSK_NET_TRIES/KIOSK_NET_SLEEP). The page works
 # from its saved copy if it never comes back later.
 MARKER="$HOME/kiosk/ever-online-${SERIAL:-unknown}"    # per Pi, like the rotation LAST file below
@@ -907,6 +943,7 @@ elif [[ ! -f "$MARKER" ]]; then
     "$CHROME" --kiosk "http://localhost/" --user-data-dir="$HOME/kiosk/setup-profile" \
       --ozone-platform-hint=auto --noerrdialogs --disable-infobars --no-first-run --password-store=basic >>"$LOG" 2>&1 &
     SETUP_CHROME_PID=$!
+    end_startup
   fi
   ${LOBBY_WIFI_SETUP:-sudo -n /usr/local/sbin/lobby-wifi-setup} "${SERIAL:-unknown}" "$URL" >>"$LOG" 2>&1
   [[ -n "$SETUP_CHROME_PID" ]] && kill "$SETUP_CHROME_PID" 2>/dev/null
@@ -930,10 +967,6 @@ echo "$(date '+%F %T') rotation $ROT (setting: $ROTATE)"
 # and on) can come back with the output reset or switched off, which would leave a portrait screen sideways or dark.
 if [[ -n "${WAYLAND_DISPLAY:-}" ]] && command -v wlr-randr >/dev/null; then
   WANT="$([[ "$ROT" == "0" ]] && echo normal || echo "$ROT")"
-  turn() {
-    local out; out="$(wlr-randr 2>/dev/null | awk '/^HDMI/ {print $1; exit}')"
-    [[ -n "$out" ]] && wlr-randr --output "$out" --on --transform "$WANT"
-  }
   turn
   (
     while sleep "${KIOSK_WATCH_SECONDS:-10}"; do
@@ -952,6 +985,8 @@ fi
 
 # Keep the log small
 [[ $(wc -c <"$LOG") -gt 1000000 ]] && tail -n 2000 "$LOG" > "$LOG.tmp" && mv "$LOG.tmp" "$LOG"
+
+end_startup   # the directory's window opens next, over the animation
 
 while true; do
   # After a power cut Chromium thinks it crashed and shows a "Restore pages?" bar. Clear that.
@@ -1068,11 +1103,25 @@ if [[ -s "$STARTUP_PNG" && "$(head -c 8 "$STARTUP_PNG" | od -An -tx1 | tr -d ' \
 elif [[ -s "$STARTUP_DIR/startup.png" ]]; then echo "    couldn't get the start-up picture; keeping the one this Pi has"
 else echo "    couldn't get the start-up picture; the start-up background stays black"; fi
 rm -f "$STARTUP_PNG"
+# The animation: a page and its two pictures, checked (a PNG each, at most 5 MB; the page at most 1 MB and ours) and
+# swapped in whole, so a Pi never ends up with half of a new one. Otherwise it keeps the one it has, or none.
+png_ok() { [[ -s "$1" && "$(head -c 8 "$1" | od -An -tx1 | tr -d ' \n')" == 89504e470d0a1a0a && "$(stat -c %s "$1")" -le 5242880 ]]; }
+if png_ok "$STARTUP_ANIM/road.png" && png_ok "$STARTUP_ANIM/mark.png" && [[ -s "$STARTUP_ANIM/startup.html" ]] \
+   && [[ "$(stat -c %s "$STARTUP_ANIM/startup.html")" -le 1048576 ]] && grep -q 'waytugo start-up animation' "$STARTUP_ANIM/startup.html"; then
+  rm -rf "$STARTUP_DIR/startup.new"; mkdir -p "$STARTUP_DIR/startup.new"
+  install -m 644 "$STARTUP_ANIM"/startup.html "$STARTUP_ANIM"/road.png "$STARTUP_ANIM"/mark.png "$STARTUP_DIR/startup.new/"
+  rm -rf "$STARTUP_DIR/startup"; mv "$STARTUP_DIR/startup.new" "$STARTUP_DIR/startup"; echo "    start-up animation installed"
+elif [[ -s "$STARTUP_DIR/startup/startup.html" ]]; then echo "    couldn't get the start-up animation; keeping the one this Pi has"
+else echo "    couldn't get the start-up animation; the still picture is used"; fi
+rm -rf "$STARTUP_ANIM"
 cat > /usr/local/bin/lobby-background <<'BACKGROUND'
 #!/bin/sh
-# The desktop behind the browser while a lobby Pi starts: the start-up picture fitted and centred on black (it stays
-# centred in portrait too), or plain black if there's no picture or swaybg can't show it.
+# The desktop behind the browser while a lobby Pi starts. With the start-up animation installed: plain black, since the
+# animation plays in its own window (kiosk.sh) and sweeps in from black. Without it: the start-up picture fitted and
+# centred on black (centred in portrait too), or plain black if there's no picture or swaybg can't show it.
 IMG="${LOBBY_STARTUP_PNG:-/usr/local/share/lobby/startup.png}"
+ANIM="${LOBBY_STARTUP_ANIM:-/usr/local/share/lobby/startup/startup.html}"
+[ -s "$ANIM" ] && exec swaybg -c '#000000'
 if [ -s "$IMG" ]; then
   START=$(date +%s)
   swaybg -c '#000000' -i "$IMG" -m fit && exit 0
@@ -1151,7 +1200,7 @@ if [[ $PREPARE -eq 1 ]]; then
   echo "==> Clearing everything that belongs to this bench Pi"
   systemctl stop lobby-agent.service 2>/dev/null || true
   rm -rf /var/lib/lobby-agent                                                # the agent's key and saved results
-  rm -rf "$KDIR/chromium-profile" "$KDIR/setup-profile" "$KDIR/kiosk.log" "$KDIR"/rotation*.last "$KDIR"/ever-online-*  # browser data, log, last rotation, last online marker
+  rm -rf "$KDIR/chromium-profile" "$KDIR/setup-profile" "$KDIR/startup-profile" "$KDIR/kiosk.log" "$KDIR"/rotation*.last "$KDIR"/ever-online-*  # browser data, log, last rotation, last online marker
   rm -f /var/lib/NetworkManager/*.lease /var/lib/NetworkManager/*lease*       # the bench's network addresses
   : > /etc/machine-id                                                        # made fresh in each Pi at first start
   [[ -L /var/lib/dbus/machine-id ]] || rm -f /var/lib/dbus/machine-id

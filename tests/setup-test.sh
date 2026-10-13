@@ -175,8 +175,8 @@ awk "/^cat > \/usr\/local\/sbin\/lobby-button <<'BUTTON'\$/{f=1;next} /^BUTTON\$
 python3 -c "import ast; ast.parse(open('$W/lobby-button.py').read())" 2>/dev/null && { echo "  ok  lobby-button is valid Python"; pass=$((pass+1)); } || { echo "  FAIL lobby-button doesn't parse"; fail=$((fail+1)); }
 
 # Every browser the kiosk starts skips the desktop's password keyring, or it asks for a keyring password on screen
-ok "both kiosk browsers (the directory and the Wi-Fi setup page) skip the keyring prompt" \
-  "$(grep -c -- '--password-store=basic' "$SETUP")" "2"
+ok "all three kiosk browsers (the directory, the Wi-Fi setup page and the start-up animation) skip the keyring prompt" \
+  "$(grep -c -- '--password-store=basic' "$SETUP")" "3"
 
 # ── field Wi-Fi setup (lobby-wifi-setup): the hotspot + picker a never-online Pi offers ──
 has "the sudoers rule is scoped to exactly this script, for the desktop user, no password" "$(sed -n '/^cat > \/etc\/sudoers.d\/lobby-wifi-setup/,/^SUDOERS$/p' "$SETUP")" 'NOPASSWD: /usr/local/sbin/lobby-wifi-setup'
@@ -355,9 +355,33 @@ case "$*" in *" -i "*) [[ -n "${SB_FAIL:-}" ]] && exit 1 ;; esac
 exit 0
 S
 chmod +x "$W/sbg/swaybg"
-bg() { : > "$W/sb.log"; SBLOG="$W/sb.log" PATH="$W/sbg:$PATH" LOBBY_STARTUP_PNG="$1" SB_FAIL="${2:-}" sh "$W/lobby-background"; cat "$W/sb.log"; }
+bg() { : > "$W/sb.log"; SBLOG="$W/sb.log" PATH="$W/sbg:$PATH" LOBBY_STARTUP_PNG="$1" SB_FAIL="${2:-}" LOBBY_STARTUP_ANIM="${3:-$W/no-anim.html}" sh "$W/lobby-background"; cat "$W/sb.log"; }
 ok "with a picture it's fitted and centred on black (centred in portrait too)" "$(bg "$PNG")" "-c #000000 -i $PNG -m fit"
 ok "without one, plain black" "$(bg "$W/none.png")" "-c #000000"
 ok "if swaybg can't show the picture, it falls back to plain black at once" "$(bg "$PNG" fail | tail -1)" "-c #000000"
+
+# ── DP-07 round 9c: the start-up animation ──
+A=public/pi/startup
+ok "the site serves the animation's two pictures as real PNGs" \
+  "$(for f in road mark; do head -c 8 "$A/$f.png" | od -An -tx1 | tr -d ' \n'; echo; done | sort -u)" "89504e470d0a1a0a"
+ok "and a page that's ours, with its font inside it (no network needed)" "$(grep -q 'waytugo start-up animation' "$A/startup.html" && echo ours) $(grep -c 'data:font/ttf;base64' "$A/startup.html")" "ours 1"
+ok "the page is under setup's 1 MB limit" "$(( $(stat -c %s "$A/startup.html") <= 1048576 ))" "1"
+ok "setup fetches it before the Wi-Fi is touched" \
+  "$(( $(grep -n 'pi/startup/\$f' "$SETUP" | head -1 | cut -d: -f1) < $(grep -n '/usr/local/sbin/lobby-wifi-import "$NETS"' "$SETUP" | cut -d: -f1) ))" "1"
+AN="$(sed -n '/^png_ok() {/,/^rm -rf "\$STARTUP_ANIM"$/p' "$SETUP")"
+anim() { rm -rf "$W/dl"; mkdir -p "$W/dl"; cp "$@" "$W/dl/" 2>/dev/null; STARTUP_ANIM="$W/dl" STARTUP_DIR="$W/share" bash -c "$AN" 2>&1; }
+rm -rf "$W/share"; mkdir -p "$W/share"
+has "a good animation is installed whole" "$(anim "$A/startup.html" "$A/road.png" "$A/mark.png")" "start-up animation installed"
+ok "all three files" "$(ls "$W/share/startup" | tr '\n' ' ')" "mark.png road.png startup.html "
+cp "$W/notpng" "$W/road.png"
+has "one bad picture (an error page) and nothing is replaced" "$(anim "$A/startup.html" "$W/road.png" "$A/mark.png")" "keeping the one this Pi has"
+ok "the installed one is untouched" "$(cmp -s "$A/road.png" "$W/share/startup/road.png" && echo same)" "same"
+echo '<html>something else</html>' > "$W/startup.html"
+has "a page that isn't ours is refused" "$(anim "$W/startup.html" "$A/road.png" "$A/mark.png")" "keeping the one this Pi has"
+rm -rf "$W/share"; mkdir -p "$W/share"
+has "a failed download (some files missing) leaves a Pi without one on the still picture" "$(anim "$A/startup.html")" "the still picture is used"
+ok "with the animation installed, the desktop behind it is plain black (it sweeps in from black)" "$(bg "$PNG" "" "$A/startup.html")" "-c #000000"
+ok "the bench's clean-up (--prepare) clears the animation's browser data, keeps the animation" \
+  "$(grep -c 'startup-profile' <<<"$(sed -n '/Clearing everything that belongs to this bench Pi/,/^fi$/p' "$SETUP")")|$(sed -n '/Clearing everything that belongs to this bench Pi/,/^fi$/p' "$SETUP" | grep -c 'share/lobby')" "1|0"
 
 echo; echo "$pass/$((pass+fail)) passed"; [[ $fail -eq 0 ]]
