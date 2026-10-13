@@ -259,6 +259,9 @@ FIRST_SCAN = []           # taken before the hotspot starts, while the radio is 
 ADDRESS = "10.42.0.1"     # set once the hotspot is up
 CONNECT_TRIES = int(os.environ.get("LOBBY_WIFI_SETUP_TRIES", "10"))   # for tests only; production keeps the default
 CONNECT_SLEEP = float(os.environ.get("LOBBY_WIFI_SETUP_SLEEP", "2"))
+HOTSPOT_CHECK = float(os.environ.get("LOBBY_HOTSPOT_CHECK", "5"))      # seconds between checks that the hotspot is up
+RADIO = threading.Lock()  # held while a join or the hotspot itself is changing the radio, so the two never fight
+STOP = threading.Event()  # set once setup is finishing: the hotspot is never brought back after that
 AP_SSID = f"Directory-Setup-{SERIAL[-4:]}"
 def setup_code():
     """The hotspot's 8-digit code: made once per Pi and kept, so a phone that joined before still has the right one
@@ -313,6 +316,39 @@ def hotspot_down():
     run("nmcli", "connection", "delete", AP_CONN)
 
 
+def connection_names():
+    r = run("nmcli", "-t", "-f", "NAME", "connection", "show")
+    return [nm_fields(line)[0] for line in r.stdout.splitlines() if line]
+
+
+def hotspot_active():
+    r = run("nmcli", "-t", "-f", "NAME", "connection", "show", "--active")
+    return AP_CONN in [nm_fields(line)[0] for line in r.stdout.splitlines() if line]
+
+
+def log(msg):
+    print(f"{time.strftime('%F %T')} {msg}", file=sys.stderr, flush=True)
+
+
+def keep_hotspot():
+    """DP-05: the hotspot was seen to vanish after a phone typed a wrong code, while the TV still showed the code page,
+    and only a restart brought it back. Check it every few seconds and start it again if it's gone (never while a join
+    is using the radio, and never once setup is finishing)."""
+    global ADDRESS
+    fails = 0
+    while not STOP.wait(HOTSPOT_CHECK if fails < 3 else 30):
+        with RADIO:
+            if STOP.is_set() or hotspot_active():
+                fails = 0
+                continue
+            log("the setup hotspot was down; starting it again")
+            if hotspot_up():
+                fails = 0
+                ADDRESS = ap_address()
+            else:
+                fails += 1
+
+
 def site_reachable():
     return run("curl", "-fsS", "--max-time", "4", "-o", "/dev/null", URL, timeout=6).returncode == 0
 
@@ -350,6 +386,17 @@ def scan_networks():
 
 
 def try_connect(ssid, password):
+    with RADIO:
+        if STOP.is_set():
+            return False, "Setup is finishing."
+        ok, err = join(ssid, password)
+        if ok:
+            STOP.set()   # joined: the hotspot must not come back and take the radio from it
+    return ok, err
+
+
+def join(ssid, password):
+    before = set(connection_names())
     args = ["nmcli", "device", "wifi", "connect", ssid]
     if password:
         args += ["password", password]
@@ -357,15 +404,29 @@ def try_connect(ssid, password):
     if r.returncode != 0:
         err = r.stderr
         if "Secrets were required" in err or "802-11-wireless-security" in err:
-            return False, f"{ssid} refused that password. Check it and try again."
-        if "No network with SSID" in err:
-            return False, f"{ssid} isn't in range of this screen."
-        return False, (err.strip()[:200] or "Couldn't join that network.")
+            msg = f"{ssid} refused that password. Check it and try again."
+        elif "No network with SSID" in err:
+            msg = f"{ssid} isn't in range of this screen."
+        else:
+            msg = err.strip()[:200] or "Couldn't join that network."
+        undo_join(before)
+        return False, msg
     for _ in range(CONNECT_TRIES):
         if site_reachable():
             return True, ""
         time.sleep(CONNECT_SLEEP)
+    undo_join(before)
     return False, "Joined, but can't reach the directory site from there."
+
+
+def undo_join(before):
+    """A join that didn't work: delete the profile it saved (a saved network with a wrong password is what makes
+    NetworkManager ask for the password again later) and put the hotspot back at once, so the phone can retry."""
+    for name in set(connection_names()) - before - {AP_CONN}:
+        run("nmcli", "connection", "delete", "id", name)
+    if not hotspot_active():
+        log("starting the setup hotspot again after a join that didn't work")
+        hotspot_up()
 
 
 PAGE = """<!doctype html><html><head><meta name="viewport" content="width=device-width, initial-scale=1">
@@ -454,9 +515,9 @@ class Handler(http.server.BaseHTTPRequestHandler):
 def watch_for_network(server):
     # Covers a cable plugged in mid-setup, without waiting for the form: the site becoming reachable ends setup
     # even if no one ever submits the picker.
-    while True:
-        time.sleep(15)
+    while not STOP.wait(15):
         if site_reachable():
+            STOP.set()
             server.shutdown()
             return
 
@@ -478,12 +539,15 @@ def main():
     ADDRESS = ap_address()
     server = http.server.ThreadingHTTPServer(("0.0.0.0", 80), Handler)
     # shutdown() must run on a thread other than the one in serve_forever(), or it deadlocks against itself.
-    signal.signal(signal.SIGTERM, lambda *_: threading.Thread(target=server.shutdown, daemon=True).start())
+    signal.signal(signal.SIGTERM, lambda *_: (STOP.set(), threading.Thread(target=server.shutdown, daemon=True).start()))
     threading.Thread(target=watch_for_network, args=(server,), daemon=True).start()
+    threading.Thread(target=keep_hotspot, daemon=True).start()
     try:
         server.serve_forever()
     finally:
-        hotspot_down()
+        STOP.set()
+        with RADIO:          # waits for a check in progress, so nothing starts the hotspot after it's taken down
+            hotspot_down()
         set_status("offline")                                 # the agent says online at its next check-in
 
 
@@ -809,6 +873,18 @@ LOOKUP="${URL/\/\?//api/screen?}"          # where to ask which way the screen f
 LAST="$HOME/kiosk/rotation-${SERIAL:-unknown}.last"   # per Pi, so a card moved to another Pi doesn't reuse its answer
 echo "$(date '+%F %T') kiosk starting, Pi ${SERIAL:-unknown}, $URL"
 
+# DP-05: on Raspberry Pi OS (trixie) the desktop's panel and file manager start even with our own autostart, and
+# lwrespawn keeps them running. The panel's network plugin is what put "Authentication required by Wi-Fi network"
+# boxes over the directory. A lobby screen needs neither: stop their respawners first, then them, now and every 10 s
+# (the black swaybg stays behind the browser).
+quiet_desktop() {
+  pkill -u "$(id -u)" -f '^/bin/sh /usr/bin/lwrespawn /usr/bin/(wf-panel-pi|pcmanfm-pi)' 2>/dev/null
+  pkill -u "$(id -u)" -x 'wf-panel-pi|pcmanfm-pi' 2>/dev/null && echo "$(date '+%F %T') stopped the desktop panel"
+  true
+}
+quiet_desktop
+( while sleep "${KIOSK_QUIET_SECONDS:-10}"; do kill -0 $$ 2>/dev/null || exit 0; quiet_desktop; done ) &
+
 # Wait up to 90 seconds for the network (tests shrink this with KIOSK_NET_TRIES/KIOSK_NET_SLEEP). The page works
 # from its saved copy if it never comes back later.
 MARKER="$HOME/kiosk/ever-online-${SERIAL:-unknown}"    # per Pi, like the rotation LAST file below
@@ -975,10 +1051,16 @@ else
 fi
 
 echo "==> Starting the kiosk at login (labwc, wayfire and X11 all covered)"
-# labwc: a user autostart replaces the desktop panel, which is what a kiosk wants.
+# labwc: our own autostart (the panel and desktop still start on trixie; kiosk.sh stops them, see quiet_desktop).
 mkdir -p "$KHOME/.config/labwc"
 # A plain black desktop behind the browser, instead of the Raspberry Pi wallpaper, while it starts
 printf '%s\n' "swaybg -c '#000000' >/dev/null 2>&1 &" "$KDIR/kiosk.sh &" > "$KHOME/.config/labwc/autostart"
+# No desktop pop-ups on a lobby screen (DP-05): the password prompts of the two polkit agents, and pprompt's warnings,
+# are switched off for this user the standard way (an entry in ~/.config/autostart with Hidden=true)
+mkdir -p "$KHOME/.config/autostart"
+for a in polkit-mate-authentication-agent-1 lxpolkit pprompt; do
+  printf '[Desktop Entry]\nType=Application\nName=%s\nHidden=true\n' "$a" > "$KHOME/.config/autostart/$a.desktop"
+done
 # wayfire (older Bookworm images)
 WF="$KHOME/.config/wayfire.ini"
 touch "$WF"

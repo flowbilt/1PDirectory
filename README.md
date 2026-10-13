@@ -152,6 +152,9 @@ This only happens for a Pi that's never gotten online at all. A Pi that's worked
 keeps the quieter behavior below (cached content, "Reconnecting…") — it never puts up a surprise hotspot on a
 screen that's already working; holding the case button 10 seconds (a network reset) brings it back on purpose.
 Proven on a real Pi 4 (2026-10-01): it lists nearby networks while hosting the hotspot.
+The hotspot is checked every 5 seconds and started again if it has gone (seen after a phone typed a wrong code);
+a join that fails deletes the profile it saved and puts the hotspot straight back, so the phone can try again
+(DP-05). These reach a Pi only on a newly prepared card (setup runs before a Pi is ever online), or with Update Pi.
 
 ### The technician page
 
@@ -208,6 +211,9 @@ A Pi needs no one on site after a power cut, whatever comes back first:
   where a building blocks the usual time service (NTP). Everything returns within about a minute of the network. A
   Pi that's never been online instead offers field Wi-Fi setup (above).
 - **No mouse pointer** on screen, with or without a mouse (an invisible pointer theme).
+- **No desktop pop-ups:** the desktop's panel and file manager (which Raspberry Pi OS starts anyway) are stopped
+  every 10 seconds by the kiosk, since the panel's network plugin is what asked for Wi-Fi passwords on screen; the
+  polkit password prompts and pprompt are switched off for the desktop user (DP-05).
 - **A quiet restart:** no rainbow square, Raspberry Pi logo, boot text or desktop picture; the TV stays black until
   the directory appears (about a minute).
 

@@ -190,15 +190,19 @@ cat > "$W/bin/nmcli" <<'S'
 #!/usr/bin/env bash
 echo "nmcli $*" >> "$NMLOG"
 case "$*" in
-  "device wifi hotspot con-name lobby-setup-ap ssid Directory-Setup-1234 password "*) exit "${HOTSPOT_RC:-0}" ;;
+  "device wifi hotspot con-name lobby-setup-ap ssid Directory-Setup-1234 password "*) [[ "${HOTSPOT_RC:-0}" == 0 ]] && touch "$AP_FLAG"; exit "${HOTSPOT_RC:-0}" ;;
+  "connection down lobby-setup-ap"|"connection delete lobby-setup-ap") rm -f "$AP_FLAG"; exit 0 ;;
+  "-t -f NAME connection show --active") [[ -f "$AP_FLAG" ]] && echo lobby-setup-ap; exit 0 ;;
+  "-t -f NAME connection show") echo "lobby-wifi-1"; [[ -f "$AP_FLAG" ]] && echo lobby-setup-ap; [[ -f "$W_PROFILE" ]] && cat "$W_PROFILE"; exit 0 ;;
+  "connection delete id "*) [[ "${*#connection delete id }" == "$(cat "$W_PROFILE" 2>/dev/null)" ]] && rm -f "$W_PROFILE"; exit 0 ;;
   "device wifi rescan") exit 0 ;;
   "-t -f SSID,SECURITY,SIGNAL device wifi list")
     if [[ -f "${SCAN_ONCE:-/nonexistent}" ]]; then rm -f "$SCAN_ONCE"; elif [[ -f "${SCAN_EMPTY:-/nonexistent}" ]]; then exit 0; fi
     printf 'Strong:WPA2:70\nWeak:WPA2:20\nOpenNet::40\nStrong:WPA2:70\nDirectory-Setup-1234:WPA2:99\nLobby\\:East:WPA2:10\n'; exit 0 ;;
-  "device wifi connect BadNet"*) echo "Error: Connection activation failed: Secrets were required, but not provided." >&2; exit 4 ;;
+  "device wifi connect BadNet"*) rm -f "$AP_FLAG"; echo BadNet > "$W_PROFILE"; echo "Error: Connection activation failed: Secrets were required, but not provided." >&2; exit 4 ;;
   "-g IP4.ADDRESS connection show lobby-setup-ap") echo "10.42.0.1/24" ;;
-  "device wifi connect GoodNet password rightpass") exit 0 ;;
-  "device wifi connect OpenNet") exit 0 ;;
+  "device wifi connect GoodNet password rightpass") rm -f "$AP_FLAG"; echo GoodNet > "$W_PROFILE"; exit 0 ;;
+  "device wifi connect OpenNet") rm -f "$AP_FLAG"; echo OpenNet > "$W_PROFILE"; exit 0 ;;
 esac
 exit 0
 S
@@ -213,7 +217,8 @@ wifisetup_run() {
   # Starts lobby-wifi-setup in the background, waits for it to listen, runs "$@" against it, then stops it and
   # waits for it to actually exit (the port must be free before the next case starts).
   : > "$NMLOG"
-  ( PATH="$W/bin:$PATH" NMLOG="$NMLOG" SITE_UP_FLAG="$SITE_UP_FLAG" LOBBY_STATUS_FILE="$W/lstatus" LOBBY_SETUP_CODE_FILE="$W/setup-code" SCAN_ONCE="$W/scan-once" SCAN_EMPTY="$W/scan-empty" LOBBY_WIFI_SETUP_TRIES="${TRIES:-2}" LOBBY_WIFI_SETUP_SLEEP="${SLEEP_S:-0.2}" \
+  rm -f "$W/ap-up" "$W/profile"
+  ( PATH="$W/bin:$PATH" NMLOG="$NMLOG" AP_FLAG="$W/ap-up" W_PROFILE="$W/profile" LOBBY_HOTSPOT_CHECK="${CHECK_S:-0.3}" SITE_UP_FLAG="$SITE_UP_FLAG" LOBBY_STATUS_FILE="$W/lstatus" LOBBY_SETUP_CODE_FILE="$W/setup-code" SCAN_ONCE="$W/scan-once" SCAN_EMPTY="$W/scan-empty" LOBBY_WIFI_SETUP_TRIES="${TRIES:-2}" LOBBY_WIFI_SETUP_SLEEP="${SLEEP_S:-0.2}" \
       timeout 40 python3 "$W/lobby-wifi-setup.py" 10000000abcd1234 "http://x.test/site" > "$W/wifisetup.out" 2>&1 & echo $! > "$W/wifisetup.pid" )
   for _ in $(seq 1 30); do curl -fsS -o /dev/null http://127.0.0.1:80/ 2>/dev/null && break; sleep 0.2; done
   "$@"
@@ -278,5 +283,45 @@ LOCKED="$(wifisetup_run bash -c "curl -s http://127.0.0.1:80/ >/dev/null; curl -
 has "a locked network with no password says it needs one" "$LOCKED" "Strong needs its password"
 ok "and doesn't even try to join it" "$(grep -c 'device wifi connect Strong' "$NMLOG")" "0"
 has "a refused password is said plainly, not as nmcli's message" "$ERR" "BadNet refused that password"
+
+
+# ── DP-05: the hotspot is kept up, and a join that didn't work is undone ──
+: > "$NMLOG"
+wifisetup_run bash -c "sleep 0.8; rm -f '$W/ap-up'; sleep 1.5"
+N_AP="$(grep -c 'device wifi hotspot con-name lobby-setup-ap' "$NMLOG")"
+ok "a hotspot that disappears (as after a phone typed a wrong code) is started again within seconds" "$([[ $N_AP -ge 2 ]] && echo again || echo "$N_AP")" "again"
+has "and the kiosk log says so" "$(cat "$W/wifisetup.out")" "the setup hotspot was down; starting it again"
+ok "a hotspot that stays up is left alone" "$( : > "$NMLOG"; wifisetup_run sleep 1.5; grep -c 'device wifi hotspot' "$NMLOG")" "1"
+: > "$NMLOG"
+ERR3="$(TRIES=1 SLEEP_S=0.1 wifisetup_run curl -s -X POST -d 'ssid=BadNet&password=wrongpass' http://127.0.0.1:80/connect)"
+has "a refused password still says so" "$ERR3" "BadNet refused that password"
+has "the profile the failed join saved is deleted (a saved wrong password makes NetworkManager ask again later)" "$(cat "$NMLOG")" "connection delete id BadNet"
+ok "and the hotspot is back straight away, so the phone can try again" \
+  "$(sed -n '/device wifi connect BadNet/,$p' "$NMLOG" | grep -c 'device wifi hotspot con-name lobby-setup-ap')" "1"
+has "the card's own networks are never deleted" "$(grep -c 'connection delete id lobby-wifi-1' "$NMLOG")" "0"
+: > "$NMLOG"
+ERR4="$(TRIES=1 SLEEP_S=0.1 wifisetup_run curl -s -X POST -d 'ssid=GoodNet&password=rightpass' http://127.0.0.1:80/connect)"
+has "joined but no site: the new profile is removed and the hotspot comes back too" "$(cat "$NMLOG")" "connection delete id GoodNet"
+touch "$SITE_UP_FLAG"; : > "$NMLOG"
+TRIES=2 SLEEP_S=0.1 wifisetup_run bash -c "curl -s -X POST -d 'ssid=OpenNet&password=' http://127.0.0.1:80/connect >/dev/null; sleep 1.2"
+rm -f "$SITE_UP_FLAG"
+ok "after a join that worked, the hotspot is never brought back to take the radio" \
+  "$(sed -n '/device wifi connect OpenNet/,$p' "$NMLOG" | grep -c 'device wifi hotspot')" "0"
+has "and the joined network is kept" "$(grep -c 'connection delete id OpenNet' "$NMLOG")" "0"
+
+# ── DP-05: no desktop pop-ups on a lobby screen ──
+KS="$(sed -n "/^cat > \"\$KDIR\/kiosk.sh\" <<'EOF'\$/,/^EOF\$/p" "$SETUP")"
+has "kiosk.sh stops the desktop panel's respawner (lwrespawn) first" "$KS" "pkill -u \"\$(id -u)\" -f '^/bin/sh /usr/bin/lwrespawn /usr/bin/(wf-panel-pi|pcmanfm-pi)'"
+has "and keeps it stopped every 10 seconds" "$KS" 'while sleep "${KIOSK_QUIET_SECONDS:-10}"; do kill -0 $$ 2>/dev/null || exit 0; quiet_desktop; done'
+cp "$(command -v sleep)" "$W/wf-panel-pi"; cp "$(command -v sleep)" "$W/pcmanfm-pi"; cp "$(command -v sleep)" "$W/chromium"
+"$W/wf-panel-pi" 30 & P1=$!; "$W/pcmanfm-pi" 30 & P2=$!; "$W/chromium" 30 & P3=$!
+QD="$(awk '/^quiet_desktop\(\) \{$/{f=1} f; f&&/^\}$/{exit}' <<<"$KS")"
+bash -c "$QD"$'\n'"quiet_desktop" >/dev/null; sleep 0.3
+ok "the panel and the desktop's file manager are stopped" "$(kill -0 $P1 2>/dev/null; echo $?)$(kill -0 $P2 2>/dev/null; echo $?)" "11"
+ok "the browser and everything else are left alone" "$(kill -0 $P3 2>/dev/null && echo running)" "running"
+kill $P3 2>/dev/null; wait 2>/dev/null
+AUTO="$(sed -n '/^mkdir -p "$KHOME\/.config\/autostart"/,/^done$/p' "$SETUP")"
+has "the polkit password prompts and pprompt are switched off for the desktop user (Hidden=true)" "$AUTO" 'for a in polkit-mate-authentication-agent-1 lxpolkit pprompt; do'
+has "in the standard way" "$AUTO" 'Hidden=true'
 
 echo; echo "$pass/$((pass+fail)) passed"; [[ $fail -eq 0 ]]
