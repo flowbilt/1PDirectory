@@ -217,7 +217,8 @@ A Pi needs no one on site after a power cut, whatever comes back first:
 - **A quiet restart:** no rainbow square, Raspberry Pi logo or desktop picture (the Pi's own firmware lines may show
   briefly). Then the **start-up animation** (DP-07 round 9c, `public/pi/startup/`): the waytugo logo sweeps in once
   along its road, from far to front, settles exactly as the logo is, and "Starting" appears with dots counting to
-  three, over and over, until the directory's window opens over it. It plays from the card in its own browser window,
+  three, over and over, until the directory's window opens over it (never sooner than 10 seconds after the
+  animation starts, so a Pi with a fast network still shows the whole sweep; DP-07 round 9d). It plays from the card in its own browser window,
   so it needs no network, and the screen is turned the way it was last time before it starts (a card new to a Pi
   starts landscape and turns once the site answers). The two pictures are the logo split in two (the road and the
   wordmark), so together they are the original pixel for pixel; the font is inside the page.

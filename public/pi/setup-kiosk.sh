@@ -918,12 +918,16 @@ if [[ -n "${WAYLAND_DISPLAY:-}${DISPLAY:-}" && -n "$CHROME" && -s "$STARTUP_PAGE
   "$CHROME" --kiosk "file://$STARTUP_PAGE" --user-data-dir="$HOME/kiosk/startup-profile" --ozone-platform-hint=auto \
     --noerrdialogs --disable-infobars --disable-session-crashed-bubble --no-first-run --password-store=basic \
     --disable-features=Translate,TranslateUI --autoplay-policy=no-user-gesture-required >>"$LOG" 2>&1 &
-  STARTUP_CHROME_PID=$!
+  STARTUP_CHROME_PID=$!; STARTUP_AT=$SECONDS
   echo "$(date '+%F %T') start-up animation showing"
 fi
-end_startup() {   # close it once the next window has had time to come up over it
+# Before the next window opens: let the animation play. Chromium takes several seconds to start on a Pi 4, and with a
+# network the wait below is over in a second, so without this the directory's window came up first and the animation
+# was never seen (bench Pi, 2026-10-13). Then close it once the next window has had time to come up over it.
+end_startup() {
   [[ -n "$STARTUP_CHROME_PID" ]] || return 0
-  local pid="$STARTUP_CHROME_PID"; STARTUP_CHROME_PID=""
+  local pid="$STARTUP_CHROME_PID" left=$(( ${KIOSK_STARTUP_MIN:-10} - (SECONDS - STARTUP_AT) )); STARTUP_CHROME_PID=""
+  if (( left > 0 )); then echo "$(date '+%F %T') letting the start-up animation play (${left}s)"; sleep "$left"; fi
   ( sleep "${KIOSK_STARTUP_OVERLAP:-8}"; kill "$pid" 2>/dev/null ) &
 }
 
@@ -940,10 +944,10 @@ elif [[ ! -f "$MARKER" ]]; then
   echo "$(date '+%F %T') no network and this Pi has never reached the site: starting field Wi-Fi setup"
   SETUP_CHROME_PID=""
   if [[ -n "${WAYLAND_DISPLAY:-}${DISPLAY:-}" && -n "$CHROME" ]]; then
+    end_startup   # the setup page opens next, over the animation
     "$CHROME" --kiosk "http://localhost/" --user-data-dir="$HOME/kiosk/setup-profile" \
       --ozone-platform-hint=auto --noerrdialogs --disable-infobars --no-first-run --password-store=basic >>"$LOG" 2>&1 &
     SETUP_CHROME_PID=$!
-    end_startup
   fi
   ${LOBBY_WIFI_SETUP:-sudo -n /usr/local/sbin/lobby-wifi-setup} "${SERIAL:-unknown}" "$URL" >>"$LOG" 2>&1
   [[ -n "$SETUP_CHROME_PID" ]] && kill "$SETUP_CHROME_PID" 2>/dev/null

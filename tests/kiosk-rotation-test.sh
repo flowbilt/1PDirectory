@@ -52,7 +52,7 @@ run() {
   local H="$1" serial="$2" site="$3" url="$4" setting="$5"
   mkdir -p "$H/kiosk"; rm -f "$H/wlr.log" "$H/chromium.log" "$H/wlr.state" "$H/wifisetup.log" "$H/events.log" "$H/startup.pid"
   printf 'SITE="%s"\nURL="%s"\nROTATE="%s"\n' "$site" "$url" "$setting" > "$H/kiosk/kiosk.conf"
-  env KIOSK_QUIET_SECONDS=1 KIOSK_STARTUP_OVERLAP=0.3 LOBBY_STARTUP_PAGE="${PAGE-$WORK/startup.html}" ${EXTRA:-} HOME="$H" LOBBY_SERIAL="$serial" WAYLAND_DISPLAY=wayland-0 PATH="$WORK/bin:$PATH" timeout 120 bash "$WORK/kiosk.sh" >/dev/null 2>&1
+  env KIOSK_QUIET_SECONDS=1 KIOSK_STARTUP_OVERLAP=0.3 KIOSK_STARTUP_MIN=${MIN:-0} LOBBY_STARTUP_PAGE="${PAGE-$WORK/startup.html}" ${EXTRA:-} HOME="$H" LOBBY_SERIAL="$serial" WAYLAND_DISPLAY=wayland-0 PATH="$WORK/bin:$PATH" timeout 120 bash "$WORK/kiosk.sh" >/dev/null 2>&1
   GOT_ROT="$(tail -n 1 "$H/wlr.log" 2>/dev/null)"; GOT_URL="$(cat "$H/chromium.log" 2>/dev/null)"
 }
 ok() { if [[ "$2" == "$3" ]]; then echo "  ok  $1"; pass=$((pass+1)); else echo "  FAIL $1: wanted '$3', got '$2'"; fail=$((fail+1)); fi; }
@@ -136,6 +136,10 @@ H="$WORK/s3"; EXTRA="$FAST" run "$H" 10000000fee1face "$OFF" "" auto; sleep 1
 ok "a Pi going into field Wi-Fi setup: the animation first, then the setup page over it" \
   "$(grep '^open' "$H/events.log" | tr '\n' '|')" "open file://$WORK/startup.html|open http://localhost/|open $OFF/?device=10000000fee1face|"
 ok "and the animation's window is closed" "$(alive "$H")" "closed"
+H="$WORK/s5"; t0=$SECONDS; MIN=3 run "$H" 100000008294ba46 "$BASE" "" auto; took=$(( SECONDS - t0 )); sleep 1
+ok "with a network that answers at once, the animation still gets its minimum time before the directory opens" \
+  "$(( took >= 3 ))|$(grep '^open' "$H/events.log" | tr '\n' '|')" "1|open file://$WORK/startup.html|open $BASE/?device=100000008294ba46|"
+ok "and is closed after" "$(alive "$H")" "closed"
 H="$WORK/s4"; PAGE="$WORK/none.html" run "$H" 100000008294ba46 "$BASE" "" auto
 ok "a card without the animation goes straight to the directory, as before" "$(grep -c 'file://' "$H/events.log")|$GOT_URL" "0|$BASE/?device=100000008294ba46"
 
