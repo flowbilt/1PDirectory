@@ -1,0 +1,1194 @@
+#!/usr/bin/env bash
+# Lobby directory kiosk setup for Raspberry Pi 4.
+# Target: Raspberry Pi OS with desktop (64-bit), Bookworm or newer.
+#
+# A card set up by this script carries no identity: it works in whichever Pi it's in. At every start the Pi builds
+# its screen address from its own serial, the agent makes its own key for that Pi, and the Pi names itself after
+# its serial (e.g. lobby-a4ae272d). So one prepared card can be copied to every card (README: Preparing cards).
+#
+# Usage (as the desktop user, with sudo):
+#   curl -fsSLO https://1pdirectory.netlify.app/pi/setup-kiosk.sh
+#   sudo bash setup-kiosk.sh --code XXXX-XXXX             set up this Pi, with the saved Wi-Fi networks
+#   sudo bash setup-kiosk.sh --prepare --code XXXX-XXXX   bench Pi: prepare a card to copy, then power off
+#   (The console's Update Pi runs it with --update on a Pi in the field.)
+# Get the code in the console: Pi setup -> Get a prepare code (it lasts an hour and works once). Without --code,
+# the Pi keeps whatever network it already has (fine for a wired Pi).
+#
+# The Pi then shows "New display" with its serial number until it's assigned to a screen in the console.
+# Pis from the Yodeck report are recognized by serial; open their enrollment window in the console on install day.
+#
+# A Pi that has never reached the site (wrong or missing Wi-Fi, no cable yet) offers field Wi-Fi setup on its own
+# screen instead of sitting blank: join the hotspot it shows from a phone (or use a keyboard on the Pi itself) and
+# pick a network. No card or console visit needed. See README: Field Wi-Fi setup.
+#
+# Options:
+#   --code CODE        Download the Wi-Fi networks saved in the console (Pi setup). Every network is saved on the
+#                      card; the Pi joins whichever is in range, and a network cable always wins.
+#   --update           Update this Pi in place (the console's Update Pi runs this): re-apply the latest setup with the
+#                      options this Pi was set up with (saved in /etc/lobby-setup.conf), install Raspberry Pi OS
+#                      updates, keep its identity, key and Wi-Fi. The agent restarts the Pi afterwards.
+#   --user NAME        The desktop user, when not run with sudo from that user (--update from the agent).
+#   --prepare          Bench mode: install everything, then clear everything that belongs to this Pi (machine ID,
+#                      logs, browser profile, keys, the bench's own Wi-Fi) and power off, ready to copy the card.
+#                      Needs --code. Run it at the Pi's own keyboard or on a cable: it drops the bench's Wi-Fi.
+#   --site URL         The directory site. Default https://1pdirectory.netlify.app
+#   --url URL          Old style: a fixed screen address instead of letting the console decide (not with --prepare)
+#   --rotate auto|0|90|180|270  Default auto: at every start the Pi asks the site how its screen is set in the
+#                      console (portrait 90, portrait turned the other way 270, landscape upside down 180) and turns
+#                      the picture to match. Landscape, new and unassigned Pis use 0. A fixed number overrides
+#                      the console for good; for a TV mounted the other way round, use the console's Layout instead.
+#   --tz ZONE          Time zone. Default America/Chicago.
+#   --wifi-country CC  Wi-Fi country code. Default US.
+#   --no-1080p         Keep the TV's native resolution (4K runs slowly on a Pi 4; not recommended).
+#   --no-tv            Don't control the TV. By default the Pi keeps the TV switched on and showing this Pi, over HDMI-CEC
+#                      (the TV's CEC setting must be on: Anynet+, SimpLink, Bravia Sync...); use this for a TV that
+#                      misbehaves with it.
+#   --no-button        No case button. By default a button between GPIO3 (pin 5) and ground (pin 6) works: hold 3 s
+#                      for a safe shutdown, hold 10 s to reset the network (Wi-Fi joined in the field is forgotten,
+#                      then Wi-Fi setup if no card network is in range); a press powers on a Pi that's shut down.
+#                      A Pi with no button wired never sees a press, so the default is harmless.
+#   --led-gpio N|none  The case status light's GPIO (default 17, pin 11, to ground through a resistor): steady =
+#                      online, slow blink = offline, double blink = Wi-Fi setup. "none" for a case without one.
+#   --connect          Also install Raspberry Pi Connect for remote screen viewing from a browser.
+#   --no-agent         Don't install the remote-management agent.
+#   --ssh              Leave SSH on. By default SSH is switched off (from the next restart): the Pi opens no ports,
+#                      and the agent handles remote management. Re-run setup without --ssh to switch it off again.
+set -euo pipefail
+
+SITE="https://1pdirectory.netlify.app"; URL=""; ROTATE="auto"; TZ_NAME="America/Chicago"; COUNTRY="US"
+FORCE_1080=1; CONNECT=0; AGENT=1; SSH=0; PREPARE=0; CODE=""; TV=1; UPDATE=0; KUSER_OPT=""
+BUTTON=1; LED_GPIO=17        # the case button (GPIO3) and status light; --no-button, --led-gpio N|none
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --site) SITE="${2%/}"; shift 2 ;;
+    --url) URL="$2"; shift 2 ;;
+    --code) CODE="$2"; shift 2 ;;
+    --prepare) PREPARE=1; shift ;;
+    --update) UPDATE=1; shift ;;
+    --user) KUSER_OPT="$2"; shift 2 ;;
+    --no-agent) AGENT=0; shift ;;
+    --rotate) ROTATE="$2"; shift 2 ;;
+    --reboot) echo "--reboot has been removed: the Pi doesn't reboot on its own. Reboots are started (and later scheduled) from the console."; exit 1 ;;
+    --tz) TZ_NAME="$2"; shift 2 ;;
+    --wifi-country) COUNTRY="$2"; shift 2 ;;
+    --no-1080p) FORCE_1080=0; shift ;;
+    --connect) CONNECT=1; shift ;;
+    --no-tv) TV=0; shift ;;
+    --no-button) BUTTON=0; shift ;;
+    --led-gpio) LED_GPIO="$2"; shift 2 ;;
+    --ssh) SSH=1; shift ;;
+    -h|--help) sed -n '2,/^set -euo pipefail/p' "$0" | sed '$d'; exit 0 ;;
+    *) echo "Unknown option: $1 (see --help)"; exit 1 ;;
+  esac
+done
+
+[[ "$SITE" =~ ^https?:// ]] || { echo "--site must start with https://"; exit 1; }
+[[ -z "$URL" || "$URL" =~ ^https?:// ]] || { echo "--url must start with https://"; exit 1; }
+[[ "$ROTATE" =~ ^(auto|0|90|180|270)$ ]] || { echo "--rotate must be auto, 0, 90, 180 or 270"; exit 1; }
+[[ "$COUNTRY" =~ ^[A-Z]{2}$ ]] || { echo "--wifi-country must be two capital letters, like US"; exit 1; }
+[[ "$LED_GPIO" =~ ^(none|[0-9]|1[0-9]|2[0-7])$ && "$LED_GPIO" != "3" ]] || { echo "--led-gpio must be a GPIO number from 0 to 27 (not 3, the button) or none"; exit 1; }
+[[ -z "$CODE" || "$CODE" =~ ^[A-Za-z0-9\ -]{8,12}$ ]] || { echo "That doesn't look like a prepare code (like ABCD-EFGH)."; exit 1; }
+if [[ $UPDATE -eq 1 ]]; then
+  [[ $PREPARE -eq 0 && -z "$CODE" ]] || { echo "--update keeps this Pi's settings and Wi-Fi; it can't be combined with --prepare or --code."; exit 1; }
+fi
+if [[ $PREPARE -eq 1 ]]; then
+  [[ -n "$CODE" ]] || { echo "--prepare needs --code: get one in the console (Pi setup -> Get a prepare code), so the card carries the saved Wi-Fi."; exit 1; }
+  [[ -z "$URL" ]] || { echo "--prepare makes a card for any Pi; it can't have a fixed --url."; exit 1; }
+fi
+[[ $EUID -eq 0 ]] || { echo "Run with sudo: sudo bash $0 ..."; exit 1; }
+
+SETUP_CONF="${LOBBY_SETUP_CONF:-/etc/lobby-setup.conf}"
+if [[ $UPDATE -eq 1 && -f "$SETUP_CONF" ]]; then
+  source "$SETUP_CONF"                       # the options this Pi was set up (or its card prepared) with
+fi
+KUSER="${KUSER_OPT:-${SUDO_USER:-}}"
+if [[ -z "$KUSER" && $UPDATE -eq 1 ]]; then
+  KUSER="$(python3 -c 'import json; print(json.load(open("/etc/lobby-agent.json")).get("user", ""))' 2>/dev/null || true)"
+fi
+[[ -n "$KUSER" && "$KUSER" != "root" ]] || { echo "Run this with sudo from the desktop user's account, not as root directly."; exit 1; }
+KHOME="$(getent passwd "$KUSER" | cut -d: -f6)"
+KDIR="$KHOME/kiosk"
+SERIAL="$( { tr -d '\0' </proc/device-tree/serial-number; } 2>/dev/null || awk '/^Serial/ {print $3}' /proc/cpuinfo 2>/dev/null || true)"
+SERIAL="$(echo "$SERIAL" | tr 'A-F' 'a-f')"
+
+echo "==> $([[ $PREPARE -eq 1 ]] && echo "Preparing a card on this bench Pi" || { [[ $UPDATE -eq 1 ]] && echo "Updating this Pi" || echo "Setting up this Pi"; }) for user $KUSER"
+if [[ $PREPARE -eq 1 ]]; then
+  echo "    The card will carry no identity: it takes on the serial of whichever Pi it's put in."
+else
+  echo "    Pi serial: ${SERIAL:-unknown}"
+  echo "    Screen:   ${URL:-$SITE/?device=${SERIAL:-<serial>}} $([[ -z "$URL" ]] && echo "(built from the serial at every start)")"
+fi
+echo "    Rotation: $([[ "$ROTATE" == "auto" ]] && echo "automatic (asks the site at every start)" || echo "fixed at $ROTATE")"
+echo "    Time zone: $TZ_NAME   No automatic reboots (reboots come from the console)"
+echo "    SSH: $([[ $SSH -eq 1 ]] && echo "on (--ssh)" || echo "off from the next restart (use --ssh to keep it)")"
+echo "    TV: $([[ $TV -eq 1 ]] && echo "kept on and showing this Pi (HDMI-CEC)" || echo "left alone (--no-tv)")"
+echo "    Case button: $([[ $BUTTON -eq 1 ]] && echo "GPIO3 (hold 3 s shut down, 10 s reset network); status light: $([[ $LED_GPIO == none ]] && echo "none" || echo "GPIO$LED_GPIO")" || echo "none (--no-button)")"
+
+# The saved Wi-Fi first, so a bad or used code stops setup before anything is installed
+NETS=""
+if [[ -n "$CODE" ]]; then
+  echo "==> Downloading the saved Wi-Fi networks"
+  NETS="$(mktemp)"; chmod 600 "$NETS"; trap 'rm -f "$NETS"' EXIT
+  HTTP="$(curl -sS --max-time 20 -o "$NETS" -w '%{http_code}' -H 'Content-Type: application/json' \
+    -d "{\"action\":\"prepare\",\"code\":\"$CODE\"}" "$SITE/api/networks" || echo 000)"
+  if [[ "$HTTP" != "200" ]]; then
+    echo "    $(python3 -c 'import json,sys; print(json.load(open(sys.argv[1])).get("error",""))' "$NETS" 2>/dev/null || true)"
+    echo "Couldn't download the Wi-Fi networks (HTTP $HTTP). Get a new code in the console and run setup again."; exit 1
+  fi
+  echo "    $(python3 -c 'import json,sys; print(len(json.load(open(sys.argv[1]))["networks"]))' "$NETS") network(s) to save"
+fi
+
+# The agent too, now: saving Wi-Fi below can drop a Pi's network for a few seconds (it may be on one of those networks)
+AGENT_PY=""
+HERE="$(cd "$(dirname "$0")" && pwd)"
+if [[ $AGENT -eq 1 ]]; then
+  AGENT_PY="$(mktemp)"
+  if [[ -f "$HERE/agent.py" ]]; then cp "$HERE/agent.py" "$AGENT_PY"
+  else curl -fsSL "$SITE/pi/agent.py" -o "$AGENT_PY" || { echo "Couldn't download the agent from $SITE. Check the network and run setup again."; exit 1; }; fi
+fi
+
+# The start-up picture (DP-07 round 9), shown behind the browser while a Pi starts. Optional: if it can't be had,
+# the Pi keeps the picture it has, or plain black.
+STARTUP_PNG="$(mktemp)"
+if [[ -f "$HERE/startup.png" ]]; then cp "$HERE/startup.png" "$STARTUP_PNG"
+elif ! curl -fsSL --max-time 60 "$SITE/pi/startup.png" -o "$STARTUP_PNG"; then : > "$STARTUP_PNG"; fi
+
+echo "==> Installing packages"
+apt-get update -qq
+if ! command -v chromium >/dev/null && ! command -v chromium-browser >/dev/null; then
+  apt-get install -y chromium || apt-get install -y chromium-browser
+fi
+apt-get install -y wlr-randr x11-xserver-utils curl grim scrot python3 python3-pil v4l-utils swaybg >/dev/null || true
+if [[ $CONNECT -eq 1 ]]; then apt-get install -y rpi-connect || echo "    rpi-connect not available on this OS image; skipping."; fi
+CHROME="$(command -v chromium || command -v chromium-browser)"
+if [[ $UPDATE -eq 1 ]]; then
+  echo "==> Installing Raspberry Pi OS updates"
+  DEBIAN_FRONTEND=noninteractive apt-get -y -o Dpkg::Options::=--force-confdef -o Dpkg::Options::=--force-confold full-upgrade
+fi
+
+echo "==> Desktop autologin, no screen blanking, Wi-Fi country $COUNTRY, time zone, SSH $([[ $SSH -eq 1 ]] && echo on || echo off)"
+if command -v raspi-config >/dev/null; then
+  raspi-config nonint do_boot_behaviour B4   # desktop, auto login
+  raspi-config nonint do_blanking 1          # disable screen blanking
+  raspi-config nonint do_wifi_country "$COUNTRY" || true
+fi
+timedatectl set-timezone "$TZ_NAME"
+# SSH: off unless --ssh. Only disabled here, not stopped, so a setup run over SSH isn't cut off halfway;
+# it stays off from the restart that finishes setup. (The imager may have switched it on.)
+if [[ $SSH -eq 1 ]]; then
+  systemctl enable --now ssh.service 2>/dev/null || echo "    Couldn't switch SSH on (is openssh-server installed?)"
+else
+  systemctl disable ssh.service >/dev/null 2>&1 || true
+  systemctl disable ssh.socket >/dev/null 2>&1 || true
+fi
+
+# HDMI 0 always sends a picture, even when no TV is detected at start (a TV that powers up after the Pi then just
+# shows it), at 1920x1080 unless --no-1080p (a Pi 4 struggles at 4K). "D" = keep the output on regardless.
+CMDLINE=/boot/firmware/cmdline.txt; [[ -f $CMDLINE ]] || CMDLINE=/boot/cmdline.txt
+if [[ -f $CMDLINE ]]; then
+  VIDEO="video=HDMI-A-1:$([[ $FORCE_1080 -eq 1 ]] && echo 1920x1080@60)D"
+  echo "==> HDMI 0 always on$([[ $FORCE_1080 -eq 1 ]] && echo ", 1920x1080")"
+  [[ -f "$CMDLINE.bak-kiosk" ]] || cp "$CMDLINE" "$CMDLINE.bak-kiosk"
+  sed -i -E '1 s/ ?video=HDMI-A-1:[^ ]*//g; 1 s/$/ '"$VIDEO"'/' "$CMDLINE"
+fi
+# A quiet start: no rainbow square, no Raspberry Pi logo splash, no scrolling boot text or cursor. The TV stays
+# black until the directory appears. (Company branding can replace the black later.)
+CONFIG_TXT="${LOBBY_CONFIG_TXT:-/boot/firmware/config.txt}"; [[ -f $CONFIG_TXT ]] || CONFIG_TXT=/boot/config.txt
+if [[ -f $CMDLINE ]]; then
+  echo "==> A quiet start (no splash, logo or boot text)"
+  sed -i -E '1 s/(^| )splash( |$)/\1\2/g; 1 s/  +/ /g; 1 s/ +$//' "$CMDLINE"
+  for t in quiet loglevel=3 logo.nologo vt.global_cursor_default=0; do
+    grep -qE "(^| )$t( |\$)" "$CMDLINE" || sed -i "1 s/\$/ $t/" "$CMDLINE"
+  done
+fi
+if [[ -f $CONFIG_TXT ]] && ! grep -q '^disable_splash=1' "$CONFIG_TXT"; then echo 'disable_splash=1' >> "$CONFIG_TXT"; fi
+# (end of the quiet start)
+
+# The case button and status light: the kernel turns a press on GPIO3 into a key (KEY_PROG1, 148), and the light into
+# /sys/class/leds/lobby-status. Rewritten on every run, so --no-button or a new --led-gpio takes effect.
+if [[ -f $CONFIG_TXT ]]; then
+  sed -i '/^# lobby-button (setup-kiosk.sh)$/,/^# end lobby-button$/d' "$CONFIG_TXT"
+  if [[ $BUTTON -eq 1 ]]; then
+    { echo "# lobby-button (setup-kiosk.sh)"
+      echo "dtoverlay=gpio-key,gpio=3,active_low=1,gpio_pull=up,keycode=148,label=lobby-button"
+      [[ $LED_GPIO == none ]] || echo "dtoverlay=gpio-led,gpio=$LED_GPIO,label=lobby-status,trigger=none"
+      echo "# end lobby-button"; } >> "$CONFIG_TXT"
+  fi
+fi
+# (end of the case button lines)
+
+echo "==> Saving the Wi-Fi tools and the start-up naming"
+cat > /usr/local/sbin/lobby-wifi-import <<'PY'
+#!/usr/bin/env python3
+"""Saves Wi-Fi networks downloaded from the console (setup-kiosk.sh --code) into NetworkManager, replacing any this
+script saved before. Usage: lobby-wifi-import networks.json. Every network is kept; the Pi joins whichever is in
+range, earlier ones in the console's list first, and a network cable always wins."""
+import json, subprocess, sys
+
+nets = json.load(open(sys.argv[1]))["networks"]
+shown = subprocess.run(["nmcli", "-t", "-f", "NAME", "connection", "show"], capture_output=True, text=True)
+if shown.returncode != 0:
+    sys.exit("NetworkManager isn't running on this Pi, so Wi-Fi can't be saved. Use Raspberry Pi OS Bookworm or newer.")
+for name in shown.stdout.splitlines():
+    if name.startswith("lobby-wifi-"):
+        subprocess.run(["nmcli", "connection", "delete", name], capture_output=True)
+failed = 0
+for i, n in enumerate(nets, 1):
+    args = ["nmcli", "connection", "add", "type", "wifi", "ifname", "*", "con-name", f"lobby-wifi-{i}", "ssid", n["ssid"],
+            "connection.autoconnect", "yes", "connection.autoconnect-priority", str(max(0, 100 - i)),
+            "802-11-wireless.hidden", "yes" if n.get("hidden") else "no"]
+    if n.get("psk"):
+        args += ["wifi-sec.key-mgmt", "wpa-psk", "wifi-sec.psk", n["psk"]]
+    r = subprocess.run(args, capture_output=True, text=True)
+    name = n["ssid"] + (f" ({n['label']})" if n.get("label") else "")
+    if r.returncode == 0:
+        print(f"    saved {name}")
+    else:
+        failed += 1
+        print(f"    couldn't save {name}: {r.stderr.strip()[:200]}")
+sys.exit(1 if failed else 0)
+PY
+chmod 755 /usr/local/sbin/lobby-wifi-import
+
+echo "==> Saving the field Wi-Fi setup tool"
+cat > /usr/local/sbin/lobby-wifi-setup <<'WIFISETUP'
+#!/usr/bin/env python3
+"""Field Wi-Fi setup: run by kiosk.sh when this Pi has no network and has never reached the site. Starts a short-
+lived hotspot carrying a small setup page, so a network can be picked from a phone that joins it (or from this Pi's
+own screen, with a keyboard) without a new card or a console visit. Serves until the site can be reached, then
+tears the hotspot down and exits 0. Usage: lobby-wifi-setup <serial> <site-url>"""
+import http.server, os, secrets, signal, string, subprocess, sys, threading, time, urllib.parse
+
+SERIAL, URL = sys.argv[1], sys.argv[2]
+LAST_SCAN = {}            # ssid -> open, from the latest scan
+FIRST_SCAN = []           # taken before the hotspot starts, while the radio is free: shown if a later scan comes up empty
+ADDRESS = "10.42.0.1"     # set once the hotspot is up
+CONNECT_TRIES = int(os.environ.get("LOBBY_WIFI_SETUP_TRIES", "10"))   # for tests only; production keeps the default
+CONNECT_SLEEP = float(os.environ.get("LOBBY_WIFI_SETUP_SLEEP", "2"))
+HOTSPOT_CHECK = float(os.environ.get("LOBBY_HOTSPOT_CHECK", "5"))      # seconds between checks that the hotspot is up
+RADIO = threading.Lock()  # held while a join or the hotspot itself is changing the radio, so the two never fight
+STOP = threading.Event()  # set once setup is finishing: the hotspot is never brought back after that
+AP_SSID = f"Directory-Setup-{SERIAL[-4:]}"
+def setup_code():
+    """The hotspot's 8-digit code: made once per Pi and kept, so a phone that joined before still has the right one
+    (a new code every time made iPhones fail silently with the old one). It's shown on the TV, so it only keeps out
+    someone who can't see the screen."""
+    path = os.environ.get("LOBBY_SETUP_CODE_FILE", "/var/lib/lobby-agent/setup-code")
+    try:
+        code = open(path).read().strip()
+        if len(code) == 8 and code.isdigit():
+            return code
+    except OSError:
+        pass
+    code = "".join(secrets.choice(string.digits) for _ in range(8))
+    try:
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        with open(path, "w") as fh:
+            fh.write(code + "\n")
+        os.chmod(path, 0o600)
+    except OSError:
+        pass
+    return code
+
+
+AP_PASSWORD = setup_code()
+AP_CONN = "lobby-setup-ap"
+
+
+def run(*args, timeout=20):
+    try:
+        return subprocess.run(args, capture_output=True, text=True, timeout=timeout)
+    except Exception as e:
+        return subprocess.CompletedProcess(args, 1, "", str(e))
+
+
+def hotspot_up():
+    run("nmcli", "connection", "delete", AP_CONN)  # a stale one from an earlier attempt
+    r = run("nmcli", "device", "wifi", "hotspot", "con-name", AP_CONN, "ssid", AP_SSID, "password", AP_PASSWORD, timeout=30)
+    return r.returncode == 0
+
+
+def ap_address():
+    """The Pi's own address on its hotspot (NetworkManager uses 10.42.0.1 unless that's taken)."""
+    r = run("nmcli", "-g", "IP4.ADDRESS", "connection", "show", AP_CONN)
+    for part in r.stdout.replace("|", "\n").split():
+        if "/" in part and part.split("/")[0].count(".") == 3:
+            return part.split("/")[0]
+    return "10.42.0.1"
+
+
+def hotspot_down():
+    run("nmcli", "connection", "down", AP_CONN)
+    run("nmcli", "connection", "delete", AP_CONN)
+
+
+def connection_names():
+    r = run("nmcli", "-t", "-f", "NAME", "connection", "show")
+    return [nm_fields(line)[0] for line in r.stdout.splitlines() if line]
+
+
+def hotspot_active():
+    r = run("nmcli", "-t", "-f", "NAME", "connection", "show", "--active")
+    return AP_CONN in [nm_fields(line)[0] for line in r.stdout.splitlines() if line]
+
+
+def log(msg):
+    print(f"{time.strftime('%F %T')} {msg}", file=sys.stderr, flush=True)
+
+
+def keep_hotspot():
+    """DP-05: the hotspot was seen to vanish after a phone typed a wrong code, while the TV still showed the code page,
+    and only a restart brought it back. Check it every few seconds and start it again if it's gone (never while a join
+    is using the radio, and never once setup is finishing)."""
+    global ADDRESS
+    fails = 0
+    while not STOP.wait(HOTSPOT_CHECK if fails < 3 else 30):
+        with RADIO:
+            if STOP.is_set() or hotspot_active():
+                fails = 0
+                continue
+            log("the setup hotspot was down; starting it again")
+            if hotspot_up():
+                fails = 0
+                ADDRESS = ap_address()
+            else:
+                fails += 1
+
+
+def site_reachable():
+    return run("curl", "-fsS", "--max-time", "4", "-o", "/dev/null", URL, timeout=6).returncode == 0
+
+
+def nm_fields(line):
+    # nmcli -t writes a ':' inside a value as '\\:' (and a backslash as '\\\\'), so split only on bare colons
+    out, cur, i = [], "", 0
+    while i < len(line):
+        if line[i] == "\\" and i + 1 < len(line):
+            cur += line[i + 1]; i += 2
+        elif line[i] == ":":
+            out.append(cur); cur = ""; i += 1
+        else:
+            cur += line[i]; i += 1
+    out.append(cur)
+    return out
+
+
+def scan_networks():
+    run("nmcli", "device", "wifi", "rescan", timeout=15)
+    r = run("nmcli", "-t", "-f", "SSID,SECURITY,SIGNAL", "device", "wifi", "list", timeout=15)
+    seen, nets = set(), []
+    for line in r.stdout.splitlines():
+        parts = nm_fields(line)
+        if len(parts) < 3:
+            continue
+        ssid, security, signal = parts[0], parts[1], parts[2]
+        if not ssid or ssid == AP_SSID or ssid in seen:
+            continue
+        seen.add(ssid)
+        nets.append({"ssid": ssid, "open": security in ("", "--"), "signal": signal or "0"})
+    nets.sort(key=lambda n: -int(n["signal"]))
+    LAST_SCAN.clear(); LAST_SCAN.update({n["ssid"]: n["open"] for n in nets})
+    return nets
+
+
+def try_connect(ssid, password):
+    with RADIO:
+        if STOP.is_set():
+            return False, "Setup is finishing."
+        ok, err = join(ssid, password)
+        if ok:
+            STOP.set()   # joined: the hotspot must not come back and take the radio from it
+    return ok, err
+
+
+def join(ssid, password):
+    before = set(connection_names())
+    args = ["nmcli", "device", "wifi", "connect", ssid]
+    if password:
+        args += ["password", password]
+    r = run(*args, timeout=30)
+    if r.returncode != 0:
+        err = r.stderr
+        if "Secrets were required" in err or "802-11-wireless-security" in err:
+            msg = f"{ssid} refused that password. Check it and try again."
+        elif "No network with SSID" in err:
+            msg = f"{ssid} isn't in range of this screen."
+        else:
+            msg = err.strip()[:200] or "Couldn't join that network."
+        undo_join(before)
+        return False, msg
+    for _ in range(CONNECT_TRIES):
+        if site_reachable():
+            return True, ""
+        time.sleep(CONNECT_SLEEP)
+    undo_join(before)
+    return False, "Joined, but can't reach the directory site from there."
+
+
+def undo_join(before):
+    """A join that didn't work: delete the profile it saved (a saved network with a wrong password is what makes
+    NetworkManager ask for the password again later) and put the hotspot back at once, so the phone can retry."""
+    for name in set(connection_names()) - before - {AP_CONN}:
+        run("nmcli", "connection", "delete", "id", name)
+    if not hotspot_active():
+        log("starting the setup hotspot again after a join that didn't work")
+        hotspot_up()
+
+
+PAGE = """<!doctype html><html><head><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Set up this screen's Wi-Fi</title><style>
+body{{font-family:sans-serif;background:#111;color:#eee;padding:24px;max-width:480px;margin:0 auto}}
+h1{{font-size:1.3em}}
+.code{{font-size:1.6em;letter-spacing:2px;background:#222;padding:8px 12px;border-radius:8px;display:inline-block}}
+label{{display:block;margin:14px 0 4px}}
+input,select{{width:100%;padding:10px;font-size:1em;border-radius:6px;border:1px solid #444;background:#1a1a1a;color:#eee;box-sizing:border-box}}
+button{{margin-top:18px;width:100%;padding:12px;font-size:1.1em;border-radius:8px;border:0;background:#eee;color:#111}}
+.err{{color:#f88;margin-top:10px}}
+</style></head><body>
+<h1>This screen needs Wi-Fi</h1>
+<p>From a phone: join the Wi-Fi network <b>{ap_ssid}</b> with the code <span class="code">{ap_password}</span>.
+This page opens by itself; if it doesn't, open <b>http://{address}</b> in the phone's browser.
+(If the phone says the network has no internet, choose to stay connected.) A keyboard here works too.</p>
+{message}
+<p><a href="/" style="color:#9cf">Search again</a></p>
+<form method="post" action="/connect">
+<label>Network</label>
+<select name="ssid">{options}</select>
+<label>Hidden network name (only if it's not in the list above)</label>
+<input type="text" name="hidden_ssid" autocapitalize="off" autocorrect="off">
+<label>Password (leave blank for an open network)</label>
+<input type="password" name="password">
+<button type="submit">Connect</button>
+</form>
+</body></html>"""
+
+CONNECTED = """<!doctype html><html><head><meta name="viewport" content="width=device-width, initial-scale=1"></head>
+<body style="font-family:sans-serif;background:#111;color:#8f8;padding:24px;text-align:center">
+<h1>Connected</h1><p>The screen will start in a moment.</p></body></html>"""
+
+
+def render(message=""):
+    nets = scan_networks() or FIRST_SCAN
+    if nets is FIRST_SCAN:
+        LAST_SCAN.update({n["ssid"]: n["open"] for n in nets})
+    if not nets:
+        message += ('<p class="err">No networks found yet. This page searches again by itself every 15 seconds.</p>'
+                    '<meta http-equiv="refresh" content="15">')
+    opts = "".join(
+        f'<option value="{n["ssid"]}">{n["ssid"]} ({"open" if n["open"] else "locked"}, {n["signal"]}%)</option>'
+        for n in nets
+    )
+    return PAGE.format(ap_ssid=AP_SSID, ap_password=AP_PASSWORD, address=ADDRESS, message=message, options=opts).encode()
+
+
+class Handler(http.server.BaseHTTPRequestHandler):
+    def log_message(self, *a):
+        pass  # keep the kiosk log to what matters
+
+    def _send(self, body, code=200):
+        self.send_response(code)
+        self.send_header("Content-Type", "text/html; charset=utf-8")
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
+    def do_GET(self):
+        # Every address leads here: a phone joining the hotspot checks a known web address to see whether it's online,
+        # gets this page instead, and opens it as a Wi-Fi sign-in page (the hotspot answers every name with the Pi)
+        self._send(render())
+
+    def do_POST(self):
+        if self.path != "/connect":
+            self._send(b"Not found", 404)
+            return
+        length = int(self.headers.get("Content-Length", 0))
+        form = urllib.parse.parse_qs(self.rfile.read(length).decode())
+        ssid = ((form.get("hidden_ssid") or [""])[0] or (form.get("ssid") or [""])[0]).strip()
+        password = (form.get("password") or [""])[0]
+        if not ssid:
+            ok, err = False, "Choose or type a network name."
+        elif not password and LAST_SCAN.get(ssid) is False:
+            ok, err = False, f"{ssid} needs its password. Type it in the Password box."
+        else:
+            ok, err = try_connect(ssid, password)
+        if ok:
+            self._send(CONNECTED.encode())
+            threading.Thread(target=self.server.shutdown, daemon=True).start()
+        else:
+            self._send(render(f'<p class="err">{err}</p>'))
+
+
+def watch_for_network(server):
+    # Covers a cable plugged in mid-setup, without waiting for the form: the site becoming reachable ends setup
+    # even if no one ever submits the picker.
+    while not STOP.wait(15):
+        if site_reachable():
+            STOP.set()
+            server.shutdown()
+            return
+
+
+def set_status(word):
+    try:
+        with open(os.environ.get("LOBBY_STATUS_FILE", "/run/lobby-status"), "w") as fh:
+            fh.write(f"{word} {time.time()}\n")
+    except OSError:
+        pass
+
+
+def main():
+    set_status("setup")                                       # the case light double-blinks while this runs
+    global ADDRESS
+    FIRST_SCAN.extend(scan_networks())                    # before the hotspot takes the radio
+    if not hotspot_up():
+        print(f"{time.strftime('%F %T')} couldn't start the setup hotspot; the picker is still reachable locally.", file=sys.stderr)
+    ADDRESS = ap_address()
+    server = http.server.ThreadingHTTPServer(("0.0.0.0", 80), Handler)
+    # shutdown() must run on a thread other than the one in serve_forever(), or it deadlocks against itself.
+    signal.signal(signal.SIGTERM, lambda *_: (STOP.set(), threading.Thread(target=server.shutdown, daemon=True).start()))
+    threading.Thread(target=watch_for_network, args=(server,), daemon=True).start()
+    threading.Thread(target=keep_hotspot, daemon=True).start()
+    try:
+        server.serve_forever()
+    finally:
+        STOP.set()
+        with RADIO:          # waits for a check in progress, so nothing starts the hotspot after it's taken down
+            hotspot_down()
+        set_status("offline")                                 # the agent says online at its next check-in
+
+
+if __name__ == "__main__":
+    main()
+WIFISETUP
+chmod 755 /usr/local/sbin/lobby-wifi-setup
+# On the setup hotspot only (NetworkManager's shared mode reads this folder), every name a phone looks up points at the
+# Pi, so the phone's "am I online?" check lands on the setup page and it opens it by itself, like a hotel sign-in page.
+mkdir -p /etc/NetworkManager/dnsmasq-shared.d
+echo 'address=/#/10.42.0.1' > /etc/NetworkManager/dnsmasq-shared.d/lobby-setup.conf
+# Runs as root (it manages Wi-Fi and binds port 80), started by kiosk.sh (which runs as the desktop user).
+cat > /etc/sudoers.d/lobby-wifi-setup <<SUDOERS
+$KUSER ALL=(root) NOPASSWD: /usr/local/sbin/lobby-wifi-setup
+SUDOERS
+chmod 440 /etc/sudoers.d/lobby-wifi-setup
+visudo -cf /etc/sudoers.d/lobby-wifi-setup >/dev/null || { echo "lobby-wifi-setup's sudoers rule didn't check out; removing it."; rm -f /etc/sudoers.d/lobby-wifi-setup; }
+
+echo "==> Saving the case button and status light"
+cat > /usr/local/sbin/lobby-button <<'BUTTON'
+#!/usr/bin/env python3
+"""The case button and status light (setup-kiosk.sh). Runs as root.
+Button, between GPIO3 (pin 5) and ground (pin 6); a press also powers on a Pi that's been shut down:
+  short press            nothing, so a bump or a curious visitor does nothing
+  hold 3 s, then let go  safe shutdown
+  hold 10 s, then let go network reset: forget Wi-Fi joined in the field (the card's own lobby-wifi-* networks stay),
+                         forget that this Pi has been online, restart. It comes back on a card network if one is in
+                         range, or offers Wi-Fi setup (the hotspot) if not.
+  hold 30 s or more      cancelled, so a stuck or leaned-on button never does anything
+While it's held, the board's green light and the case light blink: slowly past 3 s, fast past 10 s.
+The case light the rest of the time: steady = online, slow blink = offline, double blink = Wi-Fi setup.
+The key, enrollment and screen are never touched: those are console actions."""
+import glob, json, os, re, struct, subprocess, threading, time
+
+S = float(os.environ.get("LOBBY_BUTTON_SCALE", "1"))            # tests only: shrinks the hold times
+SHUTDOWN_S, RESET_S, CANCEL_S = 3 * S, 10 * S, 30 * S
+LEDS = os.environ.get("LOBBY_LEDS_DIR", "/sys/class/leds")
+STATUS = os.environ.get("LOBBY_STATUS_FILE", "/run/lobby-status")
+KEYCODE = 148                                                     # KEY_PROG1 (config.txt, gpio-key)
+EVENT = struct.Struct("llHHi")                                    # struct input_event, 64-bit
+held_since = None
+
+
+def log(*a):
+    print(time.strftime("%F %T"), *a, flush=True)
+
+
+def run(*args, timeout=30):
+    try:
+        return subprocess.run(args, capture_output=True, text=True, timeout=timeout)
+    except Exception as e:
+        return subprocess.CompletedProcess(args, 1, "", str(e))
+
+
+def nm_fields(line):
+    out, cur, i = [], "", 0                                       # nmcli -t writes ':' in a value as '\:'
+    while i < len(line):
+        if line[i] == "\\" and i + 1 < len(line):
+            cur += line[i + 1]; i += 2
+        elif line[i] == ":":
+            out.append(cur); cur = ""; i += 1
+        else:
+            cur += line[i]; i += 1
+    out.append(cur)
+    return out
+
+
+def find_button():
+    """The input device the gpio-key overlay made: named for a button or GPIO, with our key."""
+    if os.environ.get("LOBBY_BUTTON_DEVICE"):
+        return os.environ["LOBBY_BUTTON_DEVICE"]
+    try:
+        text = open("/proc/bus/input/devices").read()
+    except OSError:
+        return None
+    for block in text.split("\n\n"):
+        name = re.search(r'N: Name="([^"]*)"', block)
+        ev = re.search(r"H: Handlers=.*?\b(event\d+)", block)
+        keys = re.search(r"B: KEY=([0-9a-f ]+)", block)
+        if not (name and ev and keys) or not (re.search(r"button|gpio", name.group(1), re.I) or "gpio-keys" in block):
+            continue
+        words = keys.group(1).split()                             # most significant word first, 64 bits each
+        i, bit = divmod(KEYCODE, 64)
+        if i < len(words) and int(words[-1 - i], 16) >> bit & 1:
+            return "/dev/input/" + ev.group(1)
+    return None
+
+
+class Led:
+    def __init__(self, *names):
+        self.dir = next((os.path.join(LEDS, n) for n in names if os.path.isdir(os.path.join(LEDS, n))), None)
+        self.saved = None
+
+    def _write(self, f, v):
+        try:
+            with open(os.path.join(self.dir, f), "w") as fh:
+                fh.write(v)
+        except OSError:
+            pass
+
+    def take(self):                                               # from its usual job (the board's: card activity)
+        if self.dir and self.saved is None:
+            try:
+                t = open(os.path.join(self.dir, "trigger")).read()
+                m = re.search(r"\[([^\]]+)\]", t)
+                bare = t.strip()                                  # a bare name, if there are no brackets
+                self.saved = m.group(1) if m else (bare if bare and " " not in bare else "none")
+            except OSError:
+                self.saved = "none"
+            self._write("trigger", "none")
+
+    def give_back(self):
+        if self.dir and self.saved is not None:
+            self._write("trigger", self.saved); self.saved = None
+
+    def set(self, on):
+        if self.dir:
+            self._write("brightness", "1" if on else "0")
+
+
+def status():
+    try:
+        word, when = open(STATUS).read().split()[:2]
+    except (OSError, ValueError):
+        return "offline"
+    if word == "setup":
+        return "setup"
+    return "online" if word == "online" and time.time() - float(when) < 180 else "offline"
+
+
+def lit(mode, t):
+    if mode == "online":
+        return True
+    if mode == "setup":                                           # two short blinks every 1.5 s
+        p = t % 1.5
+        return p < 0.15 or 0.3 <= p < 0.45
+    if mode == "hold1":
+        return (t * 2) % 1 < 0.5
+    if mode == "hold2":
+        return (t * 8) % 1 < 0.5
+    return t % 2 < 1                                              # offline
+
+
+def lights():
+    board, case = Led("ACT", "led0"), Led("lobby-status")
+    case.take()
+    mode, checked = "offline", 0.0
+    while True:
+        now = time.monotonic()
+        if now - checked > 2:
+            mode, checked = status(), now
+        h = held_since
+        held = None if h is None else now - h
+        if held is not None and SHUTDOWN_S <= held < CANCEL_S:
+            board.take()
+            m = "hold2" if held >= RESET_S else "hold1"
+            board.set(lit(m, now)); case.set(lit(m, now))
+        else:
+            board.give_back()
+            case.set(lit(mode, now))
+        time.sleep(0.05)
+
+
+def network_reset():
+    log("network reset: forgetting Wi-Fi joined in the field")
+    r = run("nmcli", "-t", "-f", "NAME,TYPE", "connection", "show")
+    for line in r.stdout.splitlines():
+        f = nm_fields(line)
+        if len(f) > 1 and f[1] == "802-11-wireless" and not f[0].startswith("lobby-wifi-"):
+            run("nmcli", "connection", "delete", f[0])
+            log("forgot", f[0])
+    try:
+        user = json.load(open("/etc/lobby-agent.json")).get("user") or "*"
+    except (OSError, ValueError):
+        user = "*"
+    for m in glob.glob(os.environ.get("LOBBY_MARKERS", f"/home/{user}/kiosk/ever-online-*")):
+        try:
+            os.remove(m)
+        except OSError:
+            pass
+    try:
+        with open(STATUS, "w") as fh:
+            fh.write(f"offline {time.time()}\n")
+    except OSError:
+        pass
+    run("systemctl", "reboot")
+
+
+def act(held):
+    if held >= CANCEL_S:
+        log(f"held {held:.0f} s: cancelled")
+    elif held >= RESET_S:
+        network_reset()
+    elif held >= SHUTDOWN_S:
+        log("safe shutdown")
+        run("systemctl", "poweroff")
+
+
+def main():
+    global held_since
+    threading.Thread(target=lights, daemon=True).start()
+    while True:
+        dev = find_button()
+        if not dev:
+            time.sleep(10)                                        # no button wired (or not yet): keep the light going
+            continue
+        log("watching", dev)
+        try:
+            with open(dev, "rb", buffering=0) as fh:
+                while True:
+                    data = fh.read(EVENT.size)
+                    if len(data) < EVENT.size:
+                        raise EOFError
+                    _, _, typ, code, value = EVENT.unpack(data)
+                    if typ != 1 or code != KEYCODE:
+                        continue
+                    if value == 1:
+                        held_since = time.monotonic()
+                    elif value == 0 and held_since is not None:
+                        held, held_since = time.monotonic() - held_since, None
+                        act(held)
+        except (OSError, EOFError) as e:
+            held_since = None
+            log("button device closed:", e)
+            if os.environ.get("LOBBY_BUTTON_DEVICE"):
+                return
+            time.sleep(2)
+
+
+if __name__ == "__main__":
+    main()
+BUTTON
+chmod 755 /usr/local/sbin/lobby-button
+if [[ $BUTTON -eq 1 ]]; then
+  cat > /etc/systemd/system/lobby-button.service <<'UNIT'
+[Unit]
+Description=Lobby directory: the case button and status light
+
+[Service]
+ExecStart=/usr/local/sbin/lobby-button
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
+UNIT
+  systemctl daemon-reload
+  if [[ $PREPARE -eq 1 ]]; then systemctl enable lobby-button.service >/dev/null 2>&1
+  else systemctl enable --now lobby-button.service >/dev/null 2>&1; systemctl restart lobby-button.service; fi
+else
+  systemctl disable --now lobby-button.service >/dev/null 2>&1 || true
+  rm -f /etc/systemd/system/lobby-button.service
+fi
+
+cat > /usr/local/sbin/lobby-identity <<'ID'
+#!/usr/bin/env bash
+# Runs at every start, before the network comes up: names this Pi after its serial (e.g. lobby-a4ae272d), so each
+# Pi shows up on the building's network as itself, and makes SSH host keys if a prepared card has none.
+set -u
+SERIAL="${LOBBY_SERIAL:-$( { tr -d '\0' </proc/device-tree/serial-number; } 2>/dev/null || awk '/^Serial/ {print $3}' /proc/cpuinfo 2>/dev/null)}"
+SERIAL="$(echo "$SERIAL" | tr 'A-F' 'a-f')"
+[[ -n "$SERIAL" ]] || exit 0
+NAME="lobby-${SERIAL: -8}"
+HOSTS="${LOBBY_HOSTS_FILE:-/etc/hosts}"
+if [[ "$(hostname)" != "$NAME" ]]; then
+  echo "$NAME" > "${LOBBY_HOSTNAME_FILE:-/etc/hostname}"
+  hostname "$NAME"
+  if grep -q '^127\.0\.1\.1' "$HOSTS"; then sed -i "s/^127\.0\.1\.1.*/127.0.1.1\t$NAME/" "$HOSTS"
+  else printf '127.0.1.1\t%s\n' "$NAME" >> "$HOSTS"; fi
+fi
+ssh-keygen -A >/dev/null 2>&1 || true
+ID
+chmod 755 /usr/local/sbin/lobby-identity
+cat > /etc/systemd/system/lobby-identity.service <<'UNIT'
+[Unit]
+Description=Lobby directory: name this Pi after its serial
+DefaultDependencies=no
+After=local-fs.target
+Before=network-pre.target NetworkManager.service
+Wants=network-pre.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/lobby-identity
+
+[Install]
+WantedBy=multi-user.target
+UNIT
+systemctl daemon-reload
+systemctl enable lobby-identity.service >/dev/null 2>&1
+[[ $PREPARE -eq 1 ]] || /usr/local/sbin/lobby-identity
+
+if [[ -n "$NETS" ]]; then
+  echo "==> Saving the Wi-Fi networks"
+  /usr/local/sbin/lobby-wifi-import "$NETS" || { echo "Some networks couldn't be saved (see above)."; exit 1; }
+  # If this Pi was on one of those networks, it reconnects now; wait for it (up to a minute)
+  for _ in $(seq 1 30); do curl -fsS --max-time 3 -o /dev/null "$SITE/login.html" && break; sleep 2; done
+fi
+
+echo "==> Writing $KDIR/kiosk.sh"
+mkdir -p "$KDIR"
+# Only settings live here, never an identity: the address is worked out from the serial at every start.
+cat > "$KDIR/kiosk.conf" <<EOF
+SITE="$SITE"
+URL="$URL"
+ROTATE="$ROTATE"
+EOF
+
+cat > "$KDIR/kiosk.sh" <<'EOF'
+#!/usr/bin/env bash
+# Started by the desktop at login. Works out this Pi's screen address, rotates the screen and keeps Chromium running.
+# Nothing here belongs to one Pi: the address comes from the live serial at every start, so a card works in any Pi.
+# tests/kiosk-rotation-test.sh runs this very script against the local test server.
+source "$HOME/kiosk/kiosk.conf"
+PROFILE="$HOME/kiosk/chromium-profile"
+LOG="$HOME/kiosk/kiosk.log"
+CHROME="$(command -v chromium || command -v chromium-browser)"
+exec >>"$LOG" 2>&1
+SERIAL="${LOBBY_SERIAL:-$( { tr -d '\0' </proc/device-tree/serial-number; } 2>/dev/null || awk '/^Serial/ {print $3}' /proc/cpuinfo 2>/dev/null)}"
+SERIAL="$(echo "$SERIAL" | tr 'A-F' 'a-f')"
+[[ -n "${URL:-}" ]] || URL="${SITE:-https://1pdirectory.netlify.app}/?device=$SERIAL"   # a fixed --url wins
+LOOKUP="${URL/\/\?//api/screen?}"          # where to ask which way the screen faces: /api/screen in front of the "?"
+LAST="$HOME/kiosk/rotation-${SERIAL:-unknown}.last"   # per Pi, so a card moved to another Pi doesn't reuse its answer
+echo "$(date '+%F %T') kiosk starting, Pi ${SERIAL:-unknown}, $URL"
+
+# DP-05: on Raspberry Pi OS (trixie) the desktop's panel and file manager start even with our own autostart, and
+# lwrespawn keeps them running. The panel's network plugin is what put "Authentication required by Wi-Fi network"
+# boxes over the directory. A lobby screen needs neither: stop their respawners first, then them, now and every 10 s
+# (the start-up picture, or black, stays behind the browser: lobby-background).
+quiet_desktop() {
+  pkill -u "$(id -u)" -f '^/bin/sh /usr/bin/lwrespawn /usr/bin/(wf-panel-pi|pcmanfm-pi)' 2>/dev/null
+  pkill -u "$(id -u)" -x 'wf-panel-pi|pcmanfm-pi' 2>/dev/null && echo "$(date '+%F %T') stopped the desktop panel"
+  true
+}
+quiet_desktop
+( while sleep "${KIOSK_QUIET_SECONDS:-10}"; do kill -0 $$ 2>/dev/null || exit 0; quiet_desktop; done ) &
+
+# Wait up to 90 seconds for the network (tests shrink this with KIOSK_NET_TRIES/KIOSK_NET_SLEEP). The page works
+# from its saved copy if it never comes back later.
+MARKER="$HOME/kiosk/ever-online-${SERIAL:-unknown}"    # per Pi, like the rotation LAST file below
+ONLINE=0
+for _ in $(seq 1 "${KIOSK_NET_TRIES:-45}"); do curl -fsS --max-time 3 -o /dev/null "$URL" && { ONLINE=1; break; }; sleep "${KIOSK_NET_SLEEP:-2}"; done
+if [[ $ONLINE -eq 1 ]]; then
+  touch "$MARKER"
+elif [[ ! -f "$MARKER" ]]; then
+  # This Pi has never reached the site: offer field Wi-Fi setup (a phone-joinable hotspot) instead of sitting on a
+  # blank screen. A Pi that's worked before and just lost its network keeps the old, quieter "Reconnecting..." wait.
+  echo "$(date '+%F %T') no network and this Pi has never reached the site: starting field Wi-Fi setup"
+  SETUP_CHROME_PID=""
+  if [[ -n "${WAYLAND_DISPLAY:-}${DISPLAY:-}" && -n "$CHROME" ]]; then
+    "$CHROME" --kiosk "http://localhost/" --user-data-dir="$HOME/kiosk/setup-profile" \
+      --ozone-platform-hint=auto --noerrdialogs --disable-infobars --no-first-run --password-store=basic >>"$LOG" 2>&1 &
+    SETUP_CHROME_PID=$!
+  fi
+  ${LOBBY_WIFI_SETUP:-sudo -n /usr/local/sbin/lobby-wifi-setup} "${SERIAL:-unknown}" "$URL" >>"$LOG" 2>&1
+  [[ -n "$SETUP_CHROME_PID" ]] && kill "$SETUP_CHROME_PID" 2>/dev/null
+  curl -fsS --max-time 3 -o /dev/null "$URL" && touch "$MARKER"
+fi
+
+# Which way to turn the picture. "auto" asks the site how this screen is set in the console:
+# portrait -> 90, anything else (landscape, automatic, new or unassigned Pi) -> 0.
+# If the site can't be reached, this Pi's last answer is used, so a Pi that boots without internet stays the same.
+rotation_for() {
+  curl -fsS --max-time 8 "$1" 2>/dev/null | python3 -c 'import json,sys; print({"portrait": 90, "portrait-flipped": 270, "landscape-flipped": 180}.get(json.load(sys.stdin).get("orientation"), 0))' 2>/dev/null
+}
+ROT="$ROTATE"
+if [[ "$ROT" == "auto" ]]; then
+  if ROT="$(rotation_for "$LOOKUP")" && [[ -n "$ROT" ]]; then echo "$ROT" > "$LAST"
+  else ROT="$(cat "$LAST" 2>/dev/null || echo 0)"; fi
+fi
+echo "$(date '+%F %T') rotation $ROT (setting: $ROTATE)"
+
+# Rotate the screen. On Wayland a watcher keeps it that way: a TV that powers up after the Pi (or is switched off
+# and on) can come back with the output reset or switched off, which would leave a portrait screen sideways or dark.
+if [[ -n "${WAYLAND_DISPLAY:-}" ]] && command -v wlr-randr >/dev/null; then
+  WANT="$([[ "$ROT" == "0" ]] && echo normal || echo "$ROT")"
+  turn() {
+    local out; out="$(wlr-randr 2>/dev/null | awk '/^HDMI/ {print $1; exit}')"
+    [[ -n "$out" ]] && wlr-randr --output "$out" --on --transform "$WANT"
+  }
+  turn
+  (
+    while sleep "${KIOSK_WATCH_SECONDS:-10}"; do
+      kill -0 $$ 2>/dev/null || exit 0                     # the kiosk has stopped
+      now="$(wlr-randr 2>/dev/null | awk '/^[^[:space:]]/ {h = !seen && $1 ~ /^HDMI/; if (h) seen = 1}
+                                        h && /Enabled:/ {e = $2} h && /Transform:/ {t = $2} END {print e " " t}')"
+      if [[ "$now" != "yes $WANT" ]]; then echo "$(date '+%F %T') screen was '$now'; setting it back to $WANT"; turn; fi
+    done
+  ) &
+elif [[ -n "${DISPLAY:-}" ]] && command -v xrandr >/dev/null; then
+  OUT="$(xrandr | awk '/ connected/ {print $1; exit}')"
+  # Same directions as Wayland above (transform 90 = a quarter turn anticlockwise = xrandr "left")
+  case "$ROT" in 90) xrandr --output "$OUT" --rotate left ;; 270) xrandr --output "$OUT" --rotate right ;; 180) xrandr --output "$OUT" --rotate inverted ;; *) xrandr --output "$OUT" --rotate normal ;; esac
+  xset s off; xset -dpms; xset s noblank
+fi
+
+# Keep the log small
+[[ $(wc -c <"$LOG") -gt 1000000 ]] && tail -n 2000 "$LOG" > "$LOG.tmp" && mv "$LOG.tmp" "$LOG"
+
+while true; do
+  # After a power cut Chromium thinks it crashed and shows a "Restore pages?" bar. Clear that.
+  PREFS="$PROFILE/Default/Preferences"
+  if [[ -f "$PREFS" ]]; then
+    sed -i 's/"exited_cleanly":false/"exited_cleanly":true/; s/"exit_type":"[^"]*"/"exit_type":"Normal"/' "$PREFS"
+  fi
+  "$CHROME" \
+    --kiosk "$URL" \
+    --user-data-dir="$PROFILE" \
+    --ozone-platform-hint=auto \
+    --noerrdialogs --disable-infobars --disable-session-crashed-bubble \
+    --no-first-run --password-store=basic \
+    --disable-features=Translate,TranslateUI \
+    --overscroll-history-navigation=0 --disable-pinch \
+    --check-for-update-interval=31536000 \
+    --autoplay-policy=no-user-gesture-required
+  rc=$?
+  echo "$(date '+%F %T') chromium exited ($rc), restarting in 5s"
+  sleep 5
+done
+EOF
+chmod +x "$KDIR/kiosk.sh"
+
+echo "==> Hiding the mouse pointer"
+# An invisible pointer theme, so no arrow sits on the screen at start (with or without a mouse). The page hides the
+# pointer too, but only once it has moved over the page, which never happens without a mouse.
+python3 - "$KHOME/.icons/lobby-hidden" <<'PY'
+import os, struct, sys
+d = os.path.join(sys.argv[1], "cursors"); os.makedirs(d, exist_ok=True)
+img = struct.pack("<9I", 36, 0xFFFD0002, 24, 1, 1, 1, 0, 0, 0) + struct.pack("<I", 0)   # one transparent pixel
+blob = b"Xcur" + struct.pack("<3I", 16, 0x10000, 1) + struct.pack("<3I", 0xFFFD0002, 24, 28) + img
+with open(os.path.join(d, "left_ptr"), "wb") as f:
+    f.write(blob)
+for name in ("default", "arrow", "top_left_arrow", "text", "xterm", "pointer", "hand1", "hand2", "watch", "wait",
+             "progress", "left_ptr_watch", "crosshair", "move", "grab", "grabbing", "all-scroll", "not-allowed"):
+    link = os.path.join(d, name)
+    if not os.path.lexists(link):
+        os.symlink("left_ptr", link)
+with open(os.path.join(sys.argv[1], "index.theme"), "w") as f:
+    f.write("[Icon Theme]\nName=lobby-hidden\nComment=No visible pointer (lobby kiosk)\n")
+PY
+mkdir -p "$KHOME/.config/labwc"
+LENV="$KHOME/.config/labwc/environment"
+touch "$LENV"; sed -i '/^XCURSOR_THEME=/d; /^XCURSOR_SIZE=/d' "$LENV"
+printf 'XCURSOR_THEME=lobby-hidden\nXCURSOR_SIZE=24\n' >> "$LENV"
+
+if [[ $TV -eq 1 ]]; then
+  echo "==> Keeping the TV on (HDMI-CEC)"
+  cat > /usr/local/sbin/lobby-tv <<'TVS'
+#!/usr/bin/env bash
+# Keeps the TV switched on and showing this Pi, over HDMI-CEC: at start (after a power cut the TV often comes back in
+# standby, or later than the Pi) and from then on, so a TV that lost power on its own comes back too. Every 15 seconds
+# for the first 5 minutes after the Pi starts, then every 2 minutes. Needs the TV's CEC setting on (Anynet+ on
+# Samsung, SimpLink on LG, Bravia Sync on Sony). Nothing to do without a CEC device (logged once).
+DEV="${LOBBY_CEC_DEV:-}"
+if [[ -z "$DEV" ]]; then for d in /dev/cec0 /dev/cec1; do [[ -e "$d" ]] && { DEV="$d"; break; }; done; fi
+STATE="${LOBBY_TV_STATE:-/run/lobby-tv/state}"; mkdir -p "$(dirname "$STATE")"
+report() { echo "$1" > "$STATE.tmp" && mv "$STATE.tmp" "$STATE"; }   # the agent reports it to the console
+if [[ -z "$DEV" || ! -e "$DEV" ]]; then
+  echo "no HDMI-CEC device on this Pi; not controlling the TV"
+  while true; do report no-cec; sleep 120; done
+fi
+FAST="${LOBBY_TV_FAST:-15}"; SLOW="${LOBBY_TV_SLOW:-120}"; FAST_FOR="${LOBBY_TV_FAST_FOR:-300}"
+cec() { cec-ctl -d "$DEV" "$@" 2>&1; }
+cec --playback --osd-name "Lobby" >/dev/null           # join the TV's CEC network as a player
+sourced=0; last=""
+while true; do
+  st="$(cec --to 0 --give-device-power-status | grep -o 'pwr-state: [a-z-]*' | head -1 | cut -d' ' -f2)"
+  case "$st" in on|to-on) report on ;; standby|to-standby) report standby ;; *) report not-answering ;; esac
+  if [[ "$st" == "on" || "$st" == "to-on" ]]; then
+    if [[ $sourced -eq 0 ]]; then                        # make sure it's showing this Pi's input
+      pa="$(cec | awk -F': *' '/Physical Address/ {print $2; exit}')"
+      [[ -n "$pa" && "$pa" != "f.f.f.f" ]] && cec --to 15 --active-source phys-addr="$pa" >/dev/null
+      echo "TV is on; switched it to this Pi ($pa)"; sourced=1
+    fi
+  else
+    [[ "$st" != "$last" ]] && echo "TV is ${st:-not answering}; turning it on"
+    cec --to 0 --image-view-on >/dev/null; sourced=0
+  fi
+  last="$st"
+  if (( SECONDS < FAST_FOR )); then sleep "$FAST"; else sleep "$SLOW"; fi
+done
+TVS
+  chmod 755 /usr/local/sbin/lobby-tv
+  cat > /etc/systemd/system/lobby-tv.service <<'UNIT'
+[Unit]
+Description=Lobby directory: keep the TV on and showing this Pi (HDMI-CEC)
+
+[Service]
+ExecStart=/usr/local/sbin/lobby-tv
+Restart=always
+RestartSec=30
+
+[Install]
+WantedBy=multi-user.target
+UNIT
+  systemctl daemon-reload
+  if [[ $PREPARE -eq 1 ]]; then systemctl enable lobby-tv.service >/dev/null 2>&1
+  else systemctl enable --now lobby-tv.service >/dev/null 2>&1; systemctl restart lobby-tv.service; fi
+else
+  systemctl disable --now lobby-tv.service >/dev/null 2>&1 || true
+fi
+
+echo "==> Starting the kiosk at login (labwc, wayfire and X11 all covered)"
+# labwc: our own autostart (the panel and desktop still start on trixie; kiosk.sh stops them, see quiet_desktop).
+mkdir -p "$KHOME/.config/labwc"
+# Behind the browser while it starts, instead of the Raspberry Pi wallpaper: the start-up picture centred on black
+# (DP-07 round 9), or plain black without one. Checked here: a PNG, at most 5 MB; otherwise the Pi keeps what it had.
+STARTUP_DIR=/usr/local/share/lobby
+if [[ -s "$STARTUP_PNG" && "$(head -c 8 "$STARTUP_PNG" | od -An -tx1 | tr -d ' \n')" == 89504e470d0a1a0a \
+      && "$(stat -c %s "$STARTUP_PNG")" -le 5242880 ]]; then
+  install -D -m 644 "$STARTUP_PNG" "$STARTUP_DIR/startup.png"; echo "    start-up picture installed"
+elif [[ -s "$STARTUP_DIR/startup.png" ]]; then echo "    couldn't get the start-up picture; keeping the one this Pi has"
+else echo "    couldn't get the start-up picture; the start-up background stays black"; fi
+rm -f "$STARTUP_PNG"
+cat > /usr/local/bin/lobby-background <<'BACKGROUND'
+#!/bin/sh
+# The desktop behind the browser while a lobby Pi starts: the start-up picture fitted and centred on black (it stays
+# centred in portrait too), or plain black if there's no picture or swaybg can't show it.
+IMG="${LOBBY_STARTUP_PNG:-/usr/local/share/lobby/startup.png}"
+if [ -s "$IMG" ]; then
+  START=$(date +%s)
+  swaybg -c '#000000' -i "$IMG" -m fit && exit 0
+  [ $(( $(date +%s) - START )) -ge 10 ] && exit 0   # ran a while, then stopped (the session ending): nothing to fix
+fi
+exec swaybg -c '#000000'
+BACKGROUND
+chmod 755 /usr/local/bin/lobby-background
+printf '%s\n' "/usr/local/bin/lobby-background >/dev/null 2>&1 &" "$KDIR/kiosk.sh &" > "$KHOME/.config/labwc/autostart"
+# No desktop pop-ups on a lobby screen (DP-05): the password prompts of the two polkit agents, and pprompt's warnings,
+# are switched off for this user the standard way (an entry in ~/.config/autostart with Hidden=true)
+mkdir -p "$KHOME/.config/autostart"
+for a in polkit-mate-authentication-agent-1 lxpolkit pprompt; do
+  printf '[Desktop Entry]\nType=Application\nName=%s\nHidden=true\n' "$a" > "$KHOME/.config/autostart/$a.desktop"
+done
+# wayfire (older Bookworm images)
+WF="$KHOME/.config/wayfire.ini"
+touch "$WF"
+if ! grep -q "kiosk.sh" "$WF"; then
+  grep -q "^\[autostart\]" "$WF" || printf '\n[autostart]\n' >> "$WF"
+  sed -i "/^\[autostart\]/a kiosk = $KDIR/kiosk.sh\npanel = false\nbackground = false" "$WF"
+fi
+# X11 / LXDE
+mkdir -p "$KHOME/.config/lxsession/LXDE-pi"
+printf '@xset s off\n@xset -dpms\n@%s\n' "$KDIR/kiosk.sh" > "$KHOME/.config/lxsession/LXDE-pi/autostart"
+chown -R "$KUSER:$KUSER" "$KDIR" "$KHOME/.config" "$KHOME/.icons"
+
+if [[ $AGENT -eq 1 ]]; then
+  echo "==> Installing the remote-management agent"
+  mkdir -p /opt/lobby-agent
+  cp "$AGENT_PY" /opt/lobby-agent/agent.py; rm -f "$AGENT_PY"   # downloaded at the start
+  python3 -m py_compile /opt/lobby-agent/agent.py
+  chmod 755 /opt/lobby-agent/agent.py
+  # The agent makes its own key for the Pi it's in (/var/lib/lobby-agent/identity.json). A Pi set up before
+  # generic cards has its key in the config file; hand that to the agent so the Pi stays enrolled.
+  if [[ $PREPARE -eq 0 && ! -f /var/lib/lobby-agent/identity.json ]] && [[ -n "$SERIAL" ]]; then
+    python3 - "$SERIAL" <<'PY' || true
+import json, os, sys
+key = json.load(open("/etc/lobby-agent.json")).get("key", "")
+if len(key) >= 24:
+    os.makedirs("/var/lib/lobby-agent", exist_ok=True)
+    fd = os.open("/var/lib/lobby-agent/identity.json", os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    with os.fdopen(fd, "w") as f:
+        json.dump({"serial": sys.argv[1], "key": key}, f)
+PY
+  fi
+  ( umask 077; printf '{"site": "%s", "user": "%s"}\n' "$SITE" "$KUSER" > /etc/lobby-agent.json )
+  cat > /etc/systemd/system/lobby-agent.service <<'UNIT'
+[Unit]
+Description=Lobby directory agent (health, screenshots, remote commands)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+ExecStart=/usr/bin/python3 /opt/lobby-agent/agent.py
+Restart=always
+RestartSec=20
+
+[Install]
+WantedBy=multi-user.target
+UNIT
+  systemctl daemon-reload
+  if [[ $PREPARE -eq 1 ]]; then systemctl enable lobby-agent.service; systemctl stop lobby-agent.service 2>/dev/null || true
+  else systemctl enable --now lobby-agent.service; systemctl restart lobby-agent.service; fi
+fi
+
+# The options this Pi was set up with, so the console's Update Pi (--update) re-applies them the same way
+{ for v in SITE URL ROTATE TZ_NAME COUNTRY FORCE_1080 CONNECT AGENT SSH TV BUTTON LED_GPIO; do printf '%s=%q\n' "$v" "${!v}"; done; } > "$SETUP_CONF"
+
+# No automatic reboots: they're started from the console (and, later, scheduled there). Remove the nightly
+# reboot an earlier version of this script installed, if this Pi has one.
+rm -f /etc/cron.d/kiosk-reboot
+
+if [[ $PREPARE -eq 1 ]]; then
+  trap '' HUP     # dropping the bench's Wi-Fi below mustn't stop the rest
+  echo "==> Clearing everything that belongs to this bench Pi"
+  systemctl stop lobby-agent.service 2>/dev/null || true
+  rm -rf /var/lib/lobby-agent                                                # the agent's key and saved results
+  rm -rf "$KDIR/chromium-profile" "$KDIR/setup-profile" "$KDIR/kiosk.log" "$KDIR"/rotation*.last "$KDIR"/ever-online-*  # browser data, log, last rotation, last online marker
+  rm -f /var/lib/NetworkManager/*.lease /var/lib/NetworkManager/*lease*       # the bench's network addresses
+  : > /etc/machine-id                                                        # made fresh in each Pi at first start
+  [[ -L /var/lib/dbus/machine-id ]] || rm -f /var/lib/dbus/machine-id
+  rm -f /etc/ssh/ssh_host_* /var/lib/systemd/random-seed
+  journalctl --rotate >/dev/null 2>&1 || true; journalctl --vacuum-time=1s >/dev/null 2>&1 || true
+  find /var/log -type f \( -name '*.gz' -o -name '*.[0-9]' \) -delete 2>/dev/null || true
+  find /var/log -type f -name '*.log' -exec truncate -s 0 {} + 2>/dev/null || true
+  rm -f /root/.bash_history "$KHOME/.bash_history"
+  apt-get clean
+  echo lobby-new > /etc/hostname                                             # renamed from its serial at first start
+  # Last: the bench's own Wi-Fi (the saved directory networks stay)
+  if command -v nmcli >/dev/null; then
+    nmcli -t -f NAME,TYPE connection show 2>/dev/null | while IFS=: read -r name type; do
+      if [[ "$type" == "802-11-wireless" && "$name" != lobby-wifi-* ]]; then
+        nmcli connection delete "$name" >/dev/null 2>&1 && echo "    removed the bench's network: $name"
+      fi
+    done
+  fi
+  sync
+  echo
+  echo "Card prepared. Powering off now."
+  echo "Next: copy this card to an image file (README: Preparing cards). Don't start it in this Pi again first."
+  systemctl poweroff
+  exit 0
+fi
+
+if [[ $UPDATE -eq 1 ]]; then
+  echo "Updated."                            # the agent reports this, then restarts the Pi
+  exit 0
+fi
+
+echo
+echo "Done. Reboot to start the directory:  sudo reboot"
+echo "Log file: $KDIR/kiosk.log"
+if [[ -z "$URL" ]]; then
+  echo "This Pi (serial ${SERIAL:-unknown}) will show up in the console. Assign it to a screen there."
+else
+  echo "To change the screen address later, edit $KDIR/kiosk.conf and reboot."
+fi
+if [[ $AGENT -eq 1 ]]; then echo "Agent log: journalctl -u lobby-agent -f"; fi
