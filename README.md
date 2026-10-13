@@ -214,8 +214,12 @@ A Pi needs no one on site after a power cut, whatever comes back first:
 - **No desktop pop-ups:** the desktop's panel and file manager (which Raspberry Pi OS starts anyway) are stopped
   every 10 seconds by the kiosk, since the panel's network plugin is what asked for Wi-Fi passwords on screen; the
   polkit password prompts and pprompt are switched off for the desktop user (DP-05).
-- **A quiet restart:** no rainbow square, Raspberry Pi logo, boot text or desktop picture; the TV stays black until
-  the directory appears (about a minute).
+- **A quiet restart:** no rainbow square, Raspberry Pi logo, boot text or desktop picture. The first 10–20 seconds
+  are black; then the **start-up picture** (the waytugo logo with "Starting…", `public/pi/startup.png`, centred on
+  black in every layout) shows until the directory appears, including the network wait of up to 90 seconds when
+  offline (DP-07 round 9). Setup downloads it and checks it's a PNG of at most 5 MB; without one the background stays
+  black. To change it, replace `public/pi/startup.png` on GitHub (a PNG on black, ideally 3:2 or wider), then
+  Update Pi on each Pi, and make a new card image for new cards.
 
 ### Updating Pis in the field
 
@@ -292,7 +296,7 @@ node tests/test-server.mjs          # the whole site locally, with sample logins
 bash tests/kiosk-rotation-test.sh    # the kiosk: address from the serial, rotation and its watcher, a card moved between Pis, field Wi-Fi setup (about 5 minutes)
 python3 tests/agent-test.py          # the Pi's agent: schedule, results, reboot, updates, keys, Update Pi, Wi-Fi search and join, the status light, remote support (about 2 minutes)
 python3 tests/button-test.py         # the case button and status light, with key presses through a pipe (about 20 seconds)
-bash tests/setup-test.sh             # setup's options, Wi-Fi import, naming, TV keeper, pointer, HDMI, quiet start, field Wi-Fi setup (seconds)
+bash tests/setup-test.sh             # setup's options, Wi-Fi import, naming, TV keeper, pointer, HDMI, quiet start, start-up picture, field Wi-Fi setup (seconds)
 ```
 
 Local sample logins: `scot@1pointusa.com / admin-pass`, `leighann@barber.test / owner-pass`, `editor@barber.test / editor-pass`.
@@ -305,6 +309,6 @@ netlify/functions/  screen, users, config, weather, news, agent, devices, networ
 netlify/lib/        Supabase client, RSS reader, shared helpers
 supabase/           database schema (01 to 21, run in order), starting data, check queries, setup guide
 migration/          the Yodeck/Wix transcription the starting data was built from
-public/pi/          setup-kiosk.sh and agent.py (served by the site so Pis can download them)
+public/pi/          setup-kiosk.sh, agent.py and startup.png, the start-up picture (served by the site so Pis can download them)
 tests/              function tests, fake Supabase, local test server
 ```

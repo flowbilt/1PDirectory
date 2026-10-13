@@ -154,7 +154,7 @@ ok "'quiet' isn't added twice" "$(grep -o ' quiet' "$W/cmdline.txt" | wc -l)" "1
 ok "no rainbow square" "$(grep -c '^disable_splash=1' "$W/config.txt")" "1"
 quiet; ok "running setup again changes nothing" "$(cat "$W/cmdline.txt")|$(grep -c disable_splash "$W/config.txt")" "$C|1"
 ok "still one line" "$(wc -l < "$W/cmdline.txt")" "1"
-has "the desktop behind the browser is plain black" "$(grep -F 'labwc/autostart' "$SETUP")" "swaybg -c '#000000'"
+has "the desktop behind the browser is lobby-background (the start-up picture, or black)" "$(grep -F 'labwc/autostart' "$SETUP")" "/usr/local/bin/lobby-background >/dev/null 2>&1 &"
 
 
 # ── the case button and status light ──
@@ -323,5 +323,41 @@ kill $P3 2>/dev/null; wait 2>/dev/null
 AUTO="$(sed -n '/^mkdir -p "$KHOME\/.config\/autostart"/,/^done$/p' "$SETUP")"
 has "the polkit password prompts and pprompt are switched off for the desktop user (Hidden=true)" "$AUTO" 'for a in polkit-mate-authentication-agent-1 lxpolkit pprompt; do'
 has "in the standard way" "$AUTO" 'Hidden=true'
+
+# ── DP-07 round 9: the start-up picture ──
+PNG=public/pi/startup.png
+ok "the site serves a start-up picture that's a real PNG" "$(head -c 8 "$PNG" | od -An -tx1 | tr -d ' \n')" "89504e470d0a1a0a"
+ok "and under setup's 5 MB limit" "$(( $(stat -c %s "$PNG") <= 5242880 ))" "1"
+ok "setup fetches it before the Wi-Fi is touched (saving Wi-Fi can drop the network)" \
+  "$(( $(grep -n 'pi/startup.png' "$SETUP" | head -1 | cut -d: -f1) < $(grep -n '/usr/local/sbin/lobby-wifi-import "$NETS"' "$SETUP" | cut -d: -f1) ))" "1"
+has "a failed download isn't fatal" "$(grep -F 'pi/startup.png' "$SETUP")" '-o "$STARTUP_PNG"; then : > "$STARTUP_PNG"; fi'
+INST="$(sed -n '/^STARTUP_DIR=\/usr\/local\/share\/lobby$/,/^rm -f "\$STARTUP_PNG"$/p' "$SETUP" | sed "s|^STARTUP_DIR=.*|STARTUP_DIR=\"$W/share\"|")"
+inst() { cp "$1" "$W/dl"; STARTUP_PNG="$W/dl" bash -c "$INST" 2>&1; }
+O="$(inst "$PNG")"
+ok "a good picture is installed" "$(cmp -s "$PNG" "$W/share/startup.png" && echo same)" "same"
+has "and setup says so" "$O" "start-up picture installed"
+printf '<html>404 Not Found</html>' > "$W/notpng"
+O="$(inst "$W/notpng")"
+ok "a download that isn't a PNG (an error page) never replaces it" "$(cmp -s "$PNG" "$W/share/startup.png" && echo same)" "same"
+has "and the Pi keeps the one it has" "$O" "keeping the one this Pi has"
+{ head -c 8 "$PNG"; head -c 6000000 /dev/zero; } > "$W/big"
+inst "$W/big" >/dev/null
+ok "nor does one over 5 MB" "$(cmp -s "$PNG" "$W/share/startup.png" && echo same)" "same"
+rm -rf "$W/share"; : > "$W/empty"
+has "with no picture at all, the background stays black" "$(inst "$W/empty")" "stays black"
+ok "the bench's clean-up (--prepare) leaves the picture on the card" "$(sed -n '/Clearing everything that belongs to this bench Pi/,/^fi$/p' "$SETUP" | grep -c 'share/lobby')" "0"
+awk "/^cat > \/usr\/local\/bin\/lobby-background <<'BACKGROUND'\$/{f=1;next} /^BACKGROUND\$/{f=0} f" "$SETUP" > "$W/lobby-background"
+mkdir -p "$W/sbg"
+cat > "$W/sbg/swaybg" <<'S'
+#!/usr/bin/env bash
+echo "$*" >> "$SBLOG"
+case "$*" in *" -i "*) [[ -n "${SB_FAIL:-}" ]] && exit 1 ;; esac
+exit 0
+S
+chmod +x "$W/sbg/swaybg"
+bg() { : > "$W/sb.log"; SBLOG="$W/sb.log" PATH="$W/sbg:$PATH" LOBBY_STARTUP_PNG="$1" SB_FAIL="${2:-}" sh "$W/lobby-background"; cat "$W/sb.log"; }
+ok "with a picture it's fitted and centred on black (centred in portrait too)" "$(bg "$PNG")" "-c #000000 -i $PNG -m fit"
+ok "without one, plain black" "$(bg "$W/none.png")" "-c #000000"
+ok "if swaybg can't show the picture, it falls back to plain black at once" "$(bg "$PNG" fail | tail -1)" "-c #000000"
 
 echo; echo "$pass/$((pass+fail)) passed"; [[ $fail -eq 0 ]]

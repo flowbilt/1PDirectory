@@ -140,12 +140,18 @@ fi
 
 # The agent too, now: saving Wi-Fi below can drop a Pi's network for a few seconds (it may be on one of those networks)
 AGENT_PY=""
+HERE="$(cd "$(dirname "$0")" && pwd)"
 if [[ $AGENT -eq 1 ]]; then
   AGENT_PY="$(mktemp)"
-  HERE="$(cd "$(dirname "$0")" && pwd)"
   if [[ -f "$HERE/agent.py" ]]; then cp "$HERE/agent.py" "$AGENT_PY"
   else curl -fsSL "$SITE/pi/agent.py" -o "$AGENT_PY" || { echo "Couldn't download the agent from $SITE. Check the network and run setup again."; exit 1; }; fi
 fi
+
+# The start-up picture (DP-07 round 9), shown behind the browser while a Pi starts. Optional: if it can't be had,
+# the Pi keeps the picture it has, or plain black.
+STARTUP_PNG="$(mktemp)"
+if [[ -f "$HERE/startup.png" ]]; then cp "$HERE/startup.png" "$STARTUP_PNG"
+elif ! curl -fsSL --max-time 60 "$SITE/pi/startup.png" -o "$STARTUP_PNG"; then : > "$STARTUP_PNG"; fi
 
 echo "==> Installing packages"
 apt-get update -qq
@@ -876,7 +882,7 @@ echo "$(date '+%F %T') kiosk starting, Pi ${SERIAL:-unknown}, $URL"
 # DP-05: on Raspberry Pi OS (trixie) the desktop's panel and file manager start even with our own autostart, and
 # lwrespawn keeps them running. The panel's network plugin is what put "Authentication required by Wi-Fi network"
 # boxes over the directory. A lobby screen needs neither: stop their respawners first, then them, now and every 10 s
-# (the black swaybg stays behind the browser).
+# (the start-up picture, or black, stays behind the browser: lobby-background).
 quiet_desktop() {
   pkill -u "$(id -u)" -f '^/bin/sh /usr/bin/lwrespawn /usr/bin/(wf-panel-pi|pcmanfm-pi)' 2>/dev/null
   pkill -u "$(id -u)" -x 'wf-panel-pi|pcmanfm-pi' 2>/dev/null && echo "$(date '+%F %T') stopped the desktop panel"
@@ -1053,8 +1059,29 @@ fi
 echo "==> Starting the kiosk at login (labwc, wayfire and X11 all covered)"
 # labwc: our own autostart (the panel and desktop still start on trixie; kiosk.sh stops them, see quiet_desktop).
 mkdir -p "$KHOME/.config/labwc"
-# A plain black desktop behind the browser, instead of the Raspberry Pi wallpaper, while it starts
-printf '%s\n' "swaybg -c '#000000' >/dev/null 2>&1 &" "$KDIR/kiosk.sh &" > "$KHOME/.config/labwc/autostart"
+# Behind the browser while it starts, instead of the Raspberry Pi wallpaper: the start-up picture centred on black
+# (DP-07 round 9), or plain black without one. Checked here: a PNG, at most 5 MB; otherwise the Pi keeps what it had.
+STARTUP_DIR=/usr/local/share/lobby
+if [[ -s "$STARTUP_PNG" && "$(head -c 8 "$STARTUP_PNG" | od -An -tx1 | tr -d ' \n')" == 89504e470d0a1a0a \
+      && "$(stat -c %s "$STARTUP_PNG")" -le 5242880 ]]; then
+  install -D -m 644 "$STARTUP_PNG" "$STARTUP_DIR/startup.png"; echo "    start-up picture installed"
+elif [[ -s "$STARTUP_DIR/startup.png" ]]; then echo "    couldn't get the start-up picture; keeping the one this Pi has"
+else echo "    couldn't get the start-up picture; the start-up background stays black"; fi
+rm -f "$STARTUP_PNG"
+cat > /usr/local/bin/lobby-background <<'BACKGROUND'
+#!/bin/sh
+# The desktop behind the browser while a lobby Pi starts: the start-up picture fitted and centred on black (it stays
+# centred in portrait too), or plain black if there's no picture or swaybg can't show it.
+IMG="${LOBBY_STARTUP_PNG:-/usr/local/share/lobby/startup.png}"
+if [ -s "$IMG" ]; then
+  START=$(date +%s)
+  swaybg -c '#000000' -i "$IMG" -m fit && exit 0
+  [ $(( $(date +%s) - START )) -ge 10 ] && exit 0   # ran a while, then stopped (the session ending): nothing to fix
+fi
+exec swaybg -c '#000000'
+BACKGROUND
+chmod 755 /usr/local/bin/lobby-background
+printf '%s\n' "/usr/local/bin/lobby-background >/dev/null 2>&1 &" "$KDIR/kiosk.sh &" > "$KHOME/.config/labwc/autostart"
 # No desktop pop-ups on a lobby screen (DP-05): the password prompts of the two polkit agents, and pprompt's warnings,
 # are switched off for this user the standard way (an entry in ~/.config/autostart with Hidden=true)
 mkdir -p "$KHOME/.config/autostart"
