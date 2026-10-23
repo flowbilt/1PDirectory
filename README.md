@@ -258,6 +258,15 @@ A Pi needs no one on site after a power cut, whatever comes back first:
   switched on or asked, so it always reads "not answering": tick **This display has no HDMI-CEC** in the console's
   **Screen settings** (`supabase/21-no-cec.sql`) and Health stops counting its TV state as a problem (everything else
   still counts). Set that display's own power-on-after-power-loss.
+- **Touch screens (DP-08 round 13):** a USB touch panel needs nothing installed: Raspberry Pi OS takes it as a
+  multitouch device, and on a single display the touch follows the picture's rotation by itself (proven on the
+  Beetronics BEE13TS7M in portrait: its panel is a Weida Hi-Tech CoolTouch, USB 2575:0001). Its touch port is USB-A,
+  so it needs a **USB 2.0 A-to-A data cable**: of the cheap cables tried on the bench, one showed nothing at all and
+  another connected and dropped every few seconds; test the cable before mounting (`lsusb` should list the panel and
+  keep listing it). Every screen is locked against touch (display 2.12.0: no zooming, scrolling, selecting, dragging
+  or long-press menus), so a passer-by can't leave the directory in a mess. Mark a touch screen in **Screen settings**
+  (**This is a touch screen**, and **Screen size (inches)**, corner to corner, `supabase/25-touch.sql`): the touch
+  directory, in a later round, appears only there and sizes its buttons for a finger from the size.
 - **The picture:** HDMI 0 always sends a picture at 1080p, even if no TV was detected at start, and the kiosk puts the
   rotation back within 10 seconds if a TV powering up resets it.
 - **No network** (a Pi that's been online before): the screen shows the directory and news it last received, with
@@ -324,7 +333,9 @@ Pi health is a 1Point service tool. Owner users see only each screen's Online/Of
 
 In the console, the **Pi** button on each screen offers Identify, Reload screen, Take screenshot, Reboot Pi, Update agent and Update Pi (see Updating Pis in the field). The technician page adds Wi-Fi search and join (agent 1.6.0).
 
-**Remote support** (agent 1.8.1 or newer; 1.8.0 couldn't start Connect on a real Pi. Pi → More → **Remote support on**): the Pi installs Raspberry Pi Connect if needed, switches it on, and the sign-in link appears under Recent actions. Open it and sign in with 1Point's Raspberry Pi account; the Pi then appears at connect.raspberrypi.com for screen sharing and a remote shell. Connect, like the agent, only connects outward, so no ports open. **Remote support off** when finished. The master card stays without Connect or SSH: one password on every card, and Connect's sign-in is per Pi, so neither belongs on a copied image. The Pi actions appear only once the Pi has enrolled (the server refuses them before that). Under **More** are Reset device key, Switch off, and Unassign.
+**Remote support** (agent 1.8.1 or newer; 1.8.0 couldn't start Connect on a real Pi. Pi → More → **Remote support on**): the Pi installs Raspberry Pi Connect if needed, switches it on, and the sign-in link appears under Recent actions. Open it and sign in with 1Point's Raspberry Pi account; the Pi then appears at connect.raspberrypi.com for screen sharing and a remote shell. Connect, like the agent, only connects outward, so no ports open. **Remote support off** when finished. **From agent 1.9.0** (DP-08 round 13) the first Remote support on, which installs Connect and can take several minutes, runs beside the check-ins: the Pi keeps checking in, the Screens list and the Pi panel say **Busy: Remote support on, N min**, and the result arrives under Recent actions when it's done (a second request while it's busy is turned away and says so). The Screens list shows **Remote on** (in blue, so it isn't left on) or **Remote off** for each Pi; for older agents it's read from the last Remote support on or off that went through. The master card stays without Connect or SSH: one password on every card, and Connect's sign-in is per Pi, so neither belongs on a copied image. The Pi actions appear only once the Pi has enrolled (the server refuses them before that). Under **More** are Reset device key, Switch off, and Unassign.
+
+**The Pi's firmware not answering** (agent 1.9.0; seen on the bench 2026-10-23): the agent reads power and temperature through `vcgencmd`, which asks the Pi's firmware. If the firmware stops answering, `vcgencmd` hangs for good and nothing can stop it; agent 1.8.1 then froze with it (no check-ins, no commands, the case light slow-blinking, a shutdown stuck on it). 1.9.0 gives it 5 seconds, never asks again while a stuck one is still there, carries on checking in, and reports it: **Firmware stuck** in the Screens list, and in the Pi panel **Firmware: Not responding**, with Power shown as unknown. Unplug the Pi for 10 seconds; Reboot may not get through while it's stuck.
 
 The Pi panel updates itself while it's open (every 10 seconds, every 3 for two minutes after an action), so results
 and new screenshots appear without reopening it. If a Pi's check-in was refused, the panel says why and what to do:
@@ -369,7 +380,7 @@ Local sample logins: `scot@1pointusa.com / admin-pass`, `leighann@barber.test / 
 public/             screen (index.html, display.*), sign-in, console (+ console-devices.js, console-setup.js), editor, technician page (tech.*), shared auth.js
 netlify/functions/  screen, users, config, weather, news, traffic, togo (the Directory to Go page), agent, devices, networks, alert-settings, alerts
 netlify/lib/        Supabase client, RSS reader, shared helpers
-supabase/           database schema (01 to 24, run in order), starting data, check queries, setup guide
+supabase/           database schema (01 to 25, run in order), starting data, check queries, setup guide
 migration/          the Yodeck/Wix transcription the starting data was built from
 public/pi/          setup-kiosk.sh, agent.py, startup.png (the start-up picture) and startup/ (the start-up animation), served by the site so Pis can download them
 tests/              function tests, fake Supabase, local test server

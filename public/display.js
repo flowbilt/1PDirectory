@@ -10,7 +10,7 @@
 */
 (() => {
   "use strict";
-  const VERSION = "2.11.0";   // = netlify/lib/version.mjs (a test keeps them equal)
+  const VERSION = "2.12.0";   // = netlify/lib/version.mjs (a test keeps them equal)
   const q = new URLSearchParams(location.search);
   const DEVICE = (q.get("device") || "").toLowerCase();
   const CHOSEN = (q.get("screen") || q.get("key") || q.get("site") || "").toLowerCase();
@@ -575,6 +575,13 @@
     if (next <= now) next.setDate(next.getDate() + 1);
     setTimeout(() => location.reload(), next - now);
   }
+
+  // ── Touch lockdown (DP-08 round 13): on a touch screen nothing can be zoomed, selected, dragged or long-pressed
+  // into a menu, so a passer-by can't leave the directory in a mess. On every screen (harmless without touch);
+  // the styles are in display.css. The touch directory (a later round) opens its own taps on purpose.
+  for (const type of ["contextmenu", "selectstart", "dragstart", "gesturestart"]) document.addEventListener(type, (e) => e.preventDefault());
+  document.addEventListener("touchmove", (e) => { if (e.touches.length > 1) e.preventDefault(); }, { passive: false });   // no pinch
+  document.addEventListener("wheel", (e) => { if (e.ctrlKey) e.preventDefault(); }, { passive: false });                  // no pinch on a touchpad
 
   // ── Boot ──
   sizeStage();

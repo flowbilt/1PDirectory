@@ -15,6 +15,9 @@ export const SERIAL_RE = /^[0-9a-f]{8,32}$/;
 export const COMMANDS = ["reboot", "reload", "screenshot", "update_agent", "update_pi", "wifi_scan", "wifi_join", "remote_on", "remote_off"];
 /** The first agent that knows remote_on and remote_off (supabase/16-remote.sql). */
 export const REMOTE_AGENT = "1.8.0";
+/** The first agent that reports busy, firmware and remote support in its health, and runs Remote support beside
+ * its check-ins. */
+export const BUSY_AGENT = "1.9.0";
 /** The first agent that knows wifi_scan and wifi_join (supabase/13-tech.sql). Older Pis need Update agent first. */
 export const WIFI_AGENT = "1.6.0";
 /** "1.10.0" >= "1.6.0", compared number by number; "" or junk is older than anything. */
@@ -43,6 +46,12 @@ function cleanHealth(h) {
     ip: clip(h.ip, 45), os: clip(h.os, 80), display: clip(h.display, 40),
     // The TV's power state over HDMI-CEC (agent 1.5.0): on, standby, not-answering, or no-cec (no CEC on this Pi)
     tv: ["on", "standby", "not-answering", "no-cec"].includes(h.tv) ? h.tv : null,
+    // Agent 1.9.0: the Pi's firmware not answering (vcgencmd stuck), whether Remote support is on, and a long
+    // command running beside the check-ins (e.g. Remote support on installing Raspberry Pi Connect)
+    firmware: h.firmware === "not-responding" ? "not-responding" : null,
+    remote: ["on", "off"].includes(h.remote) ? h.remote : null,
+    busy: h.busy && COMMANDS.includes(h.busy.command) && Number.isFinite(Number(h.busy.since))
+      ? { command: h.busy.command, since: Math.round(Number(h.busy.since)) } : null,
   };
 }
 

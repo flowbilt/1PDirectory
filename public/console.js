@@ -7,7 +7,7 @@
   const LAYOUTS = { auto: "Automatic (match the TV)", portrait: "Portrait", "portrait-flipped": "Portrait (turned the other way)",
                     landscape: "Landscape", "landscape-flipped": "Landscape (upside down)" };
   // Signed-in users may read only these screen columns (supabase/06-trust.sql); hardware comes from /api/devices.
-  const SCREEN_COLS = "id,directory_id,key,name,location_note,orientation,last_seen,last_report,identify_until,created_at,no_cec,hide_powered_by";
+  const SCREEN_COLS = "id,directory_id,key,name,location_note,orientation,last_seen,last_report,identify_until,created_at,no_cec,hide_powered_by,touch,screen_inches";
 
   const S = { me: null, admin: false, orgs: [], props: [], dirs: [], screens: [], tenantCount: {}, tenantText: {}, people: [], page: 0 };
   window.ConsoleState = S;
@@ -114,6 +114,9 @@
           <span class="hint">Tick for a computer monitor or touch display the Pi can't switch on or ask over HDMI (e.g. the Beetronics). Health then stops counting "TV not answering" for this screen. Set the display's own power-on-after-power-loss instead.</span></div>
         <div class="field" id="f-s-nopowered"><label class="check"><input type="checkbox" id="s-nopowered"${s?.hide_powered_by ? " checked" : ""}> Hide "Powered by WayTuGo"</label>
           <span class="hint">The small WayTuGo mark at the bottom of the screen. Shown by default; hide it only for a customer who pays not to have it.</span></div>
+        <div class="field" id="f-s-touch"><label class="check"><input type="checkbox" id="s-touch"${s?.touch ? " checked" : ""}> This is a touch screen</label>
+          <span class="hint">For a display with a touch panel. The touch directory appears only on screens with this ticked (coming in a later round).</span></div>
+        ${field("s-inches", "Screen size (inches)", `<input id="s-inches" type="number" min="7" max="100" step="0.1" inputmode="decimal" value="${s?.screen_inches ?? ""}" placeholder="e.g. 13.3">`, "Measured corner to corner, as the display is sold. Touch buttons are sized from it so they suit a finger at any size.")}
         ${field("s-loc", "Location note", `<input id="s-loc" maxlength="120" value="${esc(s?.location_note || "")}" placeholder="e.g. 3rd floor, north elevator lobby">`)}
         <div id="s-hw"></div>
         ${isNew ? "" : `<button type="button" id="s-delete" class="ghost danger">Remove this screen</button>`}`,
@@ -131,8 +134,10 @@
         });
       },
       async save() {
-        const body = { name: $("s-name").value.trim(), directory_id: $("s-dir").value || null, orientation: $("s-orient").value, location_note: $("s-loc").value.trim(), no_cec: $("s-nocec").checked, hide_powered_by: $("s-nopowered").checked };
+        const body = { name: $("s-name").value.trim(), directory_id: $("s-dir").value || null, orientation: $("s-orient").value, location_note: $("s-loc").value.trim(), no_cec: $("s-nocec").checked, hide_powered_by: $("s-nopowered").checked,
+          touch: $("s-touch").checked, screen_inches: $("s-inches").value.trim() === "" ? null : Number($("s-inches").value) };
         if (!body.name) throw new Error("Enter a name.");
+        if (body.screen_inches !== null && !(body.screen_inches >= 7 && body.screen_inches <= 100)) throw new Error("Screen size: a number of inches from 7 to 100, or leave it blank.");
         if (isNew) {
           body.key = $("s-key").value.trim();
           if (!/^[a-z0-9][a-z0-9-]{0,47}$/.test(body.key)) throw new Error("The screen address can use lowercase letters, numbers and dashes.");

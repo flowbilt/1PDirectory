@@ -73,7 +73,7 @@ def main():
     json.dump({"site": f"http://127.0.0.1:{srv.server_port}", "key": "k" * 43, "user": "no-such-desktop-user"}, open(cfg, "w"))
     state = os.path.join(W, "state", "pending-results.json")
     ident = os.path.join(W, "state", "identity.json")
-    env = dict(os.environ, PATH=f"{W}/bin:" + os.environ["PATH"], LOBBY_AGENT_CONFIG=cfg, LOBBY_AGENT_STATE=state, LOBBY_AGENT_IDENTITY=ident, LOBBY_TV_STATE=os.path.join(W, "tv-state"), LOBBY_AGENT_UPDATE_DIR=os.path.join(W, "update"), UPDATE_FAIL_FILE=os.path.join(W, "fail"),
+    env = dict(os.environ, PATH=f"{W}/bin:" + os.environ["PATH"], LOBBY_AGENT_CONFIG=cfg, LOBBY_AGENT_STATE=state, LOBBY_AGENT_IDENTITY=ident, LOBBY_TV_STATE=os.path.join(W, "tv-state"), LOBBY_AGENT_UPDATE_DIR=os.path.join(W, "update"), UPDATE_FAIL_FILE=os.path.join(W, "fail"), LOBBY_AGENT_REMOTE=os.path.join(W, "state", "remote"),
                LOBBY_AGENT_INTERVAL=str(TICK), LOBBY_AGENT_SERIAL="10000000abcd0001")
     log = open(os.path.join(W, "agent.log"), "a")
     start = lambda serial="10000000abcd0001": subprocess.Popen([sys.executable, agent], env=dict(env, LOBBY_AGENT_SERIAL=serial), stdout=log, stderr=log)
@@ -309,7 +309,8 @@ exit 0
     rc_path = os.path.join(W, "bin", "rpi-connect")
     if os.path.exists(rc_path): os.remove(rc_path)
     open(os.path.join(W, "rc-body"), "w").write("#!/usr/bin/env bash\n" + rc_body)
-    stub("apt-get", f'echo "apt-get $*" >> {rc_log}; cp {W}/rc-body {rc_path}; chmod +x {rc_path}\n')
+    # The first install takes a while (3 "minutes" here), as installing Connect on a real Pi does
+    stub("apt-get", f'echo "apt-get $*" >> {rc_log}; sleep {3 * TICK}; cp {W}/rc-body {rc_path}; chmod +x {rc_path}\n')
     bare = dict(os.environ); bare.pop("DBUS_SESSION_BUS_ADDRESS", None)
     check("the stand-in Connect refuses without a session bus, as the real one did", subprocess.run(["bash", os.path.join(W, "rc-body"), "on"], env=bare, capture_output=True).returncode != 0)
     me = os.path.join(W, "agent-me.json")                # a desktop user that exists, so the session is really set up
@@ -321,7 +322,22 @@ exit 0
         with lock: replies.append([{"id": cid, "command": command}])
         got = wait_result(cid)
         return got[0][1] if got else {}
-    r = ask2(30, "remote_on")
+    with lock: replies.append([{"id": 30, "command": "remote_on"}]); n = len(checkins)
+    wait_for(n + 2)
+    with lock: busy_h = checkins[-1][1].get("health", {}).get("busy")
+    check("a long command runs beside the check-ins: the Pi keeps checking in and says it's busy (1.9.0)",
+          busy_h and busy_h.get("command") == "remote_on" and isinstance(busy_h.get("since"), int), busy_h)
+    with lock: replies.append([{"id": 33, "command": "remote_on"}])
+    got = wait_result(33)
+    check("a second one while it's busy is turned away, saying what it's busy with",
+          got and got[0][1]["status"] == "failed" and "Busy with Remote support on" in got[0][1]["result"], got)
+    got = wait_result(30)
+    r = got[0][1] if got else {}
+    with lock: during = [c for c in checkins[n:got[0][0] if got else len(checkins)]]
+    check("and its result comes with a check-in after it ends", len(during) >= 3, len(during))
+    wait_for(len(checkins) + 1)
+    with lock: after_h = checkins[-1][1].get("health", {})
+    check("then it's no longer busy, and Remote support reads on", "busy" not in after_h and after_h.get("remote") == "on", (after_h.get("busy"), after_h.get("remote")))
     calls = open(rc_log).read() if os.path.exists(rc_log) else ""
     check("remote support on: Raspberry Pi Connect is installed the first time", "apt-get install -y rpi-connect" in calls, calls)
     check("then switched on and the sign-in started", "on" in calls.split() and "signin" in calls, calls)
@@ -332,10 +348,36 @@ exit 0
     check("a Pi already signed in just says so: no second install, no new sign-in", "already" not in r.get("result", "") and "signed in" in r.get("result", "") and "apt-get" not in calls and "signin" not in calls, (r, calls))
     r = ask2(32, "remote_off")
     check("remote support off switches it off", r.get("status") == "done" and "off" in open(rc_log).read().split(), r)
-    check("the agent on the site is 1.8.1", re.search(r'VERSION = "([^"]+)"', open(AGENT).read()).group(1) == "1.8.1")
+    n = len(checkins); wait_for(n + 1)
+    with lock: h = checkins[-1][1].get("health", {})
+    check("and Remote support then reads off", h.get("remote") == "off", h.get("remote"))
+    check("the agent on the site is 1.9.0", re.search(r'VERSION = "([^"]+)"', open(AGENT).read()).group(1) == "1.9.0")
     p.terminate()
     try: p.wait(timeout=5)
     except subprocess.TimeoutExpired: p.kill()
+
+    # ── I. The Pi's firmware stops answering (1.9.0; seen on the bench 2026-10-23): vcgencmd hangs inside the kernel
+    # and ignores even kill, so the agent must neither wait for it nor ask it again. A stuck process can't be made
+    # on purpose, so here kill is made to do nothing.
+    probe = f"""
+import importlib.util, json, os, subprocess, sys, time
+os.environ["PATH"] = {W + '/fw-bin'!r} + ":" + os.environ["PATH"]
+os.environ["LOBBY_AGENT_FIRMWARE_WAIT"] = "1"
+spec = importlib.util.spec_from_file_location("agent", {AGENT!r}); a = importlib.util.module_from_spec(spec); spec.loader.exec_module(a)
+subprocess.Popen.kill = lambda self: None
+t = time.monotonic(); h1 = a.health(); t1 = time.monotonic() - t
+t = time.monotonic(); h2 = a.health(); t2 = time.monotonic() - t
+for p in a.ABANDONED: os.kill(p.pid, 9)
+print(json.dumps({{"t1": t1, "t2": t2, "f1": h1.get("firmware"), "f2": h2.get("firmware"), "temp": "temp_c" in h1 or "uptime_s" in h1}}))
+"""
+    os.makedirs(os.path.join(W, "fw-bin"), exist_ok=True)
+    with open(os.path.join(W, "fw-bin", "vcgencmd"), "w") as f: f.write("#!/usr/bin/env bash\nexec sleep 60\n")
+    os.chmod(os.path.join(W, "fw-bin", "vcgencmd"), 0o755)
+    out = subprocess.run([sys.executable, "-c", probe], capture_output=True, text=True, timeout=60)
+    try: fw = json.loads(out.stdout.strip().splitlines()[-1])
+    except Exception: fw = {"error": out.stdout[-300:] + out.stderr[-300:]}
+    check("firmware not answering: the health report still comes, within seconds, and says so", fw.get("f1") == "not-responding" and fw.get("t1", 99) < 5 and fw.get("temp"), fw)
+    check("and the stuck vcgencmd isn't asked again (no new wait)", fw.get("f2") == "not-responding" and fw.get("t2", 99) < 1, fw)
 
     srv.shutdown()
     print(f"\n{passed}/{passed + failed} passed")

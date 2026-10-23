@@ -23,6 +23,9 @@
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 [hidden] { display: none !important; }
 html, body { width: 100%; height: 100%; overflow: hidden; background: var(--navy); cursor: none; }
+/* Touch lockdown (DP-08 round 13): no zooming, scrolling, selecting, dragging or long-press menus (display.js too) */
+html, body { touch-action: none; overscroll-behavior: none; -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
+img, svg { -webkit-user-drag: none; }
 body { font-family: "Instrument Sans", "Segoe UI", Arial, sans-serif; color: var(--ink); -webkit-font-smoothing: antialiased; }
 
 #stage {

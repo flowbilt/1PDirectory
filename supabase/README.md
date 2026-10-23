@@ -43,6 +43,8 @@ Do these once. The current site keeps running as it is until the new build is de
 
 25. For the WayTuGo mark, Directory to Go and the place lists with headings and pictures (DP-08 round 12): **before uploading that code**, new query, paste all of `24-directory-to-go.sql`, and click **Run**. Then new query, paste all of `check-directory-to-go.sql`, and click **Run**; it should read **ALL 10 CHECKS PASSED** (red on purpose). Every directory gets its Directory to Go code here; round 11's places become each building's first list, "Nearby". (The old code ignores everything new; the new code reads it, so it must exist first.)
 
+26. For touch screens and the console's busy and remote-support lines (DP-08 round 13): **before uploading that code**, new query, paste all of `25-touch.sql`, and click **Run**. Then new query, paste all of `check-touch.sql`, and click **Run**; it should read **ALL 5 CHECKS PASSED** (red on purpose). (The new console reads and saves the two new screen columns, so they must exist first.)
+
 If any of them shows an error (other than the expected red messages from the `check-…sql` files), copy the message (it includes a line number) and send it to Claude.
 
 ## 3. Lock down sign-ups

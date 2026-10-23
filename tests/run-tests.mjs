@@ -1656,6 +1656,51 @@ test("a display deploy gives every screen a fresh answer that names the live ver
   assert.equal((await screen(req("/api/screen?key=ppi-1s", { headers: { "If-None-Match": old } }))).status, 200);
 });
 
+// ── Round 13: touch screens, first step (25-touch.sql), agent 1.9.0 ──
+test("agent 1.9.0's health: firmware, remote support and busy reach the console, only as known values", async () => {
+  const dev = fake.T.devices.find((x) => x.serial === PPI2S_SERIAL);
+  await checkin({ health: { firmware: "not-responding", remote: "on", busy: { command: "remote_on", since: 1761235000.4 } } });
+  assert.equal(dev.last_health.firmware, "not-responding");
+  assert.equal(dev.last_health.remote, "on");
+  assert.deepEqual(dev.last_health.busy, { command: "remote_on", since: 1761235000 });
+  await checkin({ health: { firmware: "<b>", remote: "maybe", busy: { command: "rm -rf /", since: 1 } } });
+  assert.equal(dev.last_health.firmware, null); assert.equal(dev.last_health.remote, null); assert.equal(dev.last_health.busy, null);
+  await checkin({ health: { busy: { command: "remote_off", since: "soon" } } });
+  assert.equal(dev.last_health.busy, null, "a busy report needs a real start time");
+  await checkin({ health: {} });
+  const agentPy = readFileSync(new URL("../public/pi/agent.py", import.meta.url), "utf8");
+  assert.equal(agentPy.match(/VERSION = "([^"]+)"/)[1], "1.9.0", "the agent on the site is 1.9.0");
+  for (const w of ['"not-responding"', 'h["remote"]', 'h["busy"]']) assert.ok(agentPy.includes(w), `the agent reports ${w}`);
+  const consoleJs = readFileSync(new URL("../public/console-devices.js", import.meta.url), "utf8");
+  for (const w of ["Firmware stuck", "Remote on", "Remote off", "Busy: "]) assert.ok(consoleJs.includes(w), `the Screens list can say ${w}`);
+});
+
+test("touch settings: off and blank by default, then they reach the screen and change its version", async () => {
+  const scr = fake.T.screens.find((x) => x.key === "ppi-1s");
+  const first = await screen(req("/api/screen?key=ppi-1s"));
+  const d0 = await first.json();
+  assert.equal(d0.touch, false); assert.equal(d0.screenInches, null);
+  try {
+    Object.assign(scr, { touch: true, screen_inches: 13.3 });
+    const next = await screen(req("/api/screen?key=ppi-1s", { headers: { "If-None-Match": first.headers.get("ETag") } }));
+    assert.equal(next.status, 200, "the change gives the screen a new version");
+    const d1 = await next.json();
+    assert.equal(d1.touch, true); assert.equal(d1.screenInches, 13.3);
+  } finally { Object.assign(scr, { touch: false, screen_inches: null }); }
+  const sql = readFileSync(new URL("../supabase/25-touch.sql", import.meta.url), "utf8");
+  assert.ok(sql.includes("between 7 and 100") && sql.includes("'touch', s.touch") && sql.includes("s.touch::text"), "25 checks the size and sends both");
+  const con = readFileSync(new URL("../public/console.js", import.meta.url), "utf8");
+  assert.ok(con.includes("touch,screen_inches") && con.includes('id="s-touch"') && con.includes('id="s-inches"'), "Screen settings has both");
+});
+
+test("the touch lockdown is on every screen: no zooming, selecting, dragging or long-press menus", () => {
+  const css = readFileSync(new URL("../public/display.css", import.meta.url), "utf8");
+  for (const w of ["touch-action: none", "user-select: none", "-webkit-touch-callout: none", "-webkit-user-drag: none", "overscroll-behavior: none"]) assert.ok(css.includes(w), w);
+  const js = readFileSync(new URL("../public/display.js", import.meta.url), "utf8");
+  for (const w of ['"contextmenu", "selectstart", "dragstart", "gesturestart"', "e.touches.length > 1", "e.ctrlKey"]) assert.ok(js.includes(w), w);
+  assert.equal(DISPLAY_VERSION, "2.12.0");
+});
+
 let passed = 0;
 for (const [name, fn] of tests) {
   try { await fn(); passed++; console.log(`  ok  ${name}`); }

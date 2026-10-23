@@ -104,6 +104,7 @@ a.ghost { color: inherit; display: inline-block; }
 .danger { color: var(--danger) !important; }
 .sub { color: var(--muted); font-size: 13px; font-weight: 400; }
 .warn { color: #8a5a00; font-weight: 700; }
+.remote-on { color: #0b5cad; font-weight: 700; }   /* Remote support on (round 13): noticeable, so it isn't left on */
 .page-error { max-width: 1200px; margin: 20px auto; padding: 0 20px; }
 .login-card .hint { margin: 0 0 6px; }
 

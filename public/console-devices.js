@@ -28,6 +28,17 @@ window.ConsoleDevices = (() => {
     renderNew();
   }
 
+  /** Whether Remote support is on: what the Pi reports (agent 1.9.0), else the last Remote support on or off that
+   *  went through; "" when there's nothing to go on. */
+  function remoteState(d) {
+    const h = d.last_health || {};
+    if (h.remote === "on" || h.remote === "off") return h.remote;
+    const c = (d.commands || []).find((x) => (x.command === "remote_on" || x.command === "remote_off") && x.status === "done");
+    return c ? (c.command === "remote_on" ? "on" : "off") : "";
+  }
+  /** A long command the Pi is working on beside its check-ins (agent 1.9.0), while it's still checking in. */
+  const busyOf = (d) => { const b = d.last_health?.busy; return b && fresh(d.last_seen) ? { name: cmdName(b.command), at: new Date(b.since * 1000).toISOString() } : null; };
+
   /** Extra status line under a screen's status: what its Pi says. */
   function statusNote(screen) {
     if (!admin) return "";
@@ -39,8 +50,13 @@ window.ConsoleDevices = (() => {
     else if (!d.enrolled) bits.push(`<span class="sub">Pi ${windowOpen(d) ? "waiting to enroll" : "not enrolled"}</span>`);
     else if (!fresh(d.last_seen)) bits.push(d.last_seen ? `<span class="warn">Pi offline</span>` : `<span class="sub">Pi not checked in</span>`);
     else if (!fresh(screen.last_seen)) bits.push(`<span class="warn">Pi on, screen not reporting</span>`);
+    if (h.firmware === "not-responding" && fresh(d.last_seen)) bits.push(`<span class="warn" title="The Pi's firmware stopped answering: power-cycle the Pi">Firmware stuck</span>`);
+    const busy = busyOf(d);
+    if (busy) bits.push(`<span class="sub" title="The Pi keeps checking in while it works on this">Busy: ${esc(busy.name)}, ${esc(since(busy.at))}</span>`);
     if (h.under_voltage_now) bits.push(`<span class="warn" title="Weak power supply">⚡ Power low</span>`);
     else if (h.under_voltage_seen) bits.push(`<span class="sub" title="Under-voltage since last boot">⚡ Power dipped</span>`);
+    const remote = d.enrolled ? remoteState(d) : "";
+    if (remote) bits.push(remote === "on" ? `<span class="remote-on" title="Raspberry Pi Connect is on: switch it off when support is done (Pi → More)">Remote on</span>` : `<span class="sub">Remote off</span>`);
     if (typeof h.temp_c === "number") bits.push(`<span class="${h.temp_c >= 80 ? "warn" : "sub"}">${Math.round(h.temp_c)}°C</span>`);
     return `<div class="dev-note">${bits.join(" · ")}</div>`;
   }
@@ -171,14 +187,17 @@ window.ConsoleDevices = (() => {
             ${row("Pi", `${d.serial}${d.model ? ` · ${d.model}` : ""}`)}
             ${row("Enrollment", d.enrolled ? "" : windowOpen(d) ? `Open until ${clock(d.enroll_until)}` : "Closed (not enrolled yet)")}
             ${row("Pi last check-in", since(d.last_seen))}
+            ${(() => { const b = busyOf(d); return b ? row("Busy", `${b.name}, started ${since(b.at)}. The Pi keeps checking in meanwhile; the result shows under Recent actions.`) : ""; })()}
+            ${row("Firmware", h.firmware === "not-responding" ? "Not responding: the Pi can't read its power or temperature. Unplug the Pi for 10 seconds (Reboot may not get through while it's stuck)." : "")}
             ${row("Temperature", typeof h.temp_c === "number" ? `${h.temp_c}°C` : "")}
-            ${row("Power", h.under_voltage_now ? "Under-voltage now: replace the power supply" : h.under_voltage_seen ? "Dipped since last boot" : h.throttled !== undefined ? "Normal" : "")}
+            ${row("Power", h.firmware === "not-responding" ? "Unknown while the firmware isn't responding" : h.under_voltage_now ? "Under-voltage now: replace the power supply" : h.under_voltage_seen ? "Dipped since last boot" : h.throttled !== undefined ? "Normal" : "")}
             ${row("Browser", h.browser_running === false ? "Not running" : h.browser_running ? "Running" : "")}
             ${row("TV", s?.no_cec ? "Not checked: this display has no HDMI-CEC (Screen settings)" : { on: "On", standby: "Off (standby): the Pi is turning it on", "not-answering": "Not answering over HDMI (TV unplugged, or its CEC setting is off)", "no-cec": "Not controlled (no HDMI-CEC)" }[h.tv] || "")}
             ${row("Up for", up)}
             ${row("Storage used", h.disk_used_pct != null ? `${h.disk_used_pct}%` : "")}
             ${row("Address", h.ip)}
             ${row("System", h.os)}
+            ${row("Remote support", { on: "On (Raspberry Pi Connect): switch it off when support is done", off: "Off" }[remoteState(d)] || "")}
             ${row("Agent", d.agent_version)}
           </dl>
           ${note ? `<p class="dev-note warn">${esc(note)}</p>` : ""}

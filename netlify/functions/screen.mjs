@@ -13,7 +13,7 @@ import { DISPLAY_VERSION } from "../lib/version.mjs";
 
 // Bump when toPayload's output changes shape, so every screen re-downloads once after the deploy. The live display
 // version is part of the tag too (TAG), so a display deploy also gives every screen a fresh answer.
-const PAYLOAD_V = "p5";
+const PAYLOAD_V = "p6";
 const TAG = `${PAYLOAD_V}-${DISPLAY_VERSION.replace(/[^0-9.]/g, "")}`;
 const HEADERS = { "Content-Type": "application/json; charset=utf-8", "Cache-Control": "no-cache" };
 
@@ -112,6 +112,8 @@ export function toPayload(screen, dir, prop, tenants) {
     placeLists: dir?.amenities_enabled ? cleanPlaceLists(prop?.place_lists, prop?.amenities) : [],
     togo: togoFor(dir),
     poweredBy: !screen.hide_powered_by,                    // "Powered by WayTuGo"; 1Point can hide it per screen
+    touch: !!screen.touch,                                 // a touch screen (round 13; the touch directory comes later)
+    screenInches: Number.isFinite(Number(screen.screen_inches)) && screen.screen_inches !== null ? Number(screen.screen_inches) : null,
     sizes: screen.sizes || {},                             // this screen's sizes, % of standard (supabase/18-sizes.sql)
     display: DISPLAY_VERSION,                              // the live display code; an older screen reloads itself
     assigned: !!dir,
@@ -120,7 +122,7 @@ export function toPayload(screen, dir, prop, tenants) {
   };
 }
 
-export const NEW_DEVICE = (device) => ({ key: null, device, assigned: false, newDevice: true, orientation: "auto", propertyName: "New display", buildingLabel: "", tenants: [], managedBy: {}, leasedBy: {}, welcome: "", weather: { enabled: false }, news: { enabled: false }, background: {}, traffic: { map: false, times: false, destinations: [] }, amenities: [], placeLists: [], togo: { enabled: false, url: "", line: "" }, poweredBy: true, sizes: {}, display: DISPLAY_VERSION, logo: "", timezone: "America/Chicago" });
+export const NEW_DEVICE = (device) => ({ key: null, device, assigned: false, newDevice: true, orientation: "auto", propertyName: "New display", buildingLabel: "", tenants: [], managedBy: {}, leasedBy: {}, welcome: "", weather: { enabled: false }, news: { enabled: false }, background: {}, traffic: { map: false, times: false, destinations: [] }, amenities: [], placeLists: [], togo: { enabled: false, url: "", line: "" }, poweredBy: true, touch: false, screenInches: null, sizes: {}, display: DISPLAY_VERSION, logo: "", timezone: "America/Chicago" });
 
 export default async (req) => {
   const url = new URL(req.url);

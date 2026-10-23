@@ -14,7 +14,7 @@ Runs as a systemd service (lobby-agent). Standard library only.
 """
 import base64, json, os, pwd, re, secrets, shutil, socket, subprocess, sys, tempfile, threading, time, urllib.error, urllib.request
 
-VERSION = "1.8.1"
+VERSION = "1.9.0"
 CONFIG = os.environ.get("LOBBY_AGENT_CONFIG", "/etc/lobby-agent.json")
 STATE = os.environ.get("LOBBY_AGENT_STATE", "/var/lib/lobby-agent/pending-results.json")
 IDENTITY = os.environ.get("LOBBY_AGENT_IDENTITY", "/var/lib/lobby-agent/identity.json")
@@ -24,6 +24,8 @@ FIRST_SHOT = 120           # seconds after start before the first automatic scre
 UPDATE_LIMIT = 45 * 60      # an update still running after this long is stopped and reported as failed
 INTERVAL = max(1.0, float(os.environ.get("LOBBY_AGENT_INTERVAL", "60")))   # seconds; only tests change this
 JOIN_WAIT = float(os.environ.get("LOBBY_AGENT_JOIN_WAIT", "60"))   # how long a newly joined network has to reach the site
+REMOTE_STATE = os.environ.get("LOBBY_AGENT_REMOTE", "/var/lib/lobby-agent/remote")   # "on" or "off": the last Remote support (1.9.0)
+FIRMWARE_WAIT = float(os.environ.get("LOBBY_AGENT_FIRMWARE_WAIT", "5"))   # seconds vcgencmd gets before the firmware counts as stuck
 
 
 def log(*a):
@@ -38,11 +40,35 @@ def read(path, default=""):
         return default
 
 
+ABANDONED = []   # programs that ran out of time and couldn't be stopped (1.9.0)
+
+
 def run(cmd, timeout=20, **kw):
+    """Runs a program with a time limit. One that runs out of time is killed; if even that doesn't end it (a
+    program stuck inside the kernel, e.g. vcgencmd when the Pi's firmware stops answering, ignores every signal),
+    it's left behind and never waited for, so the agent itself never freezes (1.9.0: before, it waited forever,
+    stopped checking in and couldn't take the console's Reboot)."""
     try:
-        return subprocess.run(cmd, capture_output=True, timeout=timeout, **kw)
-    except (OSError, subprocess.TimeoutExpired) as e:
+        p = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, **kw)
+    except OSError as e:
         return subprocess.CompletedProcess(cmd, 1, b"", str(e).encode())
+    try:
+        out, err = p.communicate(timeout=timeout)
+        return subprocess.CompletedProcess(cmd, p.returncode, out, err)
+    except subprocess.TimeoutExpired:
+        p.kill()
+        try:
+            out, err = p.communicate(timeout=2)
+        except subprocess.TimeoutExpired:
+            ABANDONED.append(p)
+            out, err = b"", b""
+        return subprocess.CompletedProcess(cmd, 1, out or b"", (err or b"") + f"timed out after {timeout:g} seconds".encode())
+
+
+def stuck(name):
+    """Whether a run of `name` was left behind and is still stuck (finished ones are tidied away)."""
+    ABANDONED[:] = [p for p in ABANDONED if p.poll() is None]
+    return any(os.path.basename(str(p.args[0])) == name for p in ABANDONED)
 
 
 # ── identity ──
@@ -104,12 +130,26 @@ def health():
         h["mem_used_pct"] = round(100 * (1 - int(mem["MemAvailable"]) / int(mem["MemTotal"])))
     du = shutil.disk_usage("/")
     h["disk_used_pct"] = round(100 * du.used / du.total)
-    # Power and heat: vcgencmd reports under-voltage and throttling as bit flags
-    r = run(["vcgencmd", "get_throttled"])
-    m = re.search(r"0x([0-9a-fA-F]+)", r.stdout.decode(errors="ignore"))
-    if m:
-        v = int(m.group(1), 16)
-        h.update(throttled=hex(v), under_voltage_now=bool(v & 0x1), throttled_now=bool(v & 0x4), under_voltage_seen=bool(v & 0x10000))
+    # Power and heat: vcgencmd reports under-voltage and throttling as bit flags. It asks the Pi's firmware, which
+    # can stop answering (seen on the bench 2026-10-23); then vcgencmd hangs for good, so it gets a few seconds,
+    # isn't asked again while a stuck one is still there, and the console is told (1.9.0)
+    if stuck("vcgencmd"):
+        h["firmware"] = "not-responding"
+    else:
+        r = run(["vcgencmd", "get_throttled"], FIRMWARE_WAIT)
+        m = re.search(r"0x([0-9a-fA-F]+)", r.stdout.decode(errors="ignore"))
+        if m:
+            v = int(m.group(1), 16)
+            h.update(throttled=hex(v), under_voltage_now=bool(v & 0x1), throttled_now=bool(v & 0x4), under_voltage_seen=bool(v & 0x10000))
+        elif b"timed out" in r.stderr:
+            h["firmware"] = "not-responding"
+    remote = read(REMOTE_STATE).strip()
+    if remote in ("on", "off"):
+        h["remote"] = remote
+    elif shutil.which("rpi-connect") is None:
+        h["remote"] = "off"
+    if BUSY:
+        h["busy"] = {"command": BUSY["command"], "since": int(BUSY["since"])}
     h["browser_running"] = run(["pgrep", "-f", "chromium"]).returncode == 0
     try:   # the TV's power state, if the TV keeper has checked in the last 5 minutes
         if time.time() - os.path.getmtime(TV_STATE) < 300:
@@ -412,6 +452,7 @@ def cmd_remote_on(cfg):
     r = as_user(cfg, ["rpi-connect", "on"], 60)
     if r.returncode != 0:
         return False, "Couldn't switch Raspberry Pi Connect on: " + (r.stderr or r.stdout).decode(errors="replace").strip()[-200:]
+    remember_remote("on")
     st = as_user(cfg, ["rpi-connect", "status"], 20).stdout.decode(errors="replace")
     if re.search(r"^\s*signed in:\s*yes", st, re.I | re.M):
         return True, "Remote support is on and this Pi is signed in: open connect.raspberrypi.com."
@@ -445,7 +486,53 @@ def cmd_remote_off(cfg):
     r = as_user(cfg, ["rpi-connect", "off"], 60)
     if r.returncode != 0:
         return False, "Couldn't switch Raspberry Pi Connect off: " + (r.stderr or r.stdout).decode(errors="replace").strip()[-200:]
+    remember_remote("off")
     return True, "Remote support is off."
+
+
+def remember_remote(word):
+    """Keeps whether Remote support is on, for the console's Screens list (1.9.0). Connect stays on across restarts,
+    so this is kept on disk."""
+    try:
+        os.makedirs(os.path.dirname(REMOTE_STATE), exist_ok=True)
+        with open(REMOTE_STATE, "w") as f:
+            f.write(word + "\n")
+    except OSError:
+        pass
+
+
+# ── Long commands run beside the check-ins (1.9.0) ──
+# Remote support on can take up to 15 minutes the first time (it installs Raspberry Pi Connect). It runs on its own,
+# so the Pi keeps checking in and the console shows it as busy; its result goes out with the check-in after it ends.
+BACKGROUND = {"remote_on", "remote_off"}
+BUSY = {}              # {"command", "since", "id", "thread", "result"} while one runs
+BUSY_NAMES = {"remote_on": "Remote support on", "remote_off": "Remote support off"}
+
+
+def start_background(cfg, c, fn):
+    """Starts a long command; returns a result straight away only if another is still running."""
+    if BUSY:
+        return {"id": c.get("id"), "status": "failed",
+                "result": f"Busy with {BUSY_NAMES.get(BUSY['command'], BUSY['command'])} (started {time.strftime('%H:%M', time.localtime(BUSY['since']))}). Try again when it has finished."}
+    def work():
+        try:
+            ok, msg = fn(cfg)
+        except Exception as e:                       # never leave the Pi marked busy
+            ok, msg = False, f"Failed: {e}"
+        BUSY["result"] = {"id": c.get("id"), "status": "done" if ok else "failed", "result": msg}
+    BUSY.update(command=c.get("command"), since=time.time(), id=c.get("id"), result=None)
+    BUSY["thread"] = threading.Thread(target=work, daemon=True)
+    BUSY["thread"].start()
+    return None
+
+
+def finished_background():
+    """The result of a long command that has ended since the last check-in, if any."""
+    if BUSY and BUSY.get("result") is not None:
+        r = BUSY["result"]
+        BUSY.clear()
+        return r
+    return None
 
 
 COMMANDS = {"reload": cmd_reload, "reboot": cmd_reboot, "screenshot": cmd_screenshot, "update_agent": cmd_update_agent,
@@ -534,6 +621,10 @@ def main():
             if not any(r.get("id") == done[0]["id"] for r in results):
                 results.append(done[0])
             restart_after = done[1]
+        bg = finished_background()
+        if bg:
+            results.append(bg)
+            log("command", "(background) ->", bg["result"])
         body = {"serial": me, "model": model(), "hostname": socket.gethostname(), "version": VERSION, "health": health(), "results": results}
         if force_shot or time.time() - last_shot >= shot_every:
             shot = screenshot(cfg)
@@ -564,6 +655,12 @@ def main():
                         results.append({"id": c.get("id"), "status": "failed", "result": msg})
                     continue
                 fn = COMMANDS.get(c.get("command"))
+                if fn and c.get("command") in BACKGROUND:
+                    busy = start_background(cfg, c, fn)
+                    log("command", c.get("command"), "->", busy["result"] if busy else "started beside the check-ins")
+                    if busy:
+                        results.append(busy)
+                    continue
                 if not fn:
                     ok, msg = False, "Unknown command."
                 elif c.get("command") in WITH_PAYLOAD:
