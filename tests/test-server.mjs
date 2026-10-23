@@ -15,6 +15,7 @@ import devices from "../netlify/functions/devices.mjs";
 import networks from "../netlify/functions/networks.mjs";
 import alertSettings from "../netlify/functions/alert-settings.mjs";
 import traffic from "../netlify/functions/traffic.mjs";
+import togo from "../netlify/functions/togo.mjs";
 
 const port = Number(process.argv[2]) || 8888;
 const ORIGIN = `http://localhost:${port}`;
@@ -59,7 +60,7 @@ createServer(async (req, res) => {
   const send = async (r) => { res.writeHead(r.status, Object.fromEntries(r.headers)); res.end(Buffer.from(await r.arrayBuffer())); };
   if (url.pathname === "/__outbox") return send(new Response(JSON.stringify(fake.outbox), { headers: { "Content-Type": "application/json" } }));
   if (url.pathname.startsWith("/sb/")) return send(await fake.handle(new Request("http://fake" + url.pathname.slice(3) + url.search, { method: req.method, headers: req.headers, body })));
-  const fn = ROUTES[url.pathname];
+  const fn = ROUTES[url.pathname] || (url.pathname.startsWith("/d/") ? togo : null);   // Directory to Go phone pages
   if (fn) return send(await fn(new Request(url, { method: req.method, headers: req.headers, body })));
   const file = normalize(join(PUB, url.pathname === "/" ? "index.html" : url.pathname));
   if (!file.startsWith(PUB)) { res.writeHead(403); return res.end(); }

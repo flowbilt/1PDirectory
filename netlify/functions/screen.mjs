@@ -13,7 +13,7 @@ import { DISPLAY_VERSION } from "../lib/version.mjs";
 
 // Bump when toPayload's output changes shape, so every screen re-downloads once after the deploy. The live display
 // version is part of the tag too (TAG), so a display deploy also gives every screen a fresh answer.
-const PAYLOAD_V = "p4";
+const PAYLOAD_V = "p5";
 const TAG = `${PAYLOAD_V}-${DISPLAY_VERSION.replace(/[^0-9.]/g, "")}`;
 const HEADERS = { "Content-Type": "application/json; charset=utf-8", "Cache-Control": "no-cache" };
 
@@ -54,6 +54,27 @@ export const cleanAmenities = (list) => (Array.isArray(list) ? list : []).slice(
 export const cleanDestinations = (list) => (Array.isArray(list) ? list : []).slice(0, 3)
   .map((d) => ({ label: text(d?.label || d?.address, 60), address: text(d?.address, 200) })).filter((d) => d.label);
 
+/** The building's place lists (supabase/24-directory-to-go.sql): up to 5 lists of 12, each with a heading; a picture
+ *  only as a small data URL. An empty list is dropped, so it never shows. Falls back to round 11's amenities. */
+const IMAGE_RE = /^data:image\/(jpeg|png|webp);base64,[A-Za-z0-9+/=]+$/;
+export function cleanPlaceLists(lists, amenities) {
+  const src = Array.isArray(lists) && lists.length ? lists : (Array.isArray(amenities) && amenities.length ? [{ heading: "Nearby", items: amenities }] : []);
+  return src.slice(0, 5).map((l) => ({
+    heading: text(l?.heading, 40) || "Nearby",
+    items: (Array.isArray(l?.items) ? l.items : []).slice(0, 12).map((a) => ({
+      name: text(a?.name, 60), distance: text(a?.distance, 30), line: text(a?.line, 120),
+      image: typeof a?.image === "string" && a.image.length <= 160000 && IMAGE_RE.test(a.image) ? a.image : "",
+    })).filter((a) => a.name),
+  })).filter((l) => l.items.length);
+}
+
+/** Directory to Go: the QR code's link (TOGO_BASE + the directory's code; waytugo.com forwards /d/ here). */
+export function togoFor(dir) {
+  const base = (process.env.TOGO_BASE || "https://waytugo.com/d/").replace(/\/*$/, "/");
+  const on = !!(dir?.togo_enabled && dir?.togo_code);
+  return { enabled: on, url: on ? base + dir.togo_code : "", line: text(dir?.togo_line, 80) || "Take this directory with you!" };
+}
+
 /** The information panel's traffic parts. The map needs GOOGLE_MAPS_KEY (a browser key, public by design and
  *  locked to the site's address in Google Cloud) and the building's map point; travel times need destinations. */
 export function trafficFor(dir, prop) {
@@ -87,7 +108,10 @@ export function toPayload(screen, dir, prop, tenants) {
     news: { enabled: dir ? dir.news_enabled !== false : false, rotateSeconds: dir?.rotate_seconds || 12 },
     background: prop?.background || {},
     traffic: trafficFor(dir, prop),                        // live map and travel times (supabase/23-info-panel.sql)
-    amenities: dir?.amenities_enabled ? cleanAmenities(prop?.amenities) : [],
+    amenities: dir?.amenities_enabled ? cleanAmenities(prop?.amenities) : [],   // for displays before 2.11.0
+    placeLists: dir?.amenities_enabled ? cleanPlaceLists(prop?.place_lists, prop?.amenities) : [],
+    togo: togoFor(dir),
+    poweredBy: !screen.hide_powered_by,                    // "Powered by WayTuGo"; 1Point can hide it per screen
     sizes: screen.sizes || {},                             // this screen's sizes, % of standard (supabase/18-sizes.sql)
     display: DISPLAY_VERSION,                              // the live display code; an older screen reloads itself
     assigned: !!dir,
@@ -96,7 +120,7 @@ export function toPayload(screen, dir, prop, tenants) {
   };
 }
 
-export const NEW_DEVICE = (device) => ({ key: null, device, assigned: false, newDevice: true, orientation: "auto", propertyName: "New display", buildingLabel: "", tenants: [], managedBy: {}, leasedBy: {}, welcome: "", weather: { enabled: false }, news: { enabled: false }, background: {}, traffic: { map: false, times: false, destinations: [] }, amenities: [], sizes: {}, display: DISPLAY_VERSION, logo: "", timezone: "America/Chicago" });
+export const NEW_DEVICE = (device) => ({ key: null, device, assigned: false, newDevice: true, orientation: "auto", propertyName: "New display", buildingLabel: "", tenants: [], managedBy: {}, leasedBy: {}, welcome: "", weather: { enabled: false }, news: { enabled: false }, background: {}, traffic: { map: false, times: false, destinations: [] }, amenities: [], placeLists: [], togo: { enabled: false, url: "", line: "" }, poweredBy: true, sizes: {}, display: DISPLAY_VERSION, logo: "", timezone: "America/Chicago" });
 
 export default async (req) => {
   const url = new URL(req.url);

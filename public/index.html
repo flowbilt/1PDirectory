@@ -44,13 +44,17 @@
   <footer class="contacts">
     <div id="managed" class="contact"></div>
     <div id="leased" class="contact"></div>
+    <!-- Directory to Go (DP-08 round 12): a QR code to this directory on a phone; the customer switches it on -->
+    <div id="togo" class="togo" hidden><p id="togo-line" class="togo-line"></p><div id="togo-code" class="togo-code"></div></div>
   </footer>
 
   <p id="welcome" class="welcome" hidden></p>
   <div id="brand" class="brand" hidden><img id="brand-logo" alt=""></div>
+  <p id="powered" class="powered" hidden>Powered by WayTuGo · waytugo.com</p>
   <div id="identify" class="identify" hidden></div>
   <p id="offline" class="offline" hidden>Showing saved information. Reconnecting…</p>
 </div>
+<script src="/vendor/qrcode.js"></script>
 <script src="/display.js"></script>
 </body>
 </html>

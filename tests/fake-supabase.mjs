@@ -6,16 +6,20 @@ import { readFileSync } from "node:fs";
 // Per-screen size ranges, % of standard: 18-sizes.sql (title, logo, brand, welcome) and 22-widget-sizes.sql (news,
 // clock, weather, contacts). A test checks the SQL, the display and the editor all say the same.
 export const SIZE_RANGES = { title: [50, 120], logo: [60, 200], brand: [60, 250], welcome: [80, 160],
-  news: [70, 150], clock: [70, 150], weather: [70, 150], contacts: [70, 150] };
+  news: [70, 150], clock: [70, 150], weather: [70, 150], contacts: [70, 150], qr: [70, 150] };   // qr: 24-directory-to-go.sql
 
 export const SERVICE_KEY = "test-service-key";
 export const ANON_KEY = "test-anon-key";
 
+// Directory to Go codes, as 24-directory-to-go.sql makes them: 6 characters, no 0/O/1/I/L
+const CODE_ALPHA = "ABCDEFGHJKMNPQRSTUVWXYZ23456789";
+const newCode = () => Array.from({ length: 6 }, () => CODE_ALPHA[Math.floor(Math.random() * CODE_ALPHA.length)]).join("");
+
 export function createFake() {
-  const T = { organizations: [], profiles: [], properties: [], directories: [], tenants: [], screens: [], audit_log: [], devices: [], device_commands: [], device_daily: [], wifi_networks: [], prepare_codes: [], alert_recipients: [], mail_settings: [] };
-  const SERVICE_ONLY = new Set(["devices", "device_commands", "device_daily", "wifi_networks", "prepare_codes", "alert_recipients", "mail_settings"]); // row-level security on, no policies: server key only
+  const T = { organizations: [], profiles: [], properties: [], directories: [], tenants: [], screens: [], audit_log: [], devices: [], device_commands: [], device_daily: [], wifi_networks: [], prepare_codes: [], alert_recipients: [], mail_settings: [], togo_scans: [] };
+  const SERVICE_ONLY = new Set(["togo_scans", "devices", "device_commands", "device_daily", "wifi_networks", "prepare_codes", "alert_recipients", "mail_settings"]); // row-level security on, no policies: server key only
   // Columns of screens signed-in users may read (supabase/06-trust.sql, plus sizes from 18 and no_cec from 21). hardware is server-only.
-  const SCREEN_COLS = new Set(["id", "directory_id", "key", "name", "location_note", "orientation", "last_seen", "last_report", "identify_until", "created_at", "sizes", "no_cec"]);
+  const SCREEN_COLS = new Set(["id", "directory_id", "key", "name", "location_note", "orientation", "last_seen", "last_report", "identify_until", "created_at", "sizes", "no_cec", "hide_powered_by"]);
   const users = new Map(); // id -> {id,email,password,last_sign_in_at,invited_at,user_metadata}
   const tokens = new Map(); // token -> user id
   const outbox = [];
@@ -32,22 +36,22 @@ export function createFake() {
       T.organizations.push({ id: oid, name: o.name, kind: o.kind, notes: "", created_at: now() });
       for (const p of o.properties) {
         const pid = randomUUID();
-        T.properties.push({ id: pid, org_id: oid, name: p.name, address: p.address || "", timezone: "America/Chicago", lat: p.lat, lon: p.lon, logo: "", logo_replaces_name: false, company_logo: "", logo_swap: false, background: {}, destinations: [], amenities: [], managed_by: p.managed_by || {}, leased_by: p.leased_by || {}, footer: p.footer || "", created_at: now(), updated_at: now(), updated_by: null });
+        T.properties.push({ id: pid, org_id: oid, name: p.name, address: p.address || "", timezone: "America/Chicago", lat: p.lat, lon: p.lon, logo: "", logo_replaces_name: false, company_logo: "", logo_swap: false, background: {}, destinations: [], amenities: [], place_lists: [], managed_by: p.managed_by || {}, leased_by: p.leased_by || {}, footer: p.footer || "", created_at: now(), updated_at: now(), updated_by: null });
         for (const d of p.directories) {
           const did = randomUUID();
-          T.directories.push({ id: did, property_id: pid, slug: d.slug, title: d.title, subtitle: d.subtitle, footer_override: null, news_enabled: true, rotate_seconds: 12, weather_enabled: true, map_enabled: false, times_enabled: false, amenities_enabled: false, created_at: now(), updated_at: now(), updated_by: null });
+          T.directories.push({ id: did, property_id: pid, slug: d.slug, title: d.title, subtitle: d.subtitle, footer_override: null, news_enabled: true, rotate_seconds: 12, weather_enabled: true, map_enabled: false, times_enabled: false, amenities_enabled: false, togo_enabled: false, togo_line: "", togo_code: newCode(), created_at: now(), updated_at: now(), updated_by: null });
           d.tenants.forEach((t, i) => T.tenants.push({ id: randomUUID(), directory_id: did, sort: i * 10, name: t.name, suite: t.suite, arrow: t.arrow, note: t.note }));
-          T.screens.push({ id: randomUUID(), directory_id: did, key: d.screen.key, name: d.screen.name, location_note: "", orientation: d.screen.orientation, hardware: d.screen.hardware, last_seen: null, last_report: {}, sizes: {}, no_cec: false, traffic_at: null, created_at: now() });
+          T.screens.push({ id: randomUUID(), directory_id: did, key: d.screen.key, name: d.screen.name, location_note: "", orientation: d.screen.orientation, hardware: d.screen.hardware, last_seen: null, last_report: {}, sizes: {}, no_cec: false, traffic_at: null, hide_powered_by: false, created_at: now() });
         }
       }
     }
     // A second customer, to prove Barber users can't see it.
     const other = randomUUID(), op = randomUUID(), od = randomUUID();
     T.organizations.push({ id: other, name: "Other Owner LLC", kind: "owner", notes: "", created_at: now() });
-    T.properties.push({ id: op, org_id: other, name: "Other Tower", address: "", timezone: "America/Chicago", lat: 33.5, lon: -86.8, logo: "", logo_replaces_name: false, company_logo: "", logo_swap: false, background: {}, destinations: [], amenities: [], managed_by: {}, leased_by: {}, footer: "", created_at: now(), updated_at: now() });
-    T.directories.push({ id: od, property_id: op, slug: "other-tower", title: "Other Tower", subtitle: "", footer_override: null, news_enabled: true, rotate_seconds: 12, weather_enabled: true, map_enabled: false, times_enabled: false, amenities_enabled: false, created_at: now(), updated_at: now() });
+    T.properties.push({ id: op, org_id: other, name: "Other Tower", address: "", timezone: "America/Chicago", lat: 33.5, lon: -86.8, logo: "", logo_replaces_name: false, company_logo: "", logo_swap: false, background: {}, destinations: [], amenities: [], place_lists: [], managed_by: {}, leased_by: {}, footer: "", created_at: now(), updated_at: now() });
+    T.directories.push({ id: od, property_id: op, slug: "other-tower", title: "Other Tower", subtitle: "", footer_override: null, news_enabled: true, rotate_seconds: 12, weather_enabled: true, map_enabled: false, times_enabled: false, amenities_enabled: false, togo_enabled: false, togo_line: "", togo_code: newCode(), created_at: now(), updated_at: now() });
     T.tenants.push({ id: randomUUID(), directory_id: od, sort: 0, name: "Secret Tenant Inc.", suite: "100", arrow: "", note: "" });
-    T.screens.push({ id: randomUUID(), directory_id: od, key: "other-tower", name: "Other Tower Lobby", location_note: "", orientation: "landscape", hardware: {}, last_seen: null, last_report: {}, sizes: {}, no_cec: false, traffic_at: null, created_at: now() });
+    T.screens.push({ id: randomUUID(), directory_id: od, key: "other-tower", name: "Other Tower Lobby", location_note: "", orientation: "landscape", hardware: {}, last_seen: null, last_report: {}, sizes: {}, no_cec: false, traffic_at: null, hide_powered_by: false, created_at: now() });
 
     for (const sc of T.screens) {
       const serial = String(sc.hardware?.serial || "").toLowerCase();
@@ -147,10 +151,10 @@ export function createFake() {
   }
   const defaults = {
     organizations: () => ({ id: randomUUID(), kind: "owner", notes: "", created_at: now() }),
-    properties: () => ({ id: randomUUID(), address: "", timezone: "America/Chicago", lat: null, lon: null, logo: "", logo_replaces_name: false, company_logo: "", logo_swap: false, background: {}, destinations: [], amenities: [], managed_by: {}, leased_by: {}, footer: "", created_at: now(), updated_at: now() }),
-    directories: () => ({ id: randomUUID(), subtitle: "", footer_override: null, news_enabled: true, rotate_seconds: 12, weather_enabled: true, map_enabled: false, times_enabled: false, amenities_enabled: false, created_at: now(), updated_at: now() }),
+    properties: () => ({ id: randomUUID(), address: "", timezone: "America/Chicago", lat: null, lon: null, logo: "", logo_replaces_name: false, company_logo: "", logo_swap: false, background: {}, destinations: [], amenities: [], place_lists: [], managed_by: {}, leased_by: {}, footer: "", created_at: now(), updated_at: now() }),
+    directories: () => ({ id: randomUUID(), subtitle: "", footer_override: null, news_enabled: true, rotate_seconds: 12, weather_enabled: true, map_enabled: false, times_enabled: false, amenities_enabled: false, togo_enabled: false, togo_line: "", togo_code: newCode(), created_at: now(), updated_at: now() }),
     tenants: () => ({ id: randomUUID(), sort: 0, suite: "", arrow: "", note: "" }),
-    screens: () => ({ id: randomUUID(), directory_id: null, location_note: "", orientation: "auto", hardware: {}, last_seen: null, last_report: {}, sizes: {}, no_cec: false, traffic_at: null, created_at: now() }),
+    screens: () => ({ id: randomUUID(), directory_id: null, location_note: "", orientation: "auto", hardware: {}, last_seen: null, last_report: {}, sizes: {}, no_cec: false, traffic_at: null, hide_powered_by: false, created_at: now() }),
     profiles: () => ({ full_name: "", created_at: now() }),
     audit_log: () => ({ id: T.audit_log.length + 1, at: now(), detail: {} }),
     devices: () => ({ id: randomUUID(), screen_id: null, key_hash: null, enroll_until: null, refused_at: null, refused_why: null, status: "active", model: "", hostname: "", agent_version: "", last_seen: null, last_health: {}, screenshot: "", screenshot_at: null, alert_state: {}, created_at: now() }),
@@ -260,7 +264,7 @@ export function createFake() {
   const MAX_ROWS = 1000;
   const addDays = (day, n) => new Date(Date.parse(day + "T12:00:00Z") + n * 86400_000).toISOString().slice(0, 10);
   // Functions signed-in users may call (they check access themselves); the rest are server-only
-  const USER_FUNCS = new Set(["set_screen_sizes"]);
+  const USER_FUNCS = new Set(["set_screen_sizes", "togo_scan_count", "togo_replace_code"]);
   const FUNCS = {
     // Mirror of 18-sizes.sql and 22-widget-sizes.sql (SIZE_RANGES, exported below)
     set_screen_sizes({ p_screen, p_sizes = {} }, who) {
@@ -395,6 +399,35 @@ export function createFake() {
       s.traffic_at = now();
       return { origin: { lat: p.lat, lon: p.lon, address: p.address }, destinations: p.destinations };
     },
+    // Mirrors of 24-directory-to-go.sql
+    togo_page({ p_code }) {
+      const d = T.directories.find((x) => x.togo_code === String(p_code || "").toUpperCase());
+      if (!d || !d.togo_enabled) return { missing: true };
+      const p = T.properties.find((x) => x.id === d.property_id);
+      const day = new Intl.DateTimeFormat("en-CA", { timeZone: "America/Chicago" }).format(new Date(now()));
+      const row = T.togo_scans.find((x) => x.directory_id === d.id && x.day === day);
+      if (row) row.scans++; else T.togo_scans.push({ directory_id: d.id, day, scans: 1 });
+      return {
+        dir: { title: d.title, subtitle: d.subtitle, footer_override: d.footer_override, amenities_enabled: d.amenities_enabled },
+        prop: { name: p.name, address: p.address, logo: p.logo, logo_replaces_name: p.logo_replaces_name, company_logo: p.company_logo, logo_swap: p.logo_swap,
+          managed_by: p.managed_by, leased_by: p.leased_by, footer: p.footer, place_lists: p.place_lists || [] },
+        tenants: order(T.tenants.filter((t) => t.directory_id === d.id), "sort,name").map(({ name, suite, note }) => ({ name, suite, note })),
+      };
+    },
+    togo_scan_count({ p_directory }, who) {
+      const me = who.profile;
+      if (!(who.service || me?.role === "platform_admin" || (me && dirOrg(p_directory) === me.org_id))) throw Object.assign(new Error("That directory doesn't exist, or you don't have access to it."), { status: 403 });
+      const since = new Intl.DateTimeFormat("en-CA", { timeZone: "America/Chicago" }).format(new Date(Date.parse(now()) - 30 * 86400_000));
+      const rows = T.togo_scans.filter((x) => x.directory_id === p_directory);
+      return { last30: rows.filter((x) => x.day > since).reduce((n, x) => n + x.scans, 0), total: rows.reduce((n, x) => n + x.scans, 0) };
+    },
+    togo_replace_code({ p_directory }, who) {
+      const me = who.profile, d = T.directories.find((x) => x.id === p_directory);
+      if (!d || !(who.service || me?.role === "platform_admin" || (me && dirOrg(p_directory) === me.org_id))) throw Object.assign(new Error("That directory doesn't exist, or you don't have access to it."), { status: 403 });
+      let c; do { c = newCode(); } while (T.directories.some((x) => x.togo_code === c));
+      d.togo_code = c; d.updated_at = now();
+      return c;
+    },
     screen_state({ p_key, p_device, p_etag, p_report }) {
       let s;
       if (p_device) {
@@ -408,10 +441,10 @@ export function createFake() {
       if (p_report && (!s.last_seen || Date.parse(s.last_seen) < Date.now() - 4 * 60000)) Object.assign(s, { last_seen: now(), last_report: p_report });
       const d = s.directory_id ? T.directories.find((x) => x.id === s.directory_id) : null;
       const p = d ? T.properties.find((x) => x.id === d.property_id) : null;
-      const etag = createHash("md5").update([s.key, s.name, s.orientation, s.directory_id || "-", s.identify_until || "-", d?.updated_at || "-", p?.updated_at || "-", JSON.stringify(s.sizes || {})].join("|")).digest("hex");
+      const etag = createHash("md5").update([s.key, s.name, s.orientation, s.directory_id || "-", s.identify_until || "-", d?.updated_at || "-", p?.updated_at || "-", JSON.stringify(s.sizes || {}), String(!!s.hide_powered_by)].join("|")).digest("hex");
       if (etag === p_etag) return { etag, not_modified: true };
       const tenants = d ? order(T.tenants.filter((t) => t.directory_id === d.id), "sort,name").map(({ name, suite, arrow, note, sort }) => ({ name, suite, arrow, note, sort })) : [];
-      return { etag, screen: { key: s.key, name: s.name, orientation: s.orientation, identify_until: s.identify_until ?? null, sizes: s.sizes || {} }, dir: d ? { ...d } : null, prop: p ? { ...p } : null, tenants };
+      return { etag, screen: { key: s.key, name: s.name, orientation: s.orientation, identify_until: s.identify_until ?? null, sizes: s.sizes || {}, hide_powered_by: !!s.hide_powered_by }, dir: d ? { ...d } : null, prop: p ? { ...p } : null, tenants };
     },
   };
   async function rpc(req, name) {

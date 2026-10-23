@@ -7,7 +7,7 @@
   const LAYOUTS = { auto: "Automatic (match the TV)", portrait: "Portrait", "portrait-flipped": "Portrait (turned the other way)",
                     landscape: "Landscape", "landscape-flipped": "Landscape (upside down)" };
   // Signed-in users may read only these screen columns (supabase/06-trust.sql); hardware comes from /api/devices.
-  const SCREEN_COLS = "id,directory_id,key,name,location_note,orientation,last_seen,last_report,identify_until,created_at,no_cec";
+  const SCREEN_COLS = "id,directory_id,key,name,location_note,orientation,last_seen,last_report,identify_until,created_at,no_cec,hide_powered_by";
 
   const S = { me: null, admin: false, orgs: [], props: [], dirs: [], screens: [], tenantCount: {}, tenantText: {}, people: [], page: 0 };
   window.ConsoleState = S;
@@ -112,6 +112,8 @@
         ${field("s-orient", "Layout", `<select id="s-orient">${Object.entries(LAYOUTS).map(([o, label]) => `<option value="${o}"${(s?.orientation || "auto") === o ? " selected" : ""}>${label}</option>`).join("")}</select>`, "A Pi turns its picture to match at its next start (Pi → Reboot Pi). A portrait TV that comes out upside down is mounted the other way round: choose Portrait (turned the other way).")}
         <div class="field" id="f-s-nocec"><label class="check"><input type="checkbox" id="s-nocec"${s?.no_cec ? " checked" : ""}> This display has no HDMI-CEC</label>
           <span class="hint">Tick for a computer monitor or touch display the Pi can't switch on or ask over HDMI (e.g. the Beetronics). Health then stops counting "TV not answering" for this screen. Set the display's own power-on-after-power-loss instead.</span></div>
+        <div class="field" id="f-s-nopowered"><label class="check"><input type="checkbox" id="s-nopowered"${s?.hide_powered_by ? " checked" : ""}> Hide "Powered by WayTuGo"</label>
+          <span class="hint">The small WayTuGo mark at the bottom of the screen. Shown by default; hide it only for a customer who pays not to have it.</span></div>
         ${field("s-loc", "Location note", `<input id="s-loc" maxlength="120" value="${esc(s?.location_note || "")}" placeholder="e.g. 3rd floor, north elevator lobby">`)}
         <div id="s-hw"></div>
         ${isNew ? "" : `<button type="button" id="s-delete" class="ghost danger">Remove this screen</button>`}`,
@@ -129,7 +131,7 @@
         });
       },
       async save() {
-        const body = { name: $("s-name").value.trim(), directory_id: $("s-dir").value || null, orientation: $("s-orient").value, location_note: $("s-loc").value.trim(), no_cec: $("s-nocec").checked };
+        const body = { name: $("s-name").value.trim(), directory_id: $("s-dir").value || null, orientation: $("s-orient").value, location_note: $("s-loc").value.trim(), no_cec: $("s-nocec").checked, hide_powered_by: $("s-nopowered").checked };
         if (!body.name) throw new Error("Enter a name.");
         if (isNew) {
           body.key = $("s-key").value.trim();

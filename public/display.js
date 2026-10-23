@@ -10,7 +10,7 @@
 */
 (() => {
   "use strict";
-  const VERSION = "2.10.0";   // = netlify/lib/version.mjs (a test keeps them equal)
+  const VERSION = "2.11.0";   // = netlify/lib/version.mjs (a test keeps them equal)
   const q = new URLSearchParams(location.search);
   const DEVICE = (q.get("device") || "").toLowerCase();
   const CHOSEN = (q.get("screen") || q.get("key") || q.get("site") || "").toLowerCase();
@@ -181,7 +181,14 @@
     $("managed").innerHTML = m; $("managed").hidden = !m;
     $("leased").innerHTML = l; $("leased").hidden = !l;
     document.querySelector(".contacts").classList.toggle("single", !(m && l));
-    document.querySelector(".contacts").hidden = !(m || l);
+    // Directory to Go (DP-08 round 12): the QR code sits at the end of the contacts band
+    const tg = data.togo || {}, showTogo = !!(tg.enabled && tg.url && window.LobbyQR);
+    $("togo").hidden = !showTogo;
+    if (showTogo) { $("togo-line").textContent = tg.line || "Take this directory with you!"; drawQR(tg.url); }
+    document.querySelector(".contacts").classList.toggle("has-togo", showTogo);
+    document.querySelector(".contacts").classList.toggle("togo-only", showTogo && !(m || l));
+    document.querySelector(".contacts").hidden = !(m || l || showTogo);
+    $("powered").hidden = data.poweredBy === false;           // "Powered by WayTuGo"; 1Point can hide it per screen
 
     renderBackground();
     const sz = applySizes(data.sizes);
@@ -198,10 +205,23 @@
     document.fonts.ready.then(() => { fitTenants(); stage.classList.remove("is-loading"); });
   }
 
+  // The QR code, drawn here (public/vendor/qrcode.js): dark modules on white with the standard quiet zone of four
+  let qrFor = "";
+  function drawQR(url) {
+    if (url === qrFor) return;
+    try {
+      const q = window.LobbyQR(url), n = q.size, Q = 4;
+      let d = "";
+      for (let r = 0; r < n; r++) for (let c = 0; c < n; c++) if (q.dark(r, c)) d += `M${c + Q} ${r + Q}h1v1h-1z`;
+      $("togo-code").innerHTML = `<svg viewBox="0 0 ${n + 2 * Q} ${n + 2 * Q}" shape-rendering="crispEdges" role="img" aria-label="QR code"><rect width="100%" height="100%" fill="#fff"/><path d="${d}" fill="#0d1b2e"/></svg>`;
+      qrFor = url;
+    } catch (e) { console.warn("QR failed", e); $("togo").hidden = true; }
+  }
+
   // This screen's sizes, each a percentage of the standard (missing = 100). Ranges match supabase/18-sizes.sql and
   // 22-widget-sizes.sql (news, clock, weather, contacts: DP-08 round 10); a test keeps them all equal.
   const SIZE_RANGES = { title: [50, 120], logo: [60, 200], brand: [60, 250], welcome: [80, 160],
-    news: [70, 150], clock: [70, 150], weather: [70, 150], contacts: [70, 150] };
+    news: [70, 150], clock: [70, 150], weather: [70, 150], contacts: [70, 150], qr: [70, 150] };
   function applySizes(sizes) {
     const out = {};
     for (const [name, [lo, hi]] of Object.entries(SIZE_RANGES)) {
@@ -278,7 +298,7 @@
     reloadIfOutdated.busy = true;
     try { localStorage.setItem("display-reload", JSON.stringify({ to: live, at: Date.now() })); } catch { /* ignore */ }
     console.info(`Display ${live} is live (this is ${VERSION}): reloading`);
-    await Promise.all(["/display.js", "/display.css", "/"].map((u) => fetch(u, { cache: "reload" }).catch(() => null)));
+    await Promise.all(["/display.js", "/display.css", "/vendor/qrcode.js", "/"].map((u) => fetch(u, { cache: "reload" }).catch(() => null)));
     location.reload();
   }
 
@@ -392,8 +412,15 @@
     const out = [], t = data?.traffic || {};
     if (t.map && t.mapsKey && ONLINE() && traffic.mapState !== "failed") out.push({ kind: "map" });
     if (t.times && (t.destinations || []).length && (!CHECKS_IN || (ONLINE() && traffic.times && Date.now() - traffic.at < TIMES_FRESH_MS))) out.push({ kind: "times" });
-    const am = Array.isArray(data?.amenities) ? data.amenities : [];
-    for (let i = 0; i < am.length; i += AMENITIES_PER_SLIDE) out.push({ kind: "amenities", page: i / AMENITIES_PER_SLIDE, items: am.slice(i, i + AMENITIES_PER_SLIDE), pages: Math.ceil(am.length / AMENITIES_PER_SLIDE) });
+    // The building's place lists, each with its own heading (DP-08 round 12); an empty list never shows. Pictures
+    // take more room, so a list with any has three to a slide.
+    const lists = Array.isArray(data?.placeLists) ? data.placeLists
+      : (Array.isArray(data?.amenities) && data.amenities.length ? [{ heading: "Nearby", items: data.amenities }] : []);
+    for (const l of lists) {
+      const items = (l.items || []).filter((a) => a?.name);
+      const per = items.some((a) => a.image) ? 3 : AMENITIES_PER_SLIDE, pages = Math.ceil(items.length / per);
+      for (let i = 0; i < items.length; i += per) out.push({ kind: "amenities", heading: l.heading || "Nearby", page: i / per, items: items.slice(i, i + per), pages });
+    }
     return out;
   }
 
@@ -432,8 +459,8 @@
       el.innerHTML = timesHtml();
     } else {
       el.className = "slide info-slide";
-      el.innerHTML = `<div class="info-head">Nearby${it.pages > 1 ? ` <span>${it.page + 1} of ${it.pages}</span>` : ""}</div><ul class="info-list amenities">${it.items.map((a) =>
-        `<li><div class="info-row"><span class="info-name">${esc(a.name)}</span>${a.distance ? `<span class="info-value small">${esc(a.distance)}</span>` : ""}</div>${a.line ? `<div class="info-line">${esc(a.line)}</div>` : ""}</li>`).join("")}</ul>`;
+      el.innerHTML = `<div class="info-head">${esc(it.heading || "Nearby")}${it.pages > 1 ? ` <span>${it.page + 1} of ${it.pages}</span>` : ""}</div><ul class="info-list amenities">${it.items.map((a) =>
+        `<li${a.image ? ' class="has-img"' : ""}>${a.image ? `<img class="info-img" src="${esc(a.image)}" alt="">` : ""}<div class="info-body"><div class="info-row"><span class="info-name">${esc(a.name)}</span>${a.distance ? `<span class="info-value small">${esc(a.distance)}</span>` : ""}</div>${a.line ? `<div class="info-line">${esc(a.line)}</div>` : ""}</div></li>`).join("")}</ul>`;
     }
     showSlide(el);
     return it.kind;
@@ -565,7 +592,7 @@
   let lastPanel = null;
   setInterval(() => {
     const t = data?.traffic || {};
-    const sig = JSON.stringify([data?.news?.rotateSeconds, data?.news?.enabled, t.map, t.times, t.destinations, data?.amenities, ONLINE()]);
+    const sig = JSON.stringify([data?.news?.rotateSeconds, data?.news?.enabled, t.map, t.times, t.destinations, data?.placeLists ?? data?.amenities, ONLINE()]);
     if (lastPanel !== null && sig !== lastPanel) {
       const timesChanged = JSON.stringify(JSON.parse(lastPanel).slice(3, 5)) !== JSON.stringify([t.times, t.destinations]);
       if (timesChanged) loadTimes();

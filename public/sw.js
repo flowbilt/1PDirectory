@@ -1,7 +1,7 @@
 // Network first, cache as fallback. Keeps the display up if the building's internet drops,
 // including after a reboot. Only same-origin GET requests are handled.
-const CACHE = "directory-v3";
-const SHELL = ["/", "/index.html", "/display.css", "/display.js", "/fonts/InstrumentSans-Regular.ttf", "/fonts/InstrumentSans-Bold.ttf", "/fonts/Lora-Bold.ttf"];
+const CACHE = "directory-v4";
+const SHELL = ["/", "/index.html", "/display.css", "/display.js", "/vendor/qrcode.js", "/fonts/InstrumentSans-Regular.ttf", "/fonts/InstrumentSans-Bold.ttf", "/fonts/Lora-Bold.ttf"];
 
 self.addEventListener("install", (e) => {
   e.waitUntil(caches.open(CACHE).then((c) => c.addAll(SHELL)).then(() => self.skipWaiting()));

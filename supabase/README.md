@@ -41,6 +41,8 @@ Do these once. The current site keeps running as it is until the new build is de
 
 24. For the information panel (traffic map, drive times, nearby places; DP-08 round 11): **before uploading that code**, new query, paste all of `23-info-panel.sql`, and click **Run**. Then new query, paste all of `check-info-panel.sql`, and click **Run**; it should read **ALL 9 CHECKS PASSED** (red on purpose). Check 1 also confirms nothing is switched on yet, so run it before anyone ticks the new boxes in the editor. (The old code ignores the new columns; the new editor saves them, so they must exist first.)
 
+25. For the WayTuGo mark, Directory to Go and the place lists with headings and pictures (DP-08 round 12): **before uploading that code**, new query, paste all of `24-directory-to-go.sql`, and click **Run**. Then new query, paste all of `check-directory-to-go.sql`, and click **Run**; it should read **ALL 10 CHECKS PASSED** (red on purpose). Every directory gets its Directory to Go code here; round 11's places become each building's first list, "Nearby". (The old code ignores everything new; the new code reads it, so it must exist first.)
+
 If any of them shows an error (other than the expected red messages from the `check-…sql` files), copy the message (it includes a line number) and send it to Claude.
 
 ## 3. Lock down sign-ups

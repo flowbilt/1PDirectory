@@ -6,7 +6,7 @@
 
   const S = { dir: null, prop: null, tenants: [], screens: [], siblings: 0, dirty: false, sel: 0 };
   // Per-screen sizes, % of standard (supabase/18-sizes.sql, 22-widget-sizes.sql); 100 = standard and isn't stored
-  const SIZES = ["title", "logo", "brand", "welcome", "clock", "weather", "news", "contacts"];
+  const SIZES = ["title", "logo", "brand", "welcome", "clock", "weather", "news", "contacts", "qr"];
   const sizeOf = (scr, k) => Number(scr?.sizes?.[k]) || 100;
 
   // ── Load ──
@@ -18,7 +18,7 @@
     const [[prop], tenants, screens, siblings] = await Promise.all([
       Auth.db(`properties?id=eq.${dir.property_id}&select=*`),
       Auth.db(`tenants?directory_id=eq.${dir.id}&select=*&order=sort.asc,name.asc`),
-      Auth.db(`screens?directory_id=eq.${dir.id}&select=id,key,name,orientation,last_seen,sizes&order=name.asc`),
+      Auth.db(`screens?directory_id=eq.${dir.id}&select=id,key,name,orientation,last_seen,sizes,hide_powered_by&order=name.asc`),
       Auth.db(`directories?property_id=eq.${dir.property_id}&select=id`),
     ]);
     const keepKey = S.screens[S.sel]?.key;
@@ -40,7 +40,8 @@
     $("rotate").value = d.rotate_seconds || 12;
     $("weather-on").checked = d.weather_enabled !== false;
     $("map-on").checked = !!d.map_enabled; $("times-on").checked = !!d.times_enabled; $("amen-on").checked = !!d.amenities_enabled;
-    renderDestinations(); renderAmenities();
+    renderDestinations(); renderLists();
+    $("togo-on").checked = !!d.togo_enabled; $("togo-line").value = d.togo_line || ""; renderTogo();
     $("address").value = p.address || "";
     $("m-name").value = p.managed_by?.name || ""; $("m-company").value = p.managed_by?.company || ""; $("m-phone").value = p.managed_by?.phone || "";
     $("l-name").value = p.leased_by?.name || ""; $("l-company").value = p.leased_by?.company || ""; $("l-phone").value = p.leased_by?.phone || "";
@@ -63,8 +64,8 @@
     d.map_enabled = $("map-on").checked; d.times_enabled = $("times-on").checked; d.amenities_enabled = $("amen-on").checked;
     p.destinations = [...$("dest-rows").querySelectorAll(".info-row-edit")].map((r) => ({ label: r.querySelector(".x-label").value.trim(), address: r.querySelector(".x-address").value.trim() }))
       .filter((x) => x.label || x.address).map((x) => ({ label: x.label || x.address, address: x.address || x.label }));
-    p.amenities = [...$("amen-rows").querySelectorAll(".info-row-edit")].map((r) => ({ name: r.querySelector(".x-name").value.trim(), distance: r.querySelector(".x-distance").value.trim(), line: r.querySelector(".x-line").value.trim() }))
-      .filter((x) => x.name);
+    readLists();
+    d.togo_enabled = $("togo-on").checked; d.togo_line = $("togo-line").value.trim();
     p.address = $("address").value.trim();
     p.managed_by = { name: $("m-name").value.trim(), company: $("m-company").value.trim(), phone: $("m-phone").value.trim() };
     p.leased_by = { name: $("l-name").value.trim(), company: $("l-company").value.trim(), phone: $("l-phone").value.trim() };
@@ -233,26 +234,106 @@
       <input class="x-address" value="${esc(x.address)}" placeholder="${i === 0 ? "e.g. 5900 Messer Airport Hwy, Birmingham, AL" : "Address"}" aria-label="Destination ${i + 1} address" maxlength="200">
       <span></span></div>`; }).join("");
   }
-  function renderAmenities(list = S.prop.amenities) {
-    list = Array.isArray(list) ? list : [];
-    $("amen-rows").innerHTML = list.map((a, i) => `<div class="info-row-edit amen">
-      <input class="x-name" value="${esc(a.name)}" placeholder="Name" aria-label="Place ${i + 1} name" maxlength="60">
-      <input class="x-distance" value="${esc(a.distance)}" placeholder="e.g. 5 min walk" aria-label="Place ${i + 1} distance" maxlength="30">
-      <input class="x-line" value="${esc(a.line)}" placeholder="A short line, e.g. Coffee and pastries" aria-label="Place ${i + 1} line" maxlength="120">
-      <button type="button" class="icon-btn remove" data-amen="${i}" aria-label="Remove ${esc(a.name || "place")}">Remove</button></div>`).join("");
-    $("amen-count").textContent = `${list.length} of 20`;
-    $("add-amenity").disabled = list.length >= 20;
+  // ── Places and promotions: several lists, each with its own heading; a picture per entry (DP-08 round 12) ──
+  const MAX_LISTS = 5, MAX_ITEMS = 12, MAX_PICTURES = 12;
+  function placeLists() {
+    if (!Array.isArray(S.prop.place_lists)) S.prop.place_lists = [];
+    // Round 11's places become the first list (24-directory-to-go.sql does the same in the database)
+    if (!S.prop.place_lists.length && (S.prop.amenities || []).length) S.prop.place_lists = [{ heading: "Nearby", items: S.prop.amenities.map((a) => ({ ...a })) }];
+    return S.prop.place_lists;
   }
-  $("add-amenity").addEventListener("click", () => {
-    read(); if (S.prop.amenities.length >= 20) return;
-    renderAmenities([...S.prop.amenities, { name: "", distance: "", line: "" }]);
-    $("amen-rows").lastElementChild?.querySelector(".x-name").focus();
+  /** The lists as typed (pictures kept from the model, which the page renders in the same order). */
+  function readLists() {
+    const old = placeLists();
+    S.prop.place_lists = [...$("place-lists").querySelectorAll(".plist")].map((el, li) => ({
+      heading: el.querySelector(".x-heading").value.trim(),
+      items: [...el.querySelectorAll(".pitem")].map((r, ii) => ({
+        name: r.querySelector(".x-name").value.trim(), distance: r.querySelector(".x-distance").value.trim(),
+        line: r.querySelector(".x-line").value.trim(), image: old[li]?.items?.[ii]?.image || "",
+      })),
+    }));
+  }
+  const pictureCount = () => placeLists().reduce((n, l) => n + (l.items || []).filter((a) => a.image).length, 0);
+  function renderLists() {
+    const lists = placeLists();
+    $("place-lists").innerHTML = lists.map((l, li) => `<div class="plist" data-li="${li}">
+      <div class="plist-head"><input class="x-heading" value="${esc(l.heading)}" placeholder="Heading, e.g. Nearby or While you're here!" aria-label="List ${li + 1} heading" maxlength="40">
+        <button type="button" class="ghost danger" data-act="remove-list">Remove this list</button></div>
+      ${(l.items || []).map((a, ii) => `<div class="pitem" data-ii="${ii}">
+        <label class="thumb${a.image ? " has" : ""}" style="${a.image ? `background-image:url('${a.image}')` : ""}" title="${a.image ? "Change the picture" : "Add a picture or logo (optional)"}">${a.image ? "" : "Picture"}<input type="file" accept="image/png,image/jpeg,image/webp" aria-label="Picture for ${esc(a.name || "this place")}"></label>
+        <input class="x-name" value="${esc(a.name)}" placeholder="Name, e.g. Barber Motorsports Park" aria-label="Name" maxlength="60">
+        <input class="x-distance" value="${esc(a.distance)}" placeholder="Distance or walk time" aria-label="Distance or walk time (optional)" maxlength="30">
+        <input class="x-line" value="${esc(a.line)}" placeholder="A short line (optional)" aria-label="A short line (optional)" maxlength="120">
+        <span class="pitem-actions">${a.image ? `<button type="button" class="icon-btn" data-act="remove-pic" aria-label="Remove the picture">No picture</button>` : ""}<button type="button" class="icon-btn remove" data-act="remove-item" aria-label="Remove ${esc(a.name || "place")}">Remove</button></span>
+      </div>`).join("")}
+      <div class="plist-foot"><button type="button" class="ghost" data-act="add-item"${(l.items || []).length >= MAX_ITEMS ? " disabled" : ""}>Add a place</button><span class="hint">${(l.items || []).length} of ${MAX_ITEMS}</span></div>
+    </div>`).join("");
+    $("lists-count").textContent = `${lists.length} of ${MAX_LISTS} lists · ${pictureCount()} of ${MAX_PICTURES} pictures`;
+    $("add-list").disabled = lists.length >= MAX_LISTS;
+  }
+  /** A picture or logo, made small: at most 320 px on its longest side, compressed to about 100 KB or less. */
+  async function shrinkThumb(file) {
+    const im = await loadImage(await readAsDataURL(file));
+    const scale = Math.min(1, 320 / Math.max(im.naturalWidth, im.naturalHeight));
+    const c = document.createElement("canvas");
+    c.width = Math.max(1, Math.round(im.naturalWidth * scale)); c.height = Math.max(1, Math.round(im.naturalHeight * scale));
+    const g = c.getContext("2d"); g.fillStyle = "#ffffff"; g.fillRect(0, 0, c.width, c.height); g.drawImage(im, 0, 0, c.width, c.height);
+    for (const q of [0.82, 0.7, 0.55, 0.4]) { const out = c.toDataURL("image/jpeg", q); if (out.length <= 120000) return out; }
+    throw new Error("That picture is too large even after compressing. Try a smaller one.");
+  }
+  $("add-list").addEventListener("click", () => {
+    read(); if (placeLists().length >= MAX_LISTS) return;
+    S.prop.place_lists.push({ heading: "", items: [{ name: "", distance: "", line: "", image: "" }] });
+    renderLists(); changed();
+    $("place-lists").lastElementChild?.querySelector(".x-heading").focus();
   });
-  $("amen-rows").addEventListener("click", (e) => {
-    const b = e.target.closest("[data-amen]"); if (!b) return;
-    read(); const list = [...$("amen-rows").querySelectorAll(".info-row-edit")].map((r) => ({ name: r.querySelector(".x-name").value, distance: r.querySelector(".x-distance").value, line: r.querySelector(".x-line").value }));
-    list.splice(Number(b.dataset.amen), 1);
-    renderAmenities(list); changed();
+  $("place-lists").addEventListener("click", (e) => {
+    const b = e.target.closest("[data-act]"); if (!b) return;
+    read();
+    const li = Number(b.closest(".plist").dataset.li), ii = Number(b.closest(".pitem")?.dataset.ii), l = S.prop.place_lists[li];
+    if (b.dataset.act === "add-item" && l.items.length < MAX_ITEMS) l.items.push({ name: "", distance: "", line: "", image: "" });
+    if (b.dataset.act === "remove-item") l.items.splice(ii, 1);
+    if (b.dataset.act === "remove-pic") l.items[ii].image = "";
+    if (b.dataset.act === "remove-list" && (!l.items.some((a) => a.name) || confirm(`Remove the list "${l.heading || "Nearby"}" and its ${l.items.length} entries?`))) S.prop.place_lists.splice(li, 1);
+    renderLists(); changed();
+  });
+  $("place-lists").addEventListener("change", async (e) => {
+    if (!e.target.matches("input[type=file]")) return;
+    e.stopPropagation();
+    const file = e.target.files[0]; e.target.value = "";
+    if (!file) return;
+    const li = Number(e.target.closest(".plist").dataset.li), ii = Number(e.target.closest(".pitem").dataset.ii);
+    try {
+      read();
+      const item = S.prop.place_lists[li].items[ii];
+      if (!item.image && pictureCount() >= MAX_PICTURES) throw new Error(`A building can have ${MAX_PICTURES} pictures. Remove one first.`);
+      item.image = await shrinkThumb(file);
+      renderLists(); changed();
+    } catch (ex) { toast(ex.message, true); }
+  });
+
+  // ── Directory to Go (DP-08 round 12) ──
+  function renderTogo() {
+    const d = S.dir, on = $("togo-on").checked;
+    $("togo-opts").hidden = !on;
+    const url = (S.togoBase || "https://waytugo.com/d/") + d.togo_code;
+    $("togo-link").textContent = url; $("togo-link").href = url;
+  }
+  async function loadScans() {
+    try {
+      const r = await Auth.db("rpc/togo_scan_count", { method: "POST", body: { p_directory: S.dir.id } });
+      $("togo-scans").textContent = `${r.last30} scan${r.last30 === 1 ? "" : "s"} in the last 30 days (${r.total} in all)`;
+    } catch { $("togo-scans").textContent = "scans not available"; }
+  }
+  $("togo-on").addEventListener("change", renderTogo);
+  $("togo-replace").addEventListener("click", async () => {
+    if (!confirm("Replace the code? The QR code on the screen changes within a minute, and the old link stops working, including any copy someone saved or shared.")) return;
+    try {
+      const code = await Auth.db("rpc/togo_replace_code", { method: "POST", body: { p_directory: S.dir.id } });
+      S.dir.togo_code = typeof code === "string" ? code : code?.togo_replace_code || S.dir.togo_code;
+      renderTogo(); pushPreview();
+      toast("New code saved. The screen shows it within a minute.");
+    } catch (ex) { toast(ex.message, true); }
   });
 
   // ── Sizes (per screen) ──
@@ -273,7 +354,7 @@
     const shows = { title: !wordmark, logo: !!top, brand: !!bottom, welcome: !!welcome, clock: true,
       weather: S.dir?.weather_enabled !== false && p.lat != null,
       news: S.dir?.news_enabled !== false || !!(S.dir?.map_enabled || S.dir?.times_enabled || S.dir?.amenities_enabled),
-      contacts: contact(p.managed_by) || contact(p.leased_by) };
+      contacts: contact(p.managed_by) || contact(p.leased_by), qr: !!S.dir?.togo_enabled };
     for (const k of SIZES) {
       $(`sz-${k}-row`).hidden = !has || !shows[k];
       $(`sz-${k}`).value = sizeOf(scr, k);
@@ -308,7 +389,10 @@
       // Same rules as the screen's (screen.mjs trafficFor); the preview never asks Google for times
       traffic: { map: !!(d.map_enabled && S.mapsKey && p.lat != null && p.lon != null), times: !!(d.times_enabled && (p.destinations || []).length),
         lat: p.lat ?? null, lon: p.lon ?? null, mapsKey: d.map_enabled ? S.mapsKey : "", destinations: (p.destinations || []).map((x) => x.label) },
-      amenities: d.amenities_enabled ? (p.amenities || []).filter((a) => a.name).slice(0, 20) : [],
+      amenities: [],
+      placeLists: d.amenities_enabled ? (p.place_lists || []).map((l) => ({ heading: l.heading || "Nearby", items: (l.items || []).filter((a) => a.name) })).filter((l) => l.items.length) : [],
+      togo: { enabled: !!d.togo_enabled, url: (S.togoBase || "https://waytugo.com/d/") + d.togo_code, line: d.togo_line || "Take this directory with you!" },
+      poweredBy: !scr?.hide_powered_by,
       background: p.background || {}, sizes: scr?.sizes || {}, assigned: true, updatedAt: d.updated_at,
     };
   }
@@ -351,13 +435,17 @@
       await Auth.db(`directories?id=eq.${d.id}`, { method: "PATCH", prefer: "return=minimal", body: {
         title: d.title, subtitle: d.subtitle, news_enabled: d.news_enabled, rotate_seconds: d.rotate_seconds, weather_enabled: d.weather_enabled,
         map_enabled: !!d.map_enabled, times_enabled: !!d.times_enabled, amenities_enabled: !!d.amenities_enabled,
+        togo_enabled: !!d.togo_enabled, togo_line: d.togo_line || "",
         ...(d.footer_override != null ? { footer_override: d.footer_override } : {}),
       } });
       await Auth.db(`properties?id=eq.${p.id}`, { method: "PATCH", prefer: "return=minimal", body: {
         address: p.address, logo: p.logo || "", logo_replaces_name: !!p.logo_replaces_name, background: p.background || {},
         company_logo: p.company_logo || "", logo_swap: !!(p.company_logo && p.logo_swap),
         managed_by: p.managed_by, leased_by: p.leased_by, footer: p.footer || "", lat: p.lat, lon: p.lon, timezone: p.timezone,
-        destinations: p.destinations || [], amenities: p.amenities || [],
+        destinations: p.destinations || [],
+        // Entries without a name are dropped; the first list also goes to the round 11 column for screens not yet reloaded
+        place_lists: (p.place_lists || []).map((l) => ({ heading: l.heading || "Nearby", items: (l.items || []).filter((a) => a.name) })),
+        amenities: ((p.place_lists || [])[0]?.items || []).filter((a) => a.name).map(({ name, distance, line }) => ({ name, distance, line })),
       } });
       // Tenants: save every row first, then remove the ones deleted here. A failure part-way never loses rows.
       const rows = S.tenants.filter((t) => t.name).map((t, i) => ({ id: t.id, directory_id: d.id, sort: i * 10, name: t.name, suite: t.suite, arrow: t.arrow, note: t.note }));
@@ -383,10 +471,11 @@
     try {
       await Auth.requireSession();
       await Auth.me();
-      try { S.mapsKey = (await Auth.config()).mapsKey || ""; } catch { S.mapsKey = ""; }
+      try { const c = await Auth.config(); S.mapsKey = c.mapsKey || ""; S.togoBase = c.togoBase || ""; } catch { S.mapsKey = ""; }
       await load();
       fill();
       loadPreview();
+      loadScans();
     } catch (ex) {
       if (ex.message === "Signing in…") return;
       $("load-error").textContent = ex.message; $("load-error").hidden = false;

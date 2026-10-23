@@ -35,9 +35,18 @@
         <div class="grid-3">
           <label class="check"><input type="checkbox" id="map-on"> Show traffic map</label>
           <label class="check"><input type="checkbox" id="times-on"> Show drive times</label>
-          <label class="check"><input type="checkbox" id="amen-on"> Show nearby places</label>
+          <label class="check"><input type="checkbox" id="amen-on"> Show places and promotions</label>
         </div>
         <p class="hint" id="info-note">These take turns with the news in the same box, so the tenant list keeps its room. The map and drive times use the building's weather location below; drive times show on weekdays from 6 a.m. to 7 p.m. and update every 30 minutes.</p>
+        <div class="togo-field">
+          <label class="check"><input type="checkbox" id="togo-on"> Show the Directory to Go QR code</label>
+          <p class="hint">Visitors scan it with their phone camera to take this directory with them: a phone page with the tenants, suites, contacts and your places. No app needed.</p>
+          <div id="togo-opts" class="togo-opts" hidden>
+            <div class="field"><label for="togo-line">Words beside the code <span class="hint">blank shows "Take this directory with you!"</span></label><input id="togo-line" maxlength="80" placeholder="Take this directory with you!"></div>
+            <p class="togo-meta">Link: <a id="togo-link" href="#" target="_blank" rel="noopener"></a> · <span id="togo-scans">counting…</span></p>
+            <div class="logo-actions"><button type="button" id="togo-replace" class="ghost">Replace the code</button></div>
+          </div>
+        </div>
       </section>
 
       <section class="panel" id="tenants-panel">
@@ -109,6 +118,7 @@
             <div class="field" id="sz-weather-row"><label for="sz-weather">Weather <span class="hint" id="sz-weather-val"></span></label><input id="sz-weather" type="range" min="70" max="150" step="5"></div>
             <div class="field" id="sz-news-row"><label for="sz-news">News and information <span class="hint" id="sz-news-val"></span> <span class="hint">the panel grows with its text, and steps aside if the tenants need the room</span></label><input id="sz-news" type="range" min="70" max="150" step="5"></div>
             <div class="field" id="sz-contacts-row"><label for="sz-contacts">Contacts <span class="hint" id="sz-contacts-val"></span> <span class="hint">Managed by and Leased by</span></label><input id="sz-contacts" type="range" min="70" max="150" step="5"></div>
+            <div class="field" id="sz-qr-row"><label for="sz-qr">QR code <span class="hint" id="sz-qr-val"></span> <span class="hint">larger reads from further away</span></label><input id="sz-qr" type="range" min="70" max="150" step="5"></div>
           <p class="hint" id="sz-none" hidden>No screen shows this directory yet.</p>
           <div class="logo-actions"><button type="button" id="sz-reset" class="ghost">Back to standard sizes</button></div>
           <p class="hint">Larger items leave less room for the tenant list, which shrinks its own text to fit. Changes reach the screen when you publish.</p>
@@ -137,14 +147,15 @@
       </section>
 
       <section class="panel building-panel" id="info-panel">
-        <h2>Drive times and nearby places <span class="hint">shared by the building</span></h2>
+        <h2>Drive times, places and promotions <span class="hint">shared by the building</span></h2>
         <span class="field-label">Drive time destinations <span class="hint">up to 3; the label is what the screen shows</span></span>
         <div id="dest-rows" class="info-rows"></div>
         <div class="panel-head">
-          <span class="field-label">Nearby places <span class="hint" id="amen-count"></span></span>
-          <button type="button" id="add-amenity" class="ghost">Add a place</button>
+          <span class="field-label">Places and promotions <span class="hint" id="lists-count"></span></span>
+          <button type="button" id="add-list" class="ghost">Add a list</button>
         </div>
-        <div id="amen-rows" class="info-rows"></div>
+        <p class="hint">Each list has its own heading, e.g. "Nearby" for coffee and banks, "While you're here!" for things to see. Each takes its turn in the news box; an empty list never shows. A picture or logo is optional.</p>
+        <div id="place-lists" class="place-lists"></div>
       </section>
 
       <section class="panel building-panel">

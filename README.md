@@ -10,6 +10,7 @@ Tenant directories for lobby screens, replacing Yodeck and Wix. Hosted on Netlif
 | `/console.html` | signed in | Screens (status, search, layout), Buildings, People, and Accounts (1Point only) |
 | `/tech.html` | 1Point | The technician page, sized for a phone: Identify, Reload screen, Reboot Pi, Layout, and Wi-Fi search and join. Add it to the phone's home screen |
 | `/edit.html?d=…` | signed in | Edit one directory's tenants, plus its building's shared settings (address, logo, an owner or manager logo, background photo, contacts), with a live preview. **Sizes** (per screen; `&s=` picks the screen, as the console's Edit tenants link does): title, top logo, bottom logo and Bottom line, each 50–250% of standard within limits (`supabase/18-sizes.sql`); and since DP-08 round 10 the clock and date, weather, news and contacts, each 70–150% (`supabase/22-widget-sizes.sql`; a larger news panel grows with its text and still steps aside when the tenants need the room). Only the sliders for parts the screen shows appear. **Since DP-08 round 11:** per directory, **Show traffic map**, **Show drive times** and **Show nearby places** (all off until ticked), and per building the drive time destinations (up to 3) and nearby places (up to 20: name, distance or walking time, a short line); see The information panel. Standard is unchanged; anyone who can see the screen can change them; the screen picks them up within a minute of publishing |
+| `/d/<code>` (and `waytugo.com/d/<code>`) | anyone | **Directory to Go** (DP-08 round 12): the phone page a screen's QR code opens. Read-only: the building, address (with Open in Maps), tenants and suites (a search box for longer directories), contacts (tap to call) and the place lists when the directory shows them; the WayTuGo mark at the bottom. Only for directories with Directory to Go switched on; every open is counted per directory per day (no personal data). waytugo.com forwards `/d/*` here (see The information panel and Directory to Go) |
 | `/?device=<serial>` | lobby screens | What a Pi shows: whichever screen the console assigns it to |
 | `/?screen=ppi-2s` | lobby screens | A fixed screen. Older screens use `?site=landmark-center`, which still works |
 | `/?screen=ppi-2s&view=1` | anyone | Looking at a screen (the console's **View** button). Shows the same thing but doesn't count as the screen checking in |
@@ -43,6 +44,7 @@ Owner users can't read a screen's hardware record (serial, MACs, IPs, the Yodeck
 | `ALERT_EMAIL_FROM` | No | Sender, e.g. `Lobby Directory <directory@1pointusa.com>`: the same mailbox as `SMTP_USER` (mail servers refuse other senders) |
 | `RESEND_API_KEY` | **Yes** | Optional instead of the SMTP settings: Resend, used only when `SMTP_HOST` isn't set |
 | `GOOGLE_MAPS_KEY` | No (public by design) | The traffic map's Google Maps **browser** key. It's sent to screens, so in Google Cloud it must be restricted to **Websites** `https://1pdirectory.netlify.app/*` and to the **Maps JavaScript API** only. Without it, the map stays off |
+| `TOGO_BASE` | No | Optional: the start of the Directory to Go link in the QR codes. Default `https://waytugo.com/d/`; set it to `https://1pdirectory.netlify.app/d/` only if waytugo.com isn't forwarding yet |
 | `GOOGLE_ROUTES_KEY` | **Yes**, Functions only | The drive times' Google **server** key, restricted to the **Routes API** only. Never sent to a screen or the browser. Without it, drive times stay off |
 
 Without a way to send, alerts are only logged. Settings take effect at the next deploy (Deploys → Trigger deploy).
@@ -67,10 +69,25 @@ directory in the editor and is off until ticked. Its text size is the editor's *
   destinations with a dash. Nothing Google returns is stored, on the server or on the screen. Live traffic is Google's
   "Pro" routing tier: 5,000 free a month, then $10 per 1,000; three screens with two destinations come to about 3,500 a
   month. Set daily caps in Google Cloud as the backstop.
-- **Nearby places:** typed per building, four to a slide.
+- **Places and promotions** (round 12): up to five lists per building, each with its own heading ("Nearby", "While you're here!", "For family fun!"), up to 12 entries each (name, distance or walk time, a short line, and an optional picture or logo, made small in the editor: at most 320 px, under about 100 KB, 12 pictures per building). Each list takes its turn; an empty list never shows. Four entries to a slide, three when the list has pictures. Round 11's places became the first list, "Nearby".
 - **Offline:** the map and drive times drop out while a screen is reconnecting; news and places carry on.
 - The display page tells Google its origin (`<meta name="referrer">` in `index.html`; the site otherwise sends
   `Referrer-Policy: same-origin`), so a key restricted to the site's address works.
+
+## Directory to Go and the WayTuGo mark (DP-08 round 12)
+
+- **Powered by WayTuGo · waytugo.com:** a small, quiet line at the very bottom of every screen, below the bottom logo.
+  1Point can hide it per screen (console, **Screen settings → Hide "Powered by WayTuGo"**) for a customer who pays not
+  to have it. It steps aside while "Reconnecting…" shows.
+- **Directory to Go:** a QR code at the end of the contacts band with "Take this directory with you!" (the customer can
+  change the words), switched on per directory in the editor (off by default), with its own size slider (70–150%).
+  The screen draws the code itself (`public/vendor/qrcode.js`: Kazuhiko Arase's MIT-licensed encoder, bundled; no
+  outside service). It opens `waytugo.com/d/<code>`: each directory has its own 6-character code (no 0/O/1/I/L), shown
+  in the editor with the scan count (last 30 days, and in all); **Replace the code** makes a new one at once and the old
+  link stops working.
+- **waytugo.com forwards `/d/*` here** with one rewrite on the waytugo.com Netlify site, so visitors stay on
+  waytugo.com: in that site's `_redirects` file, `/d/*  https://1pdirectory.netlify.app/d/:splat  200!` (or the same
+  as a `[[redirects]]` rule in its `netlify.toml`).
 
 ## Screens and cards (Raspberry Pi)
 
@@ -350,9 +367,9 @@ Local sample logins: `scot@1pointusa.com / admin-pass`, `leighann@barber.test / 
 
 ```
 public/             screen (index.html, display.*), sign-in, console (+ console-devices.js, console-setup.js), editor, technician page (tech.*), shared auth.js
-netlify/functions/  screen, users, config, weather, news, traffic, agent, devices, networks, alert-settings, alerts
+netlify/functions/  screen, users, config, weather, news, traffic, togo (the Directory to Go page), agent, devices, networks, alert-settings, alerts
 netlify/lib/        Supabase client, RSS reader, shared helpers
-supabase/           database schema (01 to 23, run in order), starting data, check queries, setup guide
+supabase/           database schema (01 to 24, run in order), starting data, check queries, setup guide
 migration/          the Yodeck/Wix transcription the starting data was built from
 public/pi/          setup-kiosk.sh, agent.py, startup.png (the start-up picture) and startup/ (the start-up animation), served by the site so Pis can download them
 tests/              function tests, fake Supabase, local test server

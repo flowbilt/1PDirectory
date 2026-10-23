@@ -1,10 +1,13 @@
 // Run with: npm test
 // Every server function, against a fake Supabase with the same access rules as the real one. No network needed.
 import assert from "node:assert/strict";
+import vm from "node:vm";
 import { readFileSync, readdirSync } from "node:fs";
 import { createFake, SERVICE_KEY, ANON_KEY, SIZE_RANGES } from "./fake-supabase.mjs";
 import screen, { toPayload } from "../netlify/functions/screen.mjs";
 import traffic, { toTimes } from "../netlify/functions/traffic.mjs";
+import togo from "../netlify/functions/togo.mjs";
+import { cleanPlaceLists } from "../netlify/functions/screen.mjs";
 import users from "../netlify/functions/users.mjs";
 import config from "../netlify/functions/config.mjs";
 import weather, { iconFor } from "../netlify/functions/weather.mjs";
@@ -53,6 +56,7 @@ async function login(email, password) {
   return (await r.json()).access_token;
 }
 
+const esc = (v) => String(v ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 const tests = [];
 const test = (name, fn) => tests.push([name, fn]);
 
@@ -1075,7 +1079,7 @@ test("Send test email: sent to every recipient now, or the mail server's exact r
 // ── Config ──
 test("config hands the pages only the public settings", async () => {
   const d = await (await config()).json();
-  assert.deepEqual(d, { url: SB, anonKey: ANON_KEY, mapsKey: "" });
+  assert.deepEqual(d, { url: SB, anonKey: ANON_KEY, mapsKey: "", togoBase: "https://waytugo.com/d/" });
   assert.ok(!JSON.stringify(d).includes(SERVICE_KEY));
   // The Google Maps browser key is public by design (locked to the site's address); the Routes key never leaves the server
   Object.assign(process.env, { GOOGLE_MAPS_KEY: "browser-key-123", GOOGLE_ROUTES_KEY: "server-routes-key-456" });
@@ -1292,7 +1296,7 @@ test("the size ranges agree: the latest SQL, the display, the editor's sliders a
   // The newest numbered SQL file that defines set_screen_sizes is what Supabase runs
   const files = readdirSync(new URL("../supabase/", import.meta.url)).filter((f) => /^\d\d-.*\.sql$/.test(f)).sort();
   const sqlFile = files.filter((f) => readFileSync(new URL(`../supabase/${f}`, import.meta.url), "utf8").includes("function public.set_screen_sizes")).pop();
-  assert.equal(sqlFile, "22-widget-sizes.sql");
+  assert.equal(sqlFile, "24-directory-to-go.sql");
   const sql = readFileSync(new URL(`../supabase/${sqlFile}`, import.meta.url), "utf8");
   const fromSql = Object.fromEntries([...sql.matchAll(/\('(\w+)', (\d+), (\d+)\)/g)].map(([, n, lo, hi]) => [n, [+lo, +hi]]));
   assert.deepEqual(fromSql, SIZE_RANGES, "SQL = test fake");
@@ -1445,6 +1449,126 @@ test("Google's answer is read safely: missing routes show no time rather than a 
     { destinationIndex: 2, status: { code: 3, message: "bad" } },
   ]);
   assert.deepEqual(t.map((x) => x.minutes), [10, null, null]);
+});
+
+// ── Round 12: the WayTuGo mark, Directory to Go, place lists (24-directory-to-go.sql) ──
+test("every screen shows Powered by WayTuGo unless 1Point hides it, and hiding it reaches the screen at once", async () => {
+  const scr = fake.T.screens.find((x) => x.key === "ppi-1s");
+  const first = await screen(req("/api/screen?key=ppi-1s"));
+  assert.equal((await first.json()).poweredBy, true);
+  try {
+    scr.hide_powered_by = true;
+    const next = await screen(req("/api/screen?key=ppi-1s", { headers: { "If-None-Match": first.headers.get("ETag") } }));
+    assert.equal(next.status, 200, "the switch changes the screen's version");
+    assert.equal((await next.json()).poweredBy, false);
+  } finally { scr.hide_powered_by = false; }
+  // Owners can read the switch (the console's column list) but only 1Point writes screens
+  const owner = await login("leighann@barber.test", "owner-pass");
+  const patch = await fake.handle(new Request(`${SB}/rest/v1/screens?id=eq.${scr.id}`, { method: "PATCH",
+    headers: { apikey: ANON_KEY, Authorization: `Bearer ${owner}`, "Content-Type": "application/json", Prefer: "return=representation" }, body: JSON.stringify({ hide_powered_by: true }) }));
+  assert.ok(patch.status >= 400 || (await patch.json()).length === 0);
+  assert.equal(scr.hide_powered_by, false);
+});
+
+test("Directory to Go: off until switched on; then the screen gets its waytugo.com link and words", async () => {
+  const { dir, restore } = infoFixture();
+  try {
+    let d = await (await screen(req("/api/screen?key=ppi-1s"))).json();
+    assert.deepEqual(d.togo, { enabled: false, url: "", line: "Take this directory with you!" });
+    assert.match(dir.togo_code, /^[A-HJKMNP-Z2-9]{6}$/, "every directory has a code");
+    Object.assign(dir, { togo_enabled: true, updated_at: new Date().toISOString() });
+    d = await (await screen(req("/api/screen?key=ppi-1s"))).json();
+    assert.deepEqual(d.togo, { enabled: true, url: `https://waytugo.com/d/${dir.togo_code}`, line: "Take this directory with you!" });
+    process.env.TOGO_BASE = "https://example.test/d";
+    Object.assign(dir, { togo_line: "  Scan me  ", updated_at: new Date(Date.now() + 1000).toISOString() });
+    d = await (await screen(req("/api/screen?key=ppi-1s"))).json();
+    assert.equal(d.togo.url, `https://example.test/d/${dir.togo_code}`);
+    assert.equal(d.togo.line, "Scan me");
+  } finally { delete process.env.TOGO_BASE; restore(); }
+});
+
+test("the phone page: the directory to take away, counted, read-only, only when switched on", async () => {
+  const { dir, prop, restore } = infoFixture();
+  const page = (code) => togo(req(`/d/${code}`));
+  try {
+    assert.equal((await page(dir.togo_code)).status, 404, "off: no page");
+    assert.equal((await page("bad!")).status, 404);
+    assert.equal((await page("AAAAAA")).status, 404, "an unknown code");
+    Object.assign(dir, { togo_enabled: true, amenities_enabled: false });
+    Object.assign(prop, { address: "100 Test Way, Birmingham, AL", managed_by: { name: "Leigh Ann", phone: "(205) 555-0100" },
+      place_lists: [{ heading: "While you're here!", items: [{ name: "Barber Motorsports Park", distance: "15 min", line: "Racing and the museum" }] }] });
+    const tenant = fake.T.tenants.find((t) => t.directory_id === dir.id);
+    const savedName = tenant.name; tenant.name = 'Acme <script>alert(1)</script> & Co';
+    const before = fake.T.togo_scans.filter((x) => x.directory_id === dir.id).reduce((n, x) => n + x.scans, 0);
+    const r = await page(dir.togo_code.toLowerCase());
+    assert.equal(r.status, 200);
+    assert.equal(r.headers.get("Cache-Control"), "no-store");
+    assert.match(r.headers.get("X-Robots-Tag"), /noindex/);
+    const html = await r.text();
+    tenant.name = savedName;
+    assert.ok(html.includes(esc(dir.title)), "the directory's title");
+    assert.ok(html.includes("Acme &lt;script&gt;alert(1)&lt;/script&gt; &amp; Co") && !html.includes("<script>alert(1)"), "names are escaped");
+    assert.ok(html.includes('href="tel:2055550100"'), "phone numbers tap to call");
+    assert.ok(html.includes("https://www.google.com/maps/search/?api=1&amp;query=100%20Test%20Way"), "the address opens in maps");
+    assert.ok(!html.includes("Barber Motorsports Park"), "places only when the directory shows them");
+    assert.ok(html.includes(`${SITE}/waytugo-logo.png`) && html.includes("Powered by <b>WayTuGo</b>"), "the WayTuGo mark");
+    assert.equal(fake.T.togo_scans.filter((x) => x.directory_id === dir.id).reduce((n, x) => n + x.scans, 0), before + 1, "the open is counted");
+    dir.amenities_enabled = true;
+    const withPlaces = await (await page(dir.togo_code)).text();
+    assert.ok(withPlaces.includes("While you&#39;re here!") && withPlaces.includes("Barber Motorsports Park"));
+    // The count: the directory's own account, not a stranger
+    const editor = await login("editor@barber.test", "editor-pass");
+    const count = await fake.handle(new Request(`${SB}/rest/v1/rpc/togo_scan_count`, { method: "POST",
+      headers: { apikey: ANON_KEY, Authorization: `Bearer ${editor}`, "Content-Type": "application/json" }, body: JSON.stringify({ p_directory: dir.id }) }));
+    assert.equal(count.status, 200);
+    assert.ok((await count.json()).last30 >= 2);
+    const other = fake.T.directories.find((x) => x.slug === "other-tower");
+    const stray = await fake.handle(new Request(`${SB}/rest/v1/rpc/togo_scan_count`, { method: "POST",
+      headers: { apikey: ANON_KEY, Authorization: `Bearer ${editor}`, "Content-Type": "application/json" }, body: JSON.stringify({ p_directory: other.id }) }));
+    assert.equal(stray.status, 403);
+    // Replacing the code: the old link stops working, the new one works
+    const old = dir.togo_code;
+    const rep = await fake.handle(new Request(`${SB}/rest/v1/rpc/togo_replace_code`, { method: "POST",
+      headers: { apikey: ANON_KEY, Authorization: `Bearer ${editor}`, "Content-Type": "application/json" }, body: JSON.stringify({ p_directory: dir.id }) }));
+    const code = await rep.json();
+    assert.notEqual(code, old);
+    assert.equal((await page(old)).status, 404);
+    assert.equal((await page(code)).status, 200);
+  } finally { restore(); }
+});
+
+test("place lists: headings, pictures only as small images, empty lists and entries dropped, at most 5 of 12", () => {
+  const tiny = "data:image/jpeg;base64,/9j/4AAQSkZJRg==";
+  const lists = cleanPlaceLists([
+    { heading: "  While you're here!  ", items: [{ name: "Barber Motorsports", distance: "15 min", line: "x".repeat(200), image: tiny }, { name: "" }] },
+    { heading: "", items: [{ name: "Cafe", image: "javascript:alert(1)" }, { name: "Big", image: "data:image/png;base64," + "A".repeat(170000) }] },
+    { heading: "Empty", items: [{ name: " " }] },
+    ...Array.from({ length: 6 }, (_, i) => ({ heading: `L${i}`, items: Array.from({ length: 20 }, (_, j) => ({ name: `P${j}` })) })),
+  ]);
+  assert.equal(lists[0].heading, "While you're here!");
+  assert.equal(lists[0].items.length, 1, "an entry without a name is dropped");
+  assert.equal(lists[0].items[0].image, tiny);
+  assert.equal(lists[0].items[0].line.length, 120);
+  assert.equal(lists[1].heading, "Nearby", "a blank heading reads Nearby");
+  assert.deepEqual(lists[1].items.map((a) => a.image), ["", ""], "only small data images are kept");
+  assert.ok(!lists.some((l) => l.heading === "Empty"), "an empty list never shows");
+  assert.ok(lists.length <= 5 && lists.every((l) => l.items.length <= 12));
+  assert.deepEqual(cleanPlaceLists([], [{ name: "Coffee" }]), [{ heading: "Nearby", items: [{ name: "Coffee", distance: "", line: "", image: "" }] }], "round 11's places become Nearby");
+});
+
+test("the QR encoder in the display is the bundled MIT library and makes a code for any link", () => {
+  const src = readFileSync(new URL("../public/vendor/qrcode.js", import.meta.url), "utf8");
+  assert.match(src, /Kazuhiko Arase/); assert.match(src, /MIT license/);
+  const ctx = { window: {} }; vm.runInNewContext(src, ctx);
+  for (const url of ["https://waytugo.com/d/K7M2Q9", "https://1pdirectory.netlify.app/d/ABCDEF"]) {
+    const q = ctx.window.LobbyQR(url);
+    assert.ok(q.size >= 21 && q.size <= 41, `a small code (${q.size} modules)`);
+    // the three finder patterns are where a QR code has them
+    for (const [r, c] of [[0, 0], [0, q.size - 7], [q.size - 7, 0]]) assert.ok(q.dark(r, c) && q.dark(r + 6, c + 6) && !q.dark(r + 1, c + 1) && q.dark(r + 3, c + 3));
+  }
+  const index = readFileSync(new URL("../public/index.html", import.meta.url), "utf8");
+  assert.ok(index.indexOf("/vendor/qrcode.js") < index.indexOf("/display.js"), "loaded before the display");
+  assert.ok(readFileSync(new URL("../public/sw.js", import.meta.url), "utf8").includes('"/vendor/qrcode.js"'), "kept for offline");
 });
 
 test("the editor preview and the screen send sizes the same way", () => {
