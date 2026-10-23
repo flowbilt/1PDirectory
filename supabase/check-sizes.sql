@@ -32,7 +32,7 @@ begin
 
   -- 2. The screen's own account can set them; 100 isn't stored; out of range is clamped; unknown names ignored
   perform set_config('request.jwt.claims', json_build_object('sub', u_owner, 'role', 'authenticated')::text, true);
-  r := public.set_screen_sizes(v_scr, '{"title": 80, "logo": 100, "brand": 999, "welcome": 40, "news": 70, "bogus": "x"}');
+  r := public.set_screen_sizes(v_scr, '{"title": 80, "logo": 100, "brand": 999, "welcome": 40, "ticker": 70, "bogus": "x"}');
   if r <> '{"title": 80, "brand": 250, "welcome": 80}'::jsonb
      or (select sizes from public.screens where id = v_scr) <> r then
     fails := fails || format('2 owner sets sizes: %s', r);

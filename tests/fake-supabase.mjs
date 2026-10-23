@@ -3,6 +3,11 @@
 import { createHash, randomUUID } from "node:crypto";
 import { readFileSync } from "node:fs";
 
+// Per-screen size ranges, % of standard: 18-sizes.sql (title, logo, brand, welcome) and 22-widget-sizes.sql (news,
+// clock, weather, contacts). A test checks the SQL, the display and the editor all say the same.
+export const SIZE_RANGES = { title: [50, 120], logo: [60, 200], brand: [60, 250], welcome: [80, 160],
+  news: [70, 150], clock: [70, 150], weather: [70, 150], contacts: [70, 150] };
+
 export const SERVICE_KEY = "test-service-key";
 export const ANON_KEY = "test-anon-key";
 
@@ -256,9 +261,8 @@ export function createFake() {
   const addDays = (day, n) => new Date(Date.parse(day + "T12:00:00Z") + n * 86400_000).toISOString().slice(0, 10);
   // Functions signed-in users may call (they check access themselves); the rest are server-only
   const USER_FUNCS = new Set(["set_screen_sizes"]);
-  const SIZE_RANGES = { title: [50, 120], logo: [60, 200], brand: [60, 250], welcome: [80, 160] };
   const FUNCS = {
-    // Mirror of 18-sizes.sql
+    // Mirror of 18-sizes.sql and 22-widget-sizes.sql (SIZE_RANGES, exported below)
     set_screen_sizes({ p_screen, p_sizes = {} }, who) {
       const s = T.screens.find((x) => x.id === p_screen);
       const me = who.profile;

@@ -2,7 +2,7 @@
 // Every server function, against a fake Supabase with the same access rules as the real one. No network needed.
 import assert from "node:assert/strict";
 import { readFileSync, readdirSync } from "node:fs";
-import { createFake, SERVICE_KEY, ANON_KEY } from "./fake-supabase.mjs";
+import { createFake, SERVICE_KEY, ANON_KEY, SIZE_RANGES } from "./fake-supabase.mjs";
 import screen, { toPayload } from "../netlify/functions/screen.mjs";
 import users from "../netlify/functions/users.mjs";
 import config from "../netlify/functions/config.mjs";
@@ -1238,7 +1238,7 @@ test("anyone with the screen's account can size it; the screen picks it up at on
   assert.deepEqual((await first.json()).sizes, {}, "standard until someone changes it");
   try {
     const editor = await login("editor@barber.test", "editor-pass");       // a front-desk editor, not only the owner
-    const r = await setSizes(editor, scr.id, { title: 80, logo: 100, brand: 999, welcome: 40, news: 70, bogus: "x" });
+    const r = await setSizes(editor, scr.id, { title: 80, logo: 100, brand: 999, welcome: 40, ticker: 70, bogus: "x" });
     assert.equal(r.status, 200);
     assert.deepEqual(await r.json(), { title: 80, brand: 250, welcome: 80 }, "100 isn't stored; out of range is clamped; unknown names ignored");
     const next = await screen(req("/api/screen?key=ppi-1s", { headers: { "If-None-Match": etag } }));
@@ -1261,6 +1261,43 @@ test("nobody outside the screen's account can size it", async () => {
     headers: { apikey: ANON_KEY, Authorization: `Bearer ${owner}`, "Content-Type": "application/json", Prefer: "return=representation" }, body: JSON.stringify({ sizes: { title: 60 }, name: "Renamed" }) }));
   assert.ok(patch.status >= 400 || (await patch.json()).length === 0, "screens stay 1Point-only to write directly");
   assert.notEqual(scr.name, "Renamed");
+});
+
+// ── Widget sizes (DP-08 round 10, 22-widget-sizes.sql) ──
+test("news, clock, weather and contacts can be sized per screen, 70 to 150%", async () => {
+  const scr = fake.T.screens.find((x) => x.key === "ppi-1s");
+  const etag = (await screen(req("/api/screen?key=ppi-1s"))).headers.get("ETag");
+  try {
+    const editor = await login("editor@barber.test", "editor-pass");
+    const r = await setSizes(editor, scr.id, { news: 130, clock: 10, weather: 400, contacts: 100, title: 80 });
+    assert.equal(r.status, 200);
+    assert.deepEqual(await r.json(), { news: 130, clock: 70, weather: 150, title: 80 }, "clamped to 70-150; 100 not stored; the older names still work");
+    const next = await screen(req("/api/screen?key=ppi-1s", { headers: { "If-None-Match": etag } }));
+    assert.equal(next.status, 200, "a widget size change reaches the screen within a minute");
+    assert.deepEqual((await next.json()).sizes, { news: 130, clock: 70, weather: 150, title: 80 });
+    const other = await screen(req("/api/screen?key=ppi-2s"));
+    assert.deepEqual((await other.json()).sizes, {}, "per screen");
+  } finally { scr.sizes = {}; }
+});
+
+test("the size ranges agree: the latest SQL, the display, the editor's sliders and the test fake", () => {
+  // The newest numbered SQL file that defines set_screen_sizes is what Supabase runs
+  const files = readdirSync(new URL("../supabase/", import.meta.url)).filter((f) => /^\d\d-.*\.sql$/.test(f)).sort();
+  const sqlFile = files.filter((f) => readFileSync(new URL(`../supabase/${f}`, import.meta.url), "utf8").includes("function public.set_screen_sizes")).pop();
+  assert.equal(sqlFile, "22-widget-sizes.sql");
+  const sql = readFileSync(new URL(`../supabase/${sqlFile}`, import.meta.url), "utf8");
+  const fromSql = Object.fromEntries([...sql.matchAll(/\('(\w+)', (\d+), (\d+)\)/g)].map(([, n, lo, hi]) => [n, [+lo, +hi]]));
+  assert.deepEqual(fromSql, SIZE_RANGES, "SQL = test fake");
+  const js = readFileSync(new URL("../public/display.js", import.meta.url), "utf8");
+  const block = js.match(/const SIZE_RANGES = \{([^}]+)\}/)[1];
+  const fromDisplay = Object.fromEntries([...block.matchAll(/(\w+): \[(\d+), (\d+)\]/g)].map(([, n, lo, hi]) => [n, [+lo, +hi]]));
+  assert.deepEqual(fromDisplay, SIZE_RANGES, "display = SQL");
+  const html = readFileSync(new URL("../public/edit.html", import.meta.url), "utf8");
+  const fromEditor = Object.fromEntries([...html.matchAll(/<input id="sz-(\w+)" type="range" min="(\d+)" max="(\d+)"/g)].map(([, n, lo, hi]) => [n, [+lo, +hi]]));
+  assert.deepEqual(fromEditor, SIZE_RANGES, "editor sliders = SQL");
+  const ejs = readFileSync(new URL("../public/edit.js", import.meta.url), "utf8");
+  const listed = JSON.parse(ejs.match(/const SIZES = (\[[^\]]+\])/)[1]);
+  assert.deepEqual([...listed].sort(), Object.keys(SIZE_RANGES).sort(), "the editor saves every size");
 });
 
 test("the editor preview and the screen send sizes the same way", () => {

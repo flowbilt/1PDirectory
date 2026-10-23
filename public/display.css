@@ -16,6 +16,7 @@
   --tf: calc(var(--u) * 4.6); /* tenant font size, fitted by display.js */
   /* Per-screen sizes (editor → Sizes; 1 = standard). display.js sets them from the screen's sizes. */
   --title-scale: 1; --logo-scale: 1; --brand-scale: 1; --welcome-scale: 1;
+  --news-scale: 1; --clock-scale: 1; --weather-scale: 1; --contacts-scale: 1; /* DP-08 round 10 */
 }
 
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
@@ -78,14 +79,14 @@ body { font-family: "Instrument Sans", "Segoe UI", Arial, sans-serif; color: var
 .label { margin-top: calc(var(--u) * 1.2); font-size: calc(var(--u) * 2.7); color: var(--muted); }
 
 .masthead-now { text-align: right; flex-shrink: 0; }
-.time { font-size: calc(var(--u) * 6); font-weight: 400; line-height: 1; font-variant-numeric: tabular-nums; letter-spacing: -0.02em; }
+.time { font-size: calc(var(--u) * 6 * var(--clock-scale)); font-weight: 400; line-height: 1; font-variant-numeric: tabular-nums; letter-spacing: -0.02em; }
 .time small { font-size: 0.42em; margin-left: 0.18em; color: var(--muted); letter-spacing: 0; }
-.date { margin-top: calc(var(--u) * 1); font-size: calc(var(--u) * 2.5); color: var(--muted); }
-.weather { display: inline-flex; align-items: center; gap: calc(var(--u) * 1.2); margin-top: calc(var(--u) * 1.8); }
-.wx-icon { width: calc(var(--u) * 4.6); height: calc(var(--u) * 4.6); display: inline-flex; }
+.date { margin-top: calc(var(--u) * 1 * var(--clock-scale)); font-size: calc(var(--u) * 2.5 * var(--clock-scale)); color: var(--muted); }
+.weather { display: inline-flex; align-items: center; gap: calc(var(--u) * 1.2 * var(--weather-scale)); margin-top: calc(var(--u) * 1.8); }
+.wx-icon { width: calc(var(--u) * 4.6 * var(--weather-scale)); height: calc(var(--u) * 4.6 * var(--weather-scale)); display: inline-flex; }
 .wx-icon svg { width: 100%; height: 100%; }
-.wx-temp { font-size: calc(var(--u) * 4); font-weight: 700; line-height: 1; }
-.wx-text { font-size: calc(var(--u) * 2.3); color: var(--muted); max-width: calc(var(--u) * 20); text-align: left; line-height: 1.15; }
+.wx-temp { font-size: calc(var(--u) * 4 * var(--weather-scale)); font-weight: 700; line-height: 1; }
+.wx-text { font-size: calc(var(--u) * 2.3 * var(--weather-scale)); color: var(--muted); max-width: calc(var(--u) * 20 * var(--weather-scale)); text-align: left; line-height: 1.15; }
 
 /* ── Tenant listing ─────────────────────────── */
 .listing { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; padding: calc(var(--u) * 3.6) var(--pad) calc(var(--u) * 2); }
@@ -117,19 +118,20 @@ body { font-family: "Instrument Sans", "Segoe UI", Arial, sans-serif; color: var
 
 /* ── News ───────────────────────────────────── */
 .news { flex: 0 0 auto; padding: 0 var(--pad) calc(var(--u) * 3.6); }
-.news-slides { position: relative; height: calc(var(--u) * 42); overflow: hidden; background: var(--navy-deep); }
+/* The news size scales its text, and the panel grows with it; the tenant list still keeps its room first (display.js) */
+.news-slides { position: relative; height: calc(var(--u) * 42 * var(--news-scale)); overflow: hidden; background: var(--navy-deep); }
 .slide { position: absolute; inset: 0; opacity: 0; transition: opacity 1.2s ease; }
 .slide.on { opacity: 1; }
 .slide img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
 .slide-text {
   position: absolute; left: 0; right: 0; bottom: 0;
-  padding: calc(var(--u) * 10) calc(var(--u) * 3.4) calc(var(--u) * 3);
+  padding: calc(var(--u) * 10 * var(--news-scale)) calc(var(--u) * 3.4) calc(var(--u) * 3);
   background: linear-gradient(to top, rgba(8, 19, 34, 0.96) 0%, rgba(8, 19, 34, 0.86) 45%, rgba(8, 19, 34, 0) 100%);
 }
 .slide.text-only .slide-text { top: 0; display: flex; flex-direction: column; justify-content: center; background: none; padding-top: calc(var(--u) * 3); }
-.slide-headline { font-size: calc(var(--u) * 3.7); font-weight: 700; line-height: 1.16; text-wrap: balance; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
-.slide.text-only .slide-headline { font-size: calc(var(--u) * 4.6); -webkit-line-clamp: 4; }
-.slide-meta { margin-top: calc(var(--u) * 1.2); font-size: calc(var(--u) * 2.1); color: var(--steel); }
+.slide-headline { font-size: calc(var(--u) * 3.7 * var(--news-scale)); font-weight: 700; line-height: 1.16; text-wrap: balance; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+.slide.text-only .slide-headline { font-size: calc(var(--u) * 4.6 * var(--news-scale)); -webkit-line-clamp: 4; }
+.slide-meta { margin-top: calc(var(--u) * 1.2); font-size: calc(var(--u) * 2.1 * var(--news-scale)); color: var(--steel); }
 
 /* ── Contacts ───────────────────────────────── */
 .contacts {
@@ -138,11 +140,11 @@ body { font-family: "Instrument Sans", "Segoe UI", Arial, sans-serif; color: var
   border-top: 2px solid var(--steel);
 }
 .contacts.single { grid-template-columns: 1fr; }
-.contact { padding: calc(var(--u) * 3.2) var(--pad) calc(var(--u) * 3.4); }
+.contact { padding: calc(var(--u) * 3.2 * var(--contacts-scale)) var(--pad) calc(var(--u) * 3.4 * var(--contacts-scale)); }
 .contact + .contact { border-left: 1px solid var(--rule); }
-.contact-role { font-size: calc(var(--u) * 2.2); color: var(--muted); }
-.contact-name { margin-top: calc(var(--u) * 0.8); font-size: calc(var(--u) * 3); font-weight: 700; line-height: 1.15; }
-.contact-line { margin-top: calc(var(--u) * 0.4); font-size: calc(var(--u) * 2.5); color: var(--steel); }
+.contact-role { font-size: calc(var(--u) * 2.2 * var(--contacts-scale)); color: var(--muted); }
+.contact-name { margin-top: calc(var(--u) * 0.8 * var(--contacts-scale)); font-size: calc(var(--u) * 3 * var(--contacts-scale)); font-weight: 700; line-height: 1.15; }
+.contact-line { margin-top: calc(var(--u) * 0.4 * var(--contacts-scale)); font-size: calc(var(--u) * 2.5 * var(--contacts-scale)); color: var(--steel); }
 .contact-phone { font-variant-numeric: tabular-nums; }
 
 .welcome {
@@ -175,7 +177,7 @@ body { font-family: "Instrument Sans", "Segoe UI", Arial, sans-serif; color: var
    When the list needs the room, the news steps aside and the list takes the full width. */
 #stage.landscape {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) calc(var(--u) * 64);
+  grid-template-columns: minmax(0, 1fr) calc(var(--u) * (40 + 24 * var(--news-scale))); /* 64 at standard; 56.8 to 76 */
   grid-template-rows: auto minmax(0, 1fr) auto auto auto;
 }
 #stage.landscape .masthead { grid-column: 1 / -1; }
@@ -184,9 +186,9 @@ body { font-family: "Instrument Sans", "Segoe UI", Arial, sans-serif; color: var
 #stage.landscape.no-news .listing { grid-column: 1 / -1; }
 #stage.landscape .news { grid-column: 2; grid-row: 2; display: flex; padding: calc(var(--u) * 3.6) var(--pad) calc(var(--u) * 2) 0; }
 #stage.landscape .news-slides { flex: 1; height: auto; }
-#stage.landscape .slide.text-only .slide-headline { font-size: calc(var(--u) * 3.8); }
+#stage.landscape .slide.text-only .slide-headline { font-size: calc(var(--u) * 3.8 * var(--news-scale)); }
 #stage.landscape .contacts, #stage.landscape .welcome { grid-column: 1 / -1; }
-#stage.landscape .contact { padding-top: calc(var(--u) * 2.2); padding-bottom: calc(var(--u) * 2.4); }
+#stage.landscape .contact { padding-top: calc(var(--u) * 2.2 * var(--contacts-scale)); padding-bottom: calc(var(--u) * 2.4 * var(--contacts-scale)); }
 
 /* Identify: big, unmistakable, temporary */
 .identify {

@@ -10,7 +10,7 @@
 */
 (() => {
   "use strict";
-  const VERSION = "2.8.0";   // = netlify/lib/version.mjs (a test keeps them equal)
+  const VERSION = "2.9.0";   // = netlify/lib/version.mjs (a test keeps them equal)
   const q = new URLSearchParams(location.search);
   const DEVICE = (q.get("device") || "").toLowerCase();
   const CHOSEN = (q.get("screen") || q.get("key") || q.get("site") || "").toLowerCase();
@@ -197,8 +197,10 @@
     document.fonts.ready.then(() => { fitTenants(); stage.classList.remove("is-loading"); });
   }
 
-  // This screen's sizes, each a percentage of the standard (missing = 100). Ranges match supabase/18-sizes.sql.
-  const SIZE_RANGES = { title: [50, 120], logo: [60, 200], brand: [60, 250], welcome: [80, 160] };
+  // This screen's sizes, each a percentage of the standard (missing = 100). Ranges match supabase/18-sizes.sql and
+  // 22-widget-sizes.sql (news, clock, weather, contacts: DP-08 round 10); a test keeps them all equal.
+  const SIZE_RANGES = { title: [50, 120], logo: [60, 200], brand: [60, 250], welcome: [80, 160],
+    news: [70, 150], clock: [70, 150], weather: [70, 150], contacts: [70, 150] };
   function applySizes(sizes) {
     const out = {};
     for (const [name, [lo, hi]] of Object.entries(SIZE_RANGES)) {

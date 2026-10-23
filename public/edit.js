@@ -5,8 +5,8 @@
   const params = new URLSearchParams(location.search);
 
   const S = { dir: null, prop: null, tenants: [], screens: [], siblings: 0, dirty: false, sel: 0 };
-  // Per-screen sizes, % of standard (supabase/18-sizes.sql); 100 = standard and isn't stored
-  const SIZES = ["title", "logo", "brand", "welcome"];
+  // Per-screen sizes, % of standard (supabase/18-sizes.sql, 22-widget-sizes.sql); 100 = standard and isn't stored
+  const SIZES = ["title", "logo", "brand", "welcome", "clock", "weather", "news", "contacts"];
   const sizeOf = (scr, k) => Number(scr?.sizes?.[k]) || 100;
 
   // ── Load ──
@@ -232,7 +232,10 @@
     const wordmark = !swap && !!(p.logo && p.logo_replaces_name);
     const welcome = S.dir?.footer_override ?? p.footer ?? "";
     // Only the parts this screen actually shows
-    const shows = { title: !wordmark, logo: !!top, brand: !!bottom, welcome: !!welcome };
+    const contact = (c) => !!(c && (c.name || c.company || c.phone));
+    const shows = { title: !wordmark, logo: !!top, brand: !!bottom, welcome: !!welcome, clock: true,
+      weather: S.dir?.weather_enabled !== false && p.lat != null, news: S.dir?.news_enabled !== false,
+      contacts: contact(p.managed_by) || contact(p.leased_by) };
     for (const k of SIZES) {
       $(`sz-${k}-row`).hidden = !has || !shows[k];
       $(`sz-${k}`).value = sizeOf(scr, k);

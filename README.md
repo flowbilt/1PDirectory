@@ -9,7 +9,7 @@ Tenant directories for lobby screens, replacing Yodeck and Wix. Hosted on Netlif
 | `/login.html` | everyone | Sign in, forgotten password, and setting a password from an invitation or reset email |
 | `/console.html` | signed in | Screens (status, search, layout), Buildings, People, and Accounts (1Point only) |
 | `/tech.html` | 1Point | The technician page, sized for a phone: Identify, Reload screen, Reboot Pi, Layout, and Wi-Fi search and join. Add it to the phone's home screen |
-| `/edit.html?d=…` | signed in | Edit one directory's tenants, plus its building's shared settings (address, logo, an owner or manager logo, background photo, contacts), with a live preview. **Sizes** (per screen; `&s=` picks the screen, as the console's Edit tenants link does): title, top logo, bottom logo and Bottom line, each 50–250% of standard within limits (`supabase/18-sizes.sql`). Standard is unchanged; anyone who can see the screen can change them; the screen picks them up within a minute of publishing |
+| `/edit.html?d=…` | signed in | Edit one directory's tenants, plus its building's shared settings (address, logo, an owner or manager logo, background photo, contacts), with a live preview. **Sizes** (per screen; `&s=` picks the screen, as the console's Edit tenants link does): title, top logo, bottom logo and Bottom line, each 50–250% of standard within limits (`supabase/18-sizes.sql`); and since DP-08 round 10 the clock and date, weather, news and contacts, each 70–150% (`supabase/22-widget-sizes.sql`; a larger news panel grows with its text and still steps aside when the tenants need the room). Only the sliders for parts the screen shows appear. Standard is unchanged; anyone who can see the screen can change them; the screen picks them up within a minute of publishing |
 | `/?device=<serial>` | lobby screens | What a Pi shows: whichever screen the console assigns it to |
 | `/?screen=ppi-2s` | lobby screens | A fixed screen. Older screens use `?site=landmark-center`, which still works |
 | `/?screen=ppi-2s&view=1` | anyone | Looking at a screen (the console's **View** button). Shows the same thing but doesn't count as the screen checking in |
@@ -63,11 +63,16 @@ image like a password. Networks saved from the technician page stay off cards (s
 
 1. **Save the Wi-Fi** for every building on Wi-Fi, plus the office network if Pis are tested there: console,
    **Pi setup → Add Wi-Fi network**.
-2. **Flash one card** with Raspberry Pi Imager: Raspberry Pi OS (64-bit, with desktop). In Imager's settings, set the
-   user name and password, the Wi-Fi country (US) and time zone. Wi-Fi is only needed if the bench Pi has no cable;
-   the bench's own network is removed from the card at the end.
-3. **Boot it in any Pi** (the bench Pi). In the console, **Pi setup → Get a prepare code**, then in the Pi's Terminal,
-   at its own keyboard, run the two commands the console shows:
+2. **Flash one card** with Raspberry Pi Imager: Raspberry Pi OS (64-bit, with desktop). In Imager's customisation,
+   set the user name (`pdirectory`) and the shared password (keep it in the password manager: every card copied from
+   this one has it; recent Raspberry Pi OS has no default login), the Wi-Fi country (US) and time zone, and **turn on
+   SSH with password login** so no keyboard is needed at the Pi. Leave **Raspberry Pi Connect off** (`--prepare` doesn't
+   sign it out, so every copy would carry the account link; Connect is switched on per Pi from the console instead).
+   Wi-Fi is only needed if the bench Pi has no cable; the bench's own network is removed from the card at the end.
+3. **Boot it in any Pi** (the bench Pi), on a cable, and give it a couple of minutes. From a PC (Windows Terminal,
+   PowerShell or WSL): `ssh pdirectory@<the Pi's address>` (the address is in the router; type `yes` the first time).
+   Or use the Pi's own Terminal and keyboard. Update the OS (`sudo apt update && sudo apt full-upgrade -y`), then in
+   the console, **Pi setup → Get a prepare code**, and run the two commands the console shows:
 
    ```
    curl -fsSLO https://1pdirectory.netlify.app/pi/setup-kiosk.sh
@@ -75,7 +80,9 @@ image like a password. Networks saved from the technician page stay off cards (s
    ```
 
    It installs everything, saves the Wi-Fi, clears everything that belongs to the bench Pi (machine ID, logs,
-   browser data, keys, the bench's own Wi-Fi) and powers off. **Don't start that card again before copying it.**
+   browser data, keys, the bench's own Wi-Fi), switches SSH off and powers off (an SSH session simply drops; that's
+   expected). **Don't start that card again before copying it.** Proven 2026-10-14 (DP-07): prepared over SSH with no
+   keyboard at the Pi.
 4. **Copy the card to an image file** on a Windows PC with Win32 Disk Imager: **Read** (not Write), to a file like
    `lobby-card-2026-10.img`. The file is the full size of the card. Win32 Disk Imager lists only drives with a
    letter; if the card doesn't appear, give its small FAT32 partition (bootfs) a letter in Disk Management
@@ -89,7 +96,14 @@ image like a password. Networks saved from the technician page stay off cards (s
 6. **Write the image to every card** with Raspberry Pi Imager: **Choose OS → Use custom**, pick the image, and when it
    asks about OS customisation, choose **No** (the card is already set up). No card is named or labeled.
 7. **Test one card in any Pi** before a field visit: within a couple of minutes its serial appears under
-   **Screens → New devices** (or, for a pre-registered Pi, it shows its screen).
+   **Screens → New devices** (or, for a pre-registered Pi, it shows its screen). In a Pi that's already enrolled (the
+   bench Pi, say), the console instead says **"This Pi is checking in with a different key: a new card in an enrolled
+   Pi? Use More → Reset device key."** That's expected: Reset device key, and it enrolls at its next check-in (the
+   screen works meanwhile). A Yodeck Pi is pre-registered with no key, so on its install day open its enrollment
+   window in the console before swapping the card.
+8. **Duplicating cards** (the 1-to-3 SD duplicator): the source must be a card **never started in a Pi** (a first
+   start personalises a card: machine identity, grown partition, hotspot code), e.g. one freshly written from the
+   image. Test one of the copies, not the source.
 
 When a saved network changes, cards already made keep the old one: prepare a new image, or (later) change it from
 the console once Pi settings are built.
@@ -231,7 +245,7 @@ A Pi needs no one on site after a power cut, whatever comes back first:
 
 Nothing needs a site visit or a new card:
 
-- **What the screen shows** (the display's code) comes from the site. From display 2.8.0 a screen notices a new
+- **What the screen shows** (the display's code) comes from the site. From display 2.8.0 (now 2.9.0) a screen notices a new
   version within a minute or two of a deploy (`/api/screen` names the live one, `netlify/lib/version.mjs`) and reloads
   itself once; it also reloads at 3 a.m., and **Pi → Reload screen** does it at once. Content (tenants, logos,
   photos, sizes) is live within a minute of saving.
@@ -313,7 +327,7 @@ Local sample logins: `scot@1pointusa.com / admin-pass`, `leighann@barber.test / 
 public/             screen (index.html, display.*), sign-in, console (+ console-devices.js, console-setup.js), editor, technician page (tech.*), shared auth.js
 netlify/functions/  screen, users, config, weather, news, agent, devices, networks, alert-settings, alerts
 netlify/lib/        Supabase client, RSS reader, shared helpers
-supabase/           database schema (01 to 21, run in order), starting data, check queries, setup guide
+supabase/           database schema (01 to 22, run in order), starting data, check queries, setup guide
 migration/          the Yodeck/Wix transcription the starting data was built from
 public/pi/          setup-kiosk.sh, agent.py, startup.png (the start-up picture) and startup/ (the start-up animation), served by the site so Pis can download them
 tests/              function tests, fake Supabase, local test server
