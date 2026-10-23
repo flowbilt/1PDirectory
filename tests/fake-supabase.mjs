@@ -32,22 +32,22 @@ export function createFake() {
       T.organizations.push({ id: oid, name: o.name, kind: o.kind, notes: "", created_at: now() });
       for (const p of o.properties) {
         const pid = randomUUID();
-        T.properties.push({ id: pid, org_id: oid, name: p.name, address: p.address || "", timezone: "America/Chicago", lat: p.lat, lon: p.lon, logo: "", logo_replaces_name: false, company_logo: "", logo_swap: false, background: {}, managed_by: p.managed_by || {}, leased_by: p.leased_by || {}, footer: p.footer || "", created_at: now(), updated_at: now(), updated_by: null });
+        T.properties.push({ id: pid, org_id: oid, name: p.name, address: p.address || "", timezone: "America/Chicago", lat: p.lat, lon: p.lon, logo: "", logo_replaces_name: false, company_logo: "", logo_swap: false, background: {}, destinations: [], amenities: [], managed_by: p.managed_by || {}, leased_by: p.leased_by || {}, footer: p.footer || "", created_at: now(), updated_at: now(), updated_by: null });
         for (const d of p.directories) {
           const did = randomUUID();
-          T.directories.push({ id: did, property_id: pid, slug: d.slug, title: d.title, subtitle: d.subtitle, footer_override: null, news_enabled: true, rotate_seconds: 12, weather_enabled: true, created_at: now(), updated_at: now(), updated_by: null });
+          T.directories.push({ id: did, property_id: pid, slug: d.slug, title: d.title, subtitle: d.subtitle, footer_override: null, news_enabled: true, rotate_seconds: 12, weather_enabled: true, map_enabled: false, times_enabled: false, amenities_enabled: false, created_at: now(), updated_at: now(), updated_by: null });
           d.tenants.forEach((t, i) => T.tenants.push({ id: randomUUID(), directory_id: did, sort: i * 10, name: t.name, suite: t.suite, arrow: t.arrow, note: t.note }));
-          T.screens.push({ id: randomUUID(), directory_id: did, key: d.screen.key, name: d.screen.name, location_note: "", orientation: d.screen.orientation, hardware: d.screen.hardware, last_seen: null, last_report: {}, sizes: {}, no_cec: false, created_at: now() });
+          T.screens.push({ id: randomUUID(), directory_id: did, key: d.screen.key, name: d.screen.name, location_note: "", orientation: d.screen.orientation, hardware: d.screen.hardware, last_seen: null, last_report: {}, sizes: {}, no_cec: false, traffic_at: null, created_at: now() });
         }
       }
     }
     // A second customer, to prove Barber users can't see it.
     const other = randomUUID(), op = randomUUID(), od = randomUUID();
     T.organizations.push({ id: other, name: "Other Owner LLC", kind: "owner", notes: "", created_at: now() });
-    T.properties.push({ id: op, org_id: other, name: "Other Tower", address: "", timezone: "America/Chicago", lat: 33.5, lon: -86.8, logo: "", logo_replaces_name: false, company_logo: "", logo_swap: false, background: {}, managed_by: {}, leased_by: {}, footer: "", created_at: now(), updated_at: now() });
-    T.directories.push({ id: od, property_id: op, slug: "other-tower", title: "Other Tower", subtitle: "", footer_override: null, news_enabled: true, rotate_seconds: 12, weather_enabled: true, created_at: now(), updated_at: now() });
+    T.properties.push({ id: op, org_id: other, name: "Other Tower", address: "", timezone: "America/Chicago", lat: 33.5, lon: -86.8, logo: "", logo_replaces_name: false, company_logo: "", logo_swap: false, background: {}, destinations: [], amenities: [], managed_by: {}, leased_by: {}, footer: "", created_at: now(), updated_at: now() });
+    T.directories.push({ id: od, property_id: op, slug: "other-tower", title: "Other Tower", subtitle: "", footer_override: null, news_enabled: true, rotate_seconds: 12, weather_enabled: true, map_enabled: false, times_enabled: false, amenities_enabled: false, created_at: now(), updated_at: now() });
     T.tenants.push({ id: randomUUID(), directory_id: od, sort: 0, name: "Secret Tenant Inc.", suite: "100", arrow: "", note: "" });
-    T.screens.push({ id: randomUUID(), directory_id: od, key: "other-tower", name: "Other Tower Lobby", location_note: "", orientation: "landscape", hardware: {}, last_seen: null, last_report: {}, sizes: {}, no_cec: false, created_at: now() });
+    T.screens.push({ id: randomUUID(), directory_id: od, key: "other-tower", name: "Other Tower Lobby", location_note: "", orientation: "landscape", hardware: {}, last_seen: null, last_report: {}, sizes: {}, no_cec: false, traffic_at: null, created_at: now() });
 
     for (const sc of T.screens) {
       const serial = String(sc.hardware?.serial || "").toLowerCase();
@@ -147,10 +147,10 @@ export function createFake() {
   }
   const defaults = {
     organizations: () => ({ id: randomUUID(), kind: "owner", notes: "", created_at: now() }),
-    properties: () => ({ id: randomUUID(), address: "", timezone: "America/Chicago", lat: null, lon: null, logo: "", logo_replaces_name: false, company_logo: "", logo_swap: false, background: {}, managed_by: {}, leased_by: {}, footer: "", created_at: now(), updated_at: now() }),
-    directories: () => ({ id: randomUUID(), subtitle: "", footer_override: null, news_enabled: true, rotate_seconds: 12, weather_enabled: true, created_at: now(), updated_at: now() }),
+    properties: () => ({ id: randomUUID(), address: "", timezone: "America/Chicago", lat: null, lon: null, logo: "", logo_replaces_name: false, company_logo: "", logo_swap: false, background: {}, destinations: [], amenities: [], managed_by: {}, leased_by: {}, footer: "", created_at: now(), updated_at: now() }),
+    directories: () => ({ id: randomUUID(), subtitle: "", footer_override: null, news_enabled: true, rotate_seconds: 12, weather_enabled: true, map_enabled: false, times_enabled: false, amenities_enabled: false, created_at: now(), updated_at: now() }),
     tenants: () => ({ id: randomUUID(), sort: 0, suite: "", arrow: "", note: "" }),
-    screens: () => ({ id: randomUUID(), directory_id: null, location_note: "", orientation: "auto", hardware: {}, last_seen: null, last_report: {}, sizes: {}, no_cec: false, created_at: now() }),
+    screens: () => ({ id: randomUUID(), directory_id: null, location_note: "", orientation: "auto", hardware: {}, last_seen: null, last_report: {}, sizes: {}, no_cec: false, traffic_at: null, created_at: now() }),
     profiles: () => ({ full_name: "", created_at: now() }),
     audit_log: () => ({ id: T.audit_log.length + 1, at: now(), detail: {} }),
     devices: () => ({ id: randomUUID(), screen_id: null, key_hash: null, enroll_until: null, refused_at: null, refused_why: null, status: "active", model: "", hostname: "", agent_version: "", last_seen: null, last_health: {}, screenshot: "", screenshot_at: null, alert_state: {}, created_at: now() }),
@@ -375,6 +375,25 @@ export function createFake() {
       pending.forEach((c) => Object.assign(c, { status: "sent", sent_at: t, payload: null }));
       const sc = T.screens.find((s) => s.id === dv.screen_id);
       return { screen: sc?.key ?? null, commands: handed };
+    },
+    // Mirror of 23-info-panel.sql: may this screen ask Google for travel times now?
+    traffic_claim({ p_key, p_device }) {
+      let s;
+      if (p_device) { const dv = T.devices.find((d) => d.serial === p_device); s = dv && T.screens.find((x) => x.id === dv.screen_id); }
+      else s = T.screens.find((x) => x.key === p_key);
+      if (!s) return { off: "no such screen" };
+      const d = T.directories.find((x) => x.id === s.directory_id);
+      if (!d || !d.times_enabled) return { off: "switched off" };
+      const p = T.properties.find((x) => x.id === d.property_id);
+      if (!(p.destinations || []).length) return { off: "no destinations" };
+      if (p.lat == null && !String(p.address || "").trim()) return { off: "no building location" };
+      const parts = Object.fromEntries(new Intl.DateTimeFormat("en-US", { timeZone: p.timezone || "America/Chicago", weekday: "short", hour: "numeric", hourCycle: "h23" })
+        .formatToParts(new Date(now())).map((x) => [x.type, x.value]));
+      if (["Sat", "Sun"].includes(parts.weekday) || Number(parts.hour) < 6 || Number(parts.hour) >= 19) return { off: "hours" };
+      const t = Date.parse(now());
+      if (s.traffic_at && Date.parse(s.traffic_at) > t - 25 * 60000) return { wait: Math.ceil((Date.parse(s.traffic_at) + 25 * 60000 - t) / 1000) };
+      s.traffic_at = now();
+      return { origin: { lat: p.lat, lon: p.lon, address: p.address }, destinations: p.destinations };
     },
     screen_state({ p_key, p_device, p_etag, p_report }) {
       let s;

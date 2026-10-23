@@ -10,7 +10,7 @@
 */
 (() => {
   "use strict";
-  const VERSION = "2.9.0";   // = netlify/lib/version.mjs (a test keeps them equal)
+  const VERSION = "2.10.0";   // = netlify/lib/version.mjs (a test keeps them equal)
   const q = new URLSearchParams(location.search);
   const DEVICE = (q.get("device") || "").toLowerCase();
   const CHOSEN = (q.get("screen") || q.get("key") || q.get("site") || "").toLowerCase();
@@ -101,7 +101,8 @@
     return true;
   }
 
-  function newsWanted() { return !!(data?.news?.enabled && news.items.length); }
+  // The panel (the news box) shows when there's news or any of the information slides (DP-08 round 11)
+  function newsWanted() { return !!((data?.news?.enabled && news.items.length) || infoSlides().length); }
 
   function fitTenants() {
     const list = $("tenants"), newsEl = $("news");
@@ -379,27 +380,150 @@
     });
   }
 
-  async function nextSlide() {
-    if (!news.items.length) return;
-    news.idx = (news.idx + 1) % news.items.length;
-    const it = news.items[news.idx];
-    const hasImg = await preload(it.image);
-    const box = $("news-slides");
-    const el = document.createElement("div");
-    el.className = `slide${hasImg ? "" : " text-only"}`;
-    const meta = [it.source, ago(it.published)].filter(Boolean).join(", ");
-    el.innerHTML = `${hasImg ? `<img src="${esc(it.image)}" alt="">` : ""}<div class="slide-text"><div class="slide-headline">${esc(it.title)}</div>${meta ? `<div class="slide-meta">${esc(meta)}</div>` : ""}</div>`;
-    box.appendChild(el);
-    requestAnimationFrame(() => requestAnimationFrame(() => el.classList.add("on")));
-    // Remove older slides once the new one has faded in.
-    setTimeout(() => { while (box.children.length > 1) box.removeChild(box.firstChild); }, 1500);
+  // ── The information panel (DP-08 round 11): news, a live traffic map, travel times and nearby amenities take turns
+  // in the one box, so the tenant list keeps its space. Each is switched on per directory. ──
+  const ONLINE = () => $("offline").hidden;                       // no live map or times while reconnecting
+  const TIMES_EVERY_MS = 30 * 60000, TIMES_FRESH_MS = 40 * 60000;
+  const traffic = { times: null, at: 0, timer: null, mapState: "", map: null, mapEl: null, mapCenter: "" };
+  const AMENITIES_PER_SLIDE = 4;
+
+  /** The information slides this screen shows now, in order. */
+  function infoSlides() {
+    const out = [], t = data?.traffic || {};
+    if (t.map && t.mapsKey && ONLINE() && traffic.mapState !== "failed") out.push({ kind: "map" });
+    if (t.times && (t.destinations || []).length && (!CHECKS_IN || (ONLINE() && traffic.times && Date.now() - traffic.at < TIMES_FRESH_MS))) out.push({ kind: "times" });
+    const am = Array.isArray(data?.amenities) ? data.amenities : [];
+    for (let i = 0; i < am.length; i += AMENITIES_PER_SLIDE) out.push({ kind: "amenities", page: i / AMENITIES_PER_SLIDE, items: am.slice(i, i + AMENITIES_PER_SLIDE), pages: Math.ceil(am.length / AMENITIES_PER_SLIDE) });
+    return out;
   }
 
+  // Turn order: when there's news, every third turn is the next information slide; otherwise the information slides alone.
+  const turns = { n: 0, info: -1 };
+  function nextItem() {
+    const info = infoSlides(), hasNews = !!(data?.news?.enabled && news.items.length);
+    turns.n++;
+    if (info.length && (!hasNews || turns.n % 3 === 1)) { turns.info = (turns.info + 1) % info.length; return info[turns.info]; }
+    if (!hasNews) return null;
+    news.idx = (news.idx + 1) % news.items.length;
+    return { kind: "news", item: news.items[news.idx] };
+  }
+
+  function showSlide(el) {
+    const box = $("news-slides");
+    if (!el.parentNode) box.appendChild(el);
+    for (const other of box.children) if (other !== el) other.classList.remove("on");
+    requestAnimationFrame(() => requestAnimationFrame(() => el.classList.add("on")));
+    // Remove older slides once the new one has faded in (the map is kept: it's loaded once per page)
+    setTimeout(() => { for (const c of [...box.children]) if (c !== el && !c.classList.contains("keep")) c.remove(); }, 1500);
+  }
+
+  async function nextSlide() {
+    const it = nextItem();
+    if (!it) return null;
+    if (it.kind === "map") { showMap(); return "map"; }
+    const el = document.createElement("div");
+    if (it.kind === "news") {
+      const n = it.item, hasImg = await preload(n.image);
+      el.className = `slide${hasImg ? "" : " text-only"}`;
+      const meta = [n.source, ago(n.published)].filter(Boolean).join(", ");
+      el.innerHTML = `${hasImg ? `<img src="${esc(n.image)}" alt="">` : ""}<div class="slide-text"><div class="slide-headline">${esc(n.title)}</div>${meta ? `<div class="slide-meta">${esc(meta)}</div>` : ""}</div>`;
+    } else if (it.kind === "times") {
+      el.className = "slide info-slide";
+      el.innerHTML = timesHtml();
+    } else {
+      el.className = "slide info-slide";
+      el.innerHTML = `<div class="info-head">Nearby${it.pages > 1 ? ` <span>${it.page + 1} of ${it.pages}</span>` : ""}</div><ul class="info-list amenities">${it.items.map((a) =>
+        `<li><div class="info-row"><span class="info-name">${esc(a.name)}</span>${a.distance ? `<span class="info-value small">${esc(a.distance)}</span>` : ""}</div>${a.line ? `<div class="info-line">${esc(a.line)}</div>` : ""}</li>`).join("")}</ul>`;
+    }
+    showSlide(el);
+    return it.kind;
+  }
+
+  function timesHtml() {
+    const dests = data?.traffic?.destinations || [];
+    const rows = CHECKS_IN && traffic.times ? traffic.times : dests.map((label) => ({ label, minutes: null }));
+    const at = traffic.at && CHECKS_IN ? new Date(traffic.at + clockOffset).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit", timeZone: data?.timezone || "America/Chicago" }) : "";
+    return `<div class="info-head">Drive times now</div><ul class="info-list">${rows.map((r) => {
+      const extra = r.minutes != null && r.usualMinutes != null && r.minutes - r.usualMinutes >= 3 ? `<div class="info-line">+${r.minutes - r.usualMinutes} min for traffic</div>` : "";
+      return `<li><div class="info-row"><span class="info-name">${esc(r.label)}</span><span class="info-value">${r.minutes != null ? `${r.minutes}<small> min</small>` : "—"}</span></div>${extra}</li>`;
+    }).join("")}</ul><div class="info-foot">${CHECKS_IN ? `Google Maps${at ? ` · updated ${esc(at)}` : ""}` : "Google Maps · live times show on the screen"}</div>`;
+  }
+
+  // Travel times: real screens only (the console's View and the editor preview never ask), every 30 minutes; the
+  // site decides whether Google may be asked now (hours, 25-minute spacing). Kept in memory only, never saved.
+  async function loadTimes() {
+    clearTimeout(traffic.timer);
+    if (!CHECKS_IN || !data?.traffic?.times) { traffic.times = null; return; }
+    let next = TIMES_EVERY_MS;
+    try {
+      const r = await getJSON(`/api/traffic?${DEVICE ? `device=${encodeURIComponent(DEVICE)}` : `key=${encodeURIComponent(SITE)}`}`);
+      if (Array.isArray(r.times)) { traffic.times = r.times; traffic.at = Date.now(); }
+      else if (r.wait) next = Math.max(60, r.wait + 30) * 1000;
+      else if (r.off) traffic.times = null;
+    } catch (e) { console.warn("Travel times unavailable", e); }
+    traffic.timer = setTimeout(loadTimes, next);
+    fitTenants(); ensureRotation();
+  }
+
+  // The live traffic map: Google Maps with its traffic layer, loaded once per page (Google bills per map load) and
+  // kept, shown and hidden as its turn comes. The traffic layer refreshes itself.
+  function showMap() {
+    const t = data.traffic;
+    if (!traffic.mapEl) {
+      traffic.mapEl = document.createElement("div");
+      traffic.mapEl.className = "slide keep map-slide";
+      traffic.mapEl.innerHTML = '<div class="map-canvas"></div><div class="map-pin" aria-hidden="true"></div><div class="info-head map-head">Traffic now</div>';
+      $("news-slides").appendChild(traffic.mapEl);
+    }
+    showSlide(traffic.mapEl);
+    const center = `${t.lat},${t.lon}`;
+    if (traffic.map && traffic.mapCenter !== center) { traffic.map.setCenter({ lat: Number(t.lat), lng: Number(t.lon) }); traffic.mapCenter = center; }
+    if (traffic.mapState) return;
+    traffic.mapState = "loading";
+    window.gm_authFailure = () => { traffic.mapState = "failed"; traffic.mapEl?.remove(); traffic.mapEl = null; console.warn("Google Maps refused the key"); };
+    window.__lobbyMapReady = () => {
+      try {
+        const g = window.google.maps;
+        traffic.map = new g.Map(traffic.mapEl.querySelector(".map-canvas"), {
+          center: { lat: Number(t.lat), lng: Number(t.lon) }, zoom: 12, disableDefaultUI: true, gestureHandling: "none",
+          keyboardShortcuts: false, clickableIcons: false, backgroundColor: "#0d1b2e", styles: MAP_STYLE,
+        });
+        new g.TrafficLayer({ autoRefresh: true }).setMap(traffic.map);
+        traffic.mapCenter = center; traffic.mapState = "ready";
+      } catch (e) { traffic.mapState = "failed"; console.warn("Map failed", e); }
+    };
+    const sc = document.createElement("script");
+    sc.src = `https://maps.googleapis.com/maps/api/js?key=${encodeURIComponent(t.mapsKey)}&callback=__lobbyMapReady&loading=async&v=weekly`;
+    sc.async = true;
+    sc.onerror = () => { traffic.mapState = ""; };                // offline: try again at its next turn
+    document.head.appendChild(sc);
+  }
+  // A quiet navy map so the traffic colours stand out (raster styles: no map ID needed)
+  const MAP_STYLE = [
+    { elementType: "geometry", stylers: [{ color: "#13233a" }] },
+    { elementType: "labels.text.fill", stylers: [{ color: "#9fb0c6" }] },
+    { elementType: "labels.text.stroke", stylers: [{ color: "#0d1b2e" }] },
+    { featureType: "poi", stylers: [{ visibility: "off" }] },
+    { featureType: "transit", stylers: [{ visibility: "off" }] },
+    { featureType: "road", elementType: "geometry", stylers: [{ color: "#2a3b55" }] },
+    { featureType: "road.highway", elementType: "geometry", stylers: [{ color: "#3a4d6b" }] },
+    { featureType: "water", elementType: "geometry", stylers: [{ color: "#081322" }] },
+  ];
+
   function startRotation() {
-    clearInterval(news.timer);
+    clearTimeout(news.timer);
     const secs = Math.max(5, Number(data?.news?.rotateSeconds) || 12);
-    nextSlide();
-    news.timer = setInterval(nextSlide, secs * 1000);
+    const step = async () => {
+      const kind = await nextSlide();
+      // The map and the travel times stay up half again as long as a headline
+      news.timer = setTimeout(step, secs * 1000 * (kind === "map" || kind === "times" ? 1.5 : 1));
+    };
+    news.running = true;
+    step();
+  }
+  function stopRotation() { clearTimeout(news.timer); news.running = false; }
+  function ensureRotation() {
+    if (newsWanted()) { if (!news.running) startRotation(); } else stopRotation();
   }
 
   async function loadNews() {
@@ -412,10 +536,9 @@
       console.warn("News fetch failed", e);
       items = cache.get("news") || [];
     }
-    const wasEmpty = !news.items.length;
     news.items = items;
     fitTenants(); // decides whether news fits alongside the tenants
-    if (newsWanted() && wasEmpty) startRotation();
+    ensureRotation();
   }
 
   // ── Daily reload at 3 a.m. picks up code updates and clears browser memory ──
@@ -431,22 +554,24 @@
   window.addEventListener("resize", () => { sizeStage(); fitTenants(); if (data) placeBackground(); });
   const cached = cache.get("directory");
   if (cached) apply(cached);
-  loadDirectory().then(() => { loadNews(); if (!data) setTimeout(() => location.reload(), 30000); });
+  loadDirectory().then(() => { loadNews(); loadTimes(); if (!data) setTimeout(() => location.reload(), 30000); });
   setInterval(loadDirectory, POLL_DIRECTORY_MS);
   setInterval(loadWeather, POLL_WEATHER_MS);
   setInterval(loadNews, POLL_NEWS_MS);
   setInterval(tick, 1000);
   scheduleNightlyReload();
 
-  // When settings change (rotation time, news on/off), restart the rotator.
-  let lastRotate = null, lastNewsOn = null;
+  // When settings change (rotation time, news, map, travel times or amenities on/off), restart the rotator.
+  let lastPanel = null;
   setInterval(() => {
-    const r = data?.news?.rotateSeconds, on = data?.news?.enabled;
-    if (lastRotate !== null && (r !== lastRotate || on !== lastNewsOn)) {
-      fitTenants();
-      if (on && news.items.length) startRotation(); else clearInterval(news.timer);
+    const t = data?.traffic || {};
+    const sig = JSON.stringify([data?.news?.rotateSeconds, data?.news?.enabled, t.map, t.times, t.destinations, data?.amenities, ONLINE()]);
+    if (lastPanel !== null && sig !== lastPanel) {
+      const timesChanged = JSON.stringify(JSON.parse(lastPanel).slice(3, 5)) !== JSON.stringify([t.times, t.destinations]);
+      if (timesChanged) loadTimes();
+      fitTenants(); stopRotation(); ensureRotation();
     }
-    lastRotate = r; lastNewsOn = on;
+    lastPanel = sig;
   }, 5000);
 
   if (PREVIEW) {

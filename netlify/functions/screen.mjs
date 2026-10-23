@@ -13,7 +13,7 @@ import { DISPLAY_VERSION } from "../lib/version.mjs";
 
 // Bump when toPayload's output changes shape, so every screen re-downloads once after the deploy. The live display
 // version is part of the tag too (TAG), so a display deploy also gives every screen a fresh answer.
-const PAYLOAD_V = "p3";
+const PAYLOAD_V = "p4";
 const TAG = `${PAYLOAD_V}-${DISPLAY_VERSION.replace(/[^0-9.]/g, "")}`;
 const HEADERS = { "Content-Type": "application/json; charset=utf-8", "Cache-Control": "no-cache" };
 
@@ -47,6 +47,24 @@ function report(req) {
   };
 }
 
+/** A building's amenities and destinations, tidied for the screen (supabase/23-info-panel.sql). */
+const text = (v, n) => String(v ?? "").trim().slice(0, n);
+export const cleanAmenities = (list) => (Array.isArray(list) ? list : []).slice(0, 20)
+  .map((a) => ({ name: text(a?.name, 60), distance: text(a?.distance, 30), line: text(a?.line, 120) })).filter((a) => a.name);
+export const cleanDestinations = (list) => (Array.isArray(list) ? list : []).slice(0, 3)
+  .map((d) => ({ label: text(d?.label || d?.address, 60), address: text(d?.address, 200) })).filter((d) => d.label);
+
+/** The information panel's traffic parts. The map needs GOOGLE_MAPS_KEY (a browser key, public by design and
+ *  locked to the site's address in Google Cloud) and the building's map point; travel times need destinations. */
+export function trafficFor(dir, prop) {
+  const mapsKey = process.env.GOOGLE_MAPS_KEY || "";
+  const hasPoint = prop?.lat != null && prop?.lon != null;
+  const map = !!(dir?.map_enabled && mapsKey && hasPoint);
+  const destinations = cleanDestinations(prop?.destinations).map((d) => d.label);
+  return { map, times: !!(dir?.times_enabled && destinations.length), lat: prop?.lat ?? null, lon: prop?.lon ?? null,
+    mapsKey: map ? mapsKey : "", destinations };
+}
+
 /** Turns database rows into the shape the display draws. Also used by the editor preview (same fields). */
 export function toPayload(screen, dir, prop, tenants) {
   const updated = [dir?.updated_at, prop?.updated_at].filter(Boolean).sort().pop() || null;
@@ -68,6 +86,8 @@ export function toPayload(screen, dir, prop, tenants) {
     timezone: prop?.timezone || "America/Chicago",
     news: { enabled: dir ? dir.news_enabled !== false : false, rotateSeconds: dir?.rotate_seconds || 12 },
     background: prop?.background || {},
+    traffic: trafficFor(dir, prop),                        // live map and travel times (supabase/23-info-panel.sql)
+    amenities: dir?.amenities_enabled ? cleanAmenities(prop?.amenities) : [],
     sizes: screen.sizes || {},                             // this screen's sizes, % of standard (supabase/18-sizes.sql)
     display: DISPLAY_VERSION,                              // the live display code; an older screen reloads itself
     assigned: !!dir,
@@ -76,7 +96,7 @@ export function toPayload(screen, dir, prop, tenants) {
   };
 }
 
-export const NEW_DEVICE = (device) => ({ key: null, device, assigned: false, newDevice: true, orientation: "auto", propertyName: "New display", buildingLabel: "", tenants: [], managedBy: {}, leasedBy: {}, welcome: "", weather: { enabled: false }, news: { enabled: false }, background: {}, sizes: {}, display: DISPLAY_VERSION, logo: "", timezone: "America/Chicago" });
+export const NEW_DEVICE = (device) => ({ key: null, device, assigned: false, newDevice: true, orientation: "auto", propertyName: "New display", buildingLabel: "", tenants: [], managedBy: {}, leasedBy: {}, welcome: "", weather: { enabled: false }, news: { enabled: false }, background: {}, traffic: { map: false, times: false, destinations: [] }, amenities: [], sizes: {}, display: DISPLAY_VERSION, logo: "", timezone: "America/Chicago" });
 
 export default async (req) => {
   const url = new URL(req.url);

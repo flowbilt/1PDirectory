@@ -39,6 +39,8 @@ Do these once. The current site keeps running as it is until the new build is de
 
 23. For sizes for the news, clock, weather and contacts (DP-08 round 10): **before uploading that code**, new query, paste all of `22-widget-sizes.sql`, and click **Run**. Then new query, paste all of `check-widget-sizes.sql`, and click **Run**; it should read **ALL 7 CHECKS PASSED** (red on purpose). (The old editor never sends the new sizes and the old display ignores them, so this order has no gap. `check-sizes.sql` now tests an unknown name other than news, so it still reads ALL 8 CHECKS PASSED after 22.)
 
+24. For the information panel (traffic map, drive times, nearby places; DP-08 round 11): **before uploading that code**, new query, paste all of `23-info-panel.sql`, and click **Run**. Then new query, paste all of `check-info-panel.sql`, and click **Run**; it should read **ALL 9 CHECKS PASSED** (red on purpose). Check 1 also confirms nothing is switched on yet, so run it before anyone ticks the new boxes in the editor. (The old code ignores the new columns; the new editor saves them, so they must exist first.)
+
 If any of them shows an error (other than the expected red messages from the `check-…sql` files), copy the message (it includes a line number) and send it to Claude.
 
 ## 3. Lock down sign-ups

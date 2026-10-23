@@ -14,11 +14,14 @@ import agent from "../netlify/functions/agent.mjs";
 import devices from "../netlify/functions/devices.mjs";
 import networks from "../netlify/functions/networks.mjs";
 import alertSettings from "../netlify/functions/alert-settings.mjs";
+import traffic from "../netlify/functions/traffic.mjs";
 
 const port = Number(process.argv[2]) || 8888;
 const ORIGIN = `http://localhost:${port}`;
 const SB = `${ORIGIN}/sb`;
 Object.assign(process.env, { SUPABASE_URL: SB, SUPABASE_SERVICE_KEY: SERVICE_KEY, SUPABASE_ANON_KEY: ANON_KEY });
+process.env.GOOGLE_ROUTES_KEY ||= "local-routes-key";   // the Routes stand-in below answers; nothing reaches Google
+process.env.GOOGLE_MAPS_KEY ||= "local-maps-key";       // browser checks serve a stand-in for Google's map script
 process.env.NEWS_FEEDS ||= "https://feeds.bbci.co.uk/x.xml,https://feeds.npr.org/1001/rss.xml";
 const fake = createFake();
 globalThis.__fake = fake;
@@ -35,10 +38,16 @@ globalThis.fetch = async (url, init = {}) => {
   if (u.includes("/forecast/hourly")) return ok(fx("nws-hourly.json"));
   if (u.includes("bbci")) return ok(fx("bbc.xml"));
   if (u.includes("npr")) return ok(fx("npr.xml"));
+  // A stand-in for Google's Routes API (DP-08 round 11): 21 and 18 minutes, as many destinations as asked for
+  if (u.startsWith("https://routes.googleapis.com/")) {
+    const n = JSON.parse(init.body).destinations.length;
+    return ok(JSON.stringify(Array.from({ length: n }, (_, i) => ({ originIndex: 0, destinationIndex: i, status: {}, condition: "ROUTE_EXISTS",
+      duration: `${1260 - i * 180}s`, staticDuration: `${1020 - i * 0}s`, distanceMeters: 25750 - i * 3000 }))));
+  }
   return new Response("offline", { status: 503 });
 };
 
-const ROUTES = { "/api/screen": screen, "/api/users": users, "/api/config": config, "/api/weather": weather, "/api/news": news, "/api/agent": agent, "/api/devices": devices, "/api/networks": networks, "/api/alert-settings": alertSettings };
+const ROUTES = { "/api/screen": screen, "/api/users": users, "/api/config": config, "/api/weather": weather, "/api/news": news, "/api/agent": agent, "/api/devices": devices, "/api/networks": networks, "/api/alert-settings": alertSettings, "/api/traffic": traffic };
 const TYPES = { ".html": "text/html", ".js": "text/javascript", ".css": "text/css", ".ttf": "font/ttf", ".svg": "image/svg+xml", ".png": "image/png", ".jpg": "image/jpeg", ".webmanifest": "application/manifest+json" };
 const PUB = new URL("../public/", import.meta.url).pathname;
 

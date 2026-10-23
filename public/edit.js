@@ -39,6 +39,8 @@
     $("news-on").checked = d.news_enabled !== false;
     $("rotate").value = d.rotate_seconds || 12;
     $("weather-on").checked = d.weather_enabled !== false;
+    $("map-on").checked = !!d.map_enabled; $("times-on").checked = !!d.times_enabled; $("amen-on").checked = !!d.amenities_enabled;
+    renderDestinations(); renderAmenities();
     $("address").value = p.address || "";
     $("m-name").value = p.managed_by?.name || ""; $("m-company").value = p.managed_by?.company || ""; $("m-phone").value = p.managed_by?.phone || "";
     $("l-name").value = p.leased_by?.name || ""; $("l-company").value = p.leased_by?.company || ""; $("l-phone").value = p.leased_by?.phone || "";
@@ -58,6 +60,11 @@
     d.news_enabled = $("news-on").checked;
     d.rotate_seconds = Math.min(120, Math.max(5, parseInt($("rotate").value, 10) || 12));
     d.weather_enabled = $("weather-on").checked;
+    d.map_enabled = $("map-on").checked; d.times_enabled = $("times-on").checked; d.amenities_enabled = $("amen-on").checked;
+    p.destinations = [...$("dest-rows").querySelectorAll(".info-row-edit")].map((r) => ({ label: r.querySelector(".x-label").value.trim(), address: r.querySelector(".x-address").value.trim() }))
+      .filter((x) => x.label || x.address).map((x) => ({ label: x.label || x.address, address: x.address || x.label }));
+    p.amenities = [...$("amen-rows").querySelectorAll(".info-row-edit")].map((r) => ({ name: r.querySelector(".x-name").value.trim(), distance: r.querySelector(".x-distance").value.trim(), line: r.querySelector(".x-line").value.trim() }))
+      .filter((x) => x.name);
     p.address = $("address").value.trim();
     p.managed_by = { name: $("m-name").value.trim(), company: $("m-company").value.trim(), phone: $("m-phone").value.trim() };
     p.leased_by = { name: $("l-name").value.trim(), company: $("l-company").value.trim(), phone: $("l-phone").value.trim() };
@@ -218,6 +225,36 @@
   $("bg-remove").addEventListener("click", () => { read(); S.prop.background = { ...S.prop.background, image: "", enabled: false }; renderBg(); setDirty(true); pushPreview(); });
   for (const id of ["bg-vis", "bg-pos", "bg-size", "bg-offset"]) $(id).addEventListener("input", () => { read(); renderBg(); pushPreview(); });
 
+  // ── Drive time destinations and nearby places (per building; DP-08 round 11) ──
+  function renderDestinations() {
+    const list = Array.isArray(S.prop.destinations) ? S.prop.destinations : [];
+    $("dest-rows").innerHTML = [0, 1, 2].map((i) => { const x = list[i] || {}; return `<div class="info-row-edit">
+      <input class="x-label" value="${esc(x.label)}" placeholder="${i === 0 ? "e.g. Birmingham Airport" : "Label"}" aria-label="Destination ${i + 1} label" maxlength="60">
+      <input class="x-address" value="${esc(x.address)}" placeholder="${i === 0 ? "e.g. 5900 Messer Airport Hwy, Birmingham, AL" : "Address"}" aria-label="Destination ${i + 1} address" maxlength="200">
+      <span></span></div>`; }).join("");
+  }
+  function renderAmenities(list = S.prop.amenities) {
+    list = Array.isArray(list) ? list : [];
+    $("amen-rows").innerHTML = list.map((a, i) => `<div class="info-row-edit amen">
+      <input class="x-name" value="${esc(a.name)}" placeholder="Name" aria-label="Place ${i + 1} name" maxlength="60">
+      <input class="x-distance" value="${esc(a.distance)}" placeholder="e.g. 5 min walk" aria-label="Place ${i + 1} distance" maxlength="30">
+      <input class="x-line" value="${esc(a.line)}" placeholder="A short line, e.g. Coffee and pastries" aria-label="Place ${i + 1} line" maxlength="120">
+      <button type="button" class="icon-btn remove" data-amen="${i}" aria-label="Remove ${esc(a.name || "place")}">Remove</button></div>`).join("");
+    $("amen-count").textContent = `${list.length} of 20`;
+    $("add-amenity").disabled = list.length >= 20;
+  }
+  $("add-amenity").addEventListener("click", () => {
+    read(); if (S.prop.amenities.length >= 20) return;
+    renderAmenities([...S.prop.amenities, { name: "", distance: "", line: "" }]);
+    $("amen-rows").lastElementChild?.querySelector(".x-name").focus();
+  });
+  $("amen-rows").addEventListener("click", (e) => {
+    const b = e.target.closest("[data-amen]"); if (!b) return;
+    read(); const list = [...$("amen-rows").querySelectorAll(".info-row-edit")].map((r) => ({ name: r.querySelector(".x-name").value, distance: r.querySelector(".x-distance").value, line: r.querySelector(".x-line").value }));
+    list.splice(Number(b.dataset.amen), 1);
+    renderAmenities(list); changed();
+  });
+
   // ── Sizes (per screen) ──
   function renderSizes() {
     const has = S.screens.length > 0, scr = S.screens[S.sel], p = S.prop || {};
@@ -234,7 +271,8 @@
     // Only the parts this screen actually shows
     const contact = (c) => !!(c && (c.name || c.company || c.phone));
     const shows = { title: !wordmark, logo: !!top, brand: !!bottom, welcome: !!welcome, clock: true,
-      weather: S.dir?.weather_enabled !== false && p.lat != null, news: S.dir?.news_enabled !== false,
+      weather: S.dir?.weather_enabled !== false && p.lat != null,
+      news: S.dir?.news_enabled !== false || !!(S.dir?.map_enabled || S.dir?.times_enabled || S.dir?.amenities_enabled),
       contacts: contact(p.managed_by) || contact(p.leased_by) };
     for (const k of SIZES) {
       $(`sz-${k}-row`).hidden = !has || !shows[k];
@@ -267,6 +305,10 @@
       weather: { enabled: d.weather_enabled !== false && p.lat != null, lat: p.lat, lon: p.lon },
       timezone: p.timezone || "America/Chicago",
       news: { enabled: d.news_enabled !== false, rotateSeconds: d.rotate_seconds || 12 },
+      // Same rules as the screen's (screen.mjs trafficFor); the preview never asks Google for times
+      traffic: { map: !!(d.map_enabled && S.mapsKey && p.lat != null && p.lon != null), times: !!(d.times_enabled && (p.destinations || []).length),
+        lat: p.lat ?? null, lon: p.lon ?? null, mapsKey: d.map_enabled ? S.mapsKey : "", destinations: (p.destinations || []).map((x) => x.label) },
+      amenities: d.amenities_enabled ? (p.amenities || []).filter((a) => a.name).slice(0, 20) : [],
       background: p.background || {}, sizes: scr?.sizes || {}, assigned: true, updatedAt: d.updated_at,
     };
   }
@@ -308,12 +350,14 @@
     try {
       await Auth.db(`directories?id=eq.${d.id}`, { method: "PATCH", prefer: "return=minimal", body: {
         title: d.title, subtitle: d.subtitle, news_enabled: d.news_enabled, rotate_seconds: d.rotate_seconds, weather_enabled: d.weather_enabled,
+        map_enabled: !!d.map_enabled, times_enabled: !!d.times_enabled, amenities_enabled: !!d.amenities_enabled,
         ...(d.footer_override != null ? { footer_override: d.footer_override } : {}),
       } });
       await Auth.db(`properties?id=eq.${p.id}`, { method: "PATCH", prefer: "return=minimal", body: {
         address: p.address, logo: p.logo || "", logo_replaces_name: !!p.logo_replaces_name, background: p.background || {},
         company_logo: p.company_logo || "", logo_swap: !!(p.company_logo && p.logo_swap),
         managed_by: p.managed_by, leased_by: p.leased_by, footer: p.footer || "", lat: p.lat, lon: p.lon, timezone: p.timezone,
+        destinations: p.destinations || [], amenities: p.amenities || [],
       } });
       // Tenants: save every row first, then remove the ones deleted here. A failure part-way never loses rows.
       const rows = S.tenants.filter((t) => t.name).map((t, i) => ({ id: t.id, directory_id: d.id, sort: i * 10, name: t.name, suite: t.suite, arrow: t.arrow, note: t.note }));
@@ -339,6 +383,7 @@
     try {
       await Auth.requireSession();
       await Auth.me();
+      try { S.mapsKey = (await Auth.config()).mapsKey || ""; } catch { S.mapsKey = ""; }
       await load();
       fill();
       loadPreview();

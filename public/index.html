@@ -3,6 +3,9 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<!-- The site sends Referrer-Policy: same-origin. Google checks the Maps key against the page's address, so this page
+     tells Google its origin (only the origin, never the path). DP-08 round 11. -->
+<meta name="referrer" content="strict-origin-when-cross-origin">
 <title>Directory</title>
 <link rel="preload" href="/fonts/InstrumentSans-Bold.ttf" as="font" type="font/ttf" crossorigin>
 <link rel="stylesheet" href="/display.css">

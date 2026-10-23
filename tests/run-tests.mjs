@@ -4,6 +4,7 @@ import assert from "node:assert/strict";
 import { readFileSync, readdirSync } from "node:fs";
 import { createFake, SERVICE_KEY, ANON_KEY, SIZE_RANGES } from "./fake-supabase.mjs";
 import screen, { toPayload } from "../netlify/functions/screen.mjs";
+import traffic, { toTimes } from "../netlify/functions/traffic.mjs";
 import users from "../netlify/functions/users.mjs";
 import config from "../netlify/functions/config.mjs";
 import weather, { iconFor } from "../netlify/functions/weather.mjs";
@@ -1074,8 +1075,15 @@ test("Send test email: sent to every recipient now, or the mail server's exact r
 // ── Config ──
 test("config hands the pages only the public settings", async () => {
   const d = await (await config()).json();
-  assert.deepEqual(d, { url: SB, anonKey: ANON_KEY });
+  assert.deepEqual(d, { url: SB, anonKey: ANON_KEY, mapsKey: "" });
   assert.ok(!JSON.stringify(d).includes(SERVICE_KEY));
+  // The Google Maps browser key is public by design (locked to the site's address); the Routes key never leaves the server
+  Object.assign(process.env, { GOOGLE_MAPS_KEY: "browser-key-123", GOOGLE_ROUTES_KEY: "server-routes-key-456" });
+  try {
+    const e = await (await config()).json();
+    assert.equal(e.mapsKey, "browser-key-123");
+    assert.ok(!JSON.stringify(e).includes("server-routes-key-456"));
+  } finally { delete process.env.GOOGLE_MAPS_KEY; delete process.env.GOOGLE_ROUTES_KEY; }
   const saved = process.env.SUPABASE_ANON_KEY; delete process.env.SUPABASE_ANON_KEY;
   assert.equal((await config()).status, 500);
   process.env.SUPABASE_ANON_KEY = saved;
@@ -1298,6 +1306,145 @@ test("the size ranges agree: the latest SQL, the display, the editor's sliders a
   const ejs = readFileSync(new URL("../public/edit.js", import.meta.url), "utf8");
   const listed = JSON.parse(ejs.match(/const SIZES = (\[[^\]]+\])/)[1]);
   assert.deepEqual([...listed].sort(), Object.keys(SIZE_RANGES).sort(), "the editor saves every size");
+});
+
+// ── The information panel: traffic map, travel times, amenities (DP-08 round 11, 23-info-panel.sql) ──
+const infoFixture = () => {
+  const scr = fake.T.screens.find((x) => x.key === "ppi-1s");
+  const dir = fake.T.directories.find((x) => x.id === scr.directory_id);
+  const prop = fake.T.properties.find((x) => x.id === dir.property_id);
+  const saved = { dir: { ...dir }, prop: { ...prop }, scr: { ...scr } };
+  const restore = () => { Object.assign(dir, saved.dir); Object.assign(prop, saved.prop); Object.assign(scr, saved.scr); fake.setClock(null);
+    delete process.env.GOOGLE_MAPS_KEY; delete process.env.GOOGLE_ROUTES_KEY; };
+  return { scr, dir, prop, restore };
+};
+const WEEKDAY_NOON = "2026-10-21T17:00:00Z";   // a Wednesday, noon in Birmingham
+const GOOGLE_OK = [
+  { originIndex: 0, destinationIndex: 0, status: {}, condition: "ROUTE_EXISTS", duration: "1260s", staticDuration: "1020s", distanceMeters: 25750 },
+  { originIndex: 0, destinationIndex: 1, status: {}, condition: "ROUTE_EXISTS", duration: "1080s", staticDuration: "1080s", distanceMeters: 22530 },
+];
+async function withGoogle(answer, fn) {
+  const real = globalThis.fetch, calls = [];
+  globalThis.fetch = async (url, init) => {
+    if (String(url).startsWith("https://routes.googleapis.com/")) { calls.push({ url: String(url), headers: init.headers, body: JSON.parse(init.body) });
+      return typeof answer === "function" ? answer() : new Response(JSON.stringify(answer), { status: 200 }); }
+    return real(url, init);
+  };
+  try { return await fn(calls); } finally { globalThis.fetch = real; }
+}
+
+test("the information panel is off until switched on: existing screens look exactly as before", async () => {
+  const d = await (await screen(req("/api/screen?key=ppi-1s"))).json();
+  assert.deepEqual(d.traffic, { map: false, times: false, lat: d.traffic.lat, lon: d.traffic.lon, mapsKey: "", destinations: [] });
+  assert.deepEqual(d.amenities, []);
+});
+
+test("switched on per directory: the screen gets the map (with the browser key), its destinations and tidy amenities", async () => {
+  const { dir, prop, restore } = infoFixture();
+  try {
+    process.env.GOOGLE_MAPS_KEY = "browser-key-123"; process.env.GOOGLE_ROUTES_KEY = "server-routes-key-456";
+    Object.assign(dir, { map_enabled: true, times_enabled: true, amenities_enabled: true, updated_at: new Date().toISOString() });
+    Object.assign(prop, { destinations: [{ label: "Birmingham Airport", address: "5900 Messer Airport Hwy, Birmingham, AL" }, { label: "BJCC", address: "2100 Richard Arrington Jr Blvd N, Birmingham, AL" }],
+      amenities: [{ name: "  The Summit  ", distance: "1.2 mi", line: "Shops and restaurants", extra: "x" }, { name: "" }, ...Array.from({ length: 25 }, (_, i) => ({ name: `Place ${i}` }))] });
+    const d = await (await screen(req("/api/screen?key=ppi-1s"))).json();
+    assert.equal(d.traffic.map, true); assert.equal(d.traffic.times, true);
+    assert.equal(d.traffic.mapsKey, "browser-key-123");
+    assert.deepEqual(d.traffic.destinations, ["Birmingham Airport", "BJCC"], "labels only: addresses stay on the server");
+    assert.ok(!JSON.stringify(d).includes("server-routes-key-456"), "the Routes key never reaches a screen");
+    assert.deepEqual(d.amenities[0], { name: "The Summit", distance: "1.2 mi", line: "Shops and restaurants" });
+    assert.ok(d.amenities.length <= 20 && d.amenities.every((a) => a.name), "at most 20, none blank");
+    delete process.env.GOOGLE_MAPS_KEY;
+    const e = await (await screen(req("/api/screen?key=ppi-1s"))).json();
+    assert.equal(e.traffic.map, false, "no map without the Google Maps key in Netlify");
+    assert.equal(e.traffic.mapsKey, "");
+  } finally { restore(); }
+});
+
+test("travel times: one Google call per screen, traffic-aware, straight through, never stored or shared", async () => {
+  const { dir, prop, scr, restore } = infoFixture();
+  try {
+    fake.setClock(WEEKDAY_NOON);
+    process.env.GOOGLE_ROUTES_KEY = "server-routes-key-456";
+    Object.assign(dir, { times_enabled: true });
+    Object.assign(prop, { lat: 33.4285, lon: -86.7114, destinations: [{ label: "Birmingham Airport", address: "5900 Messer Airport Hwy" }, { label: "BJCC", address: "2100 Richard Arrington Jr Blvd N" }] });
+    await withGoogle(GOOGLE_OK, async (calls) => {
+      const r = await traffic(req("/api/traffic?key=ppi-1s"));
+      assert.equal(r.status, 200);
+      const d = await r.json();
+      assert.deepEqual(d.times, [
+        { label: "Birmingham Airport", minutes: 21, usualMinutes: 17, miles: 16 },
+        { label: "BJCC", minutes: 18, usualMinutes: 18, miles: 14 },
+      ]);
+      assert.equal(d.source, "Google Maps");
+      assert.equal(calls.length, 1);
+      assert.equal(calls[0].headers["X-Goog-Api-Key"], "server-routes-key-456");
+      assert.match(calls[0].headers["X-Goog-FieldMask"], /duration/);
+      assert.equal(calls[0].body.routingPreference, "TRAFFIC_AWARE");
+      assert.equal(calls[0].body.travelMode, "DRIVE");
+      assert.deepEqual(calls[0].body.origins, [{ waypoint: { location: { latLng: { latitude: 33.4285, longitude: -86.7114 } } } }]);
+      assert.deepEqual(calls[0].body.destinations.map((x) => x.waypoint.address), ["5900 Messer Airport Hwy", "2100 Richard Arrington Jr Blvd N"]);
+      // Asking again within 25 minutes goes nowhere near Google
+      const again = await (await traffic(req("/api/traffic?key=ppi-1s"))).json();
+      assert.ok(again.wait > 0 && again.wait <= 1500, JSON.stringify(again));
+      assert.equal(calls.length, 1);
+      // Another screen of the same building asks for itself (no shared cache), and gets its own Google call
+      const other = fake.T.screens.find((x) => x.key !== "ppi-1s" && x.directory_id && fake.T.directories.find((y) => y.id === x.directory_id)?.property_id === prop.id);
+      const od = fake.T.directories.find((y) => y.id === other.directory_id); const odSaved = { ...od };
+      try {
+        od.times_enabled = true;
+        const o = await (await traffic(req(`/api/traffic?key=${other.key}`))).json();
+        assert.equal(o.times.length, 2); assert.equal(calls.length, 2);
+      } finally { Object.assign(od, odSaved); other.traffic_at = null; }
+      // After 25 minutes it may ask again
+      fake.setClock(new Date(Date.parse(WEEKDAY_NOON) + 26 * 60000));
+      assert.ok((await (await traffic(req("/api/traffic?key=ppi-1s"))).json()).times);
+      assert.equal(calls.length, 3);
+    });
+    // Nothing from Google is kept anywhere in the database
+    assert.ok(!JSON.stringify(fake.T).includes("1260s") && !JSON.stringify(fake.T).includes("ROUTE_EXISTS"));
+  } finally { restore(); }
+});
+
+test("travel times stay quiet when they shouldn't run: no key, switched off, weekends and nights, Google errors", async () => {
+  const { dir, prop, scr, restore } = infoFixture();
+  try {
+    Object.assign(dir, { times_enabled: true });
+    Object.assign(prop, { destinations: [{ label: "BJCC", address: "2100 Richard Arrington Jr Blvd N" }] });
+    fake.setClock(WEEKDAY_NOON);
+    const before = fake.rpcCalls.length;
+    assert.deepEqual(await (await traffic(req("/api/traffic?key=ppi-1s"))).json(), { off: "not set up" });
+    assert.equal(fake.rpcCalls.length, before, "no Routes key: not even a database call");
+    process.env.GOOGLE_ROUTES_KEY = "server-routes-key-456";
+    await withGoogle(GOOGLE_OK, async (calls) => {
+      dir.times_enabled = false;
+      assert.deepEqual(await (await traffic(req("/api/traffic?key=ppi-1s"))).json(), { off: "switched off" });
+      dir.times_enabled = true;
+      fake.setClock("2026-10-25T17:00:00Z");                          // Sunday
+      assert.deepEqual(await (await traffic(req("/api/traffic?key=ppi-1s"))).json(), { off: "hours" });
+      fake.setClock("2026-10-22T03:00:00Z");                          // Wednesday 10 p.m. in Birmingham
+      assert.deepEqual(await (await traffic(req("/api/traffic?key=ppi-1s"))).json(), { off: "hours" });
+      fake.setClock("2026-10-21T11:30:00Z");                          // 6:30 a.m.: on
+      assert.ok((await (await traffic(req("/api/traffic?key=ppi-1s"))).json()).times);
+      assert.equal(calls.length, 1, "only the in-hours ask reached Google");
+      assert.equal(scr.traffic_at !== null, true);
+    });
+    scr.traffic_at = null;
+    await withGoogle(() => new Response(JSON.stringify({ error: { message: "API key not valid." } }), { status: 400 }), async () => {
+      const r = await traffic(req("/api/traffic?key=ppi-1s"));
+      assert.equal(r.status, 502);
+      assert.match((await r.json()).error, /API key not valid/);
+    });
+    assert.equal((await traffic(req("/api/traffic?key=Bad Key"))).status, 400);
+  } finally { restore(); }
+});
+
+test("Google's answer is read safely: missing routes show no time rather than a wrong one", () => {
+  const t = toTimes([{ label: "A" }, { label: "B" }, { label: "C" }], [
+    { destinationIndex: 0, duration: "600s", staticDuration: "540s", distanceMeters: 8000, condition: "ROUTE_EXISTS" },
+    { destinationIndex: 1, condition: "ROUTE_NOT_FOUND" },
+    { destinationIndex: 2, status: { code: 3, message: "bad" } },
+  ]);
+  assert.deepEqual(t.map((x) => x.minutes), [10, null, null]);
 });
 
 test("the editor preview and the screen send sizes the same way", () => {

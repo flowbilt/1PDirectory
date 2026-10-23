@@ -9,7 +9,7 @@ Tenant directories for lobby screens, replacing Yodeck and Wix. Hosted on Netlif
 | `/login.html` | everyone | Sign in, forgotten password, and setting a password from an invitation or reset email |
 | `/console.html` | signed in | Screens (status, search, layout), Buildings, People, and Accounts (1Point only) |
 | `/tech.html` | 1Point | The technician page, sized for a phone: Identify, Reload screen, Reboot Pi, Layout, and Wi-Fi search and join. Add it to the phone's home screen |
-| `/edit.html?d=…` | signed in | Edit one directory's tenants, plus its building's shared settings (address, logo, an owner or manager logo, background photo, contacts), with a live preview. **Sizes** (per screen; `&s=` picks the screen, as the console's Edit tenants link does): title, top logo, bottom logo and Bottom line, each 50–250% of standard within limits (`supabase/18-sizes.sql`); and since DP-08 round 10 the clock and date, weather, news and contacts, each 70–150% (`supabase/22-widget-sizes.sql`; a larger news panel grows with its text and still steps aside when the tenants need the room). Only the sliders for parts the screen shows appear. Standard is unchanged; anyone who can see the screen can change them; the screen picks them up within a minute of publishing |
+| `/edit.html?d=…` | signed in | Edit one directory's tenants, plus its building's shared settings (address, logo, an owner or manager logo, background photo, contacts), with a live preview. **Sizes** (per screen; `&s=` picks the screen, as the console's Edit tenants link does): title, top logo, bottom logo and Bottom line, each 50–250% of standard within limits (`supabase/18-sizes.sql`); and since DP-08 round 10 the clock and date, weather, news and contacts, each 70–150% (`supabase/22-widget-sizes.sql`; a larger news panel grows with its text and still steps aside when the tenants need the room). Only the sliders for parts the screen shows appear. **Since DP-08 round 11:** per directory, **Show traffic map**, **Show drive times** and **Show nearby places** (all off until ticked), and per building the drive time destinations (up to 3) and nearby places (up to 20: name, distance or walking time, a short line); see The information panel. Standard is unchanged; anyone who can see the screen can change them; the screen picks them up within a minute of publishing |
 | `/?device=<serial>` | lobby screens | What a Pi shows: whichever screen the console assigns it to |
 | `/?screen=ppi-2s` | lobby screens | A fixed screen. Older screens use `?site=landmark-center`, which still works |
 | `/?screen=ppi-2s&view=1` | anyone | Looking at a screen (the console's **View** button). Shows the same thing but doesn't count as the screen checking in |
@@ -42,10 +42,35 @@ Owner users can't read a screen's hardware record (serial, MACs, IPs, the Yodeck
 | `ALERT_EMAIL_TO` | No | Who gets alerts until recipients are added in the console (**Pi setup → Alert emails**), comma-separated |
 | `ALERT_EMAIL_FROM` | No | Sender, e.g. `Lobby Directory <directory@1pointusa.com>`: the same mailbox as `SMTP_USER` (mail servers refuse other senders) |
 | `RESEND_API_KEY` | **Yes** | Optional instead of the SMTP settings: Resend, used only when `SMTP_HOST` isn't set |
+| `GOOGLE_MAPS_KEY` | No (public by design) | The traffic map's Google Maps **browser** key. It's sent to screens, so in Google Cloud it must be restricted to **Websites** `https://1pdirectory.netlify.app/*` and to the **Maps JavaScript API** only. Without it, the map stays off |
+| `GOOGLE_ROUTES_KEY` | **Yes**, Functions only | The drive times' Google **server** key, restricted to the **Routes API** only. Never sent to a screen or the browser. Without it, drive times stay off |
 
 Without a way to send, alerts are only logged. Settings take effect at the next deploy (Deploys → Trigger deploy).
 
 `ADMIN_PASSWORD` is no longer used and can be deleted once everyone signs in with their own login.
+
+## The information panel (DP-08 round 11)
+
+The news box is shared: news headlines, a **live traffic map**, **drive times** and **nearby places** take turns in it, so
+the tenant list keeps its room (when there's news, every third turn is one of the others). Each is switched on per
+directory in the editor and is off until ticked. Its text size is the editor's **News and information** slider.
+
+- **Traffic map:** Google Maps with its traffic layer, centred on the building's weather location (so set that first),
+  with a pin on the building, no controls, and the Google logo. It's loaded once per page (Google bills per map load:
+  about 10,000 free a month) and kept; the traffic colours refresh themselves. If Google refuses the key, the map simply
+  leaves the rotation.
+- **Drive times:** live, traffic-aware minutes to the building's destinations (e.g. Birmingham Airport, BJCC), with
+  "+N min for traffic" when it's 3 minutes or more over the usual time, and "Google Maps · updated 3:30 PM". Google's
+  terms allow no shared copy, so **each screen asks for itself** through `/api/traffic`: every 30 minutes, weekdays from
+  6 a.m. to 7 p.m. building time, never more than once in 25 minutes per screen (`traffic_claim` in
+  `supabase/23-info-panel.sql`). Only real screens ask: the console's View and the editor's preview show the
+  destinations with a dash. Nothing Google returns is stored, on the server or on the screen. Live traffic is Google's
+  "Pro" routing tier: 5,000 free a month, then $10 per 1,000; three screens with two destinations come to about 3,500 a
+  month. Set daily caps in Google Cloud as the backstop.
+- **Nearby places:** typed per building, four to a slide.
+- **Offline:** the map and drive times drop out while a screen is reconnecting; news and places carry on.
+- The display page tells Google its origin (`<meta name="referrer">` in `index.html`; the site otherwise sends
+  `Referrer-Policy: same-origin`), so a key restricted to the site's address works.
 
 ## Screens and cards (Raspberry Pi)
 
@@ -325,9 +350,9 @@ Local sample logins: `scot@1pointusa.com / admin-pass`, `leighann@barber.test / 
 
 ```
 public/             screen (index.html, display.*), sign-in, console (+ console-devices.js, console-setup.js), editor, technician page (tech.*), shared auth.js
-netlify/functions/  screen, users, config, weather, news, agent, devices, networks, alert-settings, alerts
+netlify/functions/  screen, users, config, weather, news, traffic, agent, devices, networks, alert-settings, alerts
 netlify/lib/        Supabase client, RSS reader, shared helpers
-supabase/           database schema (01 to 22, run in order), starting data, check queries, setup guide
+supabase/           database schema (01 to 23, run in order), starting data, check queries, setup guide
 migration/          the Yodeck/Wix transcription the starting data was built from
 public/pi/          setup-kiosk.sh, agent.py, startup.png (the start-up picture) and startup/ (the start-up animation), served by the site so Pis can download them
 tests/              function tests, fake Supabase, local test server

@@ -5,7 +5,9 @@ import { json } from "../lib/common.mjs";
 export default async () => {
   const url = process.env.SUPABASE_URL, anonKey = process.env.SUPABASE_ANON_KEY;
   if (!url || !anonKey) return json({ error: "Supabase isn't connected yet. Add SUPABASE_URL and SUPABASE_ANON_KEY in Netlify." }, 500);
-  return json({ url: url.replace(/\/+$/, ""), anonKey }, 200, { "Cache-Control": "public, max-age=300" });
+  // mapsKey: the Google Maps browser key (GOOGLE_MAPS_KEY), public by design and locked to the site's address in
+  // Google Cloud; the editor's preview uses it to draw the traffic map (DP-08 round 11).
+  return json({ url: url.replace(/\/+$/, ""), anonKey, mapsKey: process.env.GOOGLE_MAPS_KEY || "" }, 200, { "Cache-Control": "public, max-age=300" });
 };
 
 export const config = { path: "/api/config" };

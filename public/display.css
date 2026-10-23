@@ -133,6 +133,26 @@ body { font-family: "Instrument Sans", "Segoe UI", Arial, sans-serif; color: var
 .slide.text-only .slide-headline { font-size: calc(var(--u) * 4.6 * var(--news-scale)); -webkit-line-clamp: 4; }
 .slide-meta { margin-top: calc(var(--u) * 1.2); font-size: calc(var(--u) * 2.1 * var(--news-scale)); color: var(--steel); }
 
+/* ── Information slides (DP-08 round 11): traffic map, travel times, nearby amenities; sized with the news ── */
+.info-slide { background: var(--navy-deep); display: flex; flex-direction: column; padding: calc(var(--u) * 3.2 * var(--news-scale)) calc(var(--u) * 3.4); }
+.info-head { font-size: calc(var(--u) * 2.4 * var(--news-scale)); color: var(--steel); letter-spacing: 0.02em; margin-bottom: calc(var(--u) * 1.6 * var(--news-scale)); }
+.info-head span { color: var(--muted); margin-left: 0.5em; }
+.info-list { list-style: none; flex: 1 1 auto; min-height: 0; overflow: hidden; display: flex; flex-direction: column; justify-content: space-evenly; }
+.info-list li { padding: calc(var(--u) * 1 * var(--news-scale)) 0; border-bottom: 1px solid var(--rule); }
+.info-list li:last-child { border-bottom: 0; }
+.info-row { display: flex; align-items: baseline; justify-content: space-between; gap: calc(var(--u) * 2); }
+.info-name { font-size: calc(var(--u) * 3.3 * var(--news-scale)); font-weight: 700; line-height: 1.15; min-width: 0; }
+.info-value { font-size: calc(var(--u) * 4.4 * var(--news-scale)); font-weight: 700; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.info-value small { font-size: 0.5em; font-weight: 400; color: var(--muted); }
+.info-value.small { font-size: calc(var(--u) * 2.4 * var(--news-scale)); font-weight: 400; color: var(--steel); }
+.info-line { margin-top: calc(var(--u) * 0.5); font-size: calc(var(--u) * 2.2 * var(--news-scale)); color: var(--muted); line-height: 1.25; }
+.info-foot { margin-top: calc(var(--u) * 1.2); font-size: calc(var(--u) * 1.7 * var(--news-scale)); color: var(--muted); }
+.map-slide { overflow: hidden; background: var(--navy-deep); }
+.map-canvas { position: absolute; inset: 0; }
+.map-pin { position: absolute; left: 50%; top: 50%; width: calc(var(--u) * 2.4); height: calc(var(--u) * 2.4); margin: calc(var(--u) * -1.2) 0 0 calc(var(--u) * -1.2);
+  border-radius: 50%; background: #f2c14e; border: calc(var(--u) * 0.5) solid #0d1b2e; box-shadow: 0 0 0 calc(var(--u) * 0.3) #f2c14e; z-index: 2; pointer-events: none; }
+.map-head { position: absolute; left: 0; top: 0; z-index: 2; margin: 0; padding: calc(var(--u) * 1.2) calc(var(--u) * 2); background: rgba(8, 19, 34, 0.86); }
+
 /* ── Contacts ───────────────────────────────── */
 .contacts {
   display: grid; grid-template-columns: 1fr 1fr;

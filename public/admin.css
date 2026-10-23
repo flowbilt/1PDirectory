@@ -200,3 +200,9 @@ td.thumb { width: 96px; padding: 6px 8px; }
 .mail-test-out { margin: 0 0 12px; padding: 10px 12px; border-radius: 6px; background: var(--bg); border: 1px solid var(--line); }
 .mail-test-out.ok { border-color: #2e7d4f; color: #1f5c39; background: #eef7f1; }
 .mail-test-out.bad { border-color: #b3261e; color: #8c1d18; background: #fcefee; }
+
+/* Editor: drive time destinations and nearby places (DP-08 round 11) */
+.info-rows { display: flex; flex-direction: column; gap: 8px; margin: 6px 0 14px; }
+.info-row-edit { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.4fr) auto; gap: 8px; align-items: center; }
+.info-row-edit.amen { grid-template-columns: minmax(0, 1fr) 130px minmax(0, 1.4fr) auto; }
+@media (max-width: 640px) { .info-row-edit, .info-row-edit.amen { grid-template-columns: 1fr; } }
