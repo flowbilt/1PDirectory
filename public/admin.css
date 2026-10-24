@@ -247,3 +247,7 @@ td.thumb { width: 96px; padding: 6px 8px; }
 }
 /* A landscape screen's wider preview sits beside the form only on a wide window; below that it goes underneath, as the portrait one does */
 @media (max-width: 1000px) { .workspace.wide-preview { grid-template-columns: 1fr; } }
+/* Round 14b: a list whose company switch is off says so plainly */
+.people-head.off { background: #fff6dc; border: 1px solid #e7c66b; border-radius: 6px; padding: 6px 10px; }
+.people-off { color: #7a5a00; }
+.person-actions .check.waiting { color: var(--muted); }

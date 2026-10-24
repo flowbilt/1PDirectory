@@ -63,19 +63,19 @@
     const b = boxFor(t), first = S.tenants.findIndex((x) => x.box === t.box) === i;
     if (!first) return `<div class="people-box same" data-box="${esc(b.key)}"><span class="hint">People: the same company as above, so the same list.</span></div>`;
     return `<div class="people-box" data-box="${esc(b.key)}">
-      <div class="people-head">
+      <div class="people-head${b.show_people ? "" : " off"}">
         <label class="check"><input type="checkbox" class="p-on"${b.show_people ? " checked" : ""}> Show ${esc(t.name || "this company")}'s people on touch screens</label>
         <span class="people-details"><span class="hint">Details shown:</span>
           <label class="check inline"><input type="checkbox" class="ps-title"${b.show_title ? " checked" : ""}> Title</label>
           <label class="check inline"><input type="checkbox" class="ps-phone"${b.show_phone ? " checked" : ""}> Phone or ext.</label>
           <label class="check inline"><input type="checkbox" class="ps-email"${b.show_email ? " checked" : ""}> Email</label></span>
       </div>
-      <p class="hint">${b.show_people ? "Visitors tap the company on a touch screen to see the people ticked Show, with the details ticked above." : "Off: these people are kept for the building but not shown on any screen."}
+      <p class="hint">${b.show_people ? "Visitors tap the company on a touch screen to see the people ticked Show, with the details ticked above." : "<strong class=\"people-off\">Switched off:</strong> no one in this list shows on any screen, whatever their own Show tick. Tick the box above to show the people ticked Show. They're kept for the building either way."}
         Shared by every screen in this building that lists the company. Display-only screens and the Directory to Go page never show people.</p>
       <ol class="people-rows">${b.people.map((x, pi) => `<li class="person" data-pi="${pi}">
         ${PERSON_FIELDS.map(([f, label, n]) => `<input class="p-${f}" value="${esc(x[f])}" placeholder="${label}" aria-label="${label}" maxlength="${n}"${f === "email" ? ' type="email" inputmode="email"' : f === "phone" ? ' inputmode="tel"' : ""}>`).join("")}
         <span class="person-actions">
-          <label class="check inline"><input type="checkbox" class="p-show"${x.show !== false ? " checked" : ""}> Show</label>
+          <label class="check inline${b.show_people ? "" : " waiting"}"><input type="checkbox" class="p-show"${x.show !== false ? " checked" : ""}> ${b.show_people ? "Show" : "Show (once the company is switched on)"}</label>
           <button type="button" class="icon-btn" data-pact="up" aria-label="Move up" ${pi === 0 ? "disabled" : ""}>↑</button>
           <button type="button" class="icon-btn" data-pact="down" aria-label="Move down" ${pi === b.people.length - 1 ? "disabled" : ""}>↓</button>
           <button type="button" class="icon-btn remove" data-pact="remove" aria-label="Remove ${esc([x.first_name, x.last_name].join(" ").trim() || "person")}">Remove</button>
@@ -99,7 +99,7 @@
   }
   function peopleLabel(t) {
     const b = S.boxes.get(t.box), n = b ? b.people.filter(named).length : 0;
-    return `People${n ? ` ${n}` : ""}${b?.show_people && n ? " · shown" : ""}`;
+    return `People${n ? ` ${n}` : ""}${n ? (b.show_people ? " · shown" : " · hidden") : ""}`;
   }
   /** After the tenants are saved: each changed list goes to the company its tenant now belongs to. */
   async function savePeople(dirId) {
