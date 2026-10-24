@@ -45,6 +45,8 @@ Do these once. The current site keeps running as it is until the new build is de
 
 26. For touch screens and the console's busy and remote-support lines (DP-08 round 13): **before uploading that code**, new query, paste all of `25-touch.sql`, and click **Run**. Then new query, paste all of `check-touch.sql`, and click **Run**; it should read **ALL 5 CHECKS PASSED** (red on purpose). (The new console reads and saves the two new screen columns, so they must exist first.)
 
+27. For people under tenants (DP-09 round 14): **before uploading that code**, new query, paste all of `26-people.sql`, and click **Run**. Then new query, paste all of `check-people.sql`, and click **Run**; it should read **ALL 10 CHECKS PASSED** (red on purpose). Every existing tenant gets its building's company here (one per name per building), with no people and nothing shown. (The new editor reads and writes the new tables, so they must exist first; the old code never asks for them.)
+
 If any of them shows an error (other than the expected red messages from the `check-…sql` files), copy the message (it includes a line number) and send it to Claude.
 
 ## 3. Lock down sign-ups

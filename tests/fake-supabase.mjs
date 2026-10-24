@@ -16,7 +16,7 @@ const CODE_ALPHA = "ABCDEFGHJKMNPQRSTUVWXYZ23456789";
 const newCode = () => Array.from({ length: 6 }, () => CODE_ALPHA[Math.floor(Math.random() * CODE_ALPHA.length)]).join("");
 
 export function createFake() {
-  const T = { organizations: [], profiles: [], properties: [], directories: [], tenants: [], screens: [], audit_log: [], devices: [], device_commands: [], device_daily: [], wifi_networks: [], prepare_codes: [], alert_recipients: [], mail_settings: [], togo_scans: [] };
+  const T = { organizations: [], profiles: [], properties: [], directories: [], tenants: [], screens: [], audit_log: [], devices: [], device_commands: [], device_daily: [], wifi_networks: [], prepare_codes: [], alert_recipients: [], mail_settings: [], togo_scans: [], companies: [], people: [] };
   const SERVICE_ONLY = new Set(["togo_scans", "devices", "device_commands", "device_daily", "wifi_networks", "prepare_codes", "alert_recipients", "mail_settings"]); // row-level security on, no policies: server key only
   // Columns of screens signed-in users may read (supabase/06-trust.sql, plus sizes from 18 and no_cec from 21). hardware is server-only.
   const SCREEN_COLS = new Set(["id", "directory_id", "key", "name", "location_note", "orientation", "last_seen", "last_report", "identify_until", "created_at", "sizes", "no_cec", "hide_powered_by", "touch", "screen_inches"]);
@@ -53,6 +53,7 @@ export function createFake() {
     T.tenants.push({ id: randomUUID(), directory_id: od, sort: 0, name: "Secret Tenant Inc.", suite: "100", arrow: "", note: "" });
     T.screens.push({ id: randomUUID(), directory_id: od, key: "other-tower", name: "Other Tower Lobby", location_note: "", orientation: "landscape", hardware: {}, last_seen: null, last_report: {}, sizes: {}, no_cec: false, traffic_at: null, hide_powered_by: false, touch: false, screen_inches: null, created_at: now() });
 
+    for (const t of T.tenants) linkTenant(t, null);              // 26-people.sql gives existing tenants their companies
     for (const sc of T.screens) {
       const serial = String(sc.hardware?.serial || "").toLowerCase();
       if (/^[0-9a-f]{8,32}$/.test(serial)) T.devices.push({ ...defaults.devices(), serial, screen_id: sc.id, model: sc.hardware.model || "" });
@@ -71,6 +72,7 @@ export function createFake() {
 
   // ── access rules (mirror of 01-schema.sql) ──
   const profileOf = (uid) => T.profiles.find((p) => p.user_id === uid);
+  const companyOrg = (cid) => { const c = T.companies.find((x) => x.id === cid); return T.properties.find((x) => x.id === c?.property_id)?.org_id; };
   const dirOrg = (did) => { const d = T.directories.find((x) => x.id === did); const p = d && T.properties.find((x) => x.id === d.property_id); return p?.org_id; };
   function canSee(table, row, who) {
     if (who.service) return true;
@@ -84,6 +86,8 @@ export function createFake() {
       case "directories": return dirOrg(row.id) === me.org_id;
       case "tenants": return dirOrg(row.directory_id) === me.org_id;
       case "screens": return dirOrg(row.directory_id) === me.org_id;
+      case "companies": return companyOrg(row.id) === me.org_id;
+      case "people": return companyOrg(row.company_id) === me.org_id;
       default: return false;
     }
   }
@@ -93,6 +97,8 @@ export function createFake() {
     const me = who.profile; if (!me) return false;
     if (me.role === "platform_admin") return table !== "profiles" && table !== "audit_log";
     if (table === "tenants") return dirOrg(row.directory_id) === me.org_id;
+    if (table === "people") return companyOrg(row.company_id) === me.org_id;            // 26-people.sql
+    if (op === "update" && table === "companies") return companyOrg(row.id) === me.org_id; // no insert: the tenant list makes them
     if (op === "update" && table === "properties") return row.org_id === me.org_id;
     if (op === "update" && table === "directories") return dirOrg(row.id) === me.org_id;
     return false;
@@ -153,7 +159,9 @@ export function createFake() {
     organizations: () => ({ id: randomUUID(), kind: "owner", notes: "", created_at: now() }),
     properties: () => ({ id: randomUUID(), address: "", timezone: "America/Chicago", lat: null, lon: null, logo: "", logo_replaces_name: false, company_logo: "", logo_swap: false, background: {}, destinations: [], amenities: [], place_lists: [], managed_by: {}, leased_by: {}, footer: "", created_at: now(), updated_at: now() }),
     directories: () => ({ id: randomUUID(), subtitle: "", footer_override: null, news_enabled: true, rotate_seconds: 12, weather_enabled: true, map_enabled: false, times_enabled: false, amenities_enabled: false, togo_enabled: false, togo_line: "", togo_code: newCode(), created_at: now(), updated_at: now() }),
-    tenants: () => ({ id: randomUUID(), sort: 0, suite: "", arrow: "", note: "" }),
+    tenants: () => ({ id: randomUUID(), sort: 0, suite: "", arrow: "", note: "", company_id: null }),
+    companies: () => ({ id: randomUUID(), show_people: false, show_title: true, show_phone: false, show_email: false, created_at: now(), updated_at: now() }),
+    people: () => ({ id: randomUUID(), sort: 0, first_name: "", last_name: "", title: "", phone: "", email: "", suite: "", show: true, created_at: now(), updated_at: now() }),
     screens: () => ({ id: randomUUID(), directory_id: null, location_note: "", orientation: "auto", hardware: {}, last_seen: null, last_report: {}, sizes: {}, no_cec: false, traffic_at: null, hide_powered_by: false, touch: false, screen_inches: null, created_at: now() }),
     profiles: () => ({ full_name: "", created_at: now() }),
     audit_log: () => ({ id: T.audit_log.length + 1, at: now(), detail: {} }),
@@ -165,10 +173,30 @@ export function createFake() {
     device_commands: () => ({ id: (T.device_commands.at(-1)?.id || 0) + 1, status: "pending", result: "", payload: null, save: null, created_at: now(), sent_at: null, done_at: null }),
   };
   const touchDir = (did, uid) => { const d = T.directories.find((x) => x.id === did); if (d) { d.updated_at = now(); d.updated_by = uid || null; } };
+  // Mirror of 26-people.sql: a tenant finds (or makes) its building's company by name; a rename of a company's only
+  // listing to a free name renames the company; people and switch changes mark every directory listing the company
+  const companyKey = (n) => String(n ?? "").trim().replace(/\s+/g, " ").toLowerCase();
+  const touchCompany = (cid, uid) => new Set(T.tenants.filter((t) => t.company_id === cid).map((t) => t.directory_id)).forEach((d) => touchDir(d, uid));
+  function linkTenant(row, old) {
+    const prop = T.directories.find((d) => d.id === row.directory_id)?.property_id;
+    if (!prop) return;
+    const key = companyKey(row.name);
+    if (old && old.company_id && old.directory_id === row.directory_id && companyKey(old.name) !== key
+        && !T.tenants.some((t) => t.company_id === old.company_id && t.id !== old.id)
+        && !T.companies.some((c) => c.property_id === prop && companyKey(c.name) === key)) {
+      const c = T.companies.find((x) => x.id === old.company_id); c.name = String(row.name).trim(); c.updated_at = now();
+      row.company_id = old.company_id; return;
+    }
+    let c = T.companies.find((x) => x.property_id === prop && companyKey(x.name) === key);
+    if (!c) { c = { ...defaults.companies(), property_id: prop, name: String(row.name).trim() }; T.companies.push(c); }
+    row.company_id = c.id;
+  }
   function checkRow(table, row) {
     if (table === "directories" && T.directories.some((d) => d.slug === row.slug && d.id !== row.id)) return "duplicate key value violates unique constraint \"directories_slug_key\"";
     if (table === "screens" && T.screens.some((s) => s.key === row.key && s.id !== row.id)) return "duplicate key value violates unique constraint \"screens_key_key\"";
     if (table === "tenants" && !String(row.name || "").trim()) return "new row violates check constraint \"tenants_name_check\"";
+    if (table === "people" && !String(row.first_name || "").trim() && !String(row.last_name || "").trim()) return "new row violates check constraint \"people_named\"";
+    if (table === "people" && [["first_name", 60], ["last_name", 60], ["title", 80], ["phone", 40], ["email", 120], ["suite", 16]].some(([f, n]) => String(row[f] ?? "").length > n)) return "new row violates check constraint \"people_check\"";
     // 19-mail.sql: one row, and only sealed passwords
     if (table === "mail_settings" && (row.id !== true || !String(row.password_enc || "").startsWith("v1:"))) return "new row violates check constraint \"mail_settings_check\"";
     return null;
@@ -208,14 +236,19 @@ export function createFake() {
           const next = { ...existing, ...item };
           if (!canWrite(table, "update", next, who)) return err(403, `new row violates row-level security policy for table "${table}"`);
           const bad = checkRow(table, next); if (bad) return err(409, bad);
-          Object.assign(existing, item); result.push({ ...existing });
-          if (table === "tenants") touchDir(existing.directory_id, who.uid);
+          const before = { ...existing };
+          Object.assign(existing, item);
+          if (table === "tenants") { linkTenant(existing, before); touchDir(existing.directory_id, who.uid); }
+          if (table === "people") touchCompany(existing.company_id, who.uid);
+          result.push({ ...existing });
         } else {
           const row = { ...(defaults[table]?.() || {}), ...item };
           if (!canWrite(table, "insert", row, who)) return err(403, `new row violates row-level security policy for table "${table}"`);
           const bad = checkRow(table, row); if (bad) return err(409, bad);
+          if (table === "tenants") linkTenant(row, null);
           T[table].push(row); result.push({ ...row });
           if (table === "tenants") touchDir(row.directory_id, who.uid);
+          if (table === "people") touchCompany(row.company_id, who.uid);
         }
       }
       return wantRows ? out(result, 201) : out(undefined, 201);
@@ -228,13 +261,18 @@ export function createFake() {
         if (!who.service && who.profile?.role !== "platform_admin") {
           if (table === "properties" && body.org_id && body.org_id !== r.org_id) return err(400, "Only 1Point admins can move a building to another owner");
           if (table === "directories" && ((body.slug && body.slug !== r.slug) || (body.property_id && body.property_id !== r.property_id))) return err(400, "Only 1Point admins can move or rename a directory");
+          if (table === "companies" && ((body.name !== undefined && body.name !== r.name) || (body.property_id && body.property_id !== r.property_id))) return err(400, "A company takes its name from the tenant list: rename the tenant instead");
         }
         const bad = checkRow(table, { ...r, ...body }); if (bad) return err(409, bad);
       }
       rows.forEach((r) => {
-        Object.assign(r, body);
+        const before = { ...r };
+        const { company_id, ...rest } = body;                     // a tenant's company comes from its name, never from the editor
+        Object.assign(r, table === "tenants" ? rest : body);
         if (table === "properties" || table === "directories") { r.updated_at = now(); r.updated_by = who.uid || null; }
-        if (table === "tenants") touchDir(r.directory_id, who.uid);
+        if (table === "tenants") { linkTenant(r, before); touchDir(r.directory_id, who.uid); }
+        if (table === "people") touchCompany(r.company_id, who.uid);
+        if (table === "companies" && ["show_people", "show_title", "show_phone", "show_email", "name"].some((k) => before[k] !== r[k])) touchCompany(r.id, who.uid);
       });
       return wantRows ? out(rows.map((r) => ({ ...r }))) : out(undefined, 204);
     }
@@ -243,6 +281,7 @@ export function createFake() {
       for (const r of rows) if (!canWrite(table, "delete", r, who)) return err(403, `permission denied for table ${table}`);
       T[table] = T[table].filter((r) => !rows.includes(r));
       if (table === "tenants") new Set(rows.map((r) => r.directory_id)).forEach((d) => touchDir(d, who.uid));
+      if (table === "people") new Set(rows.map((r) => r.company_id)).forEach((c) => touchCompany(c, who.uid));
       if (table === "directories") { const ids = new Set(rows.map((r) => r.id)); T.tenants = T.tenants.filter((t) => !ids.has(t.directory_id)); T.screens.forEach((s) => { if (ids.has(s.directory_id)) s.directory_id = null; }); }
       return wantRows ? out(rows) : out(undefined, 204);
     }
@@ -443,7 +482,15 @@ export function createFake() {
       const p = d ? T.properties.find((x) => x.id === d.property_id) : null;
       const etag = createHash("md5").update([s.key, s.name, s.orientation, s.directory_id || "-", s.identify_until || "-", d?.updated_at || "-", p?.updated_at || "-", JSON.stringify(s.sizes || {}), String(!!s.hide_powered_by), String(!!s.touch), s.screen_inches ?? "-"].join("|")).digest("hex");
       if (etag === p_etag) return { etag, not_modified: true };
-      const tenants = d ? order(T.tenants.filter((t) => t.directory_id === d.id), "sort,name").map(({ name, suite, arrow, note, sort }) => ({ name, suite, arrow, note, sort })) : [];
+      // 26-people.sql: people only on touch screens, with the company's switch on, ticked Show, and the details it shows
+      const peopleOf = (cid) => {
+        const c = T.companies.find((x) => x.id === cid);
+        if (!s.touch || !c?.show_people) return [];
+        return [...T.people.filter((x) => x.company_id === cid && x.show !== false)]
+          .sort((a, b) => a.sort - b.sort || a.last_name.toLowerCase().localeCompare(b.last_name.toLowerCase()) || a.first_name.toLowerCase().localeCompare(b.first_name.toLowerCase()))
+          .map((x) => ({ first: x.first_name, last: x.last_name, title: c.show_title ? x.title : "", phone: c.show_phone ? x.phone : "", email: c.show_email ? x.email : "", suite: x.suite }));
+      };
+      const tenants = d ? order(T.tenants.filter((t) => t.directory_id === d.id), "sort,name").map(({ name, suite, arrow, note, sort, company_id }) => ({ name, suite, arrow, note, sort, people: peopleOf(company_id) })) : [];
       return { etag, screen: { key: s.key, name: s.name, orientation: s.orientation, identify_until: s.identify_until ?? null, sizes: s.sizes || {}, hide_powered_by: !!s.hide_powered_by, touch: !!s.touch, screen_inches: s.screen_inches ?? null }, dir: d ? { ...d } : null, prop: p ? { ...p } : null, tenants };
     },
   };

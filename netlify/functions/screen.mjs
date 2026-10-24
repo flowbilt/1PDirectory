@@ -13,7 +13,7 @@ import { DISPLAY_VERSION } from "../lib/version.mjs";
 
 // Bump when toPayload's output changes shape, so every screen re-downloads once after the deploy. The live display
 // version is part of the tag too (TAG), so a display deploy also gives every screen a fresh answer.
-const PAYLOAD_V = "p6";
+const PAYLOAD_V = "p7";
 const TAG = `${PAYLOAD_V}-${DISPLAY_VERSION.replace(/[^0-9.]/g, "")}`;
 const HEADERS = { "Content-Type": "application/json; charset=utf-8", "Cache-Control": "no-cache" };
 
@@ -68,6 +68,12 @@ export function cleanPlaceLists(lists, amenities) {
   })).filter((l) => l.items.length);
 }
 
+/** A tenant's people (supabase/26-people.sql). The database sends them only to touch screens, only with the owner's
+ *  switches on, and only the details the owner shows; this just tidies and caps them. */
+export const cleanPeople = (list) => (Array.isArray(list) ? list : []).slice(0, 200)
+  .map((x) => ({ first: text(x?.first, 60), last: text(x?.last, 60), title: text(x?.title, 80), phone: text(x?.phone, 40),
+    email: text(x?.email, 120), suite: text(x?.suite, 16) })).filter((x) => x.first || x.last);
+
 /** Directory to Go: the QR code's link (TOGO_BASE + the directory's code; waytugo.com forwards /d/ here). */
 export function togoFor(dir) {
   const base = (process.env.TOGO_BASE || "https://waytugo.com/d/").replace(/\/*$/, "/");
@@ -99,7 +105,8 @@ export function toPayload(screen, dir, prop, tenants) {
     logoReplacesName: !!(prop?.logo && prop?.logo_replaces_name),
     companyLogo: prop?.company_logo || "",                 // the owner's or manager's logo (supabase/15-logos.sql)
     logoSwap: !!prop?.logo_swap,                           // true: company logo on top, building logo at the bottom
-    tenants: (tenants || []).map((t) => ({ name: t.name, suite: t.suite, dir: t.arrow || "", note: t.note || "" })),
+    // people: only ever filled on a touch screen (26-people.sql); the touch directory (round 15) draws them
+    tenants: (tenants || []).map((t) => ({ name: t.name, suite: t.suite, dir: t.arrow || "", note: t.note || "", people: cleanPeople(t.people) })),
     managedBy: prop?.managed_by || {},
     leasedBy: prop?.leased_by || {},
     welcome: dir?.footer_override ?? prop?.footer ?? "",

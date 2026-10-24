@@ -4,7 +4,8 @@
   const { esc, toast, since } = window.UI;
   const params = new URLSearchParams(location.search);
 
-  const S = { dir: null, prop: null, tenants: [], screens: [], siblings: 0, dirty: false, sel: 0 };
+  const S = { dir: null, prop: null, tenants: [], screens: [], siblings: 0, dirty: false, sel: 0,
+    boxes: new Map(), open: new Set(), peopleOff: false };   // people under tenants (26-people.sql)
   // Per-screen sizes, % of standard (supabase/18-sizes.sql, 22-widget-sizes.sql); 100 = standard and isn't stored
   const SIZES = ["title", "logo", "brand", "welcome", "clock", "weather", "news", "contacts", "qr"];
   const sizeOf = (scr, k) => Number(scr?.sizes?.[k]) || 100;
@@ -24,9 +25,103 @@
     const keepKey = S.screens[S.sel]?.key;
     for (const s of screens) s.saved = JSON.stringify(s.sizes || {});
     Object.assign(S, { dir, prop, tenants: tenants.map((t) => ({ ...t })), screens, siblings: siblings.length });
+    await loadPeople();
     // The screen opened from the console (?s=), else the one shown before publishing, else the first
     const want = keepKey ? screens.findIndex((s) => s.key === keepKey) : screens.findIndex((s) => s.id === params.get("s"));
     S.sel = Math.max(0, want);
+  }
+
+  // ── People under tenants (DP-09 round 14; supabase/26-people.sql) ──
+  // People belong to the building's company, not to this directory's row: every screen in the building that lists the
+  // company shares one list. The database makes and links the companies from the tenant names. Each list is a "box":
+  // keyed by its company, or by the tenant row for a tenant not yet published.
+  const PERSON_FIELDS = [["first_name", "First name", 60], ["last_name", "Last name", 60], ["title", "Title", 80],
+    ["phone", "Phone or ext.", 40], ["email", "Email", 120], ["suite", "Suite, if different", 16]];
+  const blankPerson = () => ({ id: crypto.randomUUID(), first_name: "", last_name: "", title: "", phone: "", email: "", suite: "", show: true });
+  const named = (x) => (x.first_name || "").trim() || (x.last_name || "").trim();
+  async function loadPeople() {
+    S.boxes = new Map();
+    try {
+      const cos = await Auth.db(`companies?property_id=eq.${S.prop.id}&select=id,name,show_people,show_title,show_phone,show_email`);
+      const ids = cos.map((c) => c.id);
+      const people = ids.length ? await Auth.db(`people?company_id=in.(${ids.join(",")})&select=*&order=sort.asc,last_name.asc,first_name.asc`) : [];
+      for (const c of cos) S.boxes.set(c.id, { key: c.id, company_id: c.id, show_people: !!c.show_people, show_title: c.show_title !== false,
+        show_phone: !!c.show_phone, show_email: !!c.show_email, people: people.filter((x) => x.company_id === c.id).map((x) => ({ ...x })), dirty: false });
+      S.peopleOff = false;
+    } catch { S.peopleOff = true; }            // 26-people.sql not run yet: the rest of the editor works as before
+    for (const t of S.tenants) {
+      t.box = t.company_id && S.boxes.has(t.company_id) ? t.company_id : `new:${t.id}`;
+      if (S.open.delete(`new:${t.id}`)) S.open.add(t.box);   // a list opened before publishing stays open after it
+    }
+  }
+  function boxFor(t) {
+    if (!t.box) t.box = `new:${t.id}`;
+    if (!S.boxes.has(t.box)) S.boxes.set(t.box, { key: t.box, company_id: null, show_people: false, show_title: true, show_phone: false, show_email: false, people: [], dirty: false });
+    return S.boxes.get(t.box);
+  }
+  function renderBox(t, i) {
+    const b = boxFor(t), first = S.tenants.findIndex((x) => x.box === t.box) === i;
+    if (!first) return `<div class="people-box same" data-box="${esc(b.key)}"><span class="hint">People: the same company as above, so the same list.</span></div>`;
+    return `<div class="people-box" data-box="${esc(b.key)}">
+      <div class="people-head">
+        <label class="check"><input type="checkbox" class="p-on"${b.show_people ? " checked" : ""}> Show ${esc(t.name || "this company")}'s people on touch screens</label>
+        <span class="people-details"><span class="hint">Details shown:</span>
+          <label class="check inline"><input type="checkbox" class="ps-title"${b.show_title ? " checked" : ""}> Title</label>
+          <label class="check inline"><input type="checkbox" class="ps-phone"${b.show_phone ? " checked" : ""}> Phone or ext.</label>
+          <label class="check inline"><input type="checkbox" class="ps-email"${b.show_email ? " checked" : ""}> Email</label></span>
+      </div>
+      <p class="hint">${b.show_people ? "Visitors tap the company on a touch screen to see the people ticked Show, with the details ticked above." : "Off: these people are kept for the building but not shown on any screen."}
+        Shared by every screen in this building that lists the company. Display-only screens and the Directory to Go page never show people.</p>
+      <ol class="people-rows">${b.people.map((x, pi) => `<li class="person" data-pi="${pi}">
+        ${PERSON_FIELDS.map(([f, label, n]) => `<input class="p-${f}" value="${esc(x[f])}" placeholder="${label}" aria-label="${label}" maxlength="${n}"${f === "email" ? ' type="email" inputmode="email"' : f === "phone" ? ' inputmode="tel"' : ""}>`).join("")}
+        <span class="person-actions">
+          <label class="check inline"><input type="checkbox" class="p-show"${x.show !== false ? " checked" : ""}> Show</label>
+          <button type="button" class="icon-btn" data-pact="up" aria-label="Move up" ${pi === 0 ? "disabled" : ""}>↑</button>
+          <button type="button" class="icon-btn" data-pact="down" aria-label="Move down" ${pi === b.people.length - 1 ? "disabled" : ""}>↓</button>
+          <button type="button" class="icon-btn remove" data-pact="remove" aria-label="Remove ${esc([x.first_name, x.last_name].join(" ").trim() || "person")}">Remove</button>
+        </span></li>`).join("") || `<li class="empty-rows">No people yet.</li>`}</ol>
+      <div class="people-foot"><button type="button" class="ghost" data-pact="add">Add a person</button>
+        ${b.people.length > 1 ? `<button type="button" class="ghost" data-pact="sort">Sort A to Z by last name</button>` : ""}
+        <span class="hint">${b.people.filter(named).length} ${b.people.filter(named).length === 1 ? "person" : "people"}</span></div>
+    </div>`;
+  }
+  /** What's typed in the open lists, back into the boxes. */
+  function readBoxes() {
+    for (const el of $("tenant-rows").querySelectorAll(".people-box:not(.same)")) {
+      const b = S.boxes.get(el.dataset.box); if (!b) continue;
+      const was = JSON.stringify([b.show_people, b.show_title, b.show_phone, b.show_email, b.people]);
+      b.show_people = el.querySelector(".p-on").checked; b.show_title = el.querySelector(".ps-title").checked;
+      b.show_phone = el.querySelector(".ps-phone").checked; b.show_email = el.querySelector(".ps-email").checked;
+      b.people = [...el.querySelectorAll(".person")].map((row) => ({ ...b.people[Number(row.dataset.pi)],
+        ...Object.fromEntries(PERSON_FIELDS.map(([f]) => [f, row.querySelector(`.p-${f}`).value.trim()])), show: row.querySelector(".p-show").checked }));
+      if (JSON.stringify([b.show_people, b.show_title, b.show_phone, b.show_email, b.people]) !== was) b.dirty = true;
+    }
+  }
+  function peopleLabel(t) {
+    const b = S.boxes.get(t.box), n = b ? b.people.filter(named).length : 0;
+    return `People${n ? ` ${n}` : ""}${b?.show_people && n ? " · shown" : ""}`;
+  }
+  /** After the tenants are saved: each changed list goes to the company its tenant now belongs to. */
+  async function savePeople(dirId) {
+    const dirty = [...S.boxes.values()].filter((b) => b.dirty);
+    if (S.peopleOff || !dirty.length) return;
+    const saved = await Auth.db(`tenants?directory_id=eq.${dirId}&select=id,company_id`);
+    for (const b of dirty) {
+      const t = S.tenants.find((x) => x.box === b.key && x.name);
+      const target = t && saved.find((x) => x.id === t.id)?.company_id;
+      if (!target) continue;                                     // its tenant was removed or left blank: nothing to save
+      await Auth.db(`companies?id=eq.${target}`, { method: "PATCH", prefer: "return=minimal",
+        body: { show_people: b.show_people, show_title: b.show_title, show_phone: b.show_phone, show_email: b.show_email } });
+      // A list typed for another company (a rename to a name that already exists) is copied, never moved
+      const same = target === b.company_id;
+      const rows = b.people.filter(named).map((x, i) => ({ id: same ? x.id : crypto.randomUUID(), company_id: target, sort: i * 10,
+        ...Object.fromEntries(PERSON_FIELDS.map(([f]) => [f, x[f] || ""])), show: x.show !== false }));
+      if (rows.length) await Auth.db("people", { method: "POST", prefer: "resolution=merge-duplicates,return=minimal", body: rows });
+      if (same) {
+        const keep = rows.map((r) => r.id);
+        await Auth.db(`people?company_id=eq.${target}${keep.length ? `&id=not.in.(${keep.join(",")})` : ""}`, { method: "DELETE", prefer: "return=minimal" });
+      }
+    }
   }
 
   // ── Form <-> state ──
@@ -81,8 +176,11 @@
     $("bg-vis-val").textContent = `${p.background.visibility}%`;
     const scr = S.screens[S.sel];
     if (scr) scr.sizes = Object.fromEntries(SIZES.map((k) => [k, parseInt($(`sz-${k}`).value, 10)]).filter(([, v]) => v && v !== 100));
+    readBoxes();
+    const prev = new Map(S.tenants.map((t) => [t.id, t]));
     S.tenants = [...$("tenant-rows").querySelectorAll(".tenant-row")].map((row) => ({
-      id: row.dataset.id,
+      ...(prev.get(row.dataset.id)?._noteOpen ? { _noteOpen: true } : {}),
+      id: row.dataset.id, company_id: prev.get(row.dataset.id)?.company_id ?? null, box: prev.get(row.dataset.id)?.box || `new:${row.dataset.id}`,
       name: row.querySelector(".t-name").value.trim(),
       suite: row.querySelector(".t-suite").value.trim(),
       arrow: row.querySelector(".t-dir").value,
@@ -94,7 +192,12 @@
   function changed() { read(); setDirty(true); renderSizes(); pushPreview(); }
   // The Sizes screen picker isn't an edit: it has its own handler (below)
   $("editor").addEventListener("input", (e) => { if (!e.target.matches("[type=file], #sz-screen")) changed(); });
-  $("editor").addEventListener("change", (e) => { if (e.target.matches("select, input[type=checkbox]")) changed(); });
+  $("editor").addEventListener("change", (e) => {
+    if (!e.target.matches("select, input[type=checkbox]")) return;
+    changed();
+    if (e.target.matches(".p-on")) { const k = e.target.closest(".people-box").dataset.box; renderTenants();
+      $("tenant-rows").querySelector(`.people-box[data-box="${CSS.escape(k)}"] .p-on`)?.focus(); }
+  });
 
   function renderStatus() {
     const s = S.screens;
@@ -119,24 +222,48 @@
           <button type="button" class="icon-btn" data-act="up" aria-label="Move up" ${i === 0 ? "disabled" : ""}>↑</button>
           <button type="button" class="icon-btn" data-act="down" aria-label="Move down" ${i === rows.length - 1 ? "disabled" : ""}>↓</button>
           <button type="button" class="icon-btn" data-act="note" aria-label="Add a note under the name" title="Note under the name" ${t.note ? "hidden" : ""}>+ note</button>
+          ${S.peopleOff ? "" : `<button type="button" class="icon-btn people-btn${S.open.has(t.box) ? " open" : ""}" data-act="people" aria-expanded="${S.open.has(t.box)}" title="The people at this company">${esc(peopleLabel(t))}</button>`}
           <button type="button" class="icon-btn remove" data-act="remove" aria-label="Remove ${esc(t.name || "tenant")}">Remove</button>
         </span>
         ${t.note !== "" || t._noteOpen ? `<input class="t-note" value="${esc(t.note)}" placeholder="Small line under the name, e.g. A subsidiary of…" aria-label="Tenant ${i + 1} note" maxlength="120">` : ""}
+        ${!S.peopleOff && S.open.has(t.box) ? renderBox(t, i) : ""}
       </li>`).join("") : `<li class="empty-rows">No tenants yet. Click Add tenant to start the list.</li>`;
   }
   $("tenant-rows").addEventListener("click", (e) => {
+    const pb = e.target.closest("button[data-pact]");
+    if (pb) { personAction(pb); return; }
     const btn = e.target.closest("button[data-act]");
     if (!btn) return;
     read();
     const i = Number(btn.closest(".tenant-row").dataset.i), t = S.tenants;
     if (btn.dataset.act === "up" && i > 0) [t[i - 1], t[i]] = [t[i], t[i - 1]];
     if (btn.dataset.act === "down" && i < t.length - 1) [t[i + 1], t[i]] = [t[i], t[i + 1]];
-    if (btn.dataset.act === "remove") t.splice(i, 1);
+    if (btn.dataset.act === "remove") t.splice(i, 1);   // its company and people stay with the building
     if (btn.dataset.act === "note") t[i]._noteOpen = true;
+    if (btn.dataset.act === "people") {
+      const k = t[i].box || `new:${t[i].id}`;
+      if (S.open.has(k)) S.open.delete(k); else { S.open.add(k); if (!boxFor(t[i]).people.length) boxFor(t[i]).people.push(blankPerson()); }
+      renderTenants();
+      if (S.open.has(k)) $("tenant-rows").querySelector(`.people-box[data-box="${CSS.escape(k)}"] .person:last-child .p-first_name`)?.focus();
+      return;                                                     // opening a list isn't an edit
+    }
     renderTenants();
     if (btn.dataset.act === "note") $("tenant-rows").querySelectorAll(".tenant-row")[i].querySelector(".t-note")?.focus();
     setDirty(true); pushPreview();
   });
+  function personAction(btn) {
+    read();
+    const box = S.boxes.get(btn.closest(".people-box").dataset.box); if (!box) return;
+    const list = box.people, pi = Number(btn.closest(".person")?.dataset.pi), act = btn.dataset.pact;
+    if (act === "add") list.push(blankPerson());
+    if (act === "up" && pi > 0) [list[pi - 1], list[pi]] = [list[pi], list[pi - 1]];
+    if (act === "down" && pi < list.length - 1) [list[pi + 1], list[pi]] = [list[pi], list[pi + 1]];
+    if (act === "remove") list.splice(pi, 1);
+    if (act === "sort") { const k = (x) => `${x.last_name} ${x.first_name}`.trim().toLowerCase(); list.sort((a, b) => k(a).localeCompare(k(b), "en", { numeric: true })); }
+    box.dirty = true;
+    renderTenants(); setDirty(true);
+    if (act === "add") $("tenant-rows").querySelector(`.people-box[data-box="${CSS.escape(box.key)}"] .person:last-child .p-first_name`)?.focus();
+  }
   $("add-tenant").addEventListener("click", () => {
     read();
     S.tenants.push({ id: crypto.randomUUID(), name: "", suite: "", arrow: "", note: "" });
@@ -452,6 +579,8 @@
       if (rows.length) await Auth.db("tenants", { method: "POST", prefer: "resolution=merge-duplicates,return=minimal", body: rows });
       const keep = rows.map((r) => r.id);
       await Auth.db(`tenants?directory_id=eq.${d.id}${keep.length ? `&id=not.in.(${keep.join(",")})` : ""}`, { method: "DELETE", prefer: "return=minimal" });
+      // People: after the tenants, so new and renamed tenants have their companies (the database makes them)
+      await savePeople(d.id);
       // Each screen whose sizes changed (the server checks access and keeps them in range)
       for (const s of S.screens) {
         if (JSON.stringify(s.sizes || {}) !== s.saved) await Auth.db("rpc/set_screen_sizes", { method: "POST", body: { p_screen: s.id, p_sizes: s.sizes || {} } });

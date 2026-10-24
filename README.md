@@ -89,6 +89,25 @@ directory in the editor and is off until ticked. Its text size is the editor's *
   waytugo.com: in that site's `_redirects` file, `/d/*  https://1pdirectory.netlify.app/d/:splat  200!` (or the same
   as a `[[redirects]]` rule in its `netlify.toml`).
 
+## People under tenants (DP-09 round 14)
+
+- **Found only through their company:** in the editor, each tenant's **People** button opens the list of people at that
+  company. On a touch screen (round 15) a visitor taps the company to see them; there's no building-wide list or search
+  of names, by design (someone looking for a person should know the company).
+- **Per building, not per screen:** the database keeps one company per name per building (`companies`, made and linked
+  from the tenant rows; case and spaces don't matter), so every screen in the building that lists a company shares
+  its people. Fixing a typo in a tenant's name keeps its people. Removing a tenant from a directory keeps the company
+  and its people for the building.
+- **An entry holds** first and last name, title, phone or extension, email, and a suite when it differs from the
+  company's. The customer fills in as much as they want: a person is kept whether or not they show (later work, such
+  as telling a person a visitor is here, will need the record).
+- **The owner decides what shows:** per company, **Show … people on touch screens** (off until the owner turns it on)
+  and which details show (title on; phone and email off by default); per person, a **Show** tick. The owner's admins
+  and editors edit them, and so can 1Point (for a customer who pays for full management); 1Point sets no default.
+- **Never anywhere else:** people go only to screens marked touch, only with the switch on, only those ticked Show, and
+  only the details shown. Display-only screens and the Directory to Go phone page never get them
+  (`supabase/26-people.sql`).
+
 ## Screens and cards (Raspberry Pi)
 
 Every Pi runs from a **prepared card**, and every card is the same. A card carries no identity until it's in a Pi:
@@ -266,7 +285,8 @@ A Pi needs no one on site after a power cut, whatever comes back first:
   keep listing it). Every screen is locked against touch (display 2.12.0: no zooming, scrolling, selecting, dragging
   or long-press menus), so a passer-by can't leave the directory in a mess. Mark a touch screen in **Screen settings**
   (**This is a touch screen**, and **Screen size (inches)**, corner to corner, `supabase/25-touch.sql`): the touch
-  directory, in a later round, appears only there and sizes its buttons for a finger from the size.
+  directory, in a later round, appears only there and sizes its buttons for a finger from the size. Only these screens
+  receive a tenant's people (People under tenants, above).
 - **The picture:** HDMI 0 always sends a picture at 1080p, even if no TV was detected at start, and the kiosk puts the
   rotation back within 10 seconds if a TV powering up resets it.
 - **No network** (a Pi that's been online before): the screen shows the directory and news it last received, with

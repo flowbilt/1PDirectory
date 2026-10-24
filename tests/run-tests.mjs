@@ -7,7 +7,7 @@ import { createFake, SERVICE_KEY, ANON_KEY, SIZE_RANGES } from "./fake-supabase.
 import screen, { toPayload } from "../netlify/functions/screen.mjs";
 import traffic, { toTimes } from "../netlify/functions/traffic.mjs";
 import togo from "../netlify/functions/togo.mjs";
-import { cleanPlaceLists } from "../netlify/functions/screen.mjs";
+import { cleanPlaceLists, cleanPeople } from "../netlify/functions/screen.mjs";
 import users from "../netlify/functions/users.mjs";
 import config from "../netlify/functions/config.mjs";
 import weather, { iconFor } from "../netlify/functions/weather.mjs";
@@ -69,7 +69,7 @@ test("a landscape Perimeter Park screen gets its title, subtitle, arrows, notes 
   assert.equal(d.buildingLabel, "South Tower");
   assert.equal(d.orientation, "landscape");
   assert.equal(d.tenants.length, 5);
-  assert.deepEqual(d.tenants[1], { name: "Common Bond Title, LLC", suite: "130 S", dir: "left", note: "A subsidiary of Affiliates Consolidated Services" });
+  assert.deepEqual(d.tenants[1], { name: "Common Bond Title, LLC", suite: "130 S", dir: "left", note: "A subsidiary of Affiliates Consolidated Services", people: [] });
   assert.match(d.welcome, /205-795-4732/);
 });
 
@@ -139,7 +139,7 @@ test("the editor preview and real screens use the same fields", () => {
   const p = toPayload({ key: "k", name: "n", orientation: "portrait" }, { title: "T", subtitle: "", footer_override: null, news_enabled: false, weather_enabled: true, rotate_seconds: 9 },
     { address: "A", logo: "", lat: 1, lon: 2, footer: "F", managed_by: {}, leased_by: {} }, [{ name: "X", suite: "1", arrow: "up", note: "" }]);
   assert.equal(p.buildingLabel, "A"); assert.equal(p.welcome, "F"); assert.equal(p.news.enabled, false); assert.equal(p.news.rotateSeconds, 9);
-  assert.deepEqual(p.tenants[0], { name: "X", suite: "1", dir: "up", note: "" });
+  assert.deepEqual(p.tenants[0], { name: "X", suite: "1", dir: "up", note: "", people: [] });
 });
 
 // ── Users and permissions ──
@@ -1699,6 +1699,158 @@ test("the touch lockdown is on every screen: no zooming, selecting, dragging or 
   const js = readFileSync(new URL("../public/display.js", import.meta.url), "utf8");
   for (const w of ['"contextmenu", "selectstart", "dragstart", "gesturestart"', "e.touches.length > 1", "e.ctrlKey"]) assert.ok(js.includes(w), w);
   assert.equal(DISPLAY_VERSION, "2.12.0");
+});
+
+// ── People under tenants (DP-09 round 14; supabase/26-people.sql) ──
+const rest = async (path, { method = "GET", token, body, prefer } = {}) => {
+  const r = await fake.handle(new Request(`${SB}/rest/v1/${path}`, { method, body: body ? JSON.stringify(body) : undefined,
+    headers: { apikey: ANON_KEY, Authorization: `Bearer ${token}`, "Content-Type": "application/json", ...(prefer ? { Prefer: prefer } : {}) } }));
+  return { status: r.status, data: r.status === 204 ? null : await r.json().catch(() => null) };
+};
+/** A second directory in Perimeter Park One (an entrance screen) that also lists Common Bond, and a touch screen for it. */
+function entranceFixture() {
+  const ppi = fake.T.properties.find((p) => p.name === "Perimeter Park One");
+  const did = crypto.randomUUID(), sid = crypto.randomUUID(), tid = crypto.randomUUID();
+  fake.T.directories.push({ id: did, property_id: ppi.id, slug: "ppi-entrance-test", title: "Perimeter Park One", subtitle: "", footer_override: null, news_enabled: false, rotate_seconds: 12, weather_enabled: false, map_enabled: false, times_enabled: false, amenities_enabled: false, togo_enabled: true, togo_line: "", togo_code: "PPXTST", created_at: new Date().toISOString(), updated_at: new Date().toISOString() });
+  fake.T.screens.push({ id: sid, directory_id: did, key: "ppi-entrance-test", name: "PPI entrance (test)", location_note: "", orientation: "portrait", hardware: {}, last_seen: null, last_report: {}, sizes: {}, no_cec: false, traffic_at: null, hide_powered_by: false, touch: true, screen_inches: 32, created_at: new Date().toISOString() });
+  return { ppi, did, sid, tid, cleanup() {
+    fake.T.tenants = fake.T.tenants.filter((t) => t.directory_id !== did);
+    fake.T.screens = fake.T.screens.filter((x) => x.id !== sid);
+    fake.T.directories = fake.T.directories.filter((x) => x.id !== did);
+  } };
+}
+
+test("people: every tenant has its building's company, the same name in two directories is one company, and people start hidden", async () => {
+  const fxr = entranceFixture();
+  const editor = await login("editor@barber.test", "editor-pass");
+  try {
+    const add = await rest("tenants", { method: "POST", token: editor, prefer: "return=representation", body: { id: fxr.tid, directory_id: fxr.did, sort: 0, name: "  common bond   TITLE, llc ", suite: "130 S" } });
+    assert.equal(add.status, 201);
+    const floor = fake.T.tenants.find((t) => t.name === "Common Bond Title, LLC");
+    assert.ok(floor.company_id && add.data[0].company_id === floor.company_id, "one company for the building, whatever the case and spaces");
+    assert.ok(fake.T.tenants.every((t) => t.company_id), "every tenant has a company");
+    const other = fake.T.tenants.find((t) => t.name === "Secret Tenant Inc.");
+    assert.notEqual(fake.T.companies.find((c) => c.id === other.company_id).property_id, fxr.ppi.id);
+    const co = fake.T.companies.find((c) => c.id === floor.company_id);
+    assert.deepEqual([co.show_people, co.show_title, co.show_phone, co.show_email], [false, true, false, false], "off until the owner turns it on");
+    const sql = readFileSync(new URL("../supabase/26-people.sql", import.meta.url), "utf8");
+    assert.ok(sql.includes("show_people  boolean not null default false") && sql.includes("show_title   boolean not null default true")
+      && sql.includes("show_phone   boolean not null default false") && sql.includes("show_email   boolean not null default false")
+      && sql.includes("show         boolean not null default true"), "the fake's defaults are the SQL's");
+  } finally { fxr.cleanup(); }
+});
+
+test("people: only a touch screen gets them, only with the owner's switch on, only people ticked Show, only the details shown", async () => {
+  const fxr = entranceFixture();
+  const owner = await login("leighann@barber.test", "owner-pass");
+  try {
+    await rest("tenants", { method: "POST", token: owner, body: { id: fxr.tid, directory_id: fxr.did, sort: 0, name: "Common Bond Title, LLC", suite: "130 S" } });
+    const cid = fake.T.tenants.find((t) => t.id === fxr.tid).company_id;
+    const ins = await rest("people", { method: "POST", token: owner, body: [
+      { company_id: cid, sort: 10, first_name: "Bea", last_name: "Zimmer", title: "Closer", phone: "x204", email: "bea@cb.example" },
+      { company_id: cid, sort: 20, first_name: "Al", last_name: "Young", title: "Escrow", phone: "205-555-0101", email: "al@cb.example" },
+      { company_id: cid, sort: 30, first_name: "Hidden", last_name: "Person", show: false }] });
+    assert.equal(ins.status, 201);
+    const people = async (key, etag) => { const r = await screen(req(`/api/screen?key=${key}`, { headers: etag ? { "If-None-Match": etag } : {} })); return { r, d: r.status === 200 ? await r.json() : null }; };
+    const pick = (d) => d.tenants.find((t) => t.name === "Common Bond Title, LLC").people;
+    // switch off: no one, anywhere
+    let a = await people("ppi-entrance-test");
+    assert.deepEqual(pick(a.d), [], "switch off");
+    // switch on
+    assert.equal((await rest(`companies?id=eq.${cid}`, { method: "PATCH", token: owner, body: { show_people: true } })).status, 204);
+    const b = await people("ppi-entrance-test", a.r.headers.get("ETag"));
+    assert.equal(b.r.status, 200, "turning the switch on gives the screen a new version");
+    assert.deepEqual(pick(b.d), [
+      { first: "Bea", last: "Zimmer", title: "Closer", phone: "", email: "", suite: "" },
+      { first: "Al", last: "Young", title: "Escrow", phone: "", email: "", suite: "" }], "ticked Show, in order, title only");
+    // the display-only directional listing the same company never gets them
+    assert.deepEqual(pick((await people("ppi-1s")).d), [], "display-only screen");
+    // details: the owner's choice
+    await rest(`companies?id=eq.${cid}`, { method: "PATCH", token: owner, body: { show_title: false, show_email: true } });
+    const c = await people("ppi-entrance-test", b.r.headers.get("ETag"));
+    assert.equal(c.r.status, 200);
+    assert.deepEqual(pick(c.d)[0], { first: "Bea", last: "Zimmer", title: "", phone: "", email: "bea@cb.example", suite: "" });
+    // a person's edit reaches every screen listing the company: both directories change
+    const before = fake.T.directories.filter((x) => ["ppi-entrance-test", "ppi-1s"].includes(x.slug)).map((x) => x.updated_at);
+    await new Promise((res) => setTimeout(res, 5));
+    const al = fake.T.people.find((x) => x.first_name === "Al");
+    await rest(`people?id=eq.${al.id}`, { method: "PATCH", token: owner, body: { show: false } });
+    const after = fake.T.directories.filter((x) => ["ppi-entrance-test", "ppi-1s"].includes(x.slug)).map((x) => x.updated_at);
+    assert.ok(after.every((t, i) => t > before[i]), "both directories marked changed");
+    const e = await people("ppi-entrance-test", c.r.headers.get("ETag"));
+    assert.equal(e.r.status, 200); assert.deepEqual(pick(e.d).map((x) => x.first), ["Bea"]);
+    // never on the Directory to Go phone page
+    const page = await (await togo(req("/d/PPXTST"))).text();
+    assert.ok(page.includes("Common Bond") && !page.includes("Zimmer") && !page.includes("bea@cb.example"), "the phone page lists the company, never its people");
+    const sql = readFileSync(new URL("../supabase/26-people.sql", import.meta.url), "utf8");
+    assert.ok(sql.includes("case when not s.touch then '[]'::jsonb") && sql.includes("co.show_people and pe.show")
+      && sql.includes("case when co.show_email then pe.email else '' end"), "the SQL has the same rules");
+  } finally { fake.T.people = []; fake.T.companies.forEach((c) => Object.assign(c, { show_people: false, show_title: true, show_phone: false, show_email: false })); fxr.cleanup(); }
+});
+
+test("people: the owner's users and 1Point edit them; strangers see nothing; companies come only from the tenant list", async () => {
+  const editor = await login("editor@barber.test", "editor-pass");
+  const admin = await login("scot@1pointusa.com", "admin-pass");
+  const other = fake.T.organizations.find((o) => o.name === "Other Owner LLC").id;
+  if (!fake.T.profiles.some((p) => p.email === "stray@other.test")) fake.addUser("stray@other.test", "stray-pass", "org_admin", other, "Stray");
+  const stray = await login("stray@other.test", "stray-pass");
+  const t = fake.T.tenants.find((x) => x.name === "Common Bond Title, LLC");
+  try {
+    assert.equal((await rest("people", { method: "POST", token: editor, body: { company_id: t.company_id, first_name: "Front", last_name: "Desk" } })).status, 201, "an owner's editor adds a person");
+    assert.equal((await rest("people", { method: "POST", token: editor, body: { company_id: t.company_id, first_name: " ", last_name: "" } })).status, 409, "a blank person is refused");
+    assert.equal((await rest("people", { method: "POST", token: editor, body: { company_id: t.company_id, first_name: "X", suite: "12345678901234567" } })).status, 409, "a 17-character suite is refused");
+    assert.equal((await rest(`companies?id=eq.${t.company_id}`, { method: "PATCH", token: admin, body: { show_people: true } })).status, 204, "1Point keeps control");
+    assert.equal((await rest(`companies?id=eq.${t.company_id}`, { method: "PATCH", token: editor, body: { name: "Renamed by hand" } })).status, 400, "no renaming a company by hand");
+    assert.equal((await rest("companies", { method: "POST", token: editor, body: { property_id: fake.T.properties[0].id, name: "Made by hand" } })).status, 403, "no making one by hand");
+    const others = fake.T.companies.find((c) => c.property_id !== fake.T.properties.find((p) => p.name === "Perimeter Park One").id && companyOrgName(c) === "Other Owner LLC");
+    await rest(`tenants?id=eq.${t.id}`, { method: "PATCH", token: editor, body: { company_id: others.id } });
+    assert.notEqual(fake.T.tenants.find((x) => x.id === t.id).company_id, others.id, "a tenant's company comes from its name, not the editor");
+    assert.deepEqual((await rest("people?select=*", { token: stray })).data, [], "a stranger sees no people");
+    assert.deepEqual((await rest("companies?select=*", { token: stray })).data.filter((c) => c.id === t.company_id), [], "nor Barber's companies");
+    assert.equal((await rest("people", { method: "POST", token: stray, body: { company_id: t.company_id, first_name: "Intruder" } })).status, 403);
+    await rest(`companies?id=eq.${t.company_id}`, { method: "PATCH", token: stray, body: { show_people: false } });
+    assert.equal(fake.T.companies.find((c) => c.id === t.company_id).show_people, true, "a stranger's change does nothing");
+    assert.ok(readFileSync(new URL("../supabase/26-people.sql", import.meta.url), "utf8").includes("revoke insert on public.companies from authenticated"));
+  } finally { fake.T.people = []; fake.T.companies.forEach((c) => (c.show_people = false)); }
+  function companyOrgName(c) { const p = fake.T.properties.find((x) => x.id === c.property_id); return fake.T.organizations.find((o) => o.id === p.org_id)?.name; }
+});
+
+test("people: fixing a tenant's name keeps its people; a renamed tenant still listed elsewhere starts a new company", async () => {
+  const fxr = entranceFixture();
+  const owner = await login("leighann@barber.test", "owner-pass");
+  try {
+    await rest("tenants", { method: "POST", token: owner, body: { id: fxr.tid, directory_id: fxr.did, sort: 0, name: "Brand New Tenant Co", suite: "400" } });
+    const cid = fake.T.tenants.find((t) => t.id === fxr.tid).company_id;
+    await rest("people", { method: "POST", token: owner, body: { company_id: cid, first_name: "Kay", last_name: "Lee" } });
+    // the editor saves by upsert: a typo fix on the only listing renames the company, people and all
+    await rest("tenants", { method: "POST", token: owner, prefer: "resolution=merge-duplicates", body: [{ id: fxr.tid, directory_id: fxr.did, sort: 0, name: "Brand New Tenant Company", suite: "400" }] });
+    const t = fake.T.tenants.find((x) => x.id === fxr.tid);
+    assert.equal(t.company_id, cid); assert.equal(fake.T.companies.find((c) => c.id === cid).name, "Brand New Tenant Company");
+    assert.equal(fake.T.people.filter((x) => x.company_id === cid).length, 1);
+    // renaming a tenant that another directory still lists leaves the people with the company the other one lists
+    const floor = fake.T.tenants.find((x) => x.name === "Common Bond Title, LLC");
+    const shared = floor.company_id;
+    await rest("tenants", { method: "POST", token: owner, body: { id: crypto.randomUUID(), directory_id: fxr.did, sort: 10, name: "Common Bond Title, LLC", suite: "130 S" } });
+    await rest("people", { method: "POST", token: owner, body: { company_id: shared, first_name: "Stays", last_name: "Put" } });
+    await rest(`tenants?id=eq.${floor.id}`, { method: "PATCH", token: owner, body: { name: "Common Bond Title Group" } });
+    assert.notEqual(fake.T.tenants.find((x) => x.id === floor.id).company_id, shared);
+    assert.equal(fake.T.people.filter((x) => x.company_id === shared).length, 1, "the people stay with the company still listed");
+  } finally {
+    const floor = fake.T.tenants.find((x) => x.name === "Common Bond Title Group"); if (floor) floor.name = "Common Bond Title, LLC";
+    fake.T.people = []; fxr.cleanup();
+    for (const t of fake.T.tenants) { const c = fake.T.companies.find((x) => x.id === t.company_id); if (c && c.name.toLowerCase() !== t.name.toLowerCase().trim()) Object.assign(t, { company_id: fake.T.companies.find((x) => x.property_id === c.property_id && x.name.toLowerCase() === t.name.toLowerCase())?.id ?? t.company_id }); }
+  }
+});
+
+test("people: tidied and capped for the screen; the editor saves them after the tenants and never sets a tenant's company", () => {
+  const list = cleanPeople([{ first: "  Ann ", last: "Bee", title: "x".repeat(200), phone: "1", email: "a@b", suite: "9".repeat(30), extra: "no" }, { first: "", last: " " }, null]);
+  assert.deepEqual(list, [{ first: "Ann", last: "Bee", title: "x".repeat(80), phone: "1", email: "a@b", suite: "9".repeat(16) }]);
+  assert.equal(cleanPeople(Array.from({ length: 300 }, (_, i) => ({ first: `P${i}` }))).length, 200);
+  assert.deepEqual(cleanPeople(undefined), []);
+  const ed = readFileSync(new URL("../public/edit.js", import.meta.url), "utf8");
+  assert.ok(ed.indexOf("await savePeople(d.id)") > ed.indexOf('Auth.db("tenants", { method: "POST"'), "people after tenants");
+  assert.ok(!/directory_id: d\.id, sort: i \* 10, name: t\.name[^)]*company_id/.test(ed), "the tenant rows sent carry no company");
+  assert.ok(ed.includes("companies?property_id=eq.") && ed.includes('Auth.db("people"') && ed.includes("S.peopleOff = true"), "reads by building; works without 26 run");
 });
 
 let passed = 0;

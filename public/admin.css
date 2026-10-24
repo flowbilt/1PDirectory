@@ -70,7 +70,7 @@ legend { font-weight: 700; padding: 0 6px; }
 .bg-controls input[type=range] { padding: 0; border: 0; }
 
 /* Tenant rows */
-.tenant-head, .tenant-row { display: grid; grid-template-columns: minmax(0, 1fr) 90px 110px 240px; gap: 8px; align-items: center; }
+.tenant-head, .tenant-row { display: grid; grid-template-columns: minmax(0, 1fr) 90px 110px 330px; gap: 8px; align-items: center; }
 .tenant-head { font-size: 13px; color: var(--muted); font-weight: 700; padding: 0 2px; }
 .tenant-rows { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
 .row-actions { display: flex; gap: 4px; justify-content: flex-end; flex-wrap: nowrap; }
@@ -221,3 +221,29 @@ td.thumb { width: 96px; padding: 6px 8px; }
 .pitem-actions { display: flex; gap: 4px; }
 .plist-foot { display: flex; justify-content: space-between; gap: 8px; margin-top: 6px; flex-wrap: wrap; }
 @media (max-width: 760px) { .pitem { grid-template-columns: 56px 1fr; } .pitem > input, .pitem-actions { grid-column: 1 / -1; } }
+
+/* People under tenants (DP-09 round 14) */
+.people-btn { font-size: 12px; }
+.people-btn.open { background: var(--navy); border-color: var(--navy); color: #fff; }
+.people-box { grid-column: 1 / -1; background: var(--bg); border: 1px solid var(--line); border-radius: 8px; padding: 12px 14px; display: grid; gap: 8px; margin: 2px 0 8px; }
+.people-box.same { padding: 8px 14px; }
+.people-box .hint { margin: 0; }
+.people-head { display: flex; flex-wrap: wrap; gap: 6px 18px; align-items: center; }
+.people-head > .check { padding-bottom: 0; }
+.people-details { display: flex; flex-wrap: wrap; gap: 4px 12px; align-items: center; }
+.people-rows { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+.person { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; padding: 8px; background: var(--panel); border: 1px solid var(--line); border-radius: 6px; }
+.person-actions { grid-column: 1 / -1; display: flex; gap: 6px; align-items: center; justify-content: flex-end; }
+.person-actions .check { margin-right: auto; }
+.person-actions .remove { color: var(--danger); }
+.people-foot { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+@media (max-width: 640px) { .person { grid-template-columns: 1fr; } }
+/* Tenant rows on a phone: the name on its own line, then suite and arrow, then the buttons */
+@media (max-width: 640px) {
+  .tenant-head { display: none; }
+  .tenant-row { grid-template-columns: minmax(0, 1fr) 110px; padding-bottom: 8px; border-bottom: 1px solid var(--line); }
+  .tenant-row .t-name, .tenant-row .t-note, .row-actions { grid-column: 1 / -1; }
+  .row-actions { justify-content: flex-start; flex-wrap: wrap; }
+}
+/* A landscape screen's wider preview sits beside the form only on a wide window; below that it goes underneath, as the portrait one does */
+@media (max-width: 1000px) { .workspace.wide-preview { grid-template-columns: 1fr; } }
