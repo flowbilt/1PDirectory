@@ -1853,6 +1853,16 @@ test("people: tidied and capped for the screen; the editor saves them after the 
   assert.ok(ed.includes("companies?property_id=eq.") && ed.includes('Auth.db("people"') && ed.includes("S.peopleOff = true"), "reads by building; works without 26 run");
 });
 
+test("a new directory gets its Directory to Go code from a trigger, not a default the signed-in user would have to run (27)", () => {
+  const sql = readFileSync(new URL("../supabase/27-new-directory.sql", import.meta.url), "utf8");
+  assert.ok(sql.includes("alter column togo_code drop default"), "no default left");
+  assert.ok(/function public\.directories_togo_new\(\)[\s\S]*security definer/.test(sql), "the trigger runs with the database's rights");
+  assert.ok(sql.includes("before insert on public.directories"), "on every new directory");
+  assert.ok(sql.includes("revoke all on function public.directories_togo_new() from public, anon, authenticated"), "and stays private");
+  const check = readFileSync(new URL("../supabase/check-new-directory.sql", import.meta.url), "utf8");
+  assert.ok(check.includes("perform set_config('role', 'authenticated', true)"), "the check adds rows as a signed-in user, as the console does");
+});
+
 let passed = 0;
 for (const [name, fn] of tests) {
   try { await fn(); passed++; console.log(`  ok  ${name}`); }
