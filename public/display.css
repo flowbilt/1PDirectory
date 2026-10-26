@@ -58,7 +58,7 @@ body { font-family: "Instrument Sans", "Segoe UI", Arial, sans-serif; color: var
     rgba(13, 27, 46, calc(1 - var(--bg-show))) 16%,
     rgba(13, 27, 46, calc(1 - var(--bg-show))) 100%);
 }
-#stage > :not(.bg):not(.offline):not(.identify) { position: relative; z-index: 1; }
+#stage > :not(.bg):not(.offline):not(.identify):not(.card):not(.kbd) { position: relative; z-index: 1; }
 .offline { z-index: 2; }
 #stage.has-bg { background: #0d1b2e; }
 #stage.has-bg .contacts, #stage.has-bg .welcome { background: rgba(8, 19, 34, 0.82); }
@@ -252,3 +252,70 @@ body { font-family: "Instrument Sans", "Segoe UI", Arial, sans-serif; color: var
 .no-screen h1 { font-family: "Lora", Georgia, serif; font-size: 36px; color: var(--ink); margin-bottom: 12px; }
 .no-screen a { color: var(--steel); }
 body:has(.no-screen) { cursor: auto; }
+
+/* ── The touch directory (DP-09 round 15): only on screens marked touch. --finger is about 15 mm on this screen ── */
+html.show-cursor, html.show-cursor body { cursor: auto; }
+html.show-cursor #stage.touch button, html.show-cursor #stage.touch .tenant { cursor: pointer; }
+#stage.touch button { font: inherit; color: inherit; border: 0; background: none; -webkit-tap-highlight-color: transparent; }
+#stage.touch .tenant { -webkit-tap-highlight-color: transparent; }
+#stage.touch .tenant:active { background: rgba(199, 205, 214, 0.12); }
+/* Too long to fit at a finger's size: the list scrolls (with a fade showing there's more), A to Z below it */
+#stage.scrolling .list-frame { overflow-y: auto; touch-action: pan-y; scrollbar-width: none; overscroll-behavior: contain;
+  -webkit-mask-image: linear-gradient(to bottom, #000 88%, transparent); mask-image: linear-gradient(to bottom, #000 88%, transparent); }
+#stage.scrolling .list-frame::-webkit-scrollbar { display: none; }
+.touchbar { display: flex; align-items: center; gap: calc(var(--u) * 1.6); padding-top: calc(var(--u) * 1.6); }
+.kbd-btn { flex: none; display: inline-flex; align-items: center; gap: calc(var(--u) * 1); min-height: calc(var(--finger, 60px) * 0.85);
+  padding: 0 calc(var(--u) * 2.2); border-radius: calc(var(--u) * 1) !important; background: rgba(199, 205, 214, 0.14) !important;
+  font-size: calc(var(--u) * 2.4) !important; font-weight: 700; }
+.kbd-btn svg { width: calc(var(--u) * 3.4); height: calc(var(--u) * 3.4); fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; }
+.az { flex: 1 1 auto; display: flex; flex-wrap: wrap; justify-content: center; gap: calc(var(--u) * 0.5); }
+.az-key { min-width: calc(var(--finger, 60px) * 0.78); height: calc(var(--finger, 60px) * 0.78); border-radius: calc(var(--u) * 0.8) !important;
+  background: rgba(199, 205, 214, 0.1) !important; font-size: calc(var(--u) * 2.4) !important; font-weight: 700; }
+.az-key:active, .key:active, .card-back:active, .kbd-btn:active { background: rgba(199, 205, 214, 0.3) !important; }
+
+/* A company's card, over the directory; the way back is at the bottom, in reach */
+#stage > .card, #stage > .kbd { position: absolute; inset: 0; z-index: 4; }
+.card { background: rgba(8, 19, 34, 0.72); display: flex; align-items: flex-end; padding: calc(var(--u) * 6) var(--pad); }
+.card-panel { width: 100%; max-height: 82%; display: flex; flex-direction: column; background: var(--navy); border: 2px solid var(--steel);
+  border-radius: calc(var(--u) * 1.4); padding: calc(var(--u) * 4); gap: calc(var(--u) * 2); box-shadow: 0 calc(var(--u) * 2) calc(var(--u) * 6) rgba(0, 0, 0, 0.5); }
+.card-name { font-family: "Lora", Georgia, serif; font-weight: 700; font-size: calc(var(--u) * 5.6); line-height: 1.08; text-wrap: balance; }
+.card-note { margin-top: calc(var(--u) * 0.8); font-size: calc(var(--u) * 2.4); font-style: italic; color: var(--muted); }
+.card-suite { margin-top: calc(var(--u) * 1.6); display: flex; align-items: center; gap: calc(var(--u) * 1.2); font-size: calc(var(--u) * 4.2); font-weight: 700; font-variant-numeric: tabular-nums; }
+.card-suite > span:first-child { font-size: 0.55em; font-weight: 400; color: var(--muted); }
+.card-dir { width: 1em; display: inline-flex; } .card-dir svg { width: 100%; height: auto; }
+.card-people-head { font-size: calc(var(--u) * 2.2); color: var(--muted); letter-spacing: 0.02em; border-top: 1px solid var(--rule); padding-top: calc(var(--u) * 1.6); }
+.card-people { list-style: none; flex: 1 1 auto; min-height: 0; overflow-y: auto; touch-action: pan-y; overscroll-behavior: contain; scrollbar-width: none; }
+.card-people::-webkit-scrollbar { display: none; }
+.card-people li { padding: calc(var(--u) * 1.4) 0; border-bottom: 1px solid var(--rule); }
+.card-people li:last-child { border-bottom: 0; }
+.person-name { font-size: calc(var(--u) * 3.2); font-weight: 700; line-height: 1.15; }
+.person-title { margin-top: calc(var(--u) * 0.3); font-size: calc(var(--u) * 2.4); color: var(--steel); }
+.person-lines { margin-top: calc(var(--u) * 0.4); font-size: calc(var(--u) * 2.3); color: var(--muted); font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.person-lines .dot { margin: 0 0.5em; }
+.card-back { flex: none; width: 100%; min-height: var(--finger, 60px); border-radius: calc(var(--u) * 1) !important; background: var(--steel) !important;
+  color: var(--navy) !important; font-size: calc(var(--u) * 2.8) !important; font-weight: 700; }
+
+/* The accessible keyboard: the lower part of the screen, where everyone can reach */
+.kbd { display: flex; align-items: flex-end; background: rgba(8, 19, 34, 0.5); }
+.kbd-panel { width: 100%; height: 64%; display: flex; flex-direction: column; gap: calc(var(--u) * 1.4); background: var(--navy-deep);
+  border-top: 2px solid var(--steel); padding: calc(var(--u) * 2.4) calc(var(--u) * 2.4) calc(var(--u) * 3); }
+.kbd-top { display: flex; gap: calc(var(--u) * 1.4); align-items: stretch; }
+.kbd-field { flex: 1 1 auto; min-width: 0; display: flex; align-items: center; min-height: calc(var(--finger, 60px) * 0.85); padding: 0 calc(var(--u) * 2);
+  background: var(--navy); border: 1px solid var(--steel); border-radius: calc(var(--u) * 1); font-size: calc(var(--u) * 3.4); font-weight: 700; white-space: pre; overflow: hidden; }
+.kbd-caret { width: 0.08em; height: 1.1em; background: var(--steel); margin-left: 0.04em; animation: caret 1.1s steps(1) infinite; }
+@keyframes caret { 50% { opacity: 0; } }
+.kbd-hint { color: var(--muted); font-weight: 400; margin-left: 0.3em; }
+.kbd-close { flex: none; padding: 0 calc(var(--u) * 2.6); border-radius: calc(var(--u) * 1) !important; background: rgba(199, 205, 214, 0.14) !important; font-size: calc(var(--u) * 2.6) !important; font-weight: 700; }
+.kbd-results { list-style: none; flex: 1 1 auto; min-height: 0; overflow-y: auto; touch-action: pan-y; overscroll-behavior: contain; scrollbar-width: none; }
+.kbd-results::-webkit-scrollbar { display: none; }
+.kbd-results li { display: flex; justify-content: space-between; align-items: center; gap: calc(var(--u) * 2); min-height: calc(var(--finger, 60px) * 0.9);
+  padding: 0 calc(var(--u) * 1); border-bottom: 1px solid var(--rule); font-size: calc(var(--u) * 3); font-weight: 700; }
+.kbd-results li:active { background: rgba(199, 205, 214, 0.12); }
+.kbd-results li.none { color: var(--muted); font-weight: 400; justify-content: flex-start; }
+.r-suite { font-variant-numeric: tabular-nums; color: var(--steel); }
+.kbd-keys { flex: none; display: flex; flex-direction: column; gap: calc(var(--u) * 0.7); }
+.kbd-row { display: flex; gap: calc(var(--u) * 0.7); justify-content: center; }
+.key { flex: 1 1 0; max-width: calc(var(--u) * 9.4); height: clamp(calc(var(--u) * 5.4), var(--finger, 60px), calc(var(--u) * 8.6));
+  border-radius: calc(var(--u) * 0.8) !important; background: rgba(199, 205, 214, 0.16) !important; font-size: calc(var(--u) * 3) !important; font-weight: 700; }
+.key.wide { flex: 1.6 1 0; max-width: calc(var(--u) * 16); font-size: calc(var(--u) * 2.4) !important; }
+.key.space { flex: 5 1 0; max-width: none; }

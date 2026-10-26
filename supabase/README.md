@@ -49,6 +49,8 @@ Do these once. The current site keeps running as it is until the new build is de
 
 28. For adding directories again (DP-09 round 14c; a bug from round 12 stopped Add directory with "You don't have permission to make that change"): new query, paste all of `27-new-directory.sql`, and click **Run**. Then new query, paste all of `check-new-directory.sql`, and click **Run**; it should read **ALL 5 CHECKS PASSED** (red on purpose). No code upload goes with it.
 
+29. For the touch directory (DP-09 round 15): **before uploading that code**, new query, paste all of `28-touch-directory.sql`, and click **Run**. Then new query, paste all of `check-touch-directory.sql`, and click **Run**; it should read **ALL 6 CHECKS PASSED** (red on purpose). (The new console and editor read and save the two new columns, so they must exist first.)
+
 If any of them shows an error (other than the expected red messages from the `check-…sql` files), copy the message (it includes a line number) and send it to Claude.
 
 ## 3. Lock down sign-ups

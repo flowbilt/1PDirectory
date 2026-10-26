@@ -10,7 +10,7 @@
 */
 (() => {
   "use strict";
-  const VERSION = "2.12.0";   // = netlify/lib/version.mjs (a test keeps them equal)
+  const VERSION = "2.13.0";   // = netlify/lib/version.mjs (a test keeps them equal)
   const q = new URLSearchParams(location.search);
   const DEVICE = (q.get("device") || "").toLowerCase();
   const CHOSEN = (q.get("screen") || q.get("key") || q.get("site") || "").toLowerCase();
@@ -107,6 +107,7 @@
   function fitTenants() {
     const list = $("tenants"), newsEl = $("news");
     const u = parseFloat(getComputedStyle(document.documentElement).getPropertyValue("--u")) || 10;
+    if (data?.touch) return fitTouch(u);
     const max = u * 5.2;
     const attempt = (min, twoCol, showNews) => {
       newsEl.hidden = !showNews;
@@ -174,8 +175,10 @@
     const anyArrow = tenants.some((t) => ARROWS[t.dir]);
     list.classList.toggle("no-arrows", !anyArrow);
     list.innerHTML = tenants.length
-      ? tenants.map((t) => `<li class="tenant"><span class="tenant-name">${esc(t.name)}${t.note ? `<span class="tenant-note">${esc(t.note)}</span>` : ""}</span><span class="tenant-suite">${esc(t.suite)}</span><span class="tenant-dir">${arrowSvg(t.dir)}</span></li>`).join("")
+      ? tenants.map((t, i) => `<li class="tenant" data-i="${i}"><span class="tenant-name">${esc(t.name)}${t.note ? `<span class="tenant-note">${esc(t.note)}</span>` : ""}</span><span class="tenant-suite">${esc(t.suite)}</span><span class="tenant-dir">${arrowSvg(t.dir)}</span></li>`).join("")
       : `<li class="empty">${data.newDevice ? `New display, serial ${esc(DEVICE)}.<br>Assign it to a screen in the console.` : data.assigned === false ? `This screen (${esc(data.key || SITE)}) isn't assigned to a directory yet.` : "Directory is being updated."}</li>`;
+
+    renderTouch();
 
     const m = contactHtml("Managed by", data.managedBy), l = contactHtml("Leased by", data.leasedBy);
     $("managed").innerHTML = m; $("managed").hidden = !m;
@@ -305,6 +308,9 @@
   function apply(d) {
     const sig = JSON.stringify(d);
     if (sig === dataSig) return;
+    // A visitor is using the touch directory: hold the update until they're done (or the screen goes idle)
+    if (touchBusy() && d.touch) { T.pending = d; return; }
+    T.pending = null;
     const coordsChanged = !data || data.weather?.lat !== d.weather?.lat || data.weather?.lon !== d.weather?.lon;
     const orientationChanged = !data || data.orientation !== d.orientation;
     dataSig = sig;
@@ -575,6 +581,151 @@
     if (next <= now) next.setDate(next.getDate() + 1);
     setTimeout(() => location.reload(), next - now);
   }
+
+
+  // ── The touch directory (DP-09 round 15): on a screen marked touch, a visitor taps a company for its card (suite and
+  // the people the owner shows); an A to Z strip when the list is too long to fit; the customer's accessible keyboard,
+  // which finds companies by name only (people are found only through their company); and back to the whole directory
+  // after the screen's idle time. Display-only screens are exactly as before. ──
+  const T = { pending: null, idle: null, scroll: false, query: "" };
+  const touchBusy = () => !$("card").hidden || !$("kbd").hidden || T.scroll && $("list-frame").scrollTop > 0;
+  const nameKey = (n) => String(n || "").toLowerCase().replace(/^the\s+/, "").replace(/[^a-z0-9 ]+/g, "").trim();
+  const letterOf = (n) => { const c = nameKey(n).charAt(0).toUpperCase(); return /[A-Z]/.test(c) ? c : "#"; };
+
+  /** About 15 mm, a fingertip, in this screen's pixels, from its size in inches (32" when not given). */
+  function fingerPx() {
+    const W = parseFloat(getComputedStyle(document.documentElement).getPropertyValue("--W")) || innerWidth;
+    const H = parseFloat(getComputedStyle(document.documentElement).getPropertyValue("--H")) || innerHeight;
+    const inches = Math.min(100, Math.max(7, Number(data?.screenInches) || 32));
+    return 15 * Math.hypot(W, H) / (inches * 25.4);
+  }
+
+  function renderTouch() {
+    const on = !!data?.touch;
+    stage.classList.toggle("touch", on);
+    document.documentElement.classList.toggle("show-cursor", on && (VIEW || PREVIEW));   // a mouse in View or the editor
+    $("listing-tenant").textContent = on ? "Tap a company for details" : "Tenant";
+    $("kbd-btn").hidden = !(on && data.keyboard);
+    if (!on) { closeCard(); closeKeyboard(); $("touchbar").hidden = true; T.scroll = false; stage.classList.remove("scrolling"); return; }
+    stage.style.setProperty("--finger", `${fingerPx()}px`);
+    armIdle();
+  }
+
+  // Touch screens: names never smaller than a fingertip's row; if the list can't fit at that size it scrolls, with A to Z
+  function fitTouch(u) {
+    const list = $("tenants"), newsEl = $("news"), f = fingerPx() / 2.06;   // a row is about 2.06 × the text size
+    const lo = (x) => Math.max(x, f), max = Math.max(u * 5.2, f);
+    stage.classList.remove("scrolling"); T.scroll = false; $("az").hidden = true;
+    $("touchbar").hidden = $("kbd-btn").hidden;
+    const attempt = (min, twoCol, showNews) => {
+      newsEl.hidden = !showNews;
+      stage.classList.toggle("no-news", !showNews);
+      list.classList.toggle("two-col", twoCol);
+      document.querySelector(".listing").classList.toggle("two-col-head", twoCol);
+      return fitSize(min, max);
+    };
+    if (newsWanted() && attempt(lo(u * 2.5), false, true)) return;
+    if (attempt(lo(u * 2.3), false, false)) return;
+    if (attempt(lo(u * 1.9), true, false)) return;
+    // Too long for this screen at a finger's size: one column that scrolls, the A to Z strip, the panel kept
+    T.scroll = true; stage.classList.add("scrolling");
+    renderAZ();
+    $("az").hidden = false; $("touchbar").hidden = false;
+    attempt(f, false, newsWanted());
+    list.style.setProperty("--tf", `${f}px`);
+  }
+
+  function renderAZ() {
+    const have = new Set((data?.tenants || []).map((t) => letterOf(t.name)));
+    $("az").innerHTML = [..."ABCDEFGHIJKLMNOPQRSTUVWXYZ", "#"].filter((c) => have.has(c))
+      .map((c) => `<button type="button" class="az-key" data-letter="${c}">${c}</button>`).join("");
+  }
+  function jumpTo(letter) {
+    const ts = data?.tenants || [], i = ts.findIndex((t) => letterOf(t.name) === letter);
+    const li = i >= 0 && $("tenants").querySelector(`li[data-i="${i}"]`);
+    if (li) $("list-frame").scrollTo({ top: li.offsetTop - $("tenants").offsetTop, behavior: "smooth" });
+  }
+
+  function openCard(t) {
+    if (!t) return;
+    const people = (t.people || []).filter((x) => x.first || x.last);
+    const who = (x) => [x.first, x.last].filter(Boolean).join(" ");
+    $("card").innerHTML = `<div class="card-panel" role="dialog" aria-label="${esc(t.name)}">
+        <div class="card-head"><div class="card-name">${esc(t.name)}</div>${t.note ? `<div class="card-note">${esc(t.note)}</div>` : ""}
+          ${t.suite ? `<div class="card-suite"><span>Suite</span> ${esc(t.suite)}${ARROWS[t.dir] ? `<span class="card-dir">${arrowSvg(t.dir)}</span>` : ""}</div>` : ""}</div>
+        ${people.length ? `<div class="card-people-head">People</div><ul class="card-people">${people.map((x) => `<li>
+          <div class="person-name">${esc(who(x))}</div>${x.title ? `<div class="person-title">${esc(x.title)}</div>` : ""}
+          ${x.phone || x.email || (x.suite && x.suite !== t.suite) ? `<div class="person-lines">${[x.suite && x.suite !== t.suite ? `Suite ${esc(x.suite)}` : "", x.phone ? esc(x.phone) : "", x.email ? esc(x.email) : ""].filter(Boolean).join('<span class="dot">·</span>')}</div>` : ""}</li>`).join("")}</ul>` : ""}
+        <button type="button" class="card-back" data-close>Back to the directory</button>
+      </div>`;
+    $("card").hidden = false;
+    armIdle();
+  }
+  function closeCard() { if ($("card").hidden) return; $("card").hidden = true; $("card").innerHTML = ""; afterTouch(); }
+
+  // The accessible keyboard: finds companies by name (never people), results above the keys
+  const KEYS = ["1234567890", "QWERTYUIOP", "ASDFGHJKL", "ZXCVBNM"];
+  function openKeyboard() {
+    T.query = "";
+    $("kbd").innerHTML = `<div class="kbd-panel" role="dialog" aria-label="Find a company">
+        <div class="kbd-top"><div class="kbd-field" aria-live="polite"><span class="kbd-text"></span><span class="kbd-caret"></span><span class="kbd-hint">Type a company's name</span></div>
+          <button type="button" class="kbd-close" data-kclose>Close</button></div>
+        <ul class="kbd-results"></ul>
+        <div class="kbd-keys">${KEYS.map((row, r) => `<div class="kbd-row">${[...row].map((k) => `<button type="button" class="key" data-key="${k}">${k}</button>`).join("")}${r === 3 ? '<button type="button" class="key wide" data-key="back" aria-label="Delete">⌫</button>' : ""}</div>`).join("")}
+          <div class="kbd-row"><button type="button" class="key wide" data-key="clear">Clear</button><button type="button" class="key space" data-key=" ">Space</button><button type="button" class="key wide" data-key="&amp;">&amp;</button></div></div>
+      </div>`;
+    $("kbd").hidden = false;
+    showResults();
+    armIdle();
+  }
+  function closeKeyboard() { if ($("kbd").hidden) return; $("kbd").hidden = true; $("kbd").innerHTML = ""; T.query = ""; afterTouch(); }
+  function showResults() {
+    const q = nameKey(T.query).replace(/\s+/g, " ");
+    const el = $("kbd"), ts = data?.tenants || [];
+    el.querySelector(".kbd-text").textContent = T.query;
+    el.querySelector(".kbd-hint").hidden = !!T.query;
+    const hits = q ? ts.map((t, i) => ({ t, i, k: nameKey(t.name) })).filter((x) => x.k.includes(q) || x.k.replace(/\s+/g, "").includes(q.replace(/\s+/g, "")))
+      .sort((a, b) => (b.k.startsWith(q) - a.k.startsWith(q)) || a.k.localeCompare(b.k)) : [];
+    el.querySelector(".kbd-results").innerHTML = !q ? "" : hits.length
+      ? hits.slice(0, 30).map((x) => `<li data-i="${x.i}"><span class="r-name">${esc(x.t.name)}</span><span class="r-suite">${esc(x.t.suite)}</span></li>`).join("")
+      : `<li class="none">No company matches "${esc(T.query)}"</li>`;
+  }
+  function typeKey(k) {
+    if (k === "back") T.query = T.query.slice(0, -1);
+    else if (k === "clear") T.query = "";
+    else if (T.query.length < 40) T.query += k;
+    showResults();
+  }
+
+  // Back to the whole directory after the screen's idle time with no touch
+  function armIdle() {
+    clearTimeout(T.idle);
+    if (!data?.touch) return;
+    T.idle = setTimeout(goIdle, Math.min(300, Math.max(15, Number(data.touchIdle) || 45)) * 1000);
+  }
+  function goIdle() {
+    closeCard(); closeKeyboard();
+    $("list-frame").scrollTop = 0;
+    if (T.pending) { const d = T.pending; T.pending = null; apply(d); }
+  }
+  function afterTouch() { if (T.pending && !touchBusy()) { const d = T.pending; T.pending = null; apply(d); } }
+
+  $("tenants").addEventListener("click", (e) => {
+    if (!data?.touch) return;
+    const li = e.target.closest("li[data-i]");
+    if (li) openCard((data.tenants || [])[Number(li.dataset.i)]);
+  });
+  $("az").addEventListener("click", (e) => { const b = e.target.closest("[data-letter]"); if (b) jumpTo(b.dataset.letter); });
+  $("kbd-btn").addEventListener("click", () => openKeyboard());
+  $("card").addEventListener("click", (e) => { if (e.target.closest("[data-close]") || e.target === $("card")) closeCard(); });
+  $("kbd").addEventListener("click", (e) => {
+    const k = e.target.closest("[data-key]"); if (k) { typeKey(k.dataset.key); return; }
+    if (e.target.closest("[data-kclose]")) { closeKeyboard(); return; }
+    const r = e.target.closest("li[data-i]"); if (r) openCard((data.tenants || [])[Number(r.dataset.i)]);
+  });
+  // Any touch keeps the screen awake for another idle period
+  document.addEventListener("pointerdown", () => { if (data?.touch) armIdle(); }, true);
+  $("list-frame").addEventListener("scroll", () => { if (data?.touch) armIdle(); }, { passive: true });
 
   // ── Touch lockdown (DP-08 round 13): on a touch screen nothing can be zoomed, selected, dragged or long-pressed
   // into a menu, so a passer-by can't leave the directory in a mess. On every screen (harmless without touch);

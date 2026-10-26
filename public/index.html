@@ -31,9 +31,14 @@
   </header>
 
   <section class="listing" aria-label="Tenant directory">
-    <div class="listing-head"><span>Tenant</span><span>Suite</span></div>
+    <div class="listing-head"><span id="listing-tenant">Tenant</span><span>Suite</span></div>
     <div id="list-frame" class="list-frame">
       <ol id="tenants" class="tenants"></ol>
+    </div>
+    <!-- Touch screens (DP-09 round 15): the accessible keyboard's button and the A to Z strip, in reach -->
+    <div id="touchbar" class="touchbar" hidden>
+      <button type="button" id="kbd-btn" class="kbd-btn" hidden><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="2.5" y="6" width="19" height="12" rx="2"/><path d="M6 10h1M9 10h1M12 10h1M15 10h1M18 10h0.5M6 13h1M9 13h1M12 13h1M15 13h1M18 13h0.5M8 16h8"/></svg><span>Search</span></button>
+      <div id="az" class="az" hidden></div>
     </div>
   </section>
 
@@ -51,6 +56,9 @@
   <p id="welcome" class="welcome" hidden></p>
   <div id="brand" class="brand" hidden><img id="brand-logo" alt=""></div>
   <p id="powered" class="powered" hidden>Powered by WayTuGo · waytugo.com</p>
+  <!-- Touch screens: a company's card, and the on-screen keyboard -->
+  <div id="kbd" class="kbd" hidden></div>
+  <div id="card" class="card" hidden></div>
   <div id="identify" class="identify" hidden></div>
   <p id="offline" class="offline" hidden>Showing saved information. Reconnecting…</p>
 </div>

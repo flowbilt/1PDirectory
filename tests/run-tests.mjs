@@ -1698,7 +1698,7 @@ test("the touch lockdown is on every screen: no zooming, selecting, dragging or 
   for (const w of ["touch-action: none", "user-select: none", "-webkit-touch-callout: none", "-webkit-user-drag: none", "overscroll-behavior: none"]) assert.ok(css.includes(w), w);
   const js = readFileSync(new URL("../public/display.js", import.meta.url), "utf8");
   for (const w of ['"contextmenu", "selectstart", "dragstart", "gesturestart"', "e.touches.length > 1", "e.ctrlKey"]) assert.ok(js.includes(w), w);
-  assert.equal(DISPLAY_VERSION, "2.12.0");
+  assert.ok(DISPLAY_VERSION >= "2.12.0");
 });
 
 // ── People under tenants (DP-09 round 14; supabase/26-people.sql) ──
@@ -1861,6 +1861,45 @@ test("a new directory gets its Directory to Go code from a trigger, not a defaul
   assert.ok(sql.includes("revoke all on function public.directories_togo_new() from public, anon, authenticated"), "and stays private");
   const check = readFileSync(new URL("../supabase/check-new-directory.sql", import.meta.url), "utf8");
   assert.ok(check.includes("perform set_config('role', 'authenticated', true)"), "the check adds rows as a signed-in user, as the console does");
+});
+
+test("the touch directory's settings: idle time per screen (15–300, 45), the keyboard per directory, both reach the screen", async () => {
+  const scr = fake.T.screens.find((x) => x.key === "ppi-1s");
+  const dir = fake.T.directories.find((x) => x.id === scr.directory_id);
+  const first = await screen(req("/api/screen?key=ppi-1s"));
+  const d0 = await first.json();
+  assert.equal(d0.touchIdle, 45); assert.equal(d0.keyboard, false);
+  try {
+    Object.assign(scr, { touch: true, touch_idle_s: 90 }); dir.touch_keyboard = true; dir.updated_at = new Date(Date.now() + 1000).toISOString();
+    const next = await screen(req("/api/screen?key=ppi-1s", { headers: { "If-None-Match": first.headers.get("ETag") } }));
+    assert.equal(next.status, 200);
+    const d1 = await next.json();
+    assert.equal(d1.touchIdle, 90); assert.equal(d1.keyboard, true); assert.equal(d1.touch, true);
+    // only 1Point sets the idle time; the owner's users set the keyboard in the editor
+    const admin = await login("scot@1pointusa.com", "admin-pass"), owner = await login("leighann@barber.test", "owner-pass");
+    const r1 = await fake.handle(new Request(`${SB}/rest/v1/screens?id=eq.${scr.id}`, { method: "PATCH", headers: { apikey: ANON_KEY, Authorization: `Bearer ${owner}`, "Content-Type": "application/json" }, body: JSON.stringify({ touch_idle_s: 20 }) }));
+    assert.notEqual(r1.status, 204, "an owner can't change Screen settings");
+    const r2 = await fake.handle(new Request(`${SB}/rest/v1/screens?id=eq.${scr.id}`, { method: "PATCH", headers: { apikey: ANON_KEY, Authorization: `Bearer ${admin}`, "Content-Type": "application/json" }, body: JSON.stringify({ touch_idle_s: 14 }) }));
+    assert.equal(r2.status, 409, "14 seconds is refused");
+  } finally { Object.assign(scr, { touch: false, touch_idle_s: 45 }); dir.touch_keyboard = false; }
+  assert.deepEqual([toPayload({ key: "k", touch_idle_s: 5 }, {}, {}, []).touchIdle, toPayload({ key: "k", touch_idle_s: 999 }, {}, {}, []).touchIdle, toPayload({ key: "k" }, null, null, []).touchIdle], [15, 300, 45]);
+  const sql = readFileSync(new URL("../supabase/28-touch-directory.sql", import.meta.url), "utf8");
+  assert.ok(sql.includes("touch_idle_s between 15 and 300") && sql.includes("default 45") && sql.includes("touch_keyboard boolean not null default false")
+    && sql.includes("'touch_idle_s', s.touch_idle_s") && sql.includes("s.touch_idle_s::text") && sql.includes("'people', case when not s.touch"), "28 keeps round 14's people and adds the idle time");
+  const con = readFileSync(new URL("../public/console.js", import.meta.url), "utf8");
+  assert.ok(con.includes(",touch_idle_s\"") && con.includes('id="s-idle"') && con.includes("from 15 to 300"), "Screen settings has the idle time");
+  const ed = readFileSync(new URL("../public/edit.js", import.meta.url), "utf8");
+  assert.ok(ed.includes("touch_keyboard: !!d.touch_keyboard") && ed.includes('$("kbd-on")'), "the editor saves the keyboard switch");
+});
+
+test("the touch directory is only on touch screens: cards, A to Z, the keyboard (company names only) and the idle return", () => {
+  const js = readFileSync(new URL("../public/display.js", import.meta.url), "utf8");
+  const html = readFileSync(new URL("../public/index.html", import.meta.url), "utf8");
+  for (const id of ['id="touchbar"', 'id="kbd-btn"', 'id="az"', 'id="card"', 'id="kbd"']) assert.ok(html.includes(id), id);
+  assert.ok(js.includes("if (data?.touch) return fitTouch(u);") && js.includes('if (!data?.touch) return;'), "display-only screens keep the old fit and ignore taps");
+  assert.ok(js.includes("(data.tenants || [])[Number(r.dataset.i)]") && !/people[^\n]*includes\(q/.test(js), "the keyboard searches company names, never people");
+  assert.ok(js.includes("Number(data.touchIdle) || 45") && js.includes("goIdle"), "back to the directory after the idle time");
+  assert.equal(DISPLAY_VERSION, "2.13.0");
 });
 
 let passed = 0;

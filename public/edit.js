@@ -19,7 +19,7 @@
     const [[prop], tenants, screens, siblings] = await Promise.all([
       Auth.db(`properties?id=eq.${dir.property_id}&select=*`),
       Auth.db(`tenants?directory_id=eq.${dir.id}&select=*&order=sort.asc,name.asc`),
-      Auth.db(`screens?directory_id=eq.${dir.id}&select=id,key,name,orientation,last_seen,sizes,hide_powered_by&order=name.asc`),
+      Auth.db(`screens?directory_id=eq.${dir.id}&select=id,key,name,orientation,last_seen,sizes,hide_powered_by,touch,screen_inches,touch_idle_s&order=name.asc`),
       Auth.db(`directories?property_id=eq.${dir.property_id}&select=id`),
     ]);
     const keepKey = S.screens[S.sel]?.key;
@@ -137,6 +137,7 @@
     $("map-on").checked = !!d.map_enabled; $("times-on").checked = !!d.times_enabled; $("amen-on").checked = !!d.amenities_enabled;
     renderDestinations(); renderLists();
     $("togo-on").checked = !!d.togo_enabled; $("togo-line").value = d.togo_line || ""; renderTogo();
+    $("kbd-on").checked = !!d.touch_keyboard;
     $("address").value = p.address || "";
     $("m-name").value = p.managed_by?.name || ""; $("m-company").value = p.managed_by?.company || ""; $("m-phone").value = p.managed_by?.phone || "";
     $("l-name").value = p.leased_by?.name || ""; $("l-company").value = p.leased_by?.company || ""; $("l-phone").value = p.leased_by?.phone || "";
@@ -161,6 +162,7 @@
       .filter((x) => x.label || x.address).map((x) => ({ label: x.label || x.address, address: x.address || x.label }));
     readLists();
     d.togo_enabled = $("togo-on").checked; d.togo_line = $("togo-line").value.trim();
+    d.touch_keyboard = $("kbd-on").checked;
     p.address = $("address").value.trim();
     p.managed_by = { name: $("m-name").value.trim(), company: $("m-company").value.trim(), phone: $("m-phone").value.trim() };
     p.leased_by = { name: $("l-name").value.trim(), company: $("l-company").value.trim(), phone: $("l-phone").value.trim() };
@@ -507,7 +509,8 @@
       propertyName: d.title, buildingLabel: d.subtitle || p.address || "",
       logo: p.logo || "", logoReplacesName: !!(p.logo && p.logo_replaces_name),
       companyLogo: p.company_logo || "", logoSwap: !!(p.company_logo && p.logo_swap),
-      tenants: S.tenants.filter((t) => t.name).map((t) => ({ name: t.name, suite: t.suite, dir: t.arrow, note: t.note })),
+      // On a touch screen the preview's cards show the people as the screen would (the same rules as 26-people.sql)
+      tenants: S.tenants.filter((t) => t.name).map((t) => ({ name: t.name, suite: t.suite, dir: t.arrow, note: t.note, people: previewPeople(t, scr) })),
       managedBy: p.managed_by || {}, leasedBy: p.leased_by || {},
       welcome: d.footer_override ?? p.footer ?? "",
       weather: { enabled: d.weather_enabled !== false && p.lat != null, lat: p.lat, lon: p.lon },
@@ -520,8 +523,15 @@
       placeLists: d.amenities_enabled ? (p.place_lists || []).map((l) => ({ heading: l.heading || "Nearby", items: (l.items || []).filter((a) => a.name) })).filter((l) => l.items.length) : [],
       togo: { enabled: !!d.togo_enabled, url: (S.togoBase || "https://waytugo.com/d/") + d.togo_code, line: d.togo_line || "Take this directory with you!" },
       poweredBy: !scr?.hide_powered_by,
+      touch: !!scr?.touch, screenInches: scr?.screen_inches ?? null, touchIdle: scr?.touch_idle_s || 45, keyboard: !!d.touch_keyboard,
       background: p.background || {}, sizes: scr?.sizes || {}, assigned: true, updatedAt: d.updated_at,
     };
+  }
+  function previewPeople(t, scr) {
+    const b = S.boxes.get(t.box);
+    if (!scr?.touch || !b?.show_people) return [];
+    return b.people.filter((x) => named(x) && x.show !== false).map((x) => ({ first: x.first_name || "", last: x.last_name || "",
+      title: b.show_title ? x.title || "" : "", phone: b.show_phone ? x.phone || "" : "", email: b.show_email ? x.email || "" : "", suite: x.suite || "" }));
   }
   function previewShape() {
     const o = S.screens[S.sel]?.orientation || "auto";
@@ -562,7 +572,7 @@
       await Auth.db(`directories?id=eq.${d.id}`, { method: "PATCH", prefer: "return=minimal", body: {
         title: d.title, subtitle: d.subtitle, news_enabled: d.news_enabled, rotate_seconds: d.rotate_seconds, weather_enabled: d.weather_enabled,
         map_enabled: !!d.map_enabled, times_enabled: !!d.times_enabled, amenities_enabled: !!d.amenities_enabled,
-        togo_enabled: !!d.togo_enabled, togo_line: d.togo_line || "",
+        togo_enabled: !!d.togo_enabled, togo_line: d.togo_line || "", touch_keyboard: !!d.touch_keyboard,
         ...(d.footer_override != null ? { footer_override: d.footer_override } : {}),
       } });
       await Auth.db(`properties?id=eq.${p.id}`, { method: "PATCH", prefer: "return=minimal", body: {

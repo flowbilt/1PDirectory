@@ -108,6 +108,29 @@ directory in the editor and is off until ticked. Its text size is the editor's *
   only the details shown. Display-only screens and the Directory to Go phone page never get them
   (`supabase/26-people.sql`).
 
+## The touch directory (DP-09 round 15)
+
+Only on screens marked **This is a touch screen** (console, Screen settings). Display-only screens are exactly as before.
+
+- **Tap a company** for its card: name, note, suite (and arrow), and its people when the owner has switched them on
+  (People under tenants, above), with only the details the owner shows; a person's own suite shows when it differs.
+  **Back to the directory** is at the bottom of the card, in reach; a tap outside the card closes it too.
+- **Sized for a finger:** from **Screen size (inches)** (32" when blank), names are never smaller than a fingertip's
+  row (about 15 mm), and buttons are about that tall.
+- **A to Z, only when needed:** when the list can't fit at a finger's size, it scrolls (swipe it), and a strip of the
+  letters in use sits under it; tapping one brings that letter's first company to the top.
+- **The accessible keyboard, when the customer chooses:** the editor's **Show the accessible keyboard on touch
+  screens** (per directory, off by default) adds a **Search** button at the bottom left of the directory. It opens an
+  on-screen keyboard in the lower part of the screen that finds **companies by name only** (never people: they're
+  found only through their company); tap a result for its card.
+- **Back to the directory by itself:** after **Back to the directory after (seconds)** with no touch (Screen settings,
+  15 to 300, 45 standard), an open card or keyboard closes and the list goes back to the top. A directory change
+  published while a visitor is using the screen waits until they're done.
+- **Trying it without a touch screen:** the console's **View** shows a pointer on touch screens, and a mouse click
+  works as a tap.
+- `supabase/28-touch-directory.sql`: `screens.touch_idle_s`, `directories.touch_keyboard`, and `screen_state` sending
+  the idle time.
+
 ## Screens and cards (Raspberry Pi)
 
 Every Pi runs from a **prepared card**, and every card is the same. A card carries no identity until it's in a Pi:
