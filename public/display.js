@@ -10,7 +10,7 @@
 */
 (() => {
   "use strict";
-  const VERSION = "2.13.0";   // = netlify/lib/version.mjs (a test keeps them equal)
+  const VERSION = "2.13.1";   // = netlify/lib/version.mjs (a test keeps them equal)
   const q = new URLSearchParams(location.search);
   const DEVICE = (q.get("device") || "").toLowerCase();
   const CHOSEN = (q.get("screen") || q.get("key") || q.get("site") || "").toLowerCase();
@@ -104,7 +104,20 @@
   // The panel (the news box) shows when there's news or any of the information slides (DP-08 round 11)
   function newsWanted() { return !!((data?.news?.enabled && news.items.length) || infoSlides().length); }
 
-  function fitTenants() {
+  // Refit whenever the list's space changes size after it was fitted (round 15b, found at The Landmark Center): the top
+  // band grows on its own as the clock and date get wider ("10:32", "Wednesday, September 30") and can push the
+  // address onto another line, a logo or the weather can arrive late; without a refit the last name was cut off.
+  let fittedAt = "";
+  const frameSize = () => { const f = $("list-frame"); return `${f.clientWidth}x${f.clientHeight}`; };
+  function fitTenants() { fitTenantsNow(); fittedAt = frameSize(); }
+  let refitQueued = false;
+  if ("ResizeObserver" in window) new ResizeObserver(() => {
+    if (refitQueued || !data || frameSize() === fittedAt) return;
+    refitQueued = true;
+    requestAnimationFrame(() => { refitQueued = false; if (frameSize() !== fittedAt) fitTenants(); });
+  }).observe($("list-frame"));
+
+  function fitTenantsNow() {
     const list = $("tenants"), newsEl = $("news");
     const u = parseFloat(getComputedStyle(document.documentElement).getPropertyValue("--u")) || 10;
     if (data?.touch) return fitTouch(u);

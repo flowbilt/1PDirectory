@@ -1899,7 +1899,8 @@ test("the touch directory is only on touch screens: cards, A to Z, the keyboard 
   assert.ok(js.includes("if (data?.touch) return fitTouch(u);") && js.includes('if (!data?.touch) return;'), "display-only screens keep the old fit and ignore taps");
   assert.ok(js.includes("(data.tenants || [])[Number(r.dataset.i)]") && !/people[^\n]*includes\(q/.test(js), "the keyboard searches company names, never people");
   assert.ok(js.includes("Number(data.touchIdle) || 45") && js.includes("goIdle"), "back to the directory after the idle time");
-  assert.equal(DISPLAY_VERSION, "2.13.0");
+  assert.equal(DISPLAY_VERSION, "2.13.1");
+  assert.ok(js.includes("new ResizeObserver") && js.includes("frameSize() !== fittedAt"), "the list refits when its space changes size (15b)");
 });
 
 let passed = 0;
