@@ -10,7 +10,7 @@
 */
 (() => {
   "use strict";
-  const VERSION = "2.13.1";   // = netlify/lib/version.mjs (a test keeps them equal)
+  const VERSION = "2.13.2";   // = netlify/lib/version.mjs (a test keeps them equal)
   const q = new URLSearchParams(location.search);
   const DEVICE = (q.get("device") || "").toLowerCase();
   const CHOSEN = (q.get("screen") || q.get("key") || q.get("site") || "").toLowerCase();
@@ -284,6 +284,8 @@
     try {
       // The size and version headers are the screen's check-in (they used to be a separate heartbeat call).
       const headers = !CHECKS_IN ? {} : { "X-Screen-Size": `${screen.width}x${screen.height}`, "X-Display-Version": VERSION };
+      // Round 15c: the drive times' status for the console (never Google's minutes or labels: its terms forbid keeping them)
+      if (CHECKS_IN && traffic.status) headers["X-Traffic"] = JSON.stringify({ ...traffic.status, shown: infoSlides().some((x) => x.kind === "times") });
       const res = await fetch(SCREEN_URL, { cache: "no-cache", headers });
       if (!res.ok) throw new Error(`directory ${res.status}`);
       const d = await res.json();
@@ -499,14 +501,18 @@
   // site decides whether Google may be asked now (hours, 25-minute spacing). Kept in memory only, never saved.
   async function loadTimes() {
     clearTimeout(traffic.timer);
-    if (!CHECKS_IN || !data?.traffic?.times) { traffic.times = null; return; }
+    if (!CHECKS_IN || !data?.traffic?.times) { traffic.times = null; traffic.status = null; return; }   // not used here: nothing to report
     let next = TIMES_EVERY_MS;
     try {
-      const r = await getJSON(`/api/traffic?${DEVICE ? `device=${encodeURIComponent(DEVICE)}` : `key=${encodeURIComponent(SITE)}`}`);
-      if (Array.isArray(r.times)) { traffic.times = r.times; traffic.at = Date.now(); }
-      else if (r.wait) next = Math.max(60, r.wait + 30) * 1000;
-      else if (r.off) traffic.times = null;
-    } catch (e) { console.warn("Travel times unavailable", e); }
+      const res = await fetch(`/api/traffic?${DEVICE ? `device=${encodeURIComponent(DEVICE)}` : `key=${encodeURIComponent(SITE)}`}`, { cache: "no-store" });
+      const r = await res.json().catch(() => ({}));
+      if (Array.isArray(r.times)) {
+        traffic.times = r.times; traffic.at = Date.now();
+        traffic.status = { s: "ok", n: r.times.filter((t) => t.minutes != null).length, of: r.times.length, at: new Date(Date.now() + clockOffset).toISOString() };
+      } else if (r.wait) { next = Math.max(60, r.wait + 30) * 1000; if (traffic.status?.s !== "ok") traffic.status = { s: "wait" }; }
+      else if (r.off) { traffic.times = null; traffic.status = { s: "off", why: String(r.off) }; }
+      else traffic.status = { s: "error", why: String(r.error || `answer ${res.status}`) };
+    } catch (e) { console.warn("Travel times unavailable", e); traffic.status = { s: "error", why: "the site couldn't be reached" }; }
     traffic.timer = setTimeout(loadTimes, next);
     fitTenants(); ensureRotation();
   }

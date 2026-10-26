@@ -1899,8 +1899,31 @@ test("the touch directory is only on touch screens: cards, A to Z, the keyboard 
   assert.ok(js.includes("if (data?.touch) return fitTouch(u);") && js.includes('if (!data?.touch) return;'), "display-only screens keep the old fit and ignore taps");
   assert.ok(js.includes("(data.tenants || [])[Number(r.dataset.i)]") && !/people[^\n]*includes\(q/.test(js), "the keyboard searches company names, never people");
   assert.ok(js.includes("Number(data.touchIdle) || 45") && js.includes("goIdle"), "back to the directory after the idle time");
-  assert.equal(DISPLAY_VERSION, "2.13.1");
+  assert.equal(DISPLAY_VERSION, "2.13.2");
   assert.ok(js.includes("new ResizeObserver") && js.includes("frameSize() !== fittedAt"), "the list refits when its space changes size (15b)");
+});
+
+test("drive times' status reaches the Pi panel, never Google's minutes or labels (15c)", async () => {
+  const scr = fake.T.screens.find((x) => x.key === "ppi-1s");
+  const keep = { last_seen: scr.last_seen, last_report: scr.last_report };
+  try {
+    scr.last_seen = null;
+    const sent = JSON.stringify({ s: "ok", n: 3, of: 3, at: "2026-10-26T23:15:00Z", shown: true, times: [{ label: "Birmingham Airport", minutes: 16 }], label: "BJCC", minutes: 17 });
+    const r = await screen(req("/api/screen?key=ppi-1s", { headers: { "X-Screen-Size": "1920x1080", "X-Display-Version": DISPLAY_VERSION, "X-Traffic": sent } }));
+    assert.equal(r.status, 200);
+    assert.deepEqual(scr.last_report.traffic, { s: "ok", n: 3, of: 3, at: "2026-10-26T23:15:00.000Z", shown: true });
+    assert.ok(!JSON.stringify(scr.last_report).includes("Airport") && !JSON.stringify(scr.last_report).includes("16"), "nothing Google returned is kept");
+  } finally { Object.assign(scr, keep); }
+  const { trafficStatus } = await import("../netlify/functions/screen.mjs");
+  assert.deepEqual(trafficStatus('{"s":"off","why":"hours"}'), { s: "off", why: "hours", shown: false });
+  assert.deepEqual(trafficStatus('{"s":"off","why":"<script>"}'), { s: "off", why: "switched off", shown: false }, "unknown reasons become plain ones");
+  assert.equal(trafficStatus('{"s":"error","why":"<b>x</b> quota"}').why, "bx/b quota");
+  assert.equal(trafficStatus("not json"), null); assert.equal(trafficStatus('{"s":"dance"}'), null);
+  assert.equal(trafficStatus('{"s":"ok","n":99,"of":-4}').n, 3);
+  const js = readFileSync(new URL("../public/display.js", import.meta.url), "utf8");
+  assert.ok(js.includes('headers["X-Traffic"]') && js.includes("traffic.status = null; return;"), "screens without drive times report nothing");
+  const dev = readFileSync(new URL("../public/console-devices.js", import.meta.url), "utf8");
+  assert.ok(dev.includes('row("Drive times", trafficLine(s))') && dev.includes("weekdays from 6 a.m. to 7 p.m."), "the Pi panel says what the screen reported");
 });
 
 let passed = 0;

@@ -36,14 +36,31 @@ function knownVersion(req) {
   return null;
 }
 
+/** The drive times' status a screen reports (round 15c), kept to known values. Never Google's minutes or labels: its
+ *  terms forbid keeping them, so only whether they show, how many, when Google answered, or why not. */
+const TRAFFIC_OFF = new Set(["switched off", "no destinations", "no building location", "hours", "not set up", "no such screen"]);
+export function trafficStatus(raw) {
+  let t; try { t = JSON.parse(String(raw || "").slice(0, 400)); } catch { return null; }
+  if (!t || typeof t !== "object") return null;
+  const int = (v) => Math.min(3, Math.max(0, Math.round(Number(v)) || 0));
+  const shown = t.shown === true;
+  if (t.s === "ok") { const at = Date.parse(t.at); return { s: "ok", n: int(t.n), of: int(t.of), at: Number.isFinite(at) ? new Date(at).toISOString() : null, shown }; }
+  if (t.s === "off") return { s: "off", why: TRAFFIC_OFF.has(t.why) ? t.why : "switched off", shown };
+  if (t.s === "wait") return { s: "wait", shown };
+  if (t.s === "error") return { s: "error", why: String(t.why || "").replace(/[^\w .,:;'()/-]/g, "").slice(0, 120), shown };
+  return null;
+}
+
 /** The screen's check-in details, if the display sent them. */
 function report(req) {
   const size = (req.headers.get("x-screen-size") || "").match(/^(\d{1,5})x(\d{1,5})$/);
   if (!size) return null;
+  const traffic = trafficStatus(req.headers.get("x-traffic"));
   return {
     w: Math.min(20000, Number(size[1])), h: Math.min(20000, Number(size[2])),
     version: (req.headers.get("x-display-version") || "").slice(0, 20),
     agent: (req.headers.get("user-agent") || "").slice(0, 160),
+    ...(traffic ? { traffic } : {}),
   };
 }
 

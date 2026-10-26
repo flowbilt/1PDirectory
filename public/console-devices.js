@@ -12,6 +12,19 @@ window.ConsoleDevices = (() => {
   const fresh = (iso) => iso && Date.now() - Date.parse(iso) <= ONLINE_MIN * 60000;
   const forScreen = (screenId) => devices.find((d) => d.screen_id === screenId);
   const windowOpen = (d) => !d.enrolled && d.enroll_until && Date.parse(d.enroll_until) > Date.now();
+  /** The drive times' status the screen reported (round 15c): whether they show and when Google last answered, never the minutes */
+  function trafficLine(s) {
+    const t = s?.last_report?.traffic;
+    if (!t) return "";
+    const when = s.last_seen ? ` (reported ${since(s.last_seen)})` : "";
+    const hm = (iso) => new Date(iso).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" });
+    if (t.s === "ok") return `Showing for ${t.n} of ${t.of} destination${t.of === 1 ? "" : "s"}${t.at ? `; Google answered at ${hm(t.at)}` : ""}${t.shown ? "" : "; not in the rotation at that moment"}${when}. For the minutes themselves, take a screenshot while they're up.`;
+    if (t.s === "wait") return `Waiting for its next turn: a screen asks Google at most every 25 minutes${when}.`;
+    if (t.s === "error") return `Google didn't answer${t.why ? `: ${t.why}` : ""}${when}. The screen tries again in 30 minutes.`;
+    return ({ hours: "Not now: drive times show on weekdays from 6 a.m. to 7 p.m., building time",
+      "switched off": "Off for this directory (editor: Show drive times)", "no destinations": "No destinations set for the building (editor)",
+      "no building location": "The building has no weather location or address (editor)", "not set up": "The site has no Google key (Netlify: GOOGLE_ROUTES_KEY)" }[t.why] || "Off") + `${when}.`;
+  }
   const clock = (iso) => new Date(iso).toLocaleString("en-US", { weekday: "short", hour: "numeric", minute: "2-digit" });
   /** One line on a Pi's enrollment: enrolled Pis say nothing. */
   const enrollNote = (d) => (d.enrolled ? "" : windowOpen(d) ? `Enrollment open until ${clock(d.enroll_until)}` : "Not enrolled · enrollment closed");
@@ -192,6 +205,7 @@ window.ConsoleDevices = (() => {
             ${row("Temperature", typeof h.temp_c === "number" ? `${h.temp_c}°C` : "")}
             ${row("Power", h.firmware === "not-responding" ? "Unknown while the firmware isn't responding" : h.under_voltage_now ? "Under-voltage now: replace the power supply" : h.under_voltage_seen ? "Dipped since last boot" : h.throttled !== undefined ? "Normal" : "")}
             ${row("Browser", h.browser_running === false ? "Not running" : h.browser_running ? "Running" : "")}
+            ${row("Drive times", trafficLine(s))}
             ${row("TV", s?.no_cec ? "Not checked: this display has no HDMI-CEC (Screen settings)" : { on: "On", standby: "Off (standby): the Pi is turning it on", "not-answering": "Not answering over HDMI (TV unplugged, or its CEC setting is off)", "no-cec": "Not controlled (no HDMI-CEC)" }[h.tv] || "")}
             ${row("Up for", up)}
             ${row("Storage used", h.disk_used_pct != null ? `${h.disk_used_pct}%` : "")}
