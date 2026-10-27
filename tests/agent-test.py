@@ -351,7 +351,7 @@ exit 0
     n = len(checkins); wait_for(n + 1)
     with lock: h = checkins[-1][1].get("health", {})
     check("and Remote support then reads off", h.get("remote") == "off", h.get("remote"))
-    check("the agent on the site is 1.9.0", re.search(r'VERSION = "([^"]+)"', open(AGENT).read()).group(1) == "1.9.0")
+    check("the agent on the site is 1.10.0", re.search(r'VERSION = "([^"]+)"', open(AGENT).read()).group(1) == "1.10.0")
     p.terminate()
     try: p.wait(timeout=5)
     except subprocess.TimeoutExpired: p.kill()
@@ -378,6 +378,27 @@ print(json.dumps({{"t1": t1, "t2": t2, "f1": h1.get("firmware"), "f2": h2.get("f
     except Exception: fw = {"error": out.stdout[-300:] + out.stderr[-300:]}
     check("firmware not answering: the health report still comes, within seconds, and says so", fw.get("f1") == "not-responding" and fw.get("t1", 99) < 5 and fw.get("temp"), fw)
     check("and the stuck vcgencmd isn't asked again (no new wait)", fw.get("f2") == "not-responding" and fw.get("t2", 99) < 1, fw)
+
+    # ── J. DP-10 round 16b: the field Wi-Fi setup's last tries (written by lobby-wifi-setup) go out with the health ──
+    rec = os.path.join(W, "wifi-setup.json")
+    probe = f"""
+import importlib.util, json, os
+os.environ["LOBBY_AGENT_WIFI_SETUP"] = {rec!r}
+spec = importlib.util.spec_from_file_location("agent", {AGENT!r}); a = importlib.util.module_from_spec(spec); spec.loader.exec_module(a)
+a.stuck = lambda name: True                        # no vcgencmd here
+h0 = a.health()
+json.dump({{"tries": [{{"at": i, "ssid": "Net%d" % i, "ok": i == 6, "why": "" if i == 6 else "refused"}} for i in range(7)]}}, open({rec!r}, "w"))
+h1 = a.health()
+open({rec!r}, "w").write("not json")
+h2 = a.health()
+print(json.dumps({{"none": "wifi_setup" not in h0, "tries": h1.get("wifi_setup"), "bad": "wifi_setup" not in h2}}))
+"""
+    out = subprocess.run([sys.executable, "-c", probe], capture_output=True, text=True, timeout=60)
+    try: ws = json.loads(out.stdout.strip().splitlines()[-1])
+    except Exception: ws = {"error": out.stdout[-300:] + out.stderr[-300:]}
+    check("no field Wi-Fi setup on record: nothing reported", ws.get("none"), ws)
+    check("the setup's last five tries go out with the health, oldest first", [t["ssid"] for t in ws.get("tries") or []] == ["Net2", "Net3", "Net4", "Net5", "Net6"] and ws["tries"][-1]["ok"] is True, ws)
+    check("a damaged record is skipped, never stops the report", ws.get("bad"), ws)
 
     srv.shutdown()
     print(f"\n{passed}/{passed + failed} passed")

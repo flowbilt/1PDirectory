@@ -264,7 +264,7 @@ cat > /usr/local/sbin/lobby-wifi-setup <<'WIFISETUP'
 lived hotspot carrying a small setup page, so a network can be picked from a phone that joins it (or from this Pi's
 own screen, with a keyboard) without a new card or a console visit. Serves until the site can be reached, then
 tears the hotspot down and exits 0. Usage: lobby-wifi-setup <serial> <site-url>"""
-import http.server, os, secrets, signal, string, subprocess, sys, threading, time, urllib.parse
+import html, http.server, json, os, secrets, signal, string, subprocess, sys, threading, time, urllib.parse
 
 SERIAL, URL = sys.argv[1], sys.argv[2]
 LAST_SCAN = {}            # ssid -> open, from the latest scan
@@ -275,6 +275,16 @@ CONNECT_SLEEP = float(os.environ.get("LOBBY_WIFI_SETUP_SLEEP", "2"))
 HOTSPOT_CHECK = float(os.environ.get("LOBBY_HOTSPOT_CHECK", "5"))      # seconds between checks that the hotspot is up
 RADIO = threading.Lock()  # held while a join or the hotspot itself is changing the radio, so the two never fight
 STOP = threading.Event()  # set once setup is finishing: the hotspot is never brought back after that
+# DP-10 round 16b: the last try, shown at the top of the page on the phone and the TV. A try drops the hotspot (the
+# Pi has one radio), so the phone never got the answer to its Connect: it reconnected, reloaded the page and saw the
+# top network chosen again, as if its choice had been lost. Now Connect answers at once, the try runs on its own,
+# and the page that comes back says how it went, with that network still chosen.
+TRY = {"state": "idle", "ssid": "", "hidden": False, "why": "", "at": 0.0, "stamp": 0}
+TRY_LOCK = threading.Lock()
+SCAN_EVERY = float(os.environ.get("LOBBY_WIFI_SCAN_EVERY", "20"))     # a page view rescans at most this often
+SCANNED = {"at": 0.0, "nets": []}
+RECORD = os.environ.get("LOBBY_WIFI_SETUP_RECORD", "/var/lib/lobby-agent/wifi-setup.json")   # the agent reports it
+SUCCESS_LINGER = float(os.environ.get("LOBBY_WIFI_SETUP_LINGER", "4"))   # the TV shows "Connected" this long
 AP_SSID = f"Directory-Setup-{SERIAL[-4:]}"
 def setup_code():
     """The hotspot's 8-digit code: made once per Pi and kept, so a phone that joined before still has the right one
@@ -380,7 +390,19 @@ def nm_fields(line):
     return out
 
 
-def scan_networks():
+def scan_networks(fresh=False):
+    """Nearby networks, strongest first. A page view rescans at most every SCAN_EVERY seconds and never during a try
+    (the TV's page checks for news every few seconds, and a rescan mid-join would fight the join for the radio)."""
+    with TRY_LOCK:
+        trying = TRY["state"] == "trying"
+    if not fresh and (trying or time.time() - SCANNED["at"] < SCAN_EVERY) and SCANNED["nets"]:
+        return SCANNED["nets"]
+    nets = _scan()
+    SCANNED.update(at=time.time(), nets=nets)
+    return nets
+
+
+def _scan():
     run("nmcli", "device", "wifi", "rescan", timeout=15)
     r = run("nmcli", "-t", "-f", "SSID,SECURITY,SIGNAL", "device", "wifi", "list", timeout=15)
     seen, nets = set(), []
@@ -432,6 +454,45 @@ def join(ssid, password):
     return False, "Joined, but can't reach the directory site from there."
 
 
+def record_try(ssid, ok, why):
+    """Keep the last five tries on the Pi (never the password), so the console can show them once the Pi is online."""
+    try:
+        tries = json.load(open(RECORD)).get("tries", [])
+    except (OSError, ValueError, AttributeError):
+        tries = []
+    tries = (tries + [{"at": int(time.time()), "ssid": ssid[:64], "ok": bool(ok), "why": (why or "")[:160]}])[-5:]
+    try:
+        os.makedirs(os.path.dirname(RECORD), exist_ok=True)
+        tmp = RECORD + ".tmp"
+        with open(tmp, "w") as fh:
+            json.dump({"tries": tries}, fh)
+        os.chmod(tmp, 0o644)
+        os.replace(tmp, RECORD)
+    except OSError:
+        pass
+
+
+def set_try(**kw):
+    with TRY_LOCK:
+        TRY.update(kw)
+        TRY["stamp"] += 1
+
+
+def run_try(server, ssid, password, hidden):
+    time.sleep(0.5)                       # let the "Trying…" page reach the phone before the hotspot drops
+    log(f"field Wi-Fi setup: trying {ssid!r}")
+    ok, err = try_connect(ssid, password)
+    record_try(ssid, ok, err)
+    if ok:
+        log(f"field Wi-Fi setup: joined {ssid!r} and reached the site")
+        set_try(state="ok", why="")
+        time.sleep(SUCCESS_LINGER)        # the TV's page shows Connected; the phone has lost the hotspot by now
+        server.shutdown()
+    else:
+        log(f"field Wi-Fi setup: {ssid!r} didn't work: {err}")
+        set_try(state="failed", why=err)
+
+
 def undo_join(before):
     """A join that didn't work: delete the profile it saved (a saved network with a wrong password is what makes
     NetworkManager ask for the password again later) and put the hotspot back at once, so the phone can retry."""
@@ -451,27 +512,40 @@ label{{display:block;margin:14px 0 4px}}
 input,select{{width:100%;padding:10px;font-size:1em;border-radius:6px;border:1px solid #444;background:#1a1a1a;color:#eee;box-sizing:border-box}}
 button{{margin-top:18px;width:100%;padding:12px;font-size:1.1em;border-radius:8px;border:0;background:#eee;color:#111}}
 .err{{color:#f88;margin-top:10px}}
+.result{{font-size:1.15em;line-height:1.4;padding:14px 16px;border-radius:10px;margin:0 0 18px}}
+.result.trying{{background:#1d3150;color:#dfe9ff}}
+.result.failed{{background:#4a1717;color:#ffd9d9}}
+.result.ok{{background:#173d22;color:#cff5d8}}
 </style></head><body>
+{result}
 <h1>This screen needs Wi-Fi</h1>
 <p>From a phone: join the Wi-Fi network <b>{ap_ssid}</b> with the code <span class="code">{ap_password}</span>.
 This page opens by itself; if it doesn't, open <b>http://{address}</b> in the phone's browser.
-(If the phone says the network has no internet, choose to stay connected.) A keyboard here works too.</p>
+(If the phone says the network has no internet, choose to stay connected. On Android, turn off mobile data
+while setting up, or the phone may not reach this page.) A keyboard here works too.</p>
 {message}
 <p><a href="/" style="color:#9cf">Search again</a></p>
 <form method="post" action="/connect">
 <label>Network</label>
 <select name="ssid">{options}</select>
 <label>Hidden network name (only if it's not in the list above)</label>
-<input type="text" name="hidden_ssid" autocapitalize="off" autocorrect="off">
+<input type="text" name="hidden_ssid" autocapitalize="off" autocorrect="off" value="{hidden_value}">
 <label>Password (leave blank for an open network)</label>
 <input type="password" name="password">
 <button type="submit">Connect</button>
 </form>
+<script>
+// Reload when a try finishes (or starts from another device), unless someone is typing into the form
+var stamp = {stamp};
+setInterval(function () {{
+  var a = document.activeElement, typing = a && (a.tagName === "INPUT" || a.tagName === "SELECT")
+    || document.querySelector("input[name=password]").value || document.querySelector("input[name=hidden_ssid]").value;
+  fetch("/status", {{cache: "no-store"}}).then(function (r) {{ return r.json(); }}).then(function (s) {{
+    if (s.stamp !== stamp && (!typing || s.state === "ok")) location.replace("/");
+  }}).catch(function () {{}});
+}}, 3000);
+</script>
 </body></html>"""
-
-CONNECTED = """<!doctype html><html><head><meta name="viewport" content="width=device-width, initial-scale=1"></head>
-<body style="font-family:sans-serif;background:#111;color:#8f8;padding:24px;text-align:center">
-<h1>Connected</h1><p>The screen will start in a moment.</p></body></html>"""
 
 
 def render(message=""):
@@ -481,11 +555,31 @@ def render(message=""):
     if not nets:
         message += ('<p class="err">No networks found yet. This page searches again by itself every 15 seconds.</p>'
                     '<meta http-equiv="refresh" content="15">')
+    with TRY_LOCK:
+        t = dict(TRY)
+    e = lambda x: html.escape(str(x), quote=True)     # in an attribute
+    t_ = lambda x: html.escape(str(x), quote=False)   # in the text (an apostrophe stays an apostrophe)
+    chosen = t["ssid"] if t["state"] in ("trying", "failed") else ""
+    listed = any(n["ssid"] == chosen for n in nets)
     opts = "".join(
-        f'<option value="{n["ssid"]}">{n["ssid"]} ({"open" if n["open"] else "locked"}, {n["signal"]}%)</option>'
+        f'<option value="{e(n["ssid"])}"{" selected" if chosen and n["ssid"] == chosen else ""}>'
+        f'{t_(n["ssid"])} ({"open" if n["open"] else "locked"}, {n["signal"]}%)</option>'
         for n in nets
     )
-    return PAGE.format(ap_ssid=AP_SSID, ap_password=AP_PASSWORD, address=ADDRESS, message=message, options=opts).encode()
+    result = ""
+    if t["state"] == "trying":
+        result = (f'<div class="result trying" role="status"><b>Trying {t_(t["ssid"])}…</b><br>This setup network drops '
+                  'while the screen tries, for up to a minute. If it works, the screen shows its directory and this '
+                  'network goes away. If not, this page comes back with the reason: rejoin '
+                  f'<b>{t_(AP_SSID)}</b> if your phone doesn\'t do it by itself.</div>')
+    elif t["state"] == "failed":
+        result = (f'<div class="result failed" role="alert"><b>{t_(t["ssid"])} didn\'t work.</b><br>{t_(t["why"])}<br>'
+                  f'{t_(t["ssid"])} is still chosen below.</div>')
+    elif t["state"] == "ok":
+        result = f'<div class="result ok" role="status"><b>Connected to {t_(t["ssid"])}.</b><br>The screen will start in a moment.</div>'
+    hidden_value = e(chosen) if chosen and (t["hidden"] or not listed) else ""
+    return PAGE.format(ap_ssid=e(AP_SSID), ap_password=AP_PASSWORD, address=ADDRESS, message=message, options=opts,
+                       result=result, hidden_value=hidden_value, stamp=t["stamp"]).encode()
 
 
 class Handler(http.server.BaseHTTPRequestHandler):
@@ -500,8 +594,18 @@ class Handler(http.server.BaseHTTPRequestHandler):
         self.wfile.write(body)
 
     def do_GET(self):
-        # Every address leads here: a phone joining the hotspot checks a known web address to see whether it's online,
-        # gets this page instead, and opens it as a Wi-Fi sign-in page (the hotspot answers every name with the Pi)
+        if self.path.split("?")[0] == "/status":
+            with TRY_LOCK:
+                body = json.dumps({k: TRY[k] for k in ("state", "stamp")}).encode()
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Cache-Control", "no-store")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+            return
+        # Every other address leads here: a phone joining the hotspot checks a known web address to see whether it's
+        # online, gets this page instead, and opens it as a Wi-Fi sign-in page (the hotspot answers every name with the Pi)
         self._send(render())
 
     def do_POST(self):
@@ -510,19 +614,22 @@ class Handler(http.server.BaseHTTPRequestHandler):
             return
         length = int(self.headers.get("Content-Length", 0))
         form = urllib.parse.parse_qs(self.rfile.read(length).decode())
-        ssid = ((form.get("hidden_ssid") or [""])[0] or (form.get("ssid") or [""])[0]).strip()
+        hidden = (form.get("hidden_ssid") or [""])[0].strip()
+        ssid = (hidden or (form.get("ssid") or [""])[0]).strip()
         password = (form.get("password") or [""])[0]
-        if not ssid:
-            ok, err = False, "Choose or type a network name."
+        with TRY_LOCK:
+            busy = TRY["state"] in ("trying", "ok")
+        if busy:
+            self._send(render())                         # one try at a time; the page shows the one under way
+        elif not ssid:
+            self._send(render('<p class="err">Choose or type a network name.</p>'))
         elif not password and LAST_SCAN.get(ssid) is False:
-            ok, err = False, f"{ssid} needs its password. Type it in the Password box."
+            set_try(state="failed", ssid=ssid, hidden=bool(hidden), why=f"{ssid} needs its password. Type it in the Password box.", at=time.time())
+            self._send(render())
         else:
-            ok, err = try_connect(ssid, password)
-        if ok:
-            self._send(CONNECTED.encode())
-            threading.Thread(target=self.server.shutdown, daemon=True).start()
-        else:
-            self._send(render(f'<p class="err">{err}</p>'))
+            set_try(state="trying", ssid=ssid, hidden=bool(hidden), why="", at=time.time())
+            self._send(render())
+            threading.Thread(target=run_try, args=(self.server, ssid, password, bool(hidden)), daemon=True).start()
 
 
 def watch_for_network(server):

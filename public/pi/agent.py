@@ -14,7 +14,7 @@ Runs as a systemd service (lobby-agent). Standard library only.
 """
 import base64, json, os, pwd, re, secrets, shutil, socket, subprocess, sys, tempfile, threading, time, urllib.error, urllib.request
 
-VERSION = "1.9.0"
+VERSION = "1.10.0"
 CONFIG = os.environ.get("LOBBY_AGENT_CONFIG", "/etc/lobby-agent.json")
 STATE = os.environ.get("LOBBY_AGENT_STATE", "/var/lib/lobby-agent/pending-results.json")
 IDENTITY = os.environ.get("LOBBY_AGENT_IDENTITY", "/var/lib/lobby-agent/identity.json")
@@ -24,6 +24,7 @@ FIRST_SHOT = 120           # seconds after start before the first automatic scre
 UPDATE_LIMIT = 45 * 60      # an update still running after this long is stopped and reported as failed
 INTERVAL = max(1.0, float(os.environ.get("LOBBY_AGENT_INTERVAL", "60")))   # seconds; only tests change this
 JOIN_WAIT = float(os.environ.get("LOBBY_AGENT_JOIN_WAIT", "60"))   # how long a newly joined network has to reach the site
+WIFI_SETUP = os.environ.get("LOBBY_AGENT_WIFI_SETUP", "/var/lib/lobby-agent/wifi-setup.json")   # field Wi-Fi setup's last tries (1.10.0)
 REMOTE_STATE = os.environ.get("LOBBY_AGENT_REMOTE", "/var/lib/lobby-agent/remote")   # "on" or "off": the last Remote support (1.9.0)
 FIRMWARE_WAIT = float(os.environ.get("LOBBY_AGENT_FIRMWARE_WAIT", "5"))   # seconds vcgencmd gets before the firmware counts as stuck
 
@@ -150,6 +151,12 @@ def health():
         h["remote"] = "off"
     if BUSY:
         h["busy"] = {"command": BUSY["command"], "since": int(BUSY["since"])}
+    try:   # the field Wi-Fi setup's last tries (never a password), so the console can show why a phone setup failed
+        tries = json.loads(read(WIFI_SETUP) or "{}").get("tries")
+        if isinstance(tries, list) and tries:
+            h["wifi_setup"] = tries[-5:]
+    except (ValueError, AttributeError):
+        pass
     h["browser_running"] = run(["pgrep", "-f", "chromium"]).returncode == 0
     try:   # the TV's power state, if the TV keeper has checked in the last 5 minutes
         if time.time() - os.path.getmtime(TV_STATE) < 300:

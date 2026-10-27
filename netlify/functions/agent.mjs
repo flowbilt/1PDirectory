@@ -52,6 +52,12 @@ function cleanHealth(h) {
     remote: ["on", "off"].includes(h.remote) ? h.remote : null,
     busy: h.busy && COMMANDS.includes(h.busy.command) && Number.isFinite(Number(h.busy.since))
       ? { command: h.busy.command, since: Math.round(Number(h.busy.since)) } : null,
+    // Agent 1.10.0 (DP-10 round 16b): the field Wi-Fi setup's last five tries, from the phone page before the Pi was
+    // ever online: when, which network, whether it worked, and why not. Never a password.
+    wifi_setup: Array.isArray(h.wifi_setup)
+      ? h.wifi_setup.filter((t) => t && Number.isFinite(Number(t.at))).slice(-5)
+        .map((t) => ({ at: Math.round(Number(t.at)), ssid: clip(t.ssid, 64), ok: t.ok === true, why: clip(t.why, 160) }))
+      : null,
   };
 }
 

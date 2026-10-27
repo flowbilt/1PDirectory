@@ -252,11 +252,21 @@ sitting on a blank screen. No new card and no console visit needed:
    same for that Pi, so a phone that has joined it before still has the right code.
 2. From a phone: join that Wi-Fi network with the code. The setup page opens by itself, like a hotel Wi-Fi sign-in
    page; if it doesn't, open `http://10.42.0.1` in the phone's browser (the TV shows the address). If the phone says
-   the network has no internet, choose to stay connected. A keyboard at the Pi works too, on the same page.
+   the network has no internet, choose to stay connected. **Android:** turn off mobile data while setting up, or the
+   phone may send the page over mobile data and never reach the Pi. A keyboard at the Pi works too, on the same page.
 3. Pick a network (or type a hidden one's name), enter its password, and submit. Not listed yet? **Search again**
    (the page also searches by itself every 15 seconds while it has found nothing). The Pi joins it, confirms it can
-   reach the site, and starts the directory normally. A wrong password or a network that can't reach the site is
-   reported on the same page so it can be retried, and so is a locked network chosen without its password.
+   reach the site, and starts the directory normally. A locked network chosen without its password is caught at once.
+4. **Since DP-10 round 16b (Update Pi, agent 1.10.0):** the page answers straight away with **Trying <network>…**,
+   because the Pi has one radio and its hotspot drops while it tries (for up to a minute). If it works, the screen
+   shows its directory and the hotspot goes away. If not, the hotspot comes back and the page (on the phone once it
+   rejoins, and on the TV) says **<network> didn't work** and why (wrong password, not in range, or joined but can't
+   reach the site), large at the top, **with that network still chosen** and the password box empty. Before 16b the
+   phone never got that answer: it rejoined, reloaded and showed the top network chosen again, which looked like the
+   choice being lost (seen on the first Wi-Fi retrofit, 2026-10-27). Each try (when, network, worked or not, why;
+   never the password) is kept on the Pi (`/var/lib/lobby-agent/wifi-setup.json`, the last five, cleared by
+   `--prepare`) and, once the Pi is online, shows in the Pi panel as **Field Wi-Fi setup**. Every try is in the kiosk
+   log too.
 
 This only happens for a Pi that's never gotten online at all. A Pi that's worked before and just loses its network
 keeps the quieter behavior below (cached content, "Reconnecting…") — it never puts up a surprise hotspot on a

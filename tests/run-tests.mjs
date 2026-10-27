@@ -1669,10 +1669,31 @@ test("agent 1.9.0's health: firmware, remote support and busy reach the console,
   assert.equal(dev.last_health.busy, null, "a busy report needs a real start time");
   await checkin({ health: {} });
   const agentPy = readFileSync(new URL("../public/pi/agent.py", import.meta.url), "utf8");
-  assert.equal(agentPy.match(/VERSION = "([^"]+)"/)[1], "1.9.0", "the agent on the site is 1.9.0");
+  assert.equal(agentPy.match(/VERSION = "([^"]+)"/)[1], "1.10.0", "the agent on the site is 1.10.0");
   for (const w of ['"not-responding"', 'h["remote"]', 'h["busy"]']) assert.ok(agentPy.includes(w), `the agent reports ${w}`);
   const consoleJs = readFileSync(new URL("../public/console-devices.js", import.meta.url), "utf8");
   for (const w of ["Firmware stuck", "Remote on", "Remote off", "Busy: "]) assert.ok(consoleJs.includes(w), `the Screens list can say ${w}`);
+});
+
+test("agent 1.10.0 (16b): the field Wi-Fi setup's last tries reach the Pi panel, tidied, never a password", async () => {
+  const dev = fake.T.devices.find((x) => x.serial === PPI2S_SERIAL);
+  const tries = Array.from({ length: 7 }, (_, i) => ({ at: 1761570000 + i, ssid: `Net${i}`, ok: i === 6, why: i === 6 ? "" : "Net refused that password." }));
+  await checkin({ health: { wifi_setup: [...tries, { at: "soon", ssid: "x" }], password: "secret" } });
+  assert.equal(dev.last_health.wifi_setup.length, 5, "the last five only");
+  assert.deepEqual(dev.last_health.wifi_setup.at(-1), { at: 1761570006, ssid: "Net6", ok: true, why: "" });
+  assert.ok(!JSON.stringify(dev.last_health).includes("secret"), "nothing outside the known fields is kept");
+  await checkin({ health: { wifi_setup: [{ at: 1, ssid: "x".repeat(300), ok: "yes", why: "y".repeat(500) }] } });
+  assert.deepEqual([dev.last_health.wifi_setup[0].ssid.length, dev.last_health.wifi_setup[0].ok, dev.last_health.wifi_setup[0].why.length], [64, false, 160]);
+  await checkin({ health: { wifi_setup: "lots" } });
+  assert.equal(dev.last_health.wifi_setup, null);
+  await checkin({ health: {} });
+  const consoleJs = readFileSync(new URL("../public/console-devices.js", import.meta.url), "utf8");
+  assert.ok(consoleJs.includes('row("Field Wi-Fi setup", wifiSetupLine(h))'), "the Pi panel has a Field Wi-Fi setup line");
+  const setup = readFileSync(new URL("../public/pi/setup-kiosk.sh", import.meta.url), "utf8");
+  assert.ok(setup.includes('RECORD = os.environ.get("LOBBY_WIFI_SETUP_RECORD", "/var/lib/lobby-agent/wifi-setup.json")')
+    && readFileSync(new URL("../public/pi/agent.py", import.meta.url), "utf8").includes('"/var/lib/lobby-agent/wifi-setup.json"'),
+    "the setup tool writes where the agent reads");
+  assert.ok(/rm -rf \/var\/lib\/lobby-agent\s/.test(setup), "--prepare clears the record with the rest of the agent's state");
 });
 
 test("touch settings: off and blank by default, then they reach the screen and change its version", async () => {

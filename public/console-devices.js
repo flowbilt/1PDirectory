@@ -185,6 +185,9 @@ window.ConsoleDevices = (() => {
     const note = refusedNote(d);
     const s = (window.ConsoleState?.screens || []).find((x) => x.id === d.screen_id);
     const h = d.last_health || {};
+    // The phone setup's last tries before this Pi was ever online (agent 1.10.0), newest first
+    const wifiSetupLine = (h) => (Array.isArray(h.wifi_setup) && h.wifi_setup.length ? h.wifi_setup.slice(-3).reverse().map((t) =>
+      `${new Date(t.at * 1000).toLocaleString("en-US", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })}: ${t.ssid} ${t.ok ? "joined" : `didn't work (${t.why || "no reason given"})`}`).join("; ") : "");
     const row = (k, v) => (v === undefined || v === null || v === "" ? "" : `<dt>${k}</dt><dd>${esc(v)}</dd>`);
     const up = h.uptime_s ? `${Math.floor(h.uptime_s / 86400)}d ${Math.floor((h.uptime_s % 86400) / 3600)}h` : "";
     const dlg = $("dev-dlg") || document.body.appendChild(Object.assign(document.createElement("dialog"), { id: "dev-dlg", className: "dev-dlg" }));
@@ -206,6 +209,7 @@ window.ConsoleDevices = (() => {
             ${row("Power", h.firmware === "not-responding" ? "Unknown while the firmware isn't responding" : h.under_voltage_now ? "Under-voltage now: replace the power supply" : h.under_voltage_seen ? "Dipped since last boot" : h.throttled !== undefined ? "Normal" : "")}
             ${row("Browser", h.browser_running === false ? "Not running" : h.browser_running ? "Running" : "")}
             ${row("Drive times", trafficLine(s))}
+            ${row("Field Wi-Fi setup", wifiSetupLine(h))}
             ${row("TV", s?.no_cec ? "Not checked: this display has no HDMI-CEC (Screen settings)" : { on: "On", standby: "Off (standby): the Pi is turning it on", "not-answering": "Not answering over HDMI (TV unplugged, or its CEC setting is off)", "no-cec": "Not controlled (no HDMI-CEC)" }[h.tv] || "")}
             ${row("Up for", up)}
             ${row("Storage used", h.disk_used_pct != null ? `${h.disk_used_pct}%` : "")}

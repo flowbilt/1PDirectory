@@ -218,7 +218,7 @@ wifisetup_run() {
   # waits for it to actually exit (the port must be free before the next case starts).
   : > "$NMLOG"
   rm -f "$W/ap-up" "$W/profile"
-  ( PATH="$W/bin:$PATH" NMLOG="$NMLOG" AP_FLAG="$W/ap-up" W_PROFILE="$W/profile" LOBBY_HOTSPOT_CHECK="${CHECK_S:-0.3}" SITE_UP_FLAG="$SITE_UP_FLAG" LOBBY_STATUS_FILE="$W/lstatus" LOBBY_SETUP_CODE_FILE="$W/setup-code" SCAN_ONCE="$W/scan-once" SCAN_EMPTY="$W/scan-empty" LOBBY_WIFI_SETUP_TRIES="${TRIES:-2}" LOBBY_WIFI_SETUP_SLEEP="${SLEEP_S:-0.2}" \
+  ( PATH="$W/bin:$PATH" NMLOG="$NMLOG" AP_FLAG="$W/ap-up" W_PROFILE="$W/profile" LOBBY_HOTSPOT_CHECK="${CHECK_S:-0.3}" SITE_UP_FLAG="$SITE_UP_FLAG" LOBBY_STATUS_FILE="$W/lstatus" LOBBY_SETUP_CODE_FILE="$W/setup-code" SCAN_ONCE="$W/scan-once" SCAN_EMPTY="$W/scan-empty" LOBBY_WIFI_SETUP_TRIES="${TRIES:-2}" LOBBY_WIFI_SETUP_SLEEP="${SLEEP_S:-0.2}" LOBBY_WIFI_SETUP_RECORD="$W/wifi-setup.json" LOBBY_WIFI_SETUP_LINGER=0.5 \
       timeout 40 python3 "$W/lobby-wifi-setup.py" 10000000abcd1234 "http://x.test/site" > "$W/wifisetup.out" 2>&1 & echo $! > "$W/wifisetup.pid" )
   for _ in $(seq 1 30); do curl -fsS -o /dev/null http://127.0.0.1:80/ 2>/dev/null && break; sleep 0.2; done
   "$@"
@@ -226,6 +226,13 @@ wifisetup_run() {
   for _ in $(seq 1 30); do kill -0 "$(cat "$W/wifisetup.pid")" 2>/dev/null || break; sleep 0.2; done
 }
 SITE_UP_FLAG="$W/site-up"; rm -f "$SITE_UP_FLAG"
+# DP-10 round 16b: Connect answers at once ("Trying…") and the try runs on its own; the page that comes back says how
+# it went. post_wait sends the form, waits for the try to end, then prints the page a phone would see on its return.
+post_wait() {
+  curl -s -X POST -d "$1" http://127.0.0.1:80/connect > "$W/post-first.html"
+  for _ in $(seq 1 60); do curl -s http://127.0.0.1:80/status 2>/dev/null | grep -q '"state": "trying"' || break; sleep 0.2; done
+  curl -s http://127.0.0.1:80/ || true
+}
 
 rm -f "$W/wifisetup.out"; wifisetup_run true
 has "it brings up a hotspot named after the Pi's own serial" "$(cat "$NMLOG")" "device wifi hotspot con-name lobby-setup-ap ssid Directory-Setup-1234"
@@ -241,20 +248,23 @@ ok "a network seen twice in a scan is listed once" "$(grep -c 'value=\"Strong\"'
 ok "the hotspot's own network never appears as something to join" "$(grep -c 'value=\"Directory-Setup-1234\"' <<<"$PAGE")" "0"
 has "the hotspot name and its code are shown for a phone to join" "$PAGE" "join the Wi-Fi network <b>Directory-Setup-1234</b> with the code"
 
-ERR="$(TRIES=1 SLEEP_S=0.1 wifisetup_run curl -s -X POST -d 'ssid=BadNet&password=x' http://127.0.0.1:80/connect)"
-has "a network that refuses the password says so, and offers the form again" "$ERR" 'err">'
+ERR="$(TRIES=1 SLEEP_S=0.1 wifisetup_run post_wait 'ssid=BadNet&password=x')"
+FIRST="$(cat "$W/post-first.html")"
+has "Connect answers straight away, before the hotspot drops (16b)" "$FIRST" "Trying BadNet…"
+has "and says the setup network drops while it tries" "$FIRST" "This setup network drops while the screen tries"
+has "a network that refuses the password says so, large, at the top of the page that comes back" "$ERR" '<div class="result failed" role="alert"><b>BadNet didn'"'"'t work.</b>'
 has "and the form is still there to retry" "$ERR" "<form method=\"post\""
 
-ERR2="$(TRIES=1 SLEEP_S=0.1 wifisetup_run curl -s -X POST -d 'ssid=GoodNet&password=rightpass' http://127.0.0.1:80/connect)"
+ERR2="$(TRIES=1 SLEEP_S=0.1 wifisetup_run post_wait 'ssid=GoodNet&password=rightpass')"
 has "joining but still not reaching the site is reported, not silently retried forever" "$ERR2" "can't reach the directory site"
 
 touch "$SITE_UP_FLAG"
-OK1="$(TRIES=2 SLEEP_S=0.1 wifisetup_run curl -s -X POST -d 'ssid=OpenNet&password=' http://127.0.0.1:80/connect)"
-has "an open network needs no password" "$OK1" "<h1>Connected"
+OK1="$(TRIES=2 SLEEP_S=0.1 wifisetup_run bash -c "curl -s -X POST -d 'ssid=OpenNet&password=' http://127.0.0.1:80/connect >/dev/null; for i in \$(seq 1 40); do curl -s http://127.0.0.1:80/status | grep -q '\"ok\"' && break; sleep 0.1; done; curl -s http://127.0.0.1:80/")"
+has "an open network needs no password, and the TV's page says Connected" "$OK1" "<b>Connected to OpenNet.</b>"
 rm -f "$SITE_UP_FLAG"
 
 : > "$NMLOG"
-wifisetup_run curl -s -X POST -d 'ssid=Strong&hidden_ssid=HiddenNet&password=secretpw' http://127.0.0.1:80/connect >/dev/null
+wifisetup_run post_wait 'ssid=Strong&hidden_ssid=HiddenNet&password=secretpw' >/dev/null
 has "a typed hidden-network name wins over the dropdown selection" "$(cat "$NMLOG")" "device wifi connect HiddenNet password secretpw"
 
 DURING="$(wifisetup_run bash -c "cut -d' ' -f1 '$W/lstatus'")"
@@ -280,6 +290,8 @@ has "the page says where it is, for a phone that doesn't open it by itself" "$PA
 has "the hotspot answers every name with the Pi (setup hotspot only)" "$(grep -A1 'mkdir -p /etc/NetworkManager/dnsmasq-shared.d' "$SETUP")" "address=/#/10.42.0.1"
 : > "$NMLOG"
 LOCKED="$(wifisetup_run bash -c "curl -s http://127.0.0.1:80/ >/dev/null; curl -s -X POST -d 'ssid=Strong&password=' http://127.0.0.1:80/connect")"
+has "and the network stays chosen" "$LOCKED" '<option value="Strong" selected>'
+
 has "a locked network with no password says it needs one" "$LOCKED" "Strong needs its password"
 ok "and doesn't even try to join it" "$(grep -c 'device wifi connect Strong' "$NMLOG")" "0"
 has "a refused password is said plainly, not as nmcli's message" "$ERR" "BadNet refused that password"
@@ -293,14 +305,14 @@ ok "a hotspot that disappears (as after a phone typed a wrong code) is started a
 has "and the kiosk log says so" "$(cat "$W/wifisetup.out")" "the setup hotspot was down; starting it again"
 ok "a hotspot that stays up is left alone" "$( : > "$NMLOG"; wifisetup_run sleep 1.5; grep -c 'device wifi hotspot' "$NMLOG")" "1"
 : > "$NMLOG"
-ERR3="$(TRIES=1 SLEEP_S=0.1 wifisetup_run curl -s -X POST -d 'ssid=BadNet&password=wrongpass' http://127.0.0.1:80/connect)"
+ERR3="$(TRIES=1 SLEEP_S=0.1 wifisetup_run post_wait 'ssid=BadNet&password=wrongpass')"
 has "a refused password still says so" "$ERR3" "BadNet refused that password"
 has "the profile the failed join saved is deleted (a saved wrong password makes NetworkManager ask again later)" "$(cat "$NMLOG")" "connection delete id BadNet"
 ok "and the hotspot is back straight away, so the phone can try again" \
   "$(sed -n '/device wifi connect BadNet/,$p' "$NMLOG" | grep -c 'device wifi hotspot con-name lobby-setup-ap')" "1"
 has "the card's own networks are never deleted" "$(grep -c 'connection delete id lobby-wifi-1' "$NMLOG")" "0"
 : > "$NMLOG"
-ERR4="$(TRIES=1 SLEEP_S=0.1 wifisetup_run curl -s -X POST -d 'ssid=GoodNet&password=rightpass' http://127.0.0.1:80/connect)"
+ERR4="$(TRIES=1 SLEEP_S=0.1 wifisetup_run post_wait 'ssid=GoodNet&password=rightpass')"
 has "joined but no site: the new profile is removed and the hotspot comes back too" "$(cat "$NMLOG")" "connection delete id GoodNet"
 touch "$SITE_UP_FLAG"; : > "$NMLOG"
 TRIES=2 SLEEP_S=0.1 wifisetup_run bash -c "curl -s -X POST -d 'ssid=OpenNet&password=' http://127.0.0.1:80/connect >/dev/null; sleep 1.2"
@@ -308,6 +320,41 @@ rm -f "$SITE_UP_FLAG"
 ok "after a join that worked, the hotspot is never brought back to take the radio" \
   "$(sed -n '/device wifi connect OpenNet/,$p' "$NMLOG" | grep -c 'device wifi hotspot')" "0"
 has "and the joined network is kept" "$(grep -c 'connection delete id OpenNet' "$NMLOG")" "0"
+
+# ── DP-10 round 16b: the chosen network is kept, and every try is recorded ──
+rm -f "$W/wifi-setup.json"; : > "$NMLOG"
+KEPT="$(TRIES=1 SLEEP_S=0.1 wifisetup_run bash -c "curl -s -X POST -d 'ssid=Weak&password=wrongpw' http://127.0.0.1:80/connect >/dev/null; for i in \$(seq 1 60); do curl -s http://127.0.0.1:80/status | grep -q trying || break; sleep 0.2; done; curl -s -H 'Host: captive.apple.com' http://127.0.0.1:80/hotspot-detect.html")"
+has "the phone's page after a failed try (what the tech saw) keeps that network chosen, not the top one" "$KEPT" '<option value="Weak" selected>'
+ok "and only that one" "$(grep -c ' selected>' <<<"$KEPT")" "1"
+has "it says why, at the top" "$KEPT" '<b>Weak didn'"'"'t work.</b>'
+has "and that the network is still chosen" "$KEPT" "Weak is still chosen below"
+has "and the kiosk log says each try" "$(cat "$W/wifisetup.out")" "field Wi-Fi setup: 'Weak' didn't work: Joined, but can't reach the directory site from there."
+ok "the password box comes back empty (never sent back to a phone)" "$(grep -c 'wrongpw' <<<"$KEPT")" "0"
+HID="$(TRIES=1 SLEEP_S=0.1 wifisetup_run post_wait 'ssid=Strong&hidden_ssid=BadNet&password=x')"
+has "a hidden network that failed stays typed in its box" "$HID" 'name="hidden_ssid" autocapitalize="off" autocorrect="off" value="BadNet"'
+ST="$(TRIES=1 SLEEP_S=0.1 wifisetup_run bash -c "curl -s http://127.0.0.1:80/status; curl -s -X POST -d 'ssid=BadNet&password=x' http://127.0.0.1:80/connect >/dev/null; curl -s http://127.0.0.1:80/status")"
+has "the page can ask how a try is going (the TV's page reloads itself when it ends)" "$ST" '{"state": "idle", "stamp": 0}{"state": "trying", "stamp": 1}'
+has "and the page carries the check" "$KEPT" 'fetch("/status"'
+REC="$(cat "$W/wifi-setup.json" 2>/dev/null)"
+has "every try is kept on the Pi for the console: network, worked or not, why" "$REC" '"ssid": "BadNet", "ok": false, "why": "BadNet refused that password. Check it and try again."'
+ok "the last five only" "$(python3 -c "import json;print(len(json.load(open('$W/wifi-setup.json'))['tries']))")" "3"
+ok "never the password" "$(grep -c 'wrongpw\|\"x\"' "$W/wifi-setup.json")" "0"
+: > "$NMLOG"
+wifisetup_run bash -c "for i in 1 2 3 4 5 6; do curl -s http://127.0.0.1:80/ >/dev/null; done"
+ok "the page checking every few seconds doesn't rescan the radio each time" "$(grep -c 'device wifi rescan' "$NMLOG")" "1"
+ESC="$(cd "$W" && python3 - <<PY
+import importlib.util, sys
+sys.argv = ["x", "10000000abcd1234", "http://x.test"]
+spec = importlib.util.spec_from_file_location("ws", "$W/lobby-wifi-setup.py"); ws = importlib.util.module_from_spec(spec)
+import os; os.environ["LOBBY_SETUP_CODE_FILE"] = "$W/setup-code"
+spec.loader.exec_module(ws)
+ws.scan_networks = lambda fresh=False: [{"ssid": 'Say "hi" <b>', "open": False, "signal": "30"}]
+ws.set_try(state="failed", ssid='Say "hi" <b>', why="x <i>", hidden=False, at=0)
+print(ws.render().decode())
+PY
+)"
+has "a network name with quotes or brackets can't break the page (escaped)" "$ESC" '<option value="Say &quot;hi&quot; &lt;b&gt;" selected>'
+ok "nor the message" "$(grep -c '<i>' <<<"$ESC")" "0"
 
 # ── DP-05: no desktop pop-ups on a lobby screen ──
 KS="$(sed -n "/^cat > \"\$KDIR\/kiosk.sh\" <<'EOF'\$/,/^EOF\$/p" "$SETUP")"
