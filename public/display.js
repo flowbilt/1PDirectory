@@ -10,7 +10,7 @@
 */
 (() => {
   "use strict";
-  const VERSION = "2.15.0";   // = netlify/lib/version.mjs (a test keeps them equal)
+  const VERSION = "2.15.1";   // = netlify/lib/version.mjs (a test keeps them equal)
   const q = new URLSearchParams(location.search);
   const DEVICE = (q.get("device") || "").toLowerCase();
   const CHOSEN = (q.get("screen") || q.get("key") || q.get("site") || "").toLowerCase();
@@ -811,12 +811,13 @@
     return `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(v)}`;
   }
   const P = { tab: 0, fromList: false };
+  const QR_LINE = "Take it with you: scan with your phone's camera";   // a place's own line replaces it (round 18b)
   function openPlaces(tab = 0) {
     const lists = placeLists();
     if (!lists.length) return;
     P.tab = Math.min(Math.max(0, tab), lists.length - 1);
     const l = lists[P.tab];
-    $("places").innerHTML = `<div class="kbd-panel places-panel" role="dialog" aria-label="Places">
+    $("places").innerHTML = `<div class="kbd-panel places-panel" role="dialog" aria-label="Places and events">
         <div class="kbd-top"><div class="places-tabs">${lists.map((x, i) => `<button type="button" class="places-tab${i === P.tab ? " on" : ""}" data-tab="${i}">${esc(x.heading)}</button>`).join("")}</div>
           <button type="button" class="kbd-close" data-pclose>Close</button></div>
         <ul class="places-list">${l.items.map((a, i) => `<li data-l="${P.tab}" data-i="${i}">${a.image ? `<img src="${esc(a.image)}" alt="">` : l.items.some((x) => x.image) ? '<span class="pl-noimg"></span>' : ""}
@@ -833,7 +834,7 @@
     P.fromList = !!fromList;
     const url = placeUrl(a.link);
     let qr = "";
-    if (url) { try { qr = `<div class="place-qr"><div class="place-qr-code">${svgQR(url)}</div><div class="place-qr-line">Take it with you: scan with your phone's camera</div></div>`; } catch (e) { console.warn("QR failed", e); } }
+    if (url) { try { qr = `<div class="place-qr"><div class="place-qr-code">${svgQR(url)}</div><div class="place-qr-line">${esc(a.qrline || QR_LINE)}</div></div>`; } catch (e) { console.warn("QR failed", e); } }
     $("place").innerHTML = `<div class="card-panel place-panel" role="dialog" aria-label="${esc(a.name)}">
         <div class="place-top">${a.image ? `<img class="place-img" src="${esc(a.image)}" alt="">` : ""}
           <div class="card-head"><div class="card-name">${esc(a.name)}</div>${a.distance ? `<div class="place-dist">${esc(a.distance)}</div>` : ""}${a.line ? `<div class="place-line">${esc(a.line)}</div>` : ""}</div></div>

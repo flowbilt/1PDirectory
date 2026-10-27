@@ -1553,7 +1553,7 @@ test("place lists: headings, pictures only as small images, empty lists and entr
   assert.deepEqual(lists[1].items.map((a) => a.image), ["", ""], "only small data images are kept");
   assert.ok(!lists.some((l) => l.heading === "Empty"), "an empty list never shows");
   assert.ok(lists.length <= 5 && lists.every((l) => l.items.length <= 12));
-  assert.deepEqual(cleanPlaceLists([], [{ name: "Coffee" }]), [{ heading: "Nearby", items: [{ name: "Coffee", distance: "", line: "", link: "", image: "" }] }], "round 11's places become Nearby");
+  assert.deepEqual(cleanPlaceLists([], [{ name: "Coffee" }]), [{ heading: "Nearby", items: [{ name: "Coffee", distance: "", line: "", link: "", qrline: "", image: "" }] }], "round 11's places become Nearby");
 });
 
 test("the QR encoder in the display is the bundled MIT library and makes a code for any link", () => {
@@ -1738,6 +1738,16 @@ test("round 18: places and promotions on touch screens: a link per place, a QR o
   assert.ok(js.includes("closeCard(); closeKeyboard(); closePlace(); closePlaces();"), "the idle return closes them");
   const html = readFileSync(new URL("../public/index.html", import.meta.url), "utf8");
   for (const id of ['id="places-btn"', 'id="places"', 'id="place"']) assert.ok(html.includes(id), id);
+});
+
+test("round 18b: the line beside a place's QR is the place's own when given; the button reads Places and Events", async () => {
+  const { cleanPlaceLists } = await import("../netlify/functions/screen.mjs");
+  const [l] = cleanPlaceLists([{ heading: "Events", items: [{ name: "Vintage Festival", link: "barbermotorsports.com", qrline: "  Get tickets " }, { name: "Long", qrline: "y".repeat(200) }] }]);
+  assert.deepEqual([l.items[0].qrline, l.items[1].qrline.length], ["Get tickets", 80]);
+  const js = readFileSync(new URL("../public/display.js", import.meta.url), "utf8");
+  assert.ok(js.includes("${esc(a.qrline || QR_LINE)}") && js.includes(`const QR_LINE = "Take it with you: scan with your phone's camera";`));
+  assert.ok(readFileSync(new URL("../public/index.html", import.meta.url), "utf8").includes("<span>Places and Events</span>"));
+  assert.ok(readFileSync(new URL("../public/edit.js", import.meta.url), "utf8").includes('qrline: r.querySelector(".x-qrline").value.trim()'));
 });
 
 test("touch settings: off and blank by default, then they reach the screen and change its version", async () => {
@@ -1964,7 +1974,7 @@ test("the touch directory is only on touch screens: cards, A to Z, the keyboard 
   assert.ok(js.includes("if (data?.touch) return fitTouch(u);") && js.includes('if (!data?.touch) return;'), "display-only screens keep the old fit and ignore taps");
   assert.ok(js.includes("(data.tenants || [])[Number(r.dataset.i)]") && !/people[^\n]*includes\(q/.test(js), "the keyboard searches company names, never people");
   assert.ok(js.includes("Number(data.touchIdle) || 45") && js.includes("goIdle"), "back to the directory after the idle time");
-  assert.equal(DISPLAY_VERSION, "2.15.0");
+  assert.equal(DISPLAY_VERSION, "2.15.1");
   assert.ok(js.includes("new ResizeObserver") && js.includes("frameSize() !== fittedAt"), "the list refits when its space changes size (15b)");
 });
 

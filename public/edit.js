@@ -378,7 +378,7 @@
       heading: el.querySelector(".x-heading").value.trim(),
       items: [...el.querySelectorAll(".pitem")].map((r, ii) => ({
         name: r.querySelector(".x-name").value.trim(), distance: r.querySelector(".x-distance").value.trim(),
-        line: r.querySelector(".x-line").value.trim(), link: r.querySelector(".x-link").value.trim(), image: old[li]?.items?.[ii]?.image || "",
+        line: r.querySelector(".x-line").value.trim(), link: r.querySelector(".x-link").value.trim(), qrline: r.querySelector(".x-qrline").value.trim(), image: old[li]?.items?.[ii]?.image || "",
       })),
     }));
   }
@@ -394,6 +394,7 @@
         <input class="x-distance" value="${esc(a.distance)}" placeholder="Distance or walk time" aria-label="Distance or walk time (optional)" maxlength="30">
         <input class="x-line" value="${esc(a.line)}" placeholder="A short line (optional)" aria-label="A short line (optional)" maxlength="120">
         <input class="x-link" value="${esc(a.link || "")}" placeholder="Address or web link, for a QR code on touch screens (optional)" aria-label="Address or web link (optional): a QR code on touch screens" maxlength="200">
+        <input class="x-qrline" value="${esc(a.qrline || "")}" placeholder="Line beside the QR, e.g. Get tickets (optional)" aria-label="Line beside the QR code (optional; blank says Take it with you)" maxlength="80">
         <span class="pitem-actions">${a.image ? `<button type="button" class="icon-btn" data-act="remove-pic" aria-label="Remove the picture">No picture</button>` : ""}<button type="button" class="icon-btn remove" data-act="remove-item" aria-label="Remove ${esc(a.name || "place")}">Remove</button></span>
       </div>`).join("")}
       <div class="plist-foot"><button type="button" class="ghost" data-act="add-item"${(l.items || []).length >= MAX_ITEMS ? " disabled" : ""}>Add a place</button><span class="hint">${(l.items || []).length} of ${MAX_ITEMS}</span></div>
