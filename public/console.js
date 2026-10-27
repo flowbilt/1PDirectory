@@ -354,6 +354,8 @@
     renderScreens(); renderBuildings(); renderAccounts();
   }
   window.ConsoleRefresh = refresh;
+  // DP-10 round 17: an open Pi panel and a waiting command refresh the Pi list; the Screens list follows at once
+  Dev.onChange(() => { Dev.renderNew(S.screens); renderScreens(); });
   $("sign-out").addEventListener("click", () => Auth.signOut());
 
   (async () => {

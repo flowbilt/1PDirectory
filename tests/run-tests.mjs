@@ -1696,6 +1696,17 @@ test("agent 1.10.0 (16b): the field Wi-Fi setup's last tries reach the Pi panel,
   assert.ok(/rm -rf \/var\/lib\/lobby-agent\s/.test(setup), "--prepare clears the record with the rest of the agent's state");
 });
 
+test("round 17: the Screens list follows the Pi panel and a waiting command; a failed refresh keeps what's shown", () => {
+  const dev = readFileSync(new URL("../public/console-devices.js", import.meta.url), "utf8");
+  const con = readFileSync(new URL("../public/console.js", import.meta.url), "utf8");
+  assert.ok(dev.includes("catch { if (!loaded) devices = []; }"), "a failed refresh keeps the last Pi list");
+  assert.ok(dev.includes("changed();                                   // and the Screens list behind the panel"), "the panel's refresh redraws the list");
+  assert.ok(dev.includes("dlg.onclose = changed"), "closing the panel redraws the list");
+  assert.ok(dev.includes('if (!admin || document.hidden || $("dev-dlg")?.open || !(waiting() || Date.now() < fastUntil)) return;'),
+    "the list watches only while a command waits, the tab is on screen and no panel is open");
+  assert.ok(con.includes("Dev.onChange(() => { Dev.renderNew(S.screens); renderScreens(); });"), "the console hooks the list in");
+});
+
 test("touch settings: off and blank by default, then they reach the screen and change its version", async () => {
   const scr = fake.T.screens.find((x) => x.key === "ppi-1s");
   const first = await screen(req("/api/screen?key=ppi-1s"));

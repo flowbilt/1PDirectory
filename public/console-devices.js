@@ -34,12 +34,27 @@ window.ConsoleDevices = (() => {
     try { return (await Auth.api(`/api/devices?hardware=${encodeURIComponent(screenId)}`)).hardware; } catch { return null; }
   }
 
+  // DP-10 round 17: a refresh that fails keeps the last list (it used to empty it, so an open Pi panel stopped
+  // updating and the Screens list lost every Pi's line until the next good refresh)
+  let loaded = false;
   async function load(isAdmin) {
     admin = isAdmin;
     if (!admin) { devices = []; return; }          // Pi health is a 1Point tool; owners never load it
-    try { devices = (await Auth.api("/api/devices")).devices; } catch { devices = []; }
+    try { devices = (await Auth.api("/api/devices")).devices; loaded = true; } catch { if (!loaded) devices = []; }
     renderNew();
   }
+  /** Set by console.js: redraws the Screens list from the latest Pi list (round 17). */
+  let onChange = () => {};
+  const changed = () => { try { onChange(); } catch { /* the list keeps what it showed */ } };
+  // Round 17: while a command is waiting for its Pi, the Screens list keeps watching (every 10 seconds, only while
+  // this tab is on screen and no Pi panel is open, which refreshes itself), so e.g. Remote on/off changes when the
+  // result arrives, not at the next minute's refresh. Nothing is fetched when nothing is waiting.
+  const waiting = () => devices.some((d) => (d.commands || []).some((c) => (c.status === "pending" || c.status === "sent")
+    && Date.now() - Date.parse(c.created_at) < 20 * 60_000));
+  setInterval(async () => {
+    if (!admin || document.hidden || $("dev-dlg")?.open || !(waiting() || Date.now() < fastUntil)) return;
+    await load(admin); changed();
+  }, 10_000);
 
   /** Whether Remote support is on: what the Pi reports (agent 1.9.0), else the last Remote support on or off that
    *  went through; "" when there's nothing to go on. */
@@ -151,6 +166,7 @@ window.ConsoleDevices = (() => {
     if (!document.hidden) {
       try { await load(admin); } catch { /* keep what's shown */ }
       if ($("dev-dlg")?.open && openId) panel(openId);
+      changed();                                   // and the Screens list behind the panel (round 17)
     }
     schedule();
   }
@@ -238,7 +254,7 @@ window.ConsoleDevices = (() => {
         </div>
       </div></div>`;
     if (moreOpen) dlg.querySelector("details.hw").open = true;
-    if (!dlg.open) dlg.showModal();
+    if (!dlg.open) { dlg.showModal(); dlg.onclose = changed; }   // closing it redraws the list from the latest (round 17)
     schedule();
     // The screenshot is fetched again only when there's a new one
     const key = `${d.id}|${d.screenshot_at}`;
@@ -327,5 +343,5 @@ window.ConsoleDevices = (() => {
     a.click();
   });
 
-  return { load, statusNote, thumbCell, actionButton, fillThumbs, renderNew, loadHealth, hardware, list: () => devices };
+  return { load, onChange: (fn) => { onChange = fn; }, statusNote, thumbCell, actionButton, fillThumbs, renderNew, loadHealth, hardware, list: () => devices };
 })();
