@@ -10,7 +10,7 @@
 */
 (() => {
   "use strict";
-  const VERSION = "2.14.0";   // = netlify/lib/version.mjs (a test keeps them equal)
+  const VERSION = "2.15.0";   // = netlify/lib/version.mjs (a test keeps them equal)
   const q = new URLSearchParams(location.search);
   const DEVICE = (q.get("device") || "").toLowerCase();
   const CHOSEN = (q.get("screen") || q.get("key") || q.get("site") || "").toLowerCase();
@@ -223,13 +223,17 @@
 
   // The QR code, drawn here (public/vendor/qrcode.js): dark modules on white with the standard quiet zone of four
   let qrFor = "";
+  /** A QR code as an SVG (also a place's card, round 18). Throws if the encoder can't take it. */
+  function svgQR(url) {
+    const q = window.LobbyQR(url), n = q.size, Q = 4;
+    let d = "";
+    for (let r = 0; r < n; r++) for (let c = 0; c < n; c++) if (q.dark(r, c)) d += `M${c + Q} ${r + Q}h1v1h-1z`;
+    return `<svg viewBox="0 0 ${n + 2 * Q} ${n + 2 * Q}" shape-rendering="crispEdges" role="img" aria-label="QR code"><rect width="100%" height="100%" fill="#fff"/><path d="${d}" fill="#0d1b2e"/></svg>`;
+  }
   function drawQR(url) {
     if (url === qrFor) return;
     try {
-      const q = window.LobbyQR(url), n = q.size, Q = 4;
-      let d = "";
-      for (let r = 0; r < n; r++) for (let c = 0; c < n; c++) if (q.dark(r, c)) d += `M${c + Q} ${r + Q}h1v1h-1z`;
-      $("togo-code").innerHTML = `<svg viewBox="0 0 ${n + 2 * Q} ${n + 2 * Q}" shape-rendering="crispEdges" role="img" aria-label="QR code"><rect width="100%" height="100%" fill="#fff"/><path d="${d}" fill="#0d1b2e"/></svg>`;
+      $("togo-code").innerHTML = svgQR(url);
       qrFor = url;
     } catch (e) { console.warn("QR failed", e); $("togo").hidden = true; }
   }
@@ -427,6 +431,13 @@
   const TIMES_EVERY_MS = 30 * 60000, TIMES_FRESH_MS = 40 * 60000;
   const traffic = { times: null, at: 0, timer: null, mapState: "", map: null, mapEl: null, mapCenter: "" };
   const AMENITIES_PER_SLIDE = 4;
+  /** The building's place lists as this screen shows them (empty ones dropped): the panel's slides, the Places
+   *  button and the place cards all use this, so a list and an entry are the same numbers everywhere (round 18). */
+  function placeLists() {
+    const lists = Array.isArray(data?.placeLists) ? data.placeLists
+      : (Array.isArray(data?.amenities) && data.amenities.length ? [{ heading: "Nearby", items: data.amenities }] : []);
+    return lists.map((l) => ({ heading: l.heading || "Nearby", items: (l.items || []).filter((a) => a?.name) })).filter((l) => l.items.length);
+  }
 
   /** The information slides this screen shows now, in order. */
   function infoSlides() {
@@ -435,13 +446,11 @@
     if (t.times && (t.destinations || []).length && (!CHECKS_IN || (ONLINE() && traffic.times && Date.now() - traffic.at < TIMES_FRESH_MS))) out.push({ kind: "times" });
     // The building's place lists, each with its own heading (DP-08 round 12); an empty list never shows. Pictures
     // take more room, so a list with any has three to a slide.
-    const lists = Array.isArray(data?.placeLists) ? data.placeLists
-      : (Array.isArray(data?.amenities) && data.amenities.length ? [{ heading: "Nearby", items: data.amenities }] : []);
-    for (const l of lists) {
-      const items = (l.items || []).filter((a) => a?.name);
+    placeLists().forEach((l, li) => {
+      const items = l.items;
       const per = items.some((a) => a.image) ? 3 : AMENITIES_PER_SLIDE, pages = Math.ceil(items.length / per);
-      for (let i = 0; i < items.length; i += per) out.push({ kind: "amenities", heading: l.heading || "Nearby", page: i / per, items: items.slice(i, i + per), pages });
-    }
+      for (let i = 0; i < items.length; i += per) out.push({ kind: "amenities", heading: l.heading, page: i / per, items: items.slice(i, i + per), pages, li, start: i });
+    });
     return out;
   }
 
@@ -480,8 +489,8 @@
       el.innerHTML = timesHtml();
     } else {
       el.className = "slide info-slide";
-      el.innerHTML = `<div class="info-head">${esc(it.heading || "Nearby")}${it.pages > 1 ? ` <span>${it.page + 1} of ${it.pages}</span>` : ""}</div><ul class="info-list amenities">${it.items.map((a) =>
-        `<li${a.image ? ' class="has-img"' : ""}>${a.image ? `<img class="info-img" src="${esc(a.image)}" alt="">` : ""}<div class="info-body"><div class="info-row"><span class="info-name">${esc(a.name)}</span>${a.distance ? `<span class="info-value small">${esc(a.distance)}</span>` : ""}</div>${a.line ? `<div class="info-line">${esc(a.line)}</div>` : ""}</div></li>`).join("")}</ul>`;
+      el.innerHTML = `<div class="info-head">${esc(it.heading || "Nearby")}${it.pages > 1 ? ` <span>${it.page + 1} of ${it.pages}</span>` : ""}</div><ul class="info-list amenities">${it.items.map((a, k) =>
+        `<li${a.image ? ' class="has-img"' : ""}${data?.touch ? ` data-l="${it.li}" data-i="${it.start + k}"` : ""}>${a.image ? `<img class="info-img" src="${esc(a.image)}" alt="">` : ""}<div class="info-body"><div class="info-row"><span class="info-name">${esc(a.name)}</span>${a.distance ? `<span class="info-value small">${esc(a.distance)}</span>` : ""}</div>${a.line ? `<div class="info-line">${esc(a.line)}</div>` : ""}</div></li>`).join("")}</ul>`;
     }
     showSlide(el);
     return it.kind;
@@ -566,6 +575,8 @@
     clearTimeout(news.timer);
     const secs = Math.max(5, Number(data?.news?.rotateSeconds) || 12);
     const step = async () => {
+      // A visitor looking at a place (round 18): the panel holds its slide until they're done
+      if (!$("place").hidden || !$("places").hidden) { news.timer = setTimeout(step, 1000); return; }
       const kind = await nextSlide();
       // The map and the travel times stay up half again as long as a headline
       news.timer = setTimeout(step, secs * 1000 * (kind === "map" || kind === "times" ? 1.5 : 1));
@@ -607,7 +618,7 @@
   // which finds companies by name only (people are found only through their company); and back to the whole directory
   // after the screen's idle time. Display-only screens are exactly as before. ──
   const T = { pending: null, idle: null, scroll: false, query: "" };
-  const touchBusy = () => !$("card").hidden || !$("kbd").hidden || T.scroll && $("list-frame").scrollTop > 0;
+  const touchBusy = () => !$("card").hidden || !$("kbd").hidden || !$("places").hidden || !$("place").hidden || T.scroll && $("list-frame").scrollTop > 0;
   const nameKey = (n) => String(n || "").toLowerCase().replace(/^the\s+/, "").replace(/[^a-z0-9 ]+/g, "").trim();
   const letterOf = (n) => { const c = nameKey(n).charAt(0).toUpperCase(); return /[A-Z]/.test(c) ? c : "#"; };
 
@@ -625,7 +636,8 @@
     document.documentElement.classList.toggle("show-cursor", on && (VIEW || PREVIEW));   // a mouse in View or the editor
     $("listing-tenant").textContent = on ? "Tap a company for details" : "Tenant";
     $("kbd-btn").hidden = !(on && data.keyboard);
-    if (!on) { closeCard(); closeKeyboard(); $("touchbar").hidden = true; T.scroll = false; stage.classList.remove("scrolling"); return; }
+    $("places-btn").hidden = !(on && placeLists().length);
+    if (!on) { closeCard(); closeKeyboard(); closePlace(); closePlaces(); $("touchbar").hidden = true; T.scroll = false; stage.classList.remove("scrolling"); return; }
     stage.style.setProperty("--finger", `${fingerPx()}px`);
     armIdle();
   }
@@ -635,7 +647,7 @@
     const list = $("tenants"), newsEl = $("news"), f = fingerPx() / 2.06;   // a row is about 2.06 × the text size
     const lo = (x) => Math.max(x, f), max = Math.max(u * 5.2, f);
     stage.classList.remove("scrolling"); T.scroll = false; $("az").hidden = true;
-    $("touchbar").hidden = $("kbd-btn").hidden;
+    $("touchbar").hidden = $("kbd-btn").hidden && $("places-btn").hidden;
     const attempt = (min, twoCol, showNews) => {
       newsEl.hidden = !showNews;
       stage.classList.toggle("no-news", !showNews);
@@ -738,7 +750,7 @@
   // a pointer), and a mouse drag doesn't scroll a list, so a finger couldn't move the long list on the Beetronics while a
   // mouse wheel could in View. A drag of more than about 2 mm scrolls the list and doesn't count as a tap; a short drag
   // is still a tap. Real touch input is left to the browser's own scrolling. Works when the page itself is turned.
-  const SCROLLERS = "#stage.scrolling .list-frame, .card-people, .kbd-results";
+  const SCROLLERS = "#stage.scrolling .list-frame, .card-people, .kbd-results, .places-list";
   function dragScroll() {
     let s = null, fling = 0;
     const local = (dx, dy) => {
@@ -786,6 +798,64 @@
   }
   dragScroll();
 
+  // ── Places and promotions on touch screens (DP-10 round 18; Scot: both ways in, and a QR when there's a link) ──
+  // The Places button opens every list (a tab per list); a place on the panel's slide can be tapped too, and the
+  // panel holds that slide while it's open. A place's card: its picture, name, distance and line, and when the
+  // building gave it an address or a web link, a QR code to take it away on a phone.
+  /** Where a place's QR code goes: a web address as it is, a bare domain as https, anything else as an address in maps. */
+  function placeUrl(link) {
+    const v = String(link || "").trim();
+    if (!v) return "";
+    if (/^https?:\/\/\S+$/i.test(v)) return v;
+    if (/^(www\.)?[a-z0-9-]+(\.[a-z0-9-]+)+(\/\S*)?$/i.test(v)) return `https://${v}`;
+    return `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(v)}`;
+  }
+  const P = { tab: 0, fromList: false };
+  function openPlaces(tab = 0) {
+    const lists = placeLists();
+    if (!lists.length) return;
+    P.tab = Math.min(Math.max(0, tab), lists.length - 1);
+    const l = lists[P.tab];
+    $("places").innerHTML = `<div class="kbd-panel places-panel" role="dialog" aria-label="Places">
+        <div class="kbd-top"><div class="places-tabs">${lists.map((x, i) => `<button type="button" class="places-tab${i === P.tab ? " on" : ""}" data-tab="${i}">${esc(x.heading)}</button>`).join("")}</div>
+          <button type="button" class="kbd-close" data-pclose>Close</button></div>
+        <ul class="places-list">${l.items.map((a, i) => `<li data-l="${P.tab}" data-i="${i}">${a.image ? `<img src="${esc(a.image)}" alt="">` : l.items.some((x) => x.image) ? '<span class="pl-noimg"></span>' : ""}
+          <span class="pl-body"><span class="pl-name">${esc(a.name)}</span>${a.line ? `<span class="pl-line">${esc(a.line)}</span>` : ""}</span>${a.distance ? `<span class="pl-dist">${esc(a.distance)}</span>` : ""}</li>`).join("")}</ul>
+      </div>`;
+    $("places").hidden = false;
+    $("places").querySelector(".places-list").scrollTop = 0;
+    armIdle();
+  }
+  function closePlaces() { if ($("places").hidden) return; $("places").hidden = true; $("places").innerHTML = ""; afterTouch(); }
+  function openPlace(li, ii, fromList) {
+    const a = placeLists()[li]?.items?.[ii];
+    if (!a) return;
+    P.fromList = !!fromList;
+    const url = placeUrl(a.link);
+    let qr = "";
+    if (url) { try { qr = `<div class="place-qr"><div class="place-qr-code">${svgQR(url)}</div><div class="place-qr-line">Take it with you: scan with your phone's camera</div></div>`; } catch (e) { console.warn("QR failed", e); } }
+    $("place").innerHTML = `<div class="card-panel place-panel" role="dialog" aria-label="${esc(a.name)}">
+        <div class="place-top">${a.image ? `<img class="place-img" src="${esc(a.image)}" alt="">` : ""}
+          <div class="card-head"><div class="card-name">${esc(a.name)}</div>${a.distance ? `<div class="place-dist">${esc(a.distance)}</div>` : ""}${a.line ? `<div class="place-line">${esc(a.line)}</div>` : ""}</div></div>
+        ${qr}
+        <button type="button" class="card-back" data-close>${P.fromList ? "Back to the list" : "Back to the directory"}</button>
+      </div>`;
+    $("place").hidden = false;
+    armIdle();
+  }
+  function closePlace() { if ($("place").hidden) return; $("place").hidden = true; $("place").innerHTML = ""; afterTouch(); }
+  $("places-btn").addEventListener("click", () => openPlaces(0));
+  $("places").addEventListener("click", (e) => {
+    if (e.target.closest("[data-pclose]") || e.target === $("places")) { closePlaces(); return; }
+    const t = e.target.closest("[data-tab]"); if (t) { openPlaces(Number(t.dataset.tab)); return; }
+    const r = e.target.closest("li[data-i]"); if (r) openPlace(Number(r.dataset.l), Number(r.dataset.i), true);
+  });
+  $("place").addEventListener("click", (e) => { if (e.target.closest("[data-close]") || e.target === $("place")) closePlace(); });
+  $("news-slides").addEventListener("click", (e) => {
+    if (!data?.touch) return;
+    const r = e.target.closest("li[data-l]"); if (r) openPlace(Number(r.dataset.l), Number(r.dataset.i), false);
+  });
+
   // Back to the whole directory after the screen's idle time with no touch
   function armIdle() {
     clearTimeout(T.idle);
@@ -793,7 +863,7 @@
     T.idle = setTimeout(goIdle, Math.min(300, Math.max(15, Number(data.touchIdle) || 45)) * 1000);
   }
   function goIdle() {
-    closeCard(); closeKeyboard();
+    closeCard(); closeKeyboard(); closePlace(); closePlaces();
     $("list-frame").scrollTop = 0;
     if (T.pending) { const d = T.pending; T.pending = null; apply(d); }
   }

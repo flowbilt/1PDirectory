@@ -215,12 +215,13 @@ td.thumb { width: 96px; padding: 6px 8px; }
 .plist { border: 1px solid #e3e7ee; border-radius: 12px; padding: 12px; }
 .plist-head { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px; align-items: center; margin-bottom: 8px; }
 .pitem { display: grid; grid-template-columns: 56px minmax(0, 1fr) 140px minmax(0, 1.4fr) auto; gap: 8px; align-items: center; margin-bottom: 6px; }
+.pitem .x-link { grid-column: 2 / 5; }   /* round 18: its own line under the name, distance and short line */
 .pitem .thumb { width: 56px; height: 56px; border-radius: 8px; background: #eef1f5 center/cover no-repeat; border: 1px dashed #c9d1dc; display: flex; align-items: center; justify-content: center; font-size: 11px; color: #5a6b82; cursor: pointer; position: relative; overflow: hidden; }
 .pitem .thumb.has { border-style: solid; }
 .pitem .thumb input { position: absolute; inset: 0; opacity: 0; cursor: pointer; }
 .pitem-actions { display: flex; gap: 4px; }
 .plist-foot { display: flex; justify-content: space-between; gap: 8px; margin-top: 6px; flex-wrap: wrap; }
-@media (max-width: 760px) { .pitem { grid-template-columns: 56px 1fr; } .pitem > input, .pitem-actions { grid-column: 1 / -1; } }
+@media (max-width: 760px) { .pitem { grid-template-columns: 56px 1fr; } .pitem > input, .pitem-actions, .pitem .x-link { grid-column: 1 / -1; } }
 
 /* People under tenants (DP-09 round 14) */
 .people-btn { font-size: 12px; }

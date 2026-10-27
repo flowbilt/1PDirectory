@@ -38,6 +38,8 @@
     <!-- Touch screens (DP-09 round 15): the accessible keyboard's button and the A to Z strip, in reach -->
     <div id="touchbar" class="touchbar" hidden>
       <button type="button" id="kbd-btn" class="kbd-btn" hidden><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="2.5" y="6" width="19" height="12" rx="2"/><path d="M6 10h1M9 10h1M12 10h1M15 10h1M18 10h0.5M6 13h1M9 13h1M12 13h1M15 13h1M18 13h0.5M8 16h8"/></svg><span>Search</span></button>
+      <!-- DP-10 round 18: the building's places and promotions, on touch screens that show them -->
+      <button type="button" id="places-btn" class="kbd-btn" hidden><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 21s-6.5-6.1-6.5-11a6.5 6.5 0 0 1 13 0c0 4.9-6.5 11-6.5 11z"/><circle cx="12" cy="10" r="2.4"/></svg><span>Places</span></button>
       <div id="az" class="az" hidden></div>
     </div>
   </section>
@@ -59,6 +61,9 @@
   <!-- Touch screens: a company's card, and the on-screen keyboard -->
   <div id="kbd" class="kbd" hidden></div>
   <div id="card" class="card" hidden></div>
+  <!-- Round 18: every place list, and one place's card (over the list, the panel's slide or the directory) -->
+  <div id="places" class="kbd places" hidden></div>
+  <div id="place" class="card place-card" hidden></div>
   <div id="identify" class="identify" hidden></div>
   <p id="offline" class="offline" hidden>Showing saved information. Reconnecting…</p>
 </div>

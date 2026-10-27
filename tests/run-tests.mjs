@@ -1553,7 +1553,7 @@ test("place lists: headings, pictures only as small images, empty lists and entr
   assert.deepEqual(lists[1].items.map((a) => a.image), ["", ""], "only small data images are kept");
   assert.ok(!lists.some((l) => l.heading === "Empty"), "an empty list never shows");
   assert.ok(lists.length <= 5 && lists.every((l) => l.items.length <= 12));
-  assert.deepEqual(cleanPlaceLists([], [{ name: "Coffee" }]), [{ heading: "Nearby", items: [{ name: "Coffee", distance: "", line: "", image: "" }] }], "round 11's places become Nearby");
+  assert.deepEqual(cleanPlaceLists([], [{ name: "Coffee" }]), [{ heading: "Nearby", items: [{ name: "Coffee", distance: "", line: "", link: "", image: "" }] }], "round 11's places become Nearby");
 });
 
 test("the QR encoder in the display is the bundled MIT library and makes a code for any link", () => {
@@ -1715,6 +1715,29 @@ test("round 17b: the Screens list shows each Pi's agent and marks an older one",
   assert.ok(dev.includes("Agent ${esc(d.agent_version)} · update") && dev.includes('`<span class="sub">Agent ${esc(d.agent_version)}</span>`'));
   const older = new Function(dev.match(/function agentOlder\(have, want\) \{[\s\S]*?\n  \}/)[0] + "; return agentOlder;")();
   assert.deepEqual([older("1.8.1", "1.10.0"), older("1.9.0", "1.10.0"), older("1.10.0", "1.10.0"), older("1.11.0", "1.10.0"), older("", "1.10.0")], [true, true, false, false, true]);
+});
+
+test("round 18: places and promotions on touch screens: a link per place, a QR on its card, the Places button", async () => {
+  const { cleanPlaceLists } = await import("../netlify/functions/screen.mjs");
+  const { placeUrl } = await import("../netlify/functions/togo.mjs");
+  const [l] = cleanPlaceLists([{ heading: "Nearby", items: [{ name: "Park", link: "x".repeat(300) }, { name: "Cafe", link: "  barbermotorsports.com " }] }]);
+  assert.equal(l.items[0].link.length, 200, "a link is capped");
+  assert.equal(l.items[1].link, "barbermotorsports.com", "and tidied");
+  assert.equal(placeUrl("https://example.com/a?b=1"), "https://example.com/a?b=1", "a web address as it is");
+  assert.equal(placeUrl("www.barbermotorsports.com"), "https://www.barbermotorsports.com", "a bare domain becomes https");
+  assert.equal(placeUrl("6040 Barber Motorsports Pkwy, Leeds, AL"), "https://www.google.com/maps/search/?api=1&query=6040%20Barber%20Motorsports%20Pkwy%2C%20Leeds%2C%20AL", "anything else is an address in maps");
+  assert.equal(placeUrl("javascript:alert(1)"), "https://www.google.com/maps/search/?api=1&query=javascript%3Aalert(1)", "never a script link");
+  assert.equal(placeUrl(""), "");
+  const js = readFileSync(new URL("../public/display.js", import.meta.url), "utf8");
+  const togo = readFileSync(new URL("../netlify/functions/togo.mjs", import.meta.url), "utf8");
+  const body = (src) => src.match(/function placeUrl\(link\) \{[\s\S]*?\n {0,2}\}/)[0].replace(/\.slice\(0, 200\)/, "").replace(/^export /, "").replace(/\s+/g, " ");
+  assert.equal(body(js), body(togo), "the screen and the phone page read a link the same way");
+  assert.ok(js.includes('$("places-btn").hidden = !(on && placeLists().length);'), "the Places button only on touch screens with places");
+  assert.ok(js.includes('data?.touch ? ` data-l="${it.li}" data-i="${it.start + k}"` : ""'), "the panel's places are tappable only on touch screens");
+  assert.ok(js.includes('if (!$("place").hidden || !$("places").hidden) { news.timer = setTimeout(step, 1000); return; }'), "the panel holds its slide while a place is open");
+  assert.ok(js.includes("closeCard(); closeKeyboard(); closePlace(); closePlaces();"), "the idle return closes them");
+  const html = readFileSync(new URL("../public/index.html", import.meta.url), "utf8");
+  for (const id of ['id="places-btn"', 'id="places"', 'id="place"']) assert.ok(html.includes(id), id);
 });
 
 test("touch settings: off and blank by default, then they reach the screen and change its version", async () => {
@@ -1941,7 +1964,7 @@ test("the touch directory is only on touch screens: cards, A to Z, the keyboard 
   assert.ok(js.includes("if (data?.touch) return fitTouch(u);") && js.includes('if (!data?.touch) return;'), "display-only screens keep the old fit and ignore taps");
   assert.ok(js.includes("(data.tenants || [])[Number(r.dataset.i)]") && !/people[^\n]*includes\(q/.test(js), "the keyboard searches company names, never people");
   assert.ok(js.includes("Number(data.touchIdle) || 45") && js.includes("goIdle"), "back to the directory after the idle time");
-  assert.equal(DISPLAY_VERSION, "2.14.0");
+  assert.equal(DISPLAY_VERSION, "2.15.0");
   assert.ok(js.includes("new ResizeObserver") && js.includes("frameSize() !== fittedAt"), "the list refits when its space changes size (15b)");
 });
 

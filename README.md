@@ -138,6 +138,14 @@ Only on screens marked **This is a touch screen** (console, Screen settings). Di
 - **Back to the directory by itself:** after **Back to the directory after (seconds)** with no touch (Screen settings,
   15 to 300, 45 standard), an open card or keyboard closes and the list goes back to the top. A directory change
   published while a visitor is using the screen waits until they're done.
+- **Places and promotions (DP-10 round 18, display 2.15.0):** on a touch screen whose directory shows places
+  (the editor's Show places and promotions), a **Places** button sits beside Search; it opens every list, a tab per
+  heading, each place with its picture, name, distance and line. A place on the information panel's slide can be
+  tapped too, and the panel holds that slide while its card is open. A place's card shows the picture larger, the
+  name, distance and line, and, when the editor gives the place an **Address or web link**, a QR code ("Take it with
+  you"): a web address as it is, a bare domain (`barbermotorsports.com`) as https, anything else as an address in
+  Google Maps. **Back to the list** or **Back to the directory**; the idle time closes everything. The Directory to Go
+  phone page makes a place with a link tappable too. Display-only screens are unchanged.
 - **Trying it without a touch screen:** the console's **View** shows a pointer on touch screens, and a mouse click
   works as a tap.
 - `supabase/28-touch-directory.sql`: `screens.touch_idle_s`, `directories.touch_keyboard`, and `screen_state` sending

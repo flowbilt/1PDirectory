@@ -80,6 +80,7 @@ export function cleanPlaceLists(lists, amenities) {
     heading: text(l?.heading, 40) || "Nearby",
     items: (Array.isArray(l?.items) ? l.items : []).slice(0, 12).map((a) => ({
       name: text(a?.name, 60), distance: text(a?.distance, 30), line: text(a?.line, 120),
+      link: text(a?.link, 200),   // round 18: an address or web link, a QR code on the place's card (touch screens)
       image: typeof a?.image === "string" && a.image.length <= 160000 && IMAGE_RE.test(a.image) ? a.image : "",
     })).filter((a) => a.name),
   })).filter((l) => l.items.length);

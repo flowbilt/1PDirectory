@@ -378,7 +378,7 @@
       heading: el.querySelector(".x-heading").value.trim(),
       items: [...el.querySelectorAll(".pitem")].map((r, ii) => ({
         name: r.querySelector(".x-name").value.trim(), distance: r.querySelector(".x-distance").value.trim(),
-        line: r.querySelector(".x-line").value.trim(), image: old[li]?.items?.[ii]?.image || "",
+        line: r.querySelector(".x-line").value.trim(), link: r.querySelector(".x-link").value.trim(), image: old[li]?.items?.[ii]?.image || "",
       })),
     }));
   }
@@ -393,6 +393,7 @@
         <input class="x-name" value="${esc(a.name)}" placeholder="Name, e.g. Barber Motorsports Park" aria-label="Name" maxlength="60">
         <input class="x-distance" value="${esc(a.distance)}" placeholder="Distance or walk time" aria-label="Distance or walk time (optional)" maxlength="30">
         <input class="x-line" value="${esc(a.line)}" placeholder="A short line (optional)" aria-label="A short line (optional)" maxlength="120">
+        <input class="x-link" value="${esc(a.link || "")}" placeholder="Address or web link, for a QR code on touch screens (optional)" aria-label="Address or web link (optional): a QR code on touch screens" maxlength="200">
         <span class="pitem-actions">${a.image ? `<button type="button" class="icon-btn" data-act="remove-pic" aria-label="Remove the picture">No picture</button>` : ""}<button type="button" class="icon-btn remove" data-act="remove-item" aria-label="Remove ${esc(a.name || "place")}">Remove</button></span>
       </div>`).join("")}
       <div class="plist-foot"><button type="button" class="ghost" data-act="add-item"${(l.items || []).length >= MAX_ITEMS ? " disabled" : ""}>Add a place</button><span class="hint">${(l.items || []).length} of ${MAX_ITEMS}</span></div>
@@ -412,7 +413,7 @@
   }
   $("add-list").addEventListener("click", () => {
     read(); if (placeLists().length >= MAX_LISTS) return;
-    S.prop.place_lists.push({ heading: "", items: [{ name: "", distance: "", line: "", image: "" }] });
+    S.prop.place_lists.push({ heading: "", items: [{ name: "", distance: "", line: "", link: "", image: "" }] });
     renderLists(); changed();
     $("place-lists").lastElementChild?.querySelector(".x-heading").focus();
   });
@@ -420,7 +421,7 @@
     const b = e.target.closest("[data-act]"); if (!b) return;
     read();
     const li = Number(b.closest(".plist").dataset.li), ii = Number(b.closest(".pitem")?.dataset.ii), l = S.prop.place_lists[li];
-    if (b.dataset.act === "add-item" && l.items.length < MAX_ITEMS) l.items.push({ name: "", distance: "", line: "", image: "" });
+    if (b.dataset.act === "add-item" && l.items.length < MAX_ITEMS) l.items.push({ name: "", distance: "", line: "", link: "", image: "" });
     if (b.dataset.act === "remove-item") l.items.splice(ii, 1);
     if (b.dataset.act === "remove-pic") l.items[ii].image = "";
     if (b.dataset.act === "remove-list" && (!l.items.some((a) => a.name) || confirm(`Remove the list "${l.heading || "Nearby"}" and its ${l.items.length} entries?`))) S.prop.place_lists.splice(li, 1);

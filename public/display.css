@@ -329,3 +329,31 @@ html.show-cursor #stage.touch button, html.show-cursor #stage.touch .tenant { cu
 .key.wide { flex: 1.7 1 0; max-width: calc(var(--key) * 2); font-size: calc(var(--key) * 0.3) !important; }
 .key.space { flex: 5 1 0; max-width: none; }
 .key.enter { background: var(--steel) !important; color: var(--navy) !important; }
+
+/* ── Places and promotions on touch screens (DP-10 round 18): the Places button opens every list; a place's card ── */
+.places .kbd-panel { gap: calc(var(--u) * 1.4); }
+.places-tabs { flex: 1 1 auto; min-width: 0; display: flex; gap: calc(var(--u) * 0.8); overflow-x: auto; scrollbar-width: none; }
+.places-tab { flex: none; min-height: var(--key); padding: 0 calc(var(--u) * 2) !important; border-radius: calc(var(--u) * 1) !important;
+  background: rgba(199, 205, 214, 0.1) !important; font-size: max(calc(var(--key) * 0.34), calc(var(--u) * 2.4)) !important; font-weight: 700; white-space: nowrap; }
+.places-tab.on { background: var(--steel) !important; color: var(--navy) !important; }
+.places .kbd-top { width: 100%; }
+.places-list { list-style: none; flex: 1 1 auto; min-height: 0; overflow-y: auto; touch-action: pan-y; overscroll-behavior: contain; scrollbar-width: none; }
+.places-list::-webkit-scrollbar { display: none; }
+.places-list li { display: flex; align-items: center; gap: calc(var(--u) * 2); min-height: calc(var(--finger, 60px) * 1.1); padding: calc(var(--u) * 1) calc(var(--u) * 0.6);
+  border-bottom: 1px solid var(--rule); }
+.places-list li:active { background: rgba(199, 205, 214, 0.12); }
+.places-list img, .pl-noimg { flex: none; width: calc(var(--finger, 60px) * 1.1); height: calc(var(--finger, 60px) * 1.1); border-radius: calc(var(--u) * 0.8); object-fit: cover; }
+.pl-noimg { background: rgba(199, 205, 214, 0.08); }
+.pl-body { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; gap: calc(var(--u) * 0.3); }
+.pl-name { font-size: calc(var(--u) * 3); font-weight: 700; line-height: 1.15; }
+.pl-line { font-size: calc(var(--u) * 2.2); color: var(--muted); }
+.pl-dist { flex: none; font-size: calc(var(--u) * 2.4); color: var(--steel); font-weight: 700; }
+.place-top { display: flex; gap: calc(var(--u) * 3); align-items: flex-start; }
+.place-img { flex: none; width: min(36%, calc(var(--u) * 30)); aspect-ratio: 1; object-fit: cover; border-radius: calc(var(--u) * 1.2); background: var(--navy-deep); }
+.place-dist { margin-top: calc(var(--u) * 1.2); font-size: calc(var(--u) * 3); font-weight: 700; color: var(--steel); }
+.place-line { margin-top: calc(var(--u) * 1); font-size: calc(var(--u) * 2.6); color: var(--muted); line-height: 1.3; }
+.place-qr { display: flex; align-items: center; gap: calc(var(--u) * 2.4); border-top: 1px solid var(--rule); padding-top: calc(var(--u) * 2); }
+.place-qr-code { flex: none; width: calc(var(--u) * 17); }
+.place-qr-code svg { display: block; width: 100%; height: auto; border-radius: calc(var(--u) * 0.6); }
+.place-qr-line { font-size: calc(var(--u) * 2.6); font-weight: 700; line-height: 1.3; }
+#stage.touch .info-list.amenities li[data-l]:active { background: rgba(199, 205, 214, 0.12); }

@@ -11,6 +11,15 @@ const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "
 const IMAGE_RE = /^data:image\/(jpeg|png|webp|svg\+xml);base64,[A-Za-z0-9+/=]+$/;
 const img = (src) => (typeof src === "string" && IMAGE_RE.test(src) ? src : "");
 const tel = (p) => String(p || "").replace(/[^0-9+]/g, "");
+/** A place's address or web link (DP-10 round 18), as on the touch screen's QR: a web address as it is, a bare
+ *  domain as https, anything else as an address in maps. */
+export function placeUrl(link) {
+  const v = String(link || "").trim().slice(0, 200);
+  if (!v) return "";
+  if (/^https?:\/\/\S+$/i.test(v)) return v;
+  if (/^(www\.)?[a-z0-9-]+(\.[a-z0-9-]+)+(\/\S*)?$/i.test(v)) return `https://${v}`;
+  return `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(v)}`;
+}
 
 const HEADERS = {
   "Content-Type": "text/html; charset=utf-8",
@@ -98,7 +107,7 @@ ${tenants.length > 6 ? `<input class="search" type="search" placeholder="Find a 
 <ul class="tenants">${tenants.map((t) => `<li class="tenant" data-q="${esc(`${t.name} ${t.suite} ${t.note || ""}`.toLowerCase())}"><span><b>${esc(t.name)}</b>${t.note ? `<span class="note">${esc(t.note)}</span>` : ""}</span>${t.suite ? `<span class="suite"><small>Suite</small>${esc(t.suite)}</span>` : ""}</li>`).join("")}</ul>
 <p class="none">No tenant matches that.</p>
 ${contacts ? `<h2>Contacts</h2><div class="contacts">${contacts}</div>` : ""}
-${lists.map((l) => `<h2>${esc(l.heading || "Nearby")}</h2><ul>${l.items.filter((a) => a?.name).map((a) => `<li class="place">${img(a.image) ? `<img src="${img(a.image)}" alt="">` : ""}<div><b>${esc(a.name)}</b>${a.line ? `<div class="line">${esc(a.line)}</div>` : ""}</div>${a.distance ? `<span class="dist">${esc(a.distance)}</span>` : ""}</li>`).join("")}</ul>`).join("")}
+${lists.map((l) => `<h2>${esc(l.heading || "Nearby")}</h2><ul>${l.items.filter((a) => a?.name).map((a) => `<li class="place">${img(a.image) ? `<img src="${img(a.image)}" alt="">` : ""}<div><b>${placeUrl(a.link) ? `<a href="${esc(placeUrl(a.link))}" rel="noopener">${esc(a.name)}</a>` : esc(a.name)}</b>${a.line ? `<div class="line">${esc(a.line)}</div>` : ""}</div>${a.distance ? `<span class="dist">${esc(a.distance)}</span>` : ""}</li>`).join("")}</ul>`).join("")}
 ${welcome ? `<p class="welcome">${esc(welcome)}</p>` : ""}
 ${ownerLogo ? `<img class="owner" src="${ownerLogo}" alt="">` : ""}
 </main>
