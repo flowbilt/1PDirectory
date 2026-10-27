@@ -267,6 +267,12 @@ sitting on a blank screen. No new card and no console visit needed:
    never the password) is kept on the Pi (`/var/lib/lobby-agent/wifi-setup.json`, the last five, cleared by
    `--prepare`) and, once the Pi is online, shows in the Pi panel as **Field Wi-Fi setup**. Every try is in the kiosk
    log too.
+5. **Since round 16c** (Scot's bench test, 2026-10-27: the waits looked like nothing was happening, and a tech might
+   type the password again): the phone's message says a try takes 30 seconds to a minute and **not to press Connect
+   again**, and Connect is greyed out ("Trying… please wait") while a try runs; the TV, which keeps the page
+   throughout, counts it live ("Joining 1PointUSA… 12 s", then "Joined 1PointUSA. Checking it can reach the directory
+   site…"). When it works the TV shows **Connected to <network>. Starting the directory…** and that page stays up
+   until the directory's window has opened over it (before, it closed at once and left a gap).
 
 This only happens for a Pi that's never gotten online at all. A Pi that's worked before and just loses its network
 keeps the quieter behavior below (cached content, "Reconnecting…") — it never puts up a surprise hotspot on a

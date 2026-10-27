@@ -201,7 +201,7 @@ case "$*" in
     printf 'Strong:WPA2:70\nWeak:WPA2:20\nOpenNet::40\nStrong:WPA2:70\nDirectory-Setup-1234:WPA2:99\nLobby\\:East:WPA2:10\n'; exit 0 ;;
   "device wifi connect BadNet"*) rm -f "$AP_FLAG"; echo BadNet > "$W_PROFILE"; echo "Error: Connection activation failed: Secrets were required, but not provided." >&2; exit 4 ;;
   "-g IP4.ADDRESS connection show lobby-setup-ap") echo "10.42.0.1/24" ;;
-  "device wifi connect GoodNet password rightpass") rm -f "$AP_FLAG"; echo GoodNet > "$W_PROFILE"; exit 0 ;;
+  "device wifi connect GoodNet password rightpass") sleep "${JOIN_S:-0}"; rm -f "$AP_FLAG"; echo GoodNet > "$W_PROFILE"; exit 0 ;;
   "device wifi connect OpenNet") rm -f "$AP_FLAG"; echo OpenNet > "$W_PROFILE"; exit 0 ;;
 esac
 exit 0
@@ -251,7 +251,12 @@ has "the hotspot name and its code are shown for a phone to join" "$PAGE" "join 
 ERR="$(TRIES=1 SLEEP_S=0.1 wifisetup_run post_wait 'ssid=BadNet&password=x')"
 FIRST="$(cat "$W/post-first.html")"
 has "Connect answers straight away, before the hotspot drops (16b)" "$FIRST" "Trying BadNet…"
-has "and says the setup network drops while it tries" "$FIRST" "This setup network drops while the screen tries"
+has "and says the setup network drops while it tries" "$FIRST" "this setup network drops while the screen tries"
+has "and not to press Connect again (16c: the phone's lag looked like a chance to retry)" "$FIRST" "Please don't press Connect again:"
+has "and how long it takes" "$FIRST" "This takes 30 seconds to a minute."
+has "Connect can't be pressed again while it tries" "$FIRST" '<button type="submit" disabled>Trying… please wait</button>'
+has "the TV's page has a live line for the try" "$FIRST" '<div id="progress" class="progress">Joining BadNet…</div>'
+has "a failed try gives Connect back" "$ERR" '<button type="submit">Connect</button>'
 has "a network that refuses the password says so, large, at the top of the page that comes back" "$ERR" '<div class="result failed" role="alert"><b>BadNet didn'"'"'t work.</b>'
 has "and the form is still there to retry" "$ERR" "<form method=\"post\""
 
@@ -333,11 +338,23 @@ ok "the password box comes back empty (never sent back to a phone)" "$(grep -c '
 HID="$(TRIES=1 SLEEP_S=0.1 wifisetup_run post_wait 'ssid=Strong&hidden_ssid=BadNet&password=x')"
 has "a hidden network that failed stays typed in its box" "$HID" 'name="hidden_ssid" autocapitalize="off" autocorrect="off" value="BadNet"'
 ST="$(TRIES=1 SLEEP_S=0.1 wifisetup_run bash -c "curl -s http://127.0.0.1:80/status; curl -s -X POST -d 'ssid=BadNet&password=x' http://127.0.0.1:80/connect >/dev/null; curl -s http://127.0.0.1:80/status")"
-has "the page can ask how a try is going (the TV's page reloads itself when it ends)" "$ST" '{"state": "idle", "stamp": 0}{"state": "trying", "stamp": 1}'
+has "the page can ask how a try is going (the TV's page reloads itself when it ends)" "$ST" '{"state": "idle", "stamp": 0, "phase": "", "since": 0}{"state": "trying", "stamp": 1,'
+PH="$(JOIN_S=0.8 TRIES=8 SLEEP_S=0.3 wifisetup_run bash -c "curl -s -X POST -d 'ssid=GoodNet&password=rightpass' http://127.0.0.1:80/connect >/dev/null; for i in \$(seq 1 40); do curl -s http://127.0.0.1:80/status | grep -o '\"phase\": \"[a-z]*\"'; sleep 0.1; done | uniq | tr '\n' '|'")"
+has "the live line follows the try: joining, then checking it can reach the site (16c)" "$PH" '"phase": "joining"|"phase": "checking"|'
+
+has "the TV's page checks every second and shows the phase and the seconds" "$KEPT" 'Checking it can reach the directory site… " : "Joining " + ssid + "… ") + s.since + " s";'
+has "a successful try says the directory is starting" "$OK1" "Starting the directory…"
 has "and the page carries the check" "$KEPT" 'fetch("/status"'
 REC="$(cat "$W/wifi-setup.json" 2>/dev/null)"
 has "every try is kept on the Pi for the console: network, worked or not, why" "$REC" '"ssid": "BadNet", "ok": false, "why": "BadNet refused that password. Check it and try again."'
-ok "the last five only" "$(python3 -c "import json;print(len(json.load(open('$W/wifi-setup.json'))['tries']))")" "3"
+ok "a try is recorded each time" "$(python3 -c "import json;print(len(json.load(open('$W/wifi-setup.json'))['tries']))")" "4"
+CAP="$(cd "$W" && LOBBY_SETUP_CODE_FILE="$W/setup-code" LOBBY_WIFI_SETUP_RECORD="$W/cap.json" python3 -c "
+import importlib.util, json, sys
+sys.argv = ['x', '10000000abcd1234', 'http://x.test']
+spec = importlib.util.spec_from_file_location('ws', '$W/lobby-wifi-setup.py'); ws = importlib.util.module_from_spec(spec); spec.loader.exec_module(ws)
+[ws.record_try('Net%d' % i, False, 'no') for i in range(7)]
+print(','.join(t['ssid'] for t in json.load(open('$W/cap.json'))['tries']))")"
+ok "only the last five are kept" "$CAP" "Net2,Net3,Net4,Net5,Net6"
 ok "never the password" "$(grep -c 'wrongpw\|\"x\"' "$W/wifi-setup.json")" "0"
 : > "$NMLOG"
 wifisetup_run bash -c "for i in 1 2 3 4 5 6; do curl -s http://127.0.0.1:80/ >/dev/null; done"

@@ -279,12 +279,12 @@ STOP = threading.Event()  # set once setup is finishing: the hotspot is never br
 # Pi has one radio), so the phone never got the answer to its Connect: it reconnected, reloaded the page and saw the
 # top network chosen again, as if its choice had been lost. Now Connect answers at once, the try runs on its own,
 # and the page that comes back says how it went, with that network still chosen.
-TRY = {"state": "idle", "ssid": "", "hidden": False, "why": "", "at": 0.0, "stamp": 0}
+TRY = {"state": "idle", "ssid": "", "hidden": False, "why": "", "at": 0.0, "stamp": 0, "phase": ""}
 TRY_LOCK = threading.Lock()
 SCAN_EVERY = float(os.environ.get("LOBBY_WIFI_SCAN_EVERY", "20"))     # a page view rescans at most this often
 SCANNED = {"at": 0.0, "nets": []}
 RECORD = os.environ.get("LOBBY_WIFI_SETUP_RECORD", "/var/lib/lobby-agent/wifi-setup.json")   # the agent reports it
-SUCCESS_LINGER = float(os.environ.get("LOBBY_WIFI_SETUP_LINGER", "4"))   # the TV shows "Connected" this long
+SUCCESS_LINGER = float(os.environ.get("LOBBY_WIFI_SETUP_LINGER", "6"))   # the TV's page catches "Connected" in this time
 AP_SSID = f"Directory-Setup-{SERIAL[-4:]}"
 def setup_code():
     """The hotspot's 8-digit code: made once per Pi and kept, so a phone that joined before still has the right one
@@ -446,6 +446,7 @@ def join(ssid, password):
             msg = err.strip()[:200] or "Couldn't join that network."
         undo_join(before)
         return False, msg
+    set_phase("checking")
     for _ in range(CONNECT_TRIES):
         if site_reachable():
             return True, ""
@@ -478,9 +479,16 @@ def set_try(**kw):
         TRY["stamp"] += 1
 
 
+def set_phase(phase):
+    """Round 16c: what a try is doing now (joining, checking), for the TV's live line; the page doesn't reload for it."""
+    with TRY_LOCK:
+        TRY["phase"] = phase
+
+
 def run_try(server, ssid, password, hidden):
     time.sleep(0.5)                       # let the "Trying…" page reach the phone before the hotspot drops
     log(f"field Wi-Fi setup: trying {ssid!r}")
+    set_phase("joining")
     ok, err = try_connect(ssid, password)
     record_try(ssid, ok, err)
     if ok:
@@ -516,6 +524,8 @@ button{{margin-top:18px;width:100%;padding:12px;font-size:1.1em;border-radius:8p
 .result.trying{{background:#1d3150;color:#dfe9ff}}
 .result.failed{{background:#4a1717;color:#ffd9d9}}
 .result.ok{{background:#173d22;color:#cff5d8}}
+.progress{{margin-top:10px;font-weight:bold}}
+button:disabled{{background:#555;color:#bbb}}
 </style></head><body>
 {result}
 <h1>This screen needs Wi-Fi</h1>
@@ -532,18 +542,22 @@ while setting up, or the phone may not reach this page.) A keyboard here works t
 <input type="text" name="hidden_ssid" autocapitalize="off" autocorrect="off" value="{hidden_value}">
 <label>Password (leave blank for an open network)</label>
 <input type="password" name="password">
-<button type="submit">Connect</button>
+<button type="submit"{busy}>{button}</button>
 </form>
 <script>
-// Reload when a try finishes (or starts from another device), unless someone is typing into the form
-var stamp = {stamp};
+// Reload when a try finishes (or starts from another device), unless someone is typing into the form; while a try
+// runs, the TV (which keeps this page throughout) shows what it's doing and for how long
+var stamp = {stamp}, ssid = {ssid_js};
 setInterval(function () {{
   var a = document.activeElement, typing = a && (a.tagName === "INPUT" || a.tagName === "SELECT")
     || document.querySelector("input[name=password]").value || document.querySelector("input[name=hidden_ssid]").value;
   fetch("/status", {{cache: "no-store"}}).then(function (r) {{ return r.json(); }}).then(function (s) {{
-    if (s.stamp !== stamp && (!typing || s.state === "ok")) location.replace("/");
+    if (s.stamp !== stamp && (!typing || s.state === "ok")) {{ location.replace("/"); return; }}
+    var p = document.getElementById("progress");
+    if (p && s.state === "trying") p.textContent = (s.phase === "checking"
+      ? "Joined " + ssid + ". Checking it can reach the directory site… " : "Joining " + ssid + "… ") + s.since + " s";
   }}).catch(function () {{}});
-}}, 3000);
+}}, 1000);
 </script>
 </body></html>"""
 
@@ -568,18 +582,23 @@ def render(message=""):
     )
     result = ""
     if t["state"] == "trying":
-        result = (f'<div class="result trying" role="status"><b>Trying {t_(t["ssid"])}…</b><br>This setup network drops '
-                  'while the screen tries, for up to a minute. If it works, the screen shows its directory and this '
-                  'network goes away. If not, this page comes back with the reason: rejoin '
-                  f'<b>{t_(AP_SSID)}</b> if your phone doesn\'t do it by itself.</div>')
+        result = (f'<div class="result trying" role="status"><b>Trying {t_(t["ssid"])}…</b> This takes 30 seconds to a '
+                  'minute. <b>Please don\'t press Connect again:</b> this setup network drops while the screen tries, so '
+                  'a phone loses this page for a while; the TV shows how it\'s going. If it works, the screen shows '
+                  'its directory and this network goes away. If not, this page comes back with the reason: rejoin '
+                  f'<b>{t_(AP_SSID)}</b> if your phone doesn\'t do it by itself.'
+                  f'<div id="progress" class="progress">Joining {t_(t["ssid"])}…</div></div>')
     elif t["state"] == "failed":
         result = (f'<div class="result failed" role="alert"><b>{t_(t["ssid"])} didn\'t work.</b><br>{t_(t["why"])}<br>'
                   f'{t_(t["ssid"])} is still chosen below.</div>')
     elif t["state"] == "ok":
-        result = f'<div class="result ok" role="status"><b>Connected to {t_(t["ssid"])}.</b><br>The screen will start in a moment.</div>'
+        result = f'<div class="result ok" role="status"><b>Connected to {t_(t["ssid"])}.</b><br>Starting the directory…</div>'
     hidden_value = e(chosen) if chosen and (t["hidden"] or not listed) else ""
     return PAGE.format(ap_ssid=e(AP_SSID), ap_password=AP_PASSWORD, address=ADDRESS, message=message, options=opts,
-                       result=result, hidden_value=hidden_value, stamp=t["stamp"]).encode()
+                       result=result, hidden_value=hidden_value, stamp=t["stamp"],
+                       ssid_js=json.dumps(t["ssid"]).replace("<", "\\u003c"),
+                       busy=" disabled" if t["state"] in ("trying", "ok") else "",
+                       button={"trying": "Trying… please wait", "ok": "Connected"}.get(t["state"], "Connect")).encode()
 
 
 class Handler(http.server.BaseHTTPRequestHandler):
@@ -596,7 +615,8 @@ class Handler(http.server.BaseHTTPRequestHandler):
     def do_GET(self):
         if self.path.split("?")[0] == "/status":
             with TRY_LOCK:
-                body = json.dumps({k: TRY[k] for k in ("state", "stamp")}).encode()
+                body = json.dumps({**{k: TRY[k] for k in ("state", "stamp", "phase")},
+                                   "since": int(time.time() - TRY["at"]) if TRY["at"] else 0}).encode()
             self.send_response(200)
             self.send_header("Content-Type", "application/json")
             self.send_header("Cache-Control", "no-store")
@@ -1057,7 +1077,8 @@ elif [[ ! -f "$MARKER" ]]; then
     SETUP_CHROME_PID=$!
   fi
   ${LOBBY_WIFI_SETUP:-sudo -n /usr/local/sbin/lobby-wifi-setup} "${SERIAL:-unknown}" "$URL" >>"$LOG" 2>&1
-  [[ -n "$SETUP_CHROME_PID" ]] && kill "$SETUP_CHROME_PID" 2>/dev/null
+  # DP-10 round 16c: the setup page (now saying "Connected… starting the directory") stays up until the directory's
+  # window has opened over it (end_setup, below), like the start-up animation; closing it here showed a gap
   curl -fsS --max-time 3 -o /dev/null "$URL" && touch "$MARKER"
 fi
 
@@ -1098,6 +1119,12 @@ fi
 [[ $(wc -c <"$LOG") -gt 1000000 ]] && tail -n 2000 "$LOG" > "$LOG.tmp" && mv "$LOG.tmp" "$LOG"
 
 end_startup   # the directory's window opens next, over the animation
+end_setup() {
+  [[ -n "${SETUP_CHROME_PID:-}" ]] || return 0
+  local pid="$SETUP_CHROME_PID"; SETUP_CHROME_PID=""
+  ( sleep "${KIOSK_STARTUP_OVERLAP:-8}"; kill "$pid" 2>/dev/null ) &
+}
+end_setup     # and over the field Wi-Fi setup page, if this start had one
 
 while true; do
   # After a power cut Chromium thinks it crashed and shows a "Restore pages?" bar. Clear that.

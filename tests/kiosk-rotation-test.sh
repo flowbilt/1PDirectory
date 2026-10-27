@@ -31,7 +31,8 @@ if [[ "$*" == *"file://"* ]]; then
   echo $$ > "$HOME/startup.pid"; exec sleep 1000   # the start-up animation: up until kiosk.sh closes it
 fi
 if [[ "$*" == *"http://localhost/"* ]]; then
-  exec sleep 1000   # the field-setup echo: stays up until kiosk.sh kills it directly, doesn't drive the main loop
+  # the field-setup page: stays up until kiosk.sh closes it, doesn't drive the main loop (16c: says when it's closed)
+  trap 'echo "close setup" >> "$HOME/events.log"; exit 0' TERM; sleep 1000 & wait
 fi
 sleep "${CHROME_WAIT:-0}"
 kill -TERM "$PPID"
@@ -136,6 +137,8 @@ H="$WORK/s3"; EXTRA="$FAST" run "$H" 10000000fee1face "$OFF" "" auto; sleep 1
 ok "a Pi going into field Wi-Fi setup: the animation first, then the setup page over it" \
   "$(grep '^open' "$H/events.log" | tr '\n' '|')" "open file://$WORK/startup.html|open http://localhost/|open $OFF/?device=10000000fee1face|"
 ok "and the animation's window is closed" "$(alive "$H")" "closed"
+ok "the setup page stays up until the directory's window has opened over it, then closes (16c: no gap)" \
+  "$(grep -E '^(open http|close setup)' "$H/events.log" | tr '\n' '|')" "open http://localhost/|open $OFF/?device=10000000fee1face|close setup|"
 H="$WORK/s5"; t0=$SECONDS; MIN=3 run "$H" 100000008294ba46 "$BASE" "" auto; took=$(( SECONDS - t0 )); sleep 1
 ok "with a network that answers at once, the animation still gets its minimum time before the directory opens" \
   "$(( took >= 3 ))|$(grep '^open' "$H/events.log" | tr '\n' '|')" "1|open file://$WORK/startup.html|open $BASE/?device=100000008294ba46|"
