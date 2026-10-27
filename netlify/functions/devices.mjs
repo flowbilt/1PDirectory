@@ -25,7 +25,7 @@
 //   POST {action:"reset_key" | "revoke" | "activate", device_id}  reset_key also opens the enrollment window
 import { json } from "../lib/common.mjs";
 import { audit, caller, db, enc, rpc } from "../lib/sb.mjs";
-import { COMMANDS, WIFI_AGENT, REMOTE_AGENT, agentAtLeast, centralDay } from "./agent.mjs";
+import { COMMANDS, WIFI_AGENT, REMOTE_AGENT, agentAtLeast, centralDay, CURRENT_AGENT } from "./agent.mjs";
 
 const ONLINE_MIN = 15;
 export const ENROLL_HOURS = 24;
@@ -99,6 +99,7 @@ export default async (req) => {
       const recent = ids.length ? await rpc("recent_device_commands", { p_device_ids: ids, p_per: 5 }) : [];
       const cmds = new Map(recent.map((r) => [r.device_id, r.commands || []]));
       return json({
+        agent_current: CURRENT_AGENT,   // round 17b: the Screens list marks Pis on an older agent
         devices: mine.map(({ key_hash, ...d }) => ({
           ...d, enrolled: !!key_hash,
           screen_key: screens.get(d.screen_id)?.key || null,

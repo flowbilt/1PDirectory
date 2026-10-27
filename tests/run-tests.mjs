@@ -1707,6 +1707,16 @@ test("round 17: the Screens list follows the Pi panel and a waiting command; a f
   assert.ok(con.includes("Dev.onChange(() => { Dev.renderNew(S.screens); renderScreens(); });"), "the console hooks the list in");
 });
 
+test("round 17b: the Screens list shows each Pi's agent and marks an older one", async () => {
+  const { CURRENT_AGENT } = await import("../netlify/functions/agent.mjs");
+  const agentPy = readFileSync(new URL("../public/pi/agent.py", import.meta.url), "utf8");
+  assert.equal(CURRENT_AGENT, agentPy.match(/VERSION = "([^"]+)"/)[1], "the console's idea of the current agent is the agent the site serves");
+  const dev = readFileSync(new URL("../public/console-devices.js", import.meta.url), "utf8");
+  assert.ok(dev.includes("Agent ${esc(d.agent_version)} · update") && dev.includes('`<span class="sub">Agent ${esc(d.agent_version)}</span>`'));
+  const older = new Function(dev.match(/function agentOlder\(have, want\) \{[\s\S]*?\n  \}/)[0] + "; return agentOlder;")();
+  assert.deepEqual([older("1.8.1", "1.10.0"), older("1.9.0", "1.10.0"), older("1.10.0", "1.10.0"), older("1.11.0", "1.10.0"), older("", "1.10.0")], [true, true, false, false, true]);
+});
+
 test("touch settings: off and blank by default, then they reach the screen and change its version", async () => {
   const scr = fake.T.screens.find((x) => x.key === "ppi-1s");
   const first = await screen(req("/api/screen?key=ppi-1s"));

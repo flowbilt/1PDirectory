@@ -36,11 +36,11 @@ window.ConsoleDevices = (() => {
 
   // DP-10 round 17: a refresh that fails keeps the last list (it used to empty it, so an open Pi panel stopped
   // updating and the Screens list lost every Pi's line until the next good refresh)
-  let loaded = false;
+  let loaded = false, agentCurrent = "";
   async function load(isAdmin) {
     admin = isAdmin;
     if (!admin) { devices = []; return; }          // Pi health is a 1Point tool; owners never load it
-    try { devices = (await Auth.api("/api/devices")).devices; loaded = true; } catch { if (!loaded) devices = []; }
+    try { const r = await Auth.api("/api/devices"); devices = r.devices; agentCurrent = r.agent_current || ""; loaded = true; } catch { if (!loaded) devices = []; }
     renderNew();
   }
   /** Set by console.js: redraws the Screens list from the latest Pi list (round 17). */
@@ -56,6 +56,12 @@ window.ConsoleDevices = (() => {
     await load(admin); changed();
   }, 10_000);
 
+  /** "1.8.1" is older than "1.10.0", compared number by number (as agent.mjs does). */
+  function agentOlder(have, want) {
+    const a = String(have).split(/[.-]/).map(Number), b = String(want).split(".").map(Number);
+    for (let i = 0; i < b.length; i++) { const x = Number.isFinite(a[i]) ? a[i] : 0; if (x !== b[i]) return x < b[i]; }
+    return false;
+  }
   /** Whether Remote support is on: what the Pi reports (agent 1.9.0), else the last Remote support on or off that
    *  went through; "" when there's nothing to go on. */
   function remoteState(d) {
@@ -86,6 +92,10 @@ window.ConsoleDevices = (() => {
     const remote = d.enrolled ? remoteState(d) : "";
     if (remote) bits.push(remote === "on" ? `<span class="remote-on" title="Raspberry Pi Connect is on: switch it off when support is done (Pi → More)">Remote on</span>` : `<span class="sub">Remote off</span>`);
     if (typeof h.temp_c === "number") bits.push(`<span class="${h.temp_c >= 80 ? "warn" : "sub"}">${Math.round(h.temp_c)}°C</span>`);
+    // Round 17b: which agent each Pi runs, at a glance; older than the site's is marked, with what to do
+    if (d.agent_version) bits.push(agentCurrent && agentOlder(d.agent_version, agentCurrent)
+      ? `<span class="warn" title="The site's agent is ${esc(agentCurrent)}: Pi → Update agent">Agent ${esc(d.agent_version)} · update</span>`
+      : `<span class="sub">Agent ${esc(d.agent_version)}</span>`);
     return `<div class="dev-note">${bits.join(" · ")}</div>`;
   }
 
@@ -232,7 +242,7 @@ window.ConsoleDevices = (() => {
             ${row("Address", h.ip)}
             ${row("System", h.os)}
             ${row("Remote support", { on: "On (Raspberry Pi Connect): switch it off when support is done", off: "Off" }[remoteState(d)] || "")}
-            ${row("Agent", d.agent_version)}
+            ${row("Agent", d.agent_version ? `${d.agent_version}${agentCurrent && agentOlder(d.agent_version, agentCurrent) ? ` (the site's is ${agentCurrent}: More → Update agent)` : ""}` : "")}
           </dl>
           ${note ? `<p class="dev-note warn">${esc(note)}</p>` : ""}
           ${admin && !d.enrolled ? `<div class="dev-actions">${windowOpen(d)

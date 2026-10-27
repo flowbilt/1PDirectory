@@ -18,6 +18,8 @@ export const REMOTE_AGENT = "1.8.0";
 /** The first agent that reports busy, firmware and remote support in its health, and runs Remote support beside
  * its check-ins. */
 export const BUSY_AGENT = "1.9.0";
+/** The agent the site serves now (public/pi/agent.py; a test keeps them equal): the console marks older Pis (DP-10 round 17b). */
+export const CURRENT_AGENT = "1.10.0";
 /** The first agent that knows wifi_scan and wifi_join (supabase/13-tech.sql). Older Pis need Update agent first. */
 export const WIFI_AGENT = "1.6.0";
 /** "1.10.0" >= "1.6.0", compared number by number; "" or junk is older than anything. */
