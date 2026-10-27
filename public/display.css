@@ -295,27 +295,37 @@ html.show-cursor #stage.touch button, html.show-cursor #stage.touch .tenant { cu
 .card-back { flex: none; width: 100%; min-height: var(--finger, 60px); border-radius: calc(var(--u) * 1) !important; background: var(--steel) !important;
   color: var(--navy) !important; font-size: calc(var(--u) * 2.8) !important; font-weight: 700; }
 
-/* The accessible keyboard: the lower part of the screen, where everyone can reach */
-.kbd { display: flex; align-items: flex-end; background: rgba(8, 19, 34, 0.5); }
-.kbd-panel { width: 100%; height: 64%; display: flex; flex-direction: column; gap: calc(var(--u) * 1.4); background: var(--navy-deep);
-  border-top: 2px solid var(--steel); padding: calc(var(--u) * 2.4) calc(var(--u) * 2.4) calc(var(--u) * 3); }
-.kbd-top { display: flex; gap: calc(var(--u) * 1.4); align-items: stretch; }
-.kbd-field { flex: 1 1 auto; min-width: 0; display: flex; align-items: center; min-height: calc(var(--finger, 60px) * 0.85); padding: 0 calc(var(--u) * 2);
-  background: var(--navy); border: 1px solid var(--steel); border-radius: calc(var(--u) * 1); font-size: calc(var(--u) * 3.4); font-weight: 700; white-space: pre; overflow: hidden; }
+/* The accessible keyboard (round 16): the lower part of the screen, where everyone can reach. --key is about 12 mm
+   (0.8 of a fingertip), held between 4 and 7 units so it stays a compact block on any screen; the matches sit above the
+   keys and always keep room for three; Show puts the keys away and the matches take the whole panel. */
+.kbd { display: flex; align-items: flex-end; background: rgba(8, 19, 34, 0.5);
+  --key: clamp(calc(var(--u) * 4), calc(var(--finger, 60px) * 0.8), calc(var(--u) * 7)); --kgap: calc(var(--key) * 0.1); }
+.kbd-panel { width: 100%; height: 64%; max-height: 96%; display: flex; flex-direction: column; gap: calc(var(--u) * 1.2); background: var(--navy-deep);
+  border-top: 2px solid var(--steel); padding: calc(var(--u) * 2) calc(var(--u) * 2.4) calc(var(--u) * 2.4); }
+#stage.landscape .kbd-panel { height: 90%; }
+.kbd-top { flex: none; display: flex; gap: calc(var(--u) * 1.2); align-items: stretch; width: min(100%, calc(var(--key) * 16)); align-self: center; }
+.kbd-field { flex: 1 1 auto; min-width: 0; display: flex; align-items: center; min-height: var(--key); padding: 0 calc(var(--u) * 2) !important;
+  background: var(--navy) !important; border: 1px solid var(--steel) !important; border-radius: calc(var(--u) * 1) !important;
+  font-size: calc(var(--key) * 0.46) !important; font-weight: 700; white-space: pre; overflow: hidden; text-align: left; }
 .kbd-caret { width: 0.08em; height: 1.1em; background: var(--steel); margin-left: 0.04em; animation: caret 1.1s steps(1) infinite; }
 @keyframes caret { 50% { opacity: 0; } }
+.keys-away .kbd-caret { display: none; }
 .kbd-hint { color: var(--muted); font-weight: 400; margin-left: 0.3em; }
-.kbd-close { flex: none; padding: 0 calc(var(--u) * 2.6); border-radius: calc(var(--u) * 1) !important; background: rgba(199, 205, 214, 0.14) !important; font-size: calc(var(--u) * 2.6) !important; font-weight: 700; }
-.kbd-results { list-style: none; flex: 1 1 auto; min-height: 0; overflow-y: auto; touch-action: pan-y; overscroll-behavior: contain; scrollbar-width: none; }
+.kbd-close, .kbd-again { flex: none; padding: 0 calc(var(--u) * 2.4); border-radius: calc(var(--u) * 1) !important; background: rgba(199, 205, 214, 0.14) !important;
+  font-size: calc(var(--key) * 0.34) !important; font-weight: 700; }
+.kbd-results { list-style: none; flex: 1 1 auto; min-height: calc(var(--key) * 3); overflow-y: auto; touch-action: pan-y; overscroll-behavior: contain; scrollbar-width: none;
+  width: min(100%, calc(var(--key) * 16)); align-self: center; }
 .kbd-results::-webkit-scrollbar { display: none; }
-.kbd-results li { display: flex; justify-content: space-between; align-items: center; gap: calc(var(--u) * 2); min-height: calc(var(--finger, 60px) * 0.9);
-  padding: 0 calc(var(--u) * 1); border-bottom: 1px solid var(--rule); font-size: calc(var(--u) * 3); font-weight: 700; }
+.kbd-results li { display: flex; justify-content: space-between; align-items: center; gap: calc(var(--u) * 2); min-height: var(--key);
+  padding: 0 calc(var(--u) * 1); border-bottom: 1px solid var(--rule); font-size: calc(var(--key) * 0.4); font-weight: 700; }
 .kbd-results li:active { background: rgba(199, 205, 214, 0.12); }
-.kbd-results li.none { color: var(--muted); font-weight: 400; justify-content: flex-start; }
+.kbd-results li.none { color: var(--muted); font-weight: 400; justify-content: flex-start; border-bottom: 0; }
 .r-suite { font-variant-numeric: tabular-nums; color: var(--steel); }
-.kbd-keys { flex: none; display: flex; flex-direction: column; gap: calc(var(--u) * 0.7); }
-.kbd-row { display: flex; gap: calc(var(--u) * 0.7); justify-content: center; }
-.key { flex: 1 1 0; max-width: calc(var(--u) * 9.4); height: clamp(calc(var(--u) * 5.4), var(--finger, 60px), calc(var(--u) * 8.6));
-  border-radius: calc(var(--u) * 0.8) !important; background: rgba(199, 205, 214, 0.16) !important; font-size: calc(var(--u) * 3) !important; font-weight: 700; }
-.key.wide { flex: 1.6 1 0; max-width: calc(var(--u) * 16); font-size: calc(var(--u) * 2.4) !important; }
+.kbd-keys { flex: none; display: flex; flex-direction: column; gap: var(--kgap); width: min(100%, calc(var(--key) * 12.4)); align-self: center; }
+.keys-away .kbd-keys { display: none; }
+.kbd-row { display: flex; gap: var(--kgap); justify-content: center; }
+.key { flex: 1 1 0; min-width: 0; max-width: calc(var(--key) * 1.16); height: var(--key);
+  border-radius: calc(var(--key) * 0.12) !important; background: rgba(199, 205, 214, 0.16) !important; font-size: calc(var(--key) * 0.42) !important; font-weight: 700; }
+.key.wide { flex: 1.7 1 0; max-width: calc(var(--key) * 2); font-size: calc(var(--key) * 0.3) !important; }
 .key.space { flex: 5 1 0; max-width: none; }
+.key.enter { background: var(--steel) !important; color: var(--navy) !important; }

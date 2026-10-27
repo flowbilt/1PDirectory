@@ -1899,8 +1899,21 @@ test("the touch directory is only on touch screens: cards, A to Z, the keyboard 
   assert.ok(js.includes("if (data?.touch) return fitTouch(u);") && js.includes('if (!data?.touch) return;'), "display-only screens keep the old fit and ignore taps");
   assert.ok(js.includes("(data.tenants || [])[Number(r.dataset.i)]") && !/people[^\n]*includes\(q/.test(js), "the keyboard searches company names, never people");
   assert.ok(js.includes("Number(data.touchIdle) || 45") && js.includes("goIdle"), "back to the directory after the idle time");
-  assert.equal(DISPLAY_VERSION, "2.13.2");
+  assert.equal(DISPLAY_VERSION, "2.14.0");
   assert.ok(js.includes("new ResizeObserver") && js.includes("frameSize() !== fittedAt"), "the list refits when its space changes size (15b)");
+});
+
+test("the touch keyboard (round 16): keys about 12 mm in a compact block, matches always with room, Show, drag to scroll", () => {
+  const js = readFileSync(new URL("../public/display.js", import.meta.url), "utf8");
+  const css = readFileSync(new URL("../public/display.css", import.meta.url), "utf8");
+  assert.ok(js.includes('data-key="enter">Show</button>') && js.includes('if (k === "enter")'), "an Enter key labelled Show");
+  assert.ok(js.includes("if (hits.length === 1) { openCard(hits[0].t); return; }"), "Show with one match opens its card");
+  assert.ok(/\.keys-away \.kbd-keys \{ display: none; \}/.test(css) && js.includes("data-kfield"), "Show puts the keys away; the field brings them back");
+  assert.ok(css.includes("--key: clamp(calc(var(--u) * 4), calc(var(--finger, 60px) * 0.8), calc(var(--u) * 7))"), "keys about 12 mm, capped");
+  assert.ok(css.includes(".kbd-results { list-style: none; flex: 1 1 auto; min-height: calc(var(--key) * 3);"), "the matches always keep room for three");
+  assert.ok(js.includes('e.pointerType === "touch"') && js.includes("#stage.scrolling .list-frame, .card-people, .kbd-results"),
+    "a finger that reaches the page as a mouse drags the lists; real touch scrolls natively");
+  assert.ok(!/people[^\n]*includes\(q/.test(js), "still company names only");
 });
 
 test("drive times' status reaches the Pi panel, never Google's minutes or labels (15c)", async () => {

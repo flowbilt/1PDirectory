@@ -26,7 +26,15 @@ export function createFake() {
   const rpcCalls = []; // which database functions were called, for tests that count trips
   const restCalls = [];
   let clock = null;                                   // tests can fix "now" with setClock(date)
-  const now = () => (clock ? new Date(clock) : new Date()).toISOString();
+  // Postgres stamps each change with its own transaction's time (microseconds), so two changes never share one; the real
+  // clock here counts milliseconds, so keep it strictly increasing (round 16: two quick changes sometimes shared a stamp,
+  // and a test that expects the second to give a screen a new version failed about once in twenty runs)
+  let lastMs = 0;
+  const now = () => {
+    if (clock) return new Date(clock).toISOString();
+    lastMs = Math.max(Date.now(), lastMs + 1);
+    return new Date(lastMs).toISOString();
+  };
 
   // ── seed from the migration data ──
   function seed() {

@@ -73,6 +73,11 @@ directory in the editor and is off until ticked. Its text size is the editor's *
 - **Offline:** the map and drive times drop out while a screen is reconnecting; news and places carry on.
 - The display page tells Google its origin (`<meta name="referrer">` in `index.html`; the site otherwise sends
   `Referrer-Policy: same-origin`), so a key restricted to the site's address works.
+- **Checking a customer's screen (DP-09 round 15c):** the console's View never asks Google, so it shows the drive
+  times as dashes. The Pi panel's **Drive times** line says what the real screen reported at its last check-in:
+  showing for how many destinations and when Google answered, or why not (hours, waiting its turn, switched off, no
+  destinations, no key, Google's error). Never the minutes themselves (Google's terms forbid keeping them): for
+  those, **Take screenshot** while they're up.
 
 ## Directory to Go and the WayTuGo mark (DP-08 round 12)
 
@@ -117,12 +122,19 @@ Only on screens marked **This is a touch screen** (console, Screen settings). Di
   **Back to the directory** is at the bottom of the card, in reach; a tap outside the card closes it too.
 - **Sized for a finger:** from **Screen size (inches)** (32" when blank), names are never smaller than a fingertip's
   row (about 15 mm), and buttons are about that tall.
-- **A to Z, only when needed:** when the list can't fit at a finger's size, it scrolls (swipe it), and a strip of the
-  letters in use sits under it; tapping one brings that letter's first company to the top.
+- **A to Z, only when needed:** when the list can't fit at a finger's size, it scrolls (drag it with a finger), and a
+  strip of the letters in use sits under it; tapping one brings that letter's first company to the top.
+- **Dragging works however the panel reaches the browser (round 16):** some touch panels arrive as a mouse, and a mouse
+  drag doesn't scroll a list, so the display scrolls the list itself when it's dragged (the directory, a card's people
+  and the keyboard's matches), with a short glide after a flick. A drag of more than about 2 mm isn't a tap; a small
+  wobble still is. Real touch input scrolls the browser's own way.
 - **The accessible keyboard, when the customer chooses:** the editor's **Show the accessible keyboard on touch
   screens** (per directory, off by default) adds a **Search** button at the bottom left of the directory. It opens an
   on-screen keyboard in the lower part of the screen that finds **companies by name only** (never people: they're
-  found only through their company); tap a result for its card.
+  found only through their company); tap a result for its card. Since round 16 (display 2.14.0): keys about 12 mm
+  (0.8 of a fingertip, between 4 and 7 units) in a compact block; the matches sit above the keys and always keep room
+  for at least three, updating with each key; **Show** puts the keys away so the matches have the whole panel (with
+  exactly one match it opens that company's card); tapping the field or **Keyboard** brings the keys back.
 - **Back to the directory by itself:** after **Back to the directory after (seconds)** with no touch (Screen settings,
   15 to 300, 45 standard), an open card or keyboard closes and the list goes back to the top. A directory change
   published while a visitor is using the screen waits until they're done.

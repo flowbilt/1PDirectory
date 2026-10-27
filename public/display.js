@@ -10,7 +10,7 @@
 */
 (() => {
   "use strict";
-  const VERSION = "2.13.2";   // = netlify/lib/version.mjs (a test keeps them equal)
+  const VERSION = "2.14.0";   // = netlify/lib/version.mjs (a test keeps them equal)
   const q = new URLSearchParams(location.search);
   const DEVICE = (q.get("device") || "").toLowerCase();
   const CHOSEN = (q.get("screen") || q.get("key") || q.get("site") || "").toLowerCase();
@@ -682,39 +682,109 @@
   }
   function closeCard() { if ($("card").hidden) return; $("card").hidden = true; $("card").innerHTML = ""; afterTouch(); }
 
-  // The accessible keyboard: finds companies by name (never people), results above the keys
+  // The accessible keyboard (round 16): finds companies by name (never people). The matches sit above the keys and
+  // always keep room for at least three; keys about 12 mm, in a compact block at the bottom; Show puts the keys away
+  // so the matches have the whole panel (with one match, Show opens its card); the field or Keyboard brings them back.
   const KEYS = ["1234567890", "QWERTYUIOP", "ASDFGHJKL", "ZXCVBNM"];
   function openKeyboard() {
     T.query = "";
     $("kbd").innerHTML = `<div class="kbd-panel" role="dialog" aria-label="Find a company">
-        <div class="kbd-top"><div class="kbd-field" aria-live="polite"><span class="kbd-text"></span><span class="kbd-caret"></span><span class="kbd-hint">Type a company's name</span></div>
+        <div class="kbd-top"><button type="button" class="kbd-field" data-kfield aria-live="polite"><span class="kbd-text"></span><span class="kbd-caret"></span><span class="kbd-hint">Type a company's name</span></button>
+          <button type="button" class="kbd-again" data-kfield hidden>Keyboard</button>
           <button type="button" class="kbd-close" data-kclose>Close</button></div>
         <ul class="kbd-results"></ul>
         <div class="kbd-keys">${KEYS.map((row, r) => `<div class="kbd-row">${[...row].map((k) => `<button type="button" class="key" data-key="${k}">${k}</button>`).join("")}${r === 3 ? '<button type="button" class="key wide" data-key="back" aria-label="Delete">⌫</button>' : ""}</div>`).join("")}
-          <div class="kbd-row"><button type="button" class="key wide" data-key="clear">Clear</button><button type="button" class="key space" data-key=" ">Space</button><button type="button" class="key wide" data-key="&amp;">&amp;</button></div></div>
+          <div class="kbd-row"><button type="button" class="key wide" data-key="clear">Clear</button><button type="button" class="key wide" data-key="&amp;">&amp;</button><button type="button" class="key space" data-key=" ">Space</button><button type="button" class="key wide enter" data-key="enter">Show</button></div></div>
       </div>`;
     $("kbd").hidden = false;
+    showKeys(true);
     showResults();
     armIdle();
   }
   function closeKeyboard() { if ($("kbd").hidden) return; $("kbd").hidden = true; $("kbd").innerHTML = ""; T.query = ""; afterTouch(); }
+  function showKeys(on) {
+    const el = $("kbd");
+    el.querySelector(".kbd-panel").classList.toggle("keys-away", !on);
+    el.querySelector(".kbd-again").hidden = on;
+  }
+  function findHits() {
+    const q = nameKey(T.query).replace(/\s+/g, " "), ts = data?.tenants || [];
+    return !q ? [] : ts.map((t, i) => ({ t, i, k: nameKey(t.name) })).filter((x) => x.k.includes(q) || x.k.replace(/\s+/g, "").includes(q.replace(/\s+/g, "")))
+      .sort((a, b) => (b.k.startsWith(q) - a.k.startsWith(q)) || a.k.localeCompare(b.k));
+  }
   function showResults() {
-    const q = nameKey(T.query).replace(/\s+/g, " ");
-    const el = $("kbd"), ts = data?.tenants || [];
+    const el = $("kbd"), q = nameKey(T.query), hits = findHits();
     el.querySelector(".kbd-text").textContent = T.query;
     el.querySelector(".kbd-hint").hidden = !!T.query;
-    const hits = q ? ts.map((t, i) => ({ t, i, k: nameKey(t.name) })).filter((x) => x.k.includes(q) || x.k.replace(/\s+/g, "").includes(q.replace(/\s+/g, "")))
-      .sort((a, b) => (b.k.startsWith(q) - a.k.startsWith(q)) || a.k.localeCompare(b.k)) : [];
-    el.querySelector(".kbd-results").innerHTML = !q ? "" : hits.length
+    el.querySelector(".kbd-results").innerHTML = !q ? `<li class="none">Matching companies show here as you type</li>` : hits.length
       ? hits.slice(0, 30).map((x) => `<li data-i="${x.i}"><span class="r-name">${esc(x.t.name)}</span><span class="r-suite">${esc(x.t.suite)}</span></li>`).join("")
       : `<li class="none">No company matches "${esc(T.query)}"</li>`;
+    el.querySelector(".kbd-results").scrollTop = 0;
   }
   function typeKey(k) {
+    if (k === "enter") {
+      const hits = findHits();
+      if (hits.length === 1) { openCard(hits[0].t); return; }
+      if (nameKey(T.query)) showKeys(false);
+      return;
+    }
     if (k === "back") T.query = T.query.slice(0, -1);
     else if (k === "clear") T.query = "";
     else if (T.query.length < 40) T.query += k;
     showResults();
   }
+
+  // Drag to scroll (round 16). Some touch panels reach the browser as a mouse (the Pi's desktop can pass a finger on as
+  // a pointer), and a mouse drag doesn't scroll a list, so a finger couldn't move the long list on the Beetronics while a
+  // mouse wheel could in View. A drag of more than about 2 mm scrolls the list and doesn't count as a tap; a short drag
+  // is still a tap. Real touch input is left to the browser's own scrolling. Works when the page itself is turned.
+  const SCROLLERS = "#stage.scrolling .list-frame, .card-people, .kbd-results";
+  function dragScroll() {
+    let s = null, fling = 0;
+    const local = (dx, dy) => {
+      const tr = getComputedStyle(stage).transform;
+      if (!tr || tr === "none") return dy;
+      const m = new DOMMatrix(tr).inverse(), a = m.transformPoint({ x: 0, y: 0 }), b = m.transformPoint({ x: dx, y: dy });
+      return b.y - a.y;
+    };
+    document.addEventListener("pointerdown", (e) => {
+      cancelAnimationFrame(fling); s = null;
+      const el = data?.touch && e.target.closest?.(SCROLLERS);
+      if (!el || e.pointerType === "touch" || e.button !== 0 || el.scrollHeight <= el.clientHeight + 1) return;
+      s = { el, id: e.pointerId, x: e.clientX, y: e.clientY, top: el.scrollTop, moved: false, v: 0, ly: 0, lt: performance.now() };
+    });
+    document.addEventListener("pointermove", (e) => {
+      if (!s || e.pointerId !== s.id) return;
+      const dy = local(e.clientX - s.x, e.clientY - s.y);
+      if (!s.moved && Math.abs(dy) > Math.max(8, fingerPx() * 0.14)) s.moved = true;
+      if (!s.moved) return;
+      const t = performance.now();
+      s.v = 0.7 * ((dy - s.ly) / Math.max(1, t - s.lt)) + 0.3 * s.v; s.ly = dy; s.lt = t;
+      s.el.scrollTop = s.top - dy;
+      armIdle();
+    });
+    const end = (e) => {
+      if (!s || e.pointerId !== s.id) return;
+      const { el, moved } = s; let v = s.v; s = null;
+      if (!moved) return;
+      // The click that follows a drag isn't a tap
+      const eat = (c) => { c.stopPropagation(); c.preventDefault(); };
+      document.addEventListener("click", eat, { capture: true, once: true });
+      setTimeout(() => document.removeEventListener("click", eat, { capture: true }), 400);
+      if (e.type === "pointercancel") return;
+      let last = performance.now();
+      const step = (t) => {   // a gentle glide after a quick flick
+        const dt = t - last; last = t; v *= Math.pow(0.995, dt);
+        if (Math.abs(v) < 0.05) return;
+        el.scrollTop -= v * dt;
+        fling = requestAnimationFrame(step);
+      };
+      fling = requestAnimationFrame(step);
+    };
+    document.addEventListener("pointerup", end, true);
+    document.addEventListener("pointercancel", end, true);
+  }
+  dragScroll();
 
   // Back to the whole directory after the screen's idle time with no touch
   function armIdle() {
@@ -740,6 +810,7 @@
   $("kbd").addEventListener("click", (e) => {
     const k = e.target.closest("[data-key]"); if (k) { typeKey(k.dataset.key); return; }
     if (e.target.closest("[data-kclose]")) { closeKeyboard(); return; }
+    if (e.target.closest("[data-kfield]")) { showKeys(true); return; }
     const r = e.target.closest("li[data-i]"); if (r) openCard((data.tenants || [])[Number(r.dataset.i)]);
   });
   // Any touch keeps the screen awake for another idle period
