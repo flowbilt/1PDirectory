@@ -42,6 +42,31 @@ export const db = (path, opts = {}) => call(`/rest/v1/${path}`, { ...opts, apike
 /** Calls a database function with the service key (supabase/05-tuning.sql). Returns what the function returns. */
 export const rpc = (name, args) => db(`rpc/${name}`, { method: "POST", body: args });
 
+/** Storage (DP-11 E1b): uploads a file to a bucket with the service key, never overwriting (a picture's address never
+ *  changes once made), cached by browsers for a year. */
+export async function storagePut(bucket, path, bytes, mime) {
+  const key = serviceKey();
+  const res = await fetch(`${base()}/storage/v1/object/${bucket}/${path}`, {
+    method: "POST",
+    headers: { apikey: key, ...(key.startsWith("eyJ") ? { Authorization: `Bearer ${key}` } : {}), "Content-Type": mime,
+      "cache-control": "max-age=31536000", "x-upsert": "false" },
+    body: bytes,
+    signal: AbortSignal.timeout(20000),
+  });
+  if (!res.ok) { const t = await res.text().catch(() => ""); throw Object.assign(new Error(`Storage refused the picture (${res.status}): ${t.slice(0, 200)}`), { status: 502 }); }
+}
+/** Removes files from a bucket with the service key. */
+export async function storageRemove(bucket, paths) {
+  const key = serviceKey();
+  const res = await fetch(`${base()}/storage/v1/object/${bucket}`, {
+    method: "DELETE",
+    headers: { apikey: key, ...(key.startsWith("eyJ") ? { Authorization: `Bearer ${key}` } : {}), "Content-Type": "application/json" },
+    body: JSON.stringify({ prefixes: paths }),
+    signal: AbortSignal.timeout(10000),
+  });
+  if (!res.ok) throw Object.assign(new Error(`Storage refused to remove the file (${res.status}).`), { status: 502 });
+}
+
 /** Auth admin endpoints with the service key. path like "/admin/users" */
 export const auth = (path, opts = {}) => call(`/auth/v1${path}`, { ...opts, apikey: serviceKey() });
 

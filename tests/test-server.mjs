@@ -62,6 +62,12 @@ createServer(async (req, res) => {
   const send = async (r) => { res.writeHead(r.status, Object.fromEntries(r.headers)); res.end(Buffer.from(await r.arrayBuffer())); };
   if (url.pathname === "/__outbox") return send(new Response(JSON.stringify(fake.outbox), { headers: { "Content-Type": "application/json" } }));
   if (url.pathname.startsWith("/sb/")) return send(await fake.handle(new Request("http://fake" + url.pathname.slice(3) + url.search, { method: req.method, headers: req.headers, body })));
+  // Pictures (E1b): netlify.toml passes /img/* through to the storage bucket; here, from the fake's storage
+  if (url.pathname.startsWith("/img/")) {
+    const f = fake.storage.get(`layout-images/${url.pathname.slice(5)}`);
+    if (!f) { res.writeHead(404); return res.end("Not found"); }
+    res.writeHead(200, { "Content-Type": f.mime, "Cache-Control": "public, max-age=31536000, immutable" }); return res.end(Buffer.from(f.bytes));
+  }
   const fn = ROUTES[url.pathname] || (url.pathname.startsWith("/d/") ? togo : null);   // Directory to Go phone pages
   if (fn) return send(await fn(new Request(url, { method: req.method, headers: req.headers, body })));
   const file = normalize(join(PUB, url.pathname === "/" ? "index.html" : url.pathname));

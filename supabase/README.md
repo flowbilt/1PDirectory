@@ -53,6 +53,8 @@ Do these once. The current site keeps running as it is until the new build is de
 
 30. For layouts, the new kind of screen content (DP-11, round E1a): **before uploading that code**, new query, paste all of `29-layout-engine.sql`, and click **Run**. Then new query, paste all of `check-layout-engine.sql`, and click **Run**; it should read **ALL 10 CHECKS PASSED** (red on purpose). (The new console reads the new tables and screen columns, so they must exist first; the old code never asks for them, and directory screens are answered exactly as before.)
 
+31. For pictures in layouts (DP-11, round E1b): **before uploading that code**, new query, paste all of `30-layout-images.sql`, and click **Run**. Then new query, paste all of `check-layout-images.sql`, and click **Run**; it should read **ALL 8 CHECKS PASSED** (red on purpose). It makes the public Storage bucket `layout-images` (at most 1 MB a picture; WebP, JPEG or PNG) and the table that names each picture; you'll see the bucket under **Storage**. Nothing to set by hand.
+
 If any of them shows an error (other than the expected red messages from the `check-…sql` files), copy the message (it includes a line number) and send it to Claude.
 
 ## 3. Lock down sign-ups

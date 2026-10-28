@@ -7,7 +7,9 @@
 // Needs Playwright with Chromium (require("playwright")); about a minute.
 import { createRequire } from "node:module";
 import { spawn } from "node:child_process";
-import { readFileSync } from "node:fs";
+import { readFileSync, mkdtempSync, copyFileSync } from "node:fs";
+import { join } from "node:path";
+import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
 const { chromium } = createRequire(import.meta.url)("playwright");
 
@@ -314,6 +316,60 @@ try {
     assert(/2\s*· live/.test(v) && v.includes("clean"), v);
     await admin.click('[data-rollback="1"]'); await admin.waitForTimeout(1500);
     assert(/3\s*· live/.test(await admin.textContent("#layout-versions")) && (await admin.textContent("#layout-versions")).includes("Rolled back to version 1"), await admin.textContent("#layout-versions"));
+  });
+
+  // ── Pictures (E1b) ──
+  const picDir = mkdtempSync(join(tmpdir(), "pics-"));
+  copyFileSync(new URL("./fixtures/picture.png", import.meta.url), join(picDir, "maple-bacon.png"));
+  copyFileSync(new URL("./fixtures/picture.jpg", import.meta.url), join(picDir, "Shop Front.jpg"));
+  await check("Pictures: uploading through the console shrinks to WebP, gives each a key from its file name, and shows it", async () => {
+    await admin.setInputFiles("#pics-file", [join(picDir, "maple-bacon.png"), join(picDir, "Shop Front.jpg")]);
+    await admin.waitForFunction(() => /2 uploaded/.test(document.getElementById("pics-progress").textContent), null, { timeout: 15000 });
+    const t = await admin.textContent("#pics-progress");
+    assert(t.includes("img:maple-bacon") && t.includes("img:shop-front"), t);
+    assert(await admin.locator("#pics-grid .pic").count() === 2, "two pictures listed");
+    await admin.locator("#pics-grid").scrollIntoViewIfNeeded(); await admin.waitForTimeout(800);   // they load lazily
+    const loaded = await admin.$$eval("#pics-grid img", (imgs) => imgs.every((i) => i.complete && i.naturalWidth > 0));
+    assert(loaded, "the pictures load from /img/");
+    const rows = (await sb("layout_images?select=key,mime,width,path")).data;
+    assert(rows.length === 2 && rows.every((r) => r.mime === "image/webp" && r.width === 320 && /\.webp$/.test(r.path)), JSON.stringify(rows));
+  });
+
+  await check("Pictures: the preview draws them, a rotator takes turns, text straight on a photo is warned about", async () => {
+    const doc = { format: 1, orientation: "portrait", grid: { cols: 12, rows: 24 }, blocks: [
+      { id: "hero", type: "rotator", at: { col: 1, row: 1, w: 12, h: 10 }, content: { seconds: 4, items: [
+        { image: "img:maple-bacon", caption: "Maple Bacon", price: "$1.89" }, { image: "img:shop-front", caption: "Come see us" }] } },
+      { id: "over", type: "text", at: { col: 2, row: 2, w: 6, h: 3 }, layer: 1, style: { size: "xl" }, content: { title: "On the photo" } },
+      { id: "logo", type: "logo", at: { col: 1, row: 12, w: 6, h: 3 }, content: { image: "img:shop-front", text: "Shop" } }] };
+    await admin.fill("#layout-json", JSON.stringify(doc, null, 2));
+    await admin.click("#layout-preview"); await admin.waitForTimeout(4000);
+    assert((await admin.textContent("#layout-results")).includes("sits straight on the picture"), await admin.textContent("#layout-results"));
+    const frame = admin.frameLocator("#layout-iframe");
+    const first = await frame.locator('[data-id="hero"] .rot-slide.on').getAttribute("data-slide");
+    const ok = await frame.locator('[data-id="hero"] img').evaluateAll((imgs) => imgs.length === 2 && imgs.every((i) => i.complete && i.naturalWidth > 0));
+    assert(ok, "both slides' pictures loaded");
+    assert(await frame.locator('[data-id="logo"].has-img img').count() === 1, "the logo is the picture");
+    let next = first;
+    for (let i = 0; i < 12 && next === first; i++) { await admin.waitForTimeout(500); next = await frame.locator('[data-id="hero"] .rot-slide.on').getAttribute("data-slide"); }
+    assert(first !== next && ["0", "1"].includes(next), `slides ${first} then ${next} within 6 seconds`);
+  });
+
+  await check("Pictures: a missing one is a problem; one the draft uses can't be removed; an unused one can", async () => {
+    await admin.fill("#layout-json", JSON.stringify({ format: 1, orientation: "portrait", grid: { cols: 12, rows: 24 }, blocks: [
+      { id: "p", type: "photo", at: { col: 1, row: 1, w: 12, h: 8 }, content: { image: "img:maple-bacon" } }] }));
+    await admin.click("#layout-check"); await admin.waitForTimeout(800);   // clean, so kept as the draft
+    await admin.fill("#layout-json", JSON.stringify({ format: 1, orientation: "portrait", grid: { cols: 12, rows: 24 }, blocks: [
+      { id: "p", type: "photo", at: { col: 1, row: 1, w: 12, h: 8 }, content: { image: "img:maple-bacon" } },
+      { id: "q", type: "photo", at: { col: 1, row: 9, w: 12, h: 8 }, content: { image: "img:not-here" } }] }));
+    await admin.click("#layout-check"); await admin.waitForTimeout(800);
+    assert((await admin.textContent("#layout-results")).includes(`There's no picture "not-here"`), await admin.textContent("#layout-results"));
+    const ids = Object.fromEntries((await sb("layout_images?select=id,key")).data.map((r) => [r.key, r.id]));
+    await admin.click(`[data-pic-delete="${ids["maple-bacon"]}"]`); await admin.waitForTimeout(1000);
+    assert((await sb("layout_images?select=id")).data.length === 2, "the one in the draft stays");
+    await admin.click(`[data-pic-delete="${ids["shop-front"]}"]`); await admin.waitForTimeout(1000);
+    const left = (await sb("layout_images?select=key")).data.map((r) => r.key);
+    assert(left.length === 1 && left[0] === "maple-bacon", JSON.stringify(left));
+    await admin.fill("#layout-json", JSON.stringify(DOC, null, 2)); await admin.click("#layout-check"); await admin.waitForTimeout(600);
   });
 
   await check("Layouts tab: a layout a screen shows can't be removed, in plain words", async () => {

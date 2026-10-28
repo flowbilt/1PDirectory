@@ -42,6 +42,8 @@ const RADII = { none: 0, s: 8, m: 18, l: 30, round: 9999 };
 const PADS = { none: 0, s: 12, m: 24, l: 40 };
 export const TAGS = { "sold-out": "Sold out", seasonal: "Seasonal", new: "New", limited: "Limited", favorite: "Favorite" };
 
+/** Where a cropped picture keeps its subject. */
+const FOCUS = ["center", "top", "bottom", "left", "right"];
 /** Block types and the content each may carry: [name, kind, max length or count]. */
 const ITEM = { name: ["text", 80], line: ["text", 160], price: ["text", 16], tags: ["tags"] };
 const SESSION = { days: ["days"], from: ["time"], to: ["time"], name: ["text", 60], line: ["text", 120] };
@@ -50,8 +52,11 @@ export const TYPES = {
   items:     { heading: ["text", 60], price: ["text", 24], columns: ["int", 1, 3], leaders: ["bool"], items: ["list", 60, ITEM] },
   chips:     { heading: ["text", 60], items: ["list", 40, { name: ["text", 40], tags: ["tags"] }] },
   price:     { label: ["text", 20], price: ["text", 16], note: ["text", 30] },
-  photo:     { image: ["image"], alt: ["text", 120], caption: ["text", 80], line: ["text", 120], price: ["text", 16] },
+  photo:     { image: ["image"], alt: ["text", 120], caption: ["text", 80], line: ["text", 120], price: ["text", 16], fit: ["enum", ["cover", "contain"]], focus: ["enum", FOCUS] },
   logo:      { image: ["image"], text: ["text", 60] },
+  // E1b: several pictures taking turns, each with its own caption, line and price
+  rotator:   { seconds: ["int", 4, 60], fit: ["enum", ["cover", "contain"]], focus: ["enum", FOCUS],
+               items: ["list", 12, { image: ["image"], alt: ["text", 120], caption: ["text", 80], line: ["text", 120], price: ["text", 16] }] },
   clock:     { show: ["enum", ["time", "date", "both"]] },
   weather:   { label: ["text", 30] },
   hours:     { heading: ["text", 40], hours: ["list", 14, { days: ["days"], open: ["time"], close: ["time"] }], note: ["text", 80] },
@@ -71,7 +76,7 @@ const ID_RE = /^[a-z0-9][a-z0-9-]{0,39}$/;
 const HEX_RE = /^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/;
 const TIME_RE = /^([01]\d|2[0-4]):([0-5]\d)$/;
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
-const IMAGE_RE = /^img:[a-z0-9-]{1,80}$/;   // E1b: an image record; E1a has no pictures, so a photo shows its caption on a panel
+const IMAGE_RE = /^img:[a-z0-9][a-z0-9-]{0,59}$/;   // E1b: a picture's key in the layout's account (console → Layouts → Pictures)
 
 const isObj = (v) => v && typeof v === "object" && !Array.isArray(v);
 
@@ -112,7 +117,7 @@ export function checkLayout(input) {
   // Theme
   const th = isObj(input.theme) ? input.theme : {};
   if (input.theme !== undefined && !isObj(input.theme)) err("theme", "\"theme\" is { \"palette\": { … }, \"fonts\": { … } }.");
-  else if (isObj(input.theme)) known(th, ["palette", "fonts"], "theme");
+  else if (isObj(input.theme)) known(th, ["palette", "fonts", "background"], "theme");
   const palette = { ...DEFAULT_PALETTE };
   if (th.palette !== undefined) {
     if (!isObj(th.palette)) err("theme.palette", "The palette is { \"bg\": \"#ffffff\", \"ink\": \"#1b1f24\", … }.");
@@ -161,7 +166,18 @@ export function checkLayout(input) {
     blocks.push({ id: b.id, type: b.type, at: pos, layer, style, content, when, on: b.on !== false, label: typeof b.label === "string" ? b.label.slice(0, 60) : "" });
   });
 
-  const doc = { format: FORMAT, orientation, grid, viewing, theme: { palette, fonts }, blocks };
+  // E1b: a background picture behind the whole layout, dimmed by the palette's bg colour (0 to 90%)
+  let background = null;
+  if (th.background !== undefined) {
+    if (!isObj(th.background)) err("theme.background", "The background is { \"image\": \"img:…\", \"dim\": 60 }.");
+    else {
+      known(th.background, ["image", "dim"], "theme.background");
+      const image = checkValue(["image"], th.background.image, "theme.background", "image", err);
+      const dim = th.background.dim === undefined ? 60 : checkValue(["int", 0, 90], th.background.dim, "theme.background", "dim", err);
+      if (image) background = { image, dim: dim ?? 60 };
+    }
+  }
+  const doc = { format: FORMAT, orientation, grid, viewing, theme: { palette, fonts, ...(background ? { background } : {}) }, blocks };
   if (!errors.length) guardrails(doc, warn);
   return { errors, warnings, doc };
 }
@@ -200,7 +216,7 @@ function checkValue(rule, v, where, label, err) {
     case "tags":
       if (!Array.isArray(v) || v.some((t) => !TAGS[t])) { err(where, `${label} are from: ${Object.keys(TAGS).join(", ")}.`); return undefined; }
       return [...new Set(v)];
-    case "image": return typeof v === "string" && IMAGE_RE.test(v) ? v : (err(where, `${label} is a picture's id (pictures come with the next round).`), undefined);
+    case "image": return typeof v === "string" && IMAGE_RE.test(v) ? v : (err(where, `${label} is a picture's key, like "img:maple-bacon" (Layouts → Pictures shows each one's key).`), undefined);
     case "strings":
       if (!Array.isArray(v) || v.length > a || v.some((s) => typeof s !== "string" || s.length > b)) { err(where, `${label} is a list of up to ${a} short texts (${b} characters each).`); return undefined; }
       return v;
@@ -282,7 +298,7 @@ function smallestShare(b) {
     case "items": return (c.items || []).some((i) => (i.tags || []).length) ? 0.55 : (c.items || []).some((i) => i.line) ? 0.62 : 1;
     case "chips": return 0.8;
     case "price": return c.note ? 0.35 : c.label ? 0.4 : 1;
-    case "photo": return c.line ? 0.55 : 1;
+    case "photo": case "rotator": return c.line || (c.items || []).some((i) => i.line) ? 0.55 : 1;
     case "logo": return 1;
     case "clock": return (c.show || "both") === "both" ? 0.4 : 0.5;
     case "weather": return c.label ? 0.4 : 0.45;
@@ -295,11 +311,15 @@ function smallestShare(b) {
 /** Whether two blocks ever show at the same moment (each day of the week, every 15 minutes; date ranges left aside). */
 function everTogether(a, b) {
   if (!a.when?.length || !b.when?.length) return true;
-  for (let dow = 1; dow <= 7; dow++) for (let m = 0; m < 1440; m += 15) {
-    const hm = `${String(Math.floor(m / 60)).padStart(2, "0")}:${String(m % 60).padStart(2, "0")}`;
-    const at = { dow, hm, date: "" };
-    const on = (x) => x.when.some((w) => inSchedule({ ...w, dates: undefined }, at));
-    if (on(a) && on(b)) return true;
+  // E1b: two entries whose date ranges never meet are never on together (a fall box and the box that follows it)
+  const apart = (x, y) => x.dates && y.dates && ((x.dates.to && y.dates.from && x.dates.to < y.dates.from) || (y.dates.to && x.dates.from && y.dates.to < x.dates.from));
+  for (const wa of a.when) for (const wb of b.when) {
+    if (apart(wa, wb)) continue;
+    for (let dow = 1; dow <= 7; dow++) for (let m = 0; m < 1440; m += 15) {
+      const hm = `${String(Math.floor(m / 60)).padStart(2, "0")}:${String(m % 60).padStart(2, "0")}`;
+      const at = { dow, hm, date: "" };
+      if (inSchedule({ ...wa, dates: undefined }, at) && inSchedule({ ...wb, dates: undefined }, at)) return true;
+    }
   }
   return false;
 }
@@ -315,6 +335,15 @@ function guardrails(doc, warn) {
     if (c < (large ? 3 : 4.5)) warn(where, `Its text is hard to read on its background (contrast ${c.toFixed(1)}:1; at least ${large ? 3 : 4.5}:1 is needed).`, "contrast");
     const smallest = size * smallestShare(b) * perPx;
     if (smallest < need) warn(where, `Its smallest text is about ${smallest.toFixed(0)} mm tall on a ${inches}" screen; from ${metres} m away it should be at least ${need.toFixed(0)} mm. Use a larger size.`, "small");
+  }
+  // E1b: text standing straight on a picture, with no band behind it, can't be read reliably whatever its colour
+  const PICTURE = new Set(["photo", "rotator"]), BANDED = new Set(["photo", "rotator", "logo", "price"]);
+  const overlaps = (a, b) => a.col < b.col + b.w && b.col < a.col + a.w && a.row < b.row + b.h && b.row < a.row + a.h;
+  for (const b of doc.blocks) {
+    if (BANDED.has(b.type) || (b.style.surface && b.style.surface !== "none")) continue;
+    const under = doc.blocks.find((x) => x !== b && PICTURE.has(x.type) && x.layer <= b.layer && overlaps(x.at, b.at) && everTogether(x, b));
+    if (under) warn(`block "${b.id}"`, `Its text sits straight on the picture "${under.id}". Give it a surface (a band behind the text), or move it off the picture.`, "photo");
+    else if (doc.theme.background && doc.theme.background.dim < 60) warn(`block "${b.id}"`, `Its text sits on the background picture, dimmed only ${doc.theme.background.dim}%. Dim it 60% or more, or give the block a surface.`, "photo");
   }
   // Blocks on the same layer that overlap (put one on a higher layer if it's meant to sit on top)
   const bs = doc.blocks;

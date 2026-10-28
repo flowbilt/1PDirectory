@@ -64,3 +64,19 @@
   [headers.values]
     X-Frame-Options = "DENY"
     Cache-Control = "no-store"
+
+# Pictures (DP-11, E1b): a layout's pictures live in Supabase Storage (the public "layout-images" bucket, made by
+# supabase/30-layout-images.sql) and are served through this site at /img/<account>/<key>-<random>.webp, so screens and
+# the console only ever see this site's address. A picture's file never changes once uploaded (a new upload is a new
+# file), so it's cached for a year: by the browser here, and by each screen's offline cache (sw.js), which fetches it once.
+# The address below is the project's public URL (the same one /api/config gives every browser); no key is involved.
+[[redirects]]
+  from = "/img/*"
+  to = "https://pconzpqfqyduxtismnxz.supabase.co/storage/v1/object/public/layout-images/:splat"
+  status = 200
+  force = true
+
+[[headers]]
+  for = "/img/*"
+  [headers.values]
+    Cache-Control = "public, max-age=31536000, immutable"

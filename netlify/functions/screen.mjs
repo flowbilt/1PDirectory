@@ -152,15 +152,27 @@ export function toPayload(screen, dir, prop, tenants) {
   };
 }
 
+/** A layout's pictures (E1b; supabase/30-layout-images.sql): key -> { url, w, h }, served from the site's own /img/. */
+export function cleanImages(images) {
+  const out = {};
+  for (const [k, v] of Object.entries(images && typeof images === "object" ? images : {})) {
+    if (!/^[a-z0-9][a-z0-9-]{0,59}$/.test(k) || !/^[0-9a-f-]{36}\/[a-z0-9-]{1,80}\.(webp|jpg|png)$/.test(String(v?.path || ""))) continue;
+    out[k] = { url: `/img/${v.path}`, w: Number(v.w) || 0, h: Number(v.h) || 0 };
+  }
+  return out;
+}
+
 /** A screen that shows a layout (DP-11, round E1a; supabase/29-layout-engine.sql): the layout's published version, and
  *  from the screen's building only what a layout uses (time zone, weather point, name and address). */
-export function toLayoutPayload(screen, layout, prop) {
+export function toLayoutPayload(screen, layout, prop, images) {
   return {
     kind: "layout",
     key: screen.key,
     screenName: screen.name,
     orientation: screen.orientation || "auto",
     layout: { id: layout?.id || null, name: layout?.name || "", version: layout?.version ?? null, doc: layout?.doc || null },
+    // E1b: the pictures it uses, key -> where the site serves it (/img/, a pass-through to the storage bucket) and its size
+    images: cleanImages(images),
     propertyName: prop?.name || "",
     address: prop?.address || "",
     timezone: prop?.timezone || "America/Chicago",
@@ -190,7 +202,7 @@ export default async (req) => {
     if (r?.missing) return send({ error: `No screen named "${key}".` }, 404);
     const etag = `"${TAG}-${r.etag}"`;
     if (r.not_modified) return new Response(null, { status: 304, headers: { ...HEADERS, ETag: etag } });
-    if (r.kind === "layout") return send(toLayoutPayload(r.screen, r.layout, r.prop), 200, etag);
+    if (r.kind === "layout") return send(toLayoutPayload(r.screen, r.layout, r.prop, r.images), 200, etag);
     return send(toPayload(r.screen, r.dir, r.prop, r.tenants), 200, etag);
   } catch (e) {
     return send({ error: e.message }, e.status && e.status < 500 ? e.status : 502);

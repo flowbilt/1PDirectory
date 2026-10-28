@@ -8,8 +8,15 @@
 //   POST { action: "publish",  layout_id, doc, note?, override?, overflow? }
 //        -> { version }; 400 with errors; 409 with the warnings unless override (1Point publishing anyway)
 //   POST { action: "rollback", layout_id, version }          -> { version } (the old version published again as a new one)
+// Pictures (E1b; supabase/30-layout-images.sql), per account:
+//   POST { action: "upload", org_id, name, data }            -> { picture } (data: a WebP, JPEG or PNG data URL, already
+//        shrunk by the console; its key comes from the name and is fixed: "Maple Bacon" -> img:maple-bacon)
+//   POST { action: "delete_image", id }                      -> { ok } (refused while any draft or kept version uses it)
+// Check, preview and publish also check that every picture a layout says exists in its account.
 import { checkLayout } from "../../public/layout-format.mjs";
-import { db, rpc, caller, enc } from "../lib/sb.mjs";
+import { db, rpc, caller, enc, storagePut, storageRemove } from "../lib/sb.mjs";
+import { readPicture, pictureKey, pictureKeys } from "../lib/images.mjs";
+import { randomUUID } from "node:crypto";
 import { toLayoutPayload } from "./screen.mjs";
 
 const json = (obj, status = 200) => new Response(JSON.stringify(obj), { status, headers: { "Content-Type": "application/json; charset=utf-8", "Cache-Control": "no-store" } });
@@ -31,6 +38,18 @@ function overflowWarnings(list) {
     .map((id) => ({ where: `block "${id}"`, msg: "Its text doesn't fit its box even at the smallest size allowed (seen in the preview). Make the box bigger or the text shorter.", kind: "overflow" }));
 }
 
+export const BUCKET = "layout-images";
+
+/** The account's pictures a layout says, as key -> {path, w, h}; and the keys it says that the account doesn't have. */
+async function picturesFor(orgId, doc) {
+  const keys = pictureKeys(doc);
+  if (!keys.length || !orgId) return { images: {}, missing: orgId ? [] : keys };
+  const rows = await db(`layout_images?org_id=eq.${enc(orgId)}&key=in.(${keys.map(enc).join(",")})&select=key,path,width,height`);
+  const images = Object.fromEntries(rows.map((r) => [r.key, { path: r.path, w: r.width, h: r.height }]));
+  return { images, missing: keys.filter((k) => !images[k]) };
+}
+const missingErrors = (missing) => missing.map((k) => ({ where: `picture "img:${k}"`, msg: `There's no picture "${k}" in this account. Upload it under Pictures, or fix the name.` }));
+
 async function loadLayout(id) {
   if (!/^[0-9a-f-]{36}$/.test(String(id || ""))) throw fail(400, "Choose a layout.");
   const [l] = await db(`layouts?id=eq.${enc(id)}&select=id,org_id,name,orientation,published_version`);
@@ -51,6 +70,8 @@ export default async (req) => {
       const layout = body.layout_id ? await loadLayout(body.layout_id) : null;
       if (layout && clean && clean.orientation && clean.orientation !== layout.orientation)
         errors.push({ where: "orientation", msg: `This layout is ${layout.orientation}, so "orientation" must be "${layout.orientation}".` });
+      const pics = layout && clean ? await picturesFor(layout.org_id, doc) : { images: {}, missing: [] };
+      errors.push(...missingErrors(pics.missing));
 
       if (body.action === "check") {
         if (layout && !errors.length) await db(`layouts?id=eq.${enc(layout.id)}`, { method: "PATCH", prefer: "return=minimal", body: { draft: doc, updated_by: user.id } });
@@ -65,7 +86,7 @@ export default async (req) => {
         }
         const payload = errors.length ? null : toLayoutPayload(
           { key: "preview", name: "Preview", orientation: clean.orientation, hide_powered_by: false, touch: false, screen_inches: clean.viewing.inches, touch_idle_s: 45 },
-          { id: layout?.id || null, name: layout?.name || "Preview", version: null, doc }, prop);
+          { id: layout?.id || null, name: layout?.name || "Preview", version: null, doc }, prop, pics.images);
         return json({ errors, warnings, payload });
       }
 
@@ -85,6 +106,35 @@ export default async (req) => {
       if (!Number.isInteger(v) || v < 1) throw fail(400, "Choose a version.");
       const version = await rpc("layout_rollback", { p_layout: layout.id, p_version: v, p_by: user.id });
       return json({ version });
+    }
+
+    if (body.action === "upload") {
+      if (!/^[0-9a-f-]{36}$/.test(String(body.org_id || ""))) throw fail(400, "Choose the account the picture belongs to.");
+      const [org] = await db(`organizations?id=eq.${enc(body.org_id)}&select=id`);
+      if (!org) throw fail(404, "No such account.");
+      const pic = readPicture(body.data);
+      if (pic.error) throw fail(400, pic.error);
+      const name = String(body.name || "").trim().slice(0, 80);
+      let key = pictureKey(body.key || name);
+      if (!key) throw fail(400, "Give the picture a name (letters or numbers), e.g. Maple Bacon.");
+      // A key is fixed once made and unique in the account: a second "Maple Bacon" becomes maple-bacon-2
+      const taken = new Set((await db(`layout_images?org_id=eq.${enc(org.id)}&key=like.${enc(key)}*&select=key`)).map((r) => r.key));
+      if (taken.has(key)) { let n = 2; while (taken.has(`${key.slice(0, 56)}-${n}`)) n++; key = `${key.slice(0, 56)}-${n}`; }
+      const path = `${org.id}/${key}-${randomUUID().slice(0, 8)}.${pic.ext}`;   // a new file every time: never overwritten
+      await storagePut(BUCKET, path, pic.bytes, pic.mime);
+      let row;
+      try {
+        [row] = await db("layout_images", { method: "POST", prefer: "return=representation",
+          body: { org_id: org.id, key, name: name || key, path, mime: pic.mime, width: pic.width, height: pic.height, bytes: pic.bytes.length, created_by: user.id } });
+      } catch (e) { await storageRemove(BUCKET, [path]).catch(() => {}); throw e; }
+      return json({ picture: { id: row.id, key: row.key, name: row.name, url: `/img/${row.path}`, width: row.width, height: row.height, bytes: row.bytes } });
+    }
+
+    if (body.action === "delete_image") {
+      if (!/^[0-9a-f-]{36}$/.test(String(body.id || ""))) throw fail(400, "Choose a picture.");
+      const path = await rpc("layout_image_delete", { p_id: body.id });   // refuses, in plain words, while anything uses it
+      await storageRemove(BUCKET, [path]).catch(() => {});                 // the row is gone; a stray file harms nothing
+      return json({ ok: true });
     }
 
     throw fail(400, "Unknown action.");

@@ -275,3 +275,15 @@ td.thumb { width: 96px; padding: 6px 8px; }
 .layout-frame.portrait { aspect-ratio: 9 / 16; }
 .layout-frame.landscape { aspect-ratio: 16 / 9; }
 @media (max-width: 1000px) { .layout-work { grid-template-columns: 1fr; } .layout-preview-col { position: static; max-width: 420px; } }
+
+/* Pictures (E1b; console Layouts tab) */
+.pics-head { display: flex; justify-content: space-between; align-items: flex-end; gap: 12px; flex-wrap: wrap; }
+.pics-upload { cursor: pointer; display: inline-flex; align-items: center; padding: 8px 14px; border-radius: 8px; }
+.pics-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 12px; margin-top: 10px; }
+.pic { border: 1px solid var(--line); border-radius: 10px; overflow: hidden; background: var(--panel); display: flex; flex-direction: column; }
+.pic img { width: 100%; aspect-ratio: 4 / 3; object-fit: cover; background: #eee; display: block; }
+.pic-body { padding: 8px 10px; font-size: 13px; display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.pic-name { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pic-key { font: 12px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pic-actions { display: flex; gap: 6px; padding: 0 10px 10px; flex-wrap: wrap; }
+.pic-actions button { font-size: 12px; padding: 4px 8px; }

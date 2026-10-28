@@ -16,7 +16,8 @@ const CODE_ALPHA = "ABCDEFGHJKMNPQRSTUVWXYZ23456789";
 const newCode = () => Array.from({ length: 6 }, () => CODE_ALPHA[Math.floor(Math.random() * CODE_ALPHA.length)]).join("");
 
 export function createFake() {
-  const T = { organizations: [], profiles: [], properties: [], directories: [], tenants: [], screens: [], audit_log: [], devices: [], device_commands: [], device_daily: [], wifi_networks: [], prepare_codes: [], alert_recipients: [], mail_settings: [], togo_scans: [], companies: [], people: [], layouts: [], layout_versions: [] };
+  const T = { organizations: [], profiles: [], properties: [], directories: [], tenants: [], screens: [], audit_log: [], devices: [], device_commands: [], device_daily: [], wifi_networks: [], prepare_codes: [], alert_recipients: [], mail_settings: [], togo_scans: [], companies: [], people: [], layouts: [], layout_versions: [], layout_images: [] };
+  const storage = new Map();   // bucket/path -> { bytes, mime, cacheControl } (E1b)
   const SERVICE_ONLY = new Set(["togo_scans", "devices", "device_commands", "device_daily", "wifi_networks", "prepare_codes", "alert_recipients", "mail_settings"]); // row-level security on, no policies: server key only
   // Columns of screens signed-in users may read (supabase/06-trust.sql, plus sizes from 18 and no_cec from 21). hardware is server-only.
   const SCREEN_COLS = new Set(["id", "directory_id", "key", "name", "location_note", "orientation", "last_seen", "last_report", "identify_until", "created_at", "sizes", "no_cec", "hide_powered_by", "touch", "screen_inches", "touch_idle_s", "layout_id", "property_id"]);
@@ -98,6 +99,7 @@ export function createFake() {
       case "screens": return dirOrg(row.directory_id) === me.org_id || (!!row.property_id && propOrg(row.property_id) === me.org_id);   // 29
       case "layouts": return row.org_id === me.org_id;                   // 29-layout-engine.sql
       case "layout_versions": return layoutOrg(row.layout_id) === me.org_id;
+      case "layout_images": return row.org_id === me.org_id;            // 30-layout-images.sql
       case "companies": return companyOrg(row.id) === me.org_id;
       case "people": return companyOrg(row.company_id) === me.org_id;
       default: return false;
@@ -107,7 +109,8 @@ export function createFake() {
     if (who.service) return true;
     if (SERVICE_ONLY.has(table)) return false;
     const me = who.profile; if (!me) return false;
-    if (me.role === "platform_admin") return table !== "profiles" && table !== "audit_log" && table !== "layout_versions";   // versions: the site only
+    if (me.role === "platform_admin") return table !== "profiles" && table !== "audit_log" && table !== "layout_versions"   // versions: the site only
+      && !(table === "layout_images" && op !== "update");                // pictures: added and removed by the site only (30)
     if (table === "tenants") return dirOrg(row.directory_id) === me.org_id;
     if (table === "people") return companyOrg(row.company_id) === me.org_id;            // 26-people.sql
     if (op === "update" && table === "companies") return companyOrg(row.id) === me.org_id; // no insert: the tenant list makes them
@@ -145,7 +148,7 @@ export function createFake() {
     const f = [];
     for (const [k, v] of params) {
       if (["select", "order", "limit", "offset", "on_conflict"].includes(k)) continue;
-      const m = v.match(/^(not\.)?(eq|neq|in|is|ilike|lt|gt|lte|gte)\.(.*)$/s);
+      const m = v.match(/^(not\.)?(eq|neq|in|is|ilike|like|lt|gt|lte|gte)\.(.*)$/s);
       if (!m) continue;
       const [, neg, op, raw] = m;
       let test;
@@ -156,6 +159,7 @@ export function createFake() {
       else if (op === "lte") test = (x) => x != null && String(x) <= raw;
       else if (op === "gte") test = (x) => x != null && String(x) >= raw;
       else if (op === "is") test = (x) => (raw === "null" ? x == null : String(x) === raw);
+      else if (op === "like") { const re = new RegExp("^" + raw.replace(/[.+?^${}()|[\]\\]/g, "\\$&").replace(/\*/g, ".*") + "$"); test = (x) => re.test(String(x ?? "")); }
       else if (op === "ilike") { const re = new RegExp("^" + raw.replace(/[.+?^${}()|[\]\\]/g, "\\$&").replace(/\*/g, ".*") + "$", "i"); test = (x) => re.test(String(x ?? "")); }
       else { const list = raw.replace(/^\(|\)$/g, "").split(",").map((s) => s.replace(/^"|"$/g, "")); test = (x) => list.includes(String(x)); }
       f.push((row) => (neg ? !test(row[k]) : test(row[k])));
@@ -174,6 +178,7 @@ export function createFake() {
     tenants: () => ({ id: randomUUID(), sort: 0, suite: "", arrow: "", note: "", company_id: null }),
     companies: () => ({ id: randomUUID(), show_people: false, show_title: true, show_phone: false, show_email: false, created_at: now(), updated_at: now() }),
     people: () => ({ id: randomUUID(), sort: 0, first_name: "", last_name: "", title: "", phone: "", email: "", suite: "", show: true, created_at: now(), updated_at: now() }),
+    layout_images: () => ({ id: randomUUID(), name: "", created_at: now(), created_by: null }),
     layouts: () => ({ id: randomUUID(), family: "menu", draft: {}, published_version: null, published_at: null, created_at: now(), updated_at: now(), updated_by: null }),
     screens: () => ({ id: randomUUID(), directory_id: null, layout_id: null, property_id: null, location_note: "", orientation: "auto", hardware: {}, last_seen: null, last_report: {}, sizes: {}, no_cec: false, traffic_at: null, hide_powered_by: false, touch: false, screen_inches: null, touch_idle_s: 45, created_at: now() }),
     profiles: () => ({ full_name: "", created_at: now() }),
@@ -223,6 +228,8 @@ export function createFake() {
   }
   function checkRow(table, row, before) {
     if (table === "screens") { const bad = layoutRule(row, before); if (bad) return bad; }
+    if (table === "layout_images" && !before && T.layout_images.some((x) => x.org_id === row.org_id && x.key === row.key)) return "duplicate key value violates unique constraint \"layout_images_org_id_key_key\"";
+    if (table === "layout_images" && !/^[a-z0-9][a-z0-9-]{0,59}$/.test(String(row.key || ""))) return "new row violates check constraint \"layout_images_key_check\"";
     if (table === "layouts" && before && (row.orientation !== before.orientation || row.org_id !== before.org_id)) {
       const n = T.screens.filter((x) => x.layout_id === before.id).length;
       if (n) return `The layout "${before.name}" is shown on ${n} screen(s). Choose something else for those screens first.`;
@@ -303,6 +310,8 @@ export function createFake() {
         const bad = checkRow(table, { ...r, ...body }, r); if (bad) return err(409, bad);
         // 29: signed-in users may not write a layout's draft or its published fields (the site does, after its checks)
         if (table === "layouts" && !who.service && ["draft", "published_version", "published_at"].some((k) => k in body)) return err(403, "permission denied for table layouts");
+        if (table === "layout_images" && !who.service && Object.keys(body).some((k) => k !== "name")) return err(403, "permission denied for table layout_images");
+        if (table === "layout_images" && ["key", "path", "org_id", "mime", "width", "height", "bytes"].some((k) => k in body && body[k] !== r[k])) return err(409, "A picture can't be changed once it's uploaded (only its name). Upload the new picture instead.");
       }
       rows.forEach((r) => {
         const before = { ...r };
@@ -508,6 +517,16 @@ export function createFake() {
       d.togo_code = c; d.updated_at = now();
       return c;
     },
+    // 30-layout-images.sql: a picture is removed only when no draft or kept version of the account's layouts uses it
+    layout_image_delete({ p_id }) {
+      const i = T.layout_images.find((x) => x.id === p_id);
+      if (!i) throw Object.assign(new Error("No such picture."), { status: 404 });
+      const says = (doc) => JSON.stringify(doc || {}).includes(`"img:${i.key}"`);
+      const users = T.layouts.filter((l) => l.org_id === i.org_id && (says(l.draft) || T.layout_versions.some((v) => v.layout_id === l.id && says(v.doc))));
+      if (users.length) throw Object.assign(new Error(`The picture "${i.name || i.key}" is used by ${users.map((l) => l.name).join(", ")}, in its draft or a kept version, so it can't be removed (Roll back needs it).`), { status: 400 });
+      T.layout_images = T.layout_images.filter((x) => x !== i);
+      return i.path;
+    },
     // 29-layout-engine.sql: publish and roll back, the site only (not in USER_FUNCS)
     layout_publish({ p_layout, p_doc, p_checks, p_overridden, p_note, p_by }) {
       const l = T.layouts.find((x) => x.id === p_layout);
@@ -549,6 +568,7 @@ export function createFake() {
         return { etag, kind: "layout",
           screen: { key: s.key, name: s.name, orientation: s.orientation, identify_until: s.identify_until ?? null, hide_powered_by: !!s.hide_powered_by, touch: !!s.touch, screen_inches: s.screen_inches ?? null, touch_idle_s: s.touch_idle_s ?? 45 },
           layout: { id: l.id, name: l.name, orientation: l.orientation, version: lv?.version ?? null, doc: lv ? lv.doc : null },
+          images: lv ? Object.fromEntries(T.layout_images.filter((i) => i.org_id === l.org_id && JSON.stringify(lv.doc).includes(`"img:${i.key}"`)).map((i) => [i.key, { path: i.path, w: i.width, h: i.height }])) : {},
           prop: lp ? { id: lp.id, name: lp.name, address: lp.address, timezone: lp.timezone, lat: lp.lat, lon: lp.lon, updated_at: lp.updated_at } : null };
       }
       const d = s.directory_id ? T.directories.find((x) => x.id === s.directory_id) : null;
@@ -629,10 +649,30 @@ export function createFake() {
     return err(404, "not found");
   }
 
+  // Supabase Storage, as far as the site uses it (E1b): upload with the service key (never overwriting), remove
+  async function storageApi(req, rest) {
+    const who = whoFrom(req);
+    if (!who?.service) return err(403, "new row violates row-level security policy");
+    if (req.method === "POST") {
+      if (storage.has(rest)) return err(409, "The resource already exists");
+      const bytes = new Uint8Array(await req.arrayBuffer());
+      if (bytes.length > 1048576) return err(413, "The object exceeded the maximum allowed size");
+      storage.set(rest, { bytes, mime: req.headers.get("content-type"), cacheControl: req.headers.get("cache-control") });
+      return out({ Key: rest }, 200);
+    }
+    if (req.method === "DELETE") {
+      const { prefixes = [] } = await req.json().catch(() => ({}));
+      for (const p of prefixes) storage.delete(`${rest}/${p}`);
+      return out([]);
+    }
+    return err(405, "Method not allowed");
+  }
+
   async function handle(req) {
     const url = new URL(req.url);
     if (req.method === "OPTIONS") return new Response(null, { status: 204, headers: cors });
     if (url.pathname === "/__outbox") return out(outbox);
+    if (url.pathname.startsWith("/storage/v1/object/")) return storageApi(req, url.pathname.slice(19));
     if (url.pathname.startsWith("/rest/v1/rpc/")) return rpc(req, url.pathname.slice(13));
     if (url.pathname.startsWith("/rest/v1/")) return rest(req, url.pathname.slice(9), url.searchParams);
     if (url.pathname.startsWith("/auth/v1")) return authApi(req, url.pathname.slice(8), url);
@@ -640,5 +680,5 @@ export function createFake() {
   }
 
   seed();
-  return { handle, T, users, outbox, addUser, rpcCalls, restCalls, deviceCredit, setClock: (d) => { clock = d ? new Date(d) : null; } };
+  return { handle, T, storage, users, outbox, addUser, rpcCalls, restCalls, deviceCredit, setClock: (d) => { clock = d ? new Date(d) : null; } };
 }

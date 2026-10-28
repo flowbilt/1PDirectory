@@ -2156,6 +2156,135 @@ test("choosing a layout for a screen: the database's rules, in its words, as the
   assert.equal(rp.status, 403);
 });
 
+// ── Pictures (DP-11, round E1b; supabase/30-layout-images.sql, netlify/lib/images.mjs, the upload and delete actions) ──
+const IMG = await import("../netlify/lib/images.mjs");
+const fxb = (f) => readFileSync(new URL(`./fixtures/${f}`, import.meta.url));
+const dataUrl = (f, mime) => `data:${mime};base64,${fxb(f).toString("base64")}`;
+const COUNTER = JSON.parse(readFileSync(new URL("../layouts/donut-joes-counter-55.json", import.meta.url), "utf8"));
+
+test("pictures are known by their own bytes: WebP (all three kinds), JPEG and PNG, a sensible size, a key from the name", () => {
+  for (const [f, mime] of [["picture.webp", "image/webp"], ["picture-lossless.webp", "image/webp"], ["picture-alpha.webp", "image/webp"], ["picture.jpg", "image/jpeg"], ["picture.png", "image/png"]]) {
+    const s = IMG.sniffImage(fxb(f));
+    assert.deepEqual([s.mime, s.width, s.height], [mime, 320, 200], f);
+    assert.equal(IMG.readPicture(dataUrl(f, mime)).width, 320, `${f} is accepted`);
+  }
+  assert.equal(IMG.sniffImage(Buffer.from("GIF89a" + "x".repeat(40))), null, "a GIF isn't one of them");
+  assert.match(IMG.readPicture("data:image/gif;base64,R0lGODlh").error, /WebP, JPEG or PNG/);
+  assert.match(IMG.readPicture(dataUrl("picture.png", "image/webp")).error, /don't match its type/, "a PNG called WebP");
+  assert.match(IMG.readPicture(dataUrl("picture-tiny.png", "image/png")).error, /8 × 8; each side must be 16 to 4096/);
+  assert.match(IMG.readPicture(`data:image/png;base64,${Buffer.alloc(IMG.MAX_BYTES + 10).toString("base64")}`).error, /at most 1024 KB/);
+  assert.equal(IMG.pictureKey("Maple Bacon.webp"), "maple-bacon");
+  assert.equal(IMG.pictureKey("Worms & Dirt.JPG".toLowerCase()), "worms-and-dirt");
+  assert.equal(IMG.pictureKey("  Jalapeño Smokey Joe!! "), "jalapeno-smokey-joe");
+  assert.equal(IMG.pictureKey("***"), "");
+  const keys = IMG.pictureKeys(COUNTER);
+  assert.ok(keys.includes("donut-joes-logo") && keys.includes("maple-bacon") && keys.includes("strawberry-spark") && keys.includes("gift-cards"));
+  assert.ok(!keys.includes("img:maple-bacon") && new Set(keys).size === keys.length, "keys, once each");
+});
+
+test("the format's pictures: photos (fit, focus), rotators, a dimmed background; text straight on a picture is warned about", () => {
+  const counter = LF.checkLayout(COUNTER);
+  assert.deepEqual([counter.errors, counter.warnings], [[], []], "the Donut Joe's counter board is clean");
+  const base = { format: 1, orientation: "landscape", grid: { cols: 12, rows: 12 }, blocks: [] };
+  const bad = LF.checkLayout({ ...base, blocks: [
+    { id: "p", type: "photo", at: { col: 1, row: 1, w: 4, h: 4 }, content: { image: "maple-bacon", fit: "stretch", focus: "middle" } },
+    { id: "r", type: "rotator", at: { col: 5, row: 1, w: 4, h: 4 }, content: { seconds: 2, items: [] } },
+    { id: "r2", type: "rotator", at: { col: 9, row: 1, w: 3, h: 4 }, content: { items: Array.from({ length: 13 }, () => ({ image: "img:a" })) } }] });
+  const said = bad.errors.map((e) => e.msg).join("\n");
+  for (const w of [/img:/, /fit/, /focus/, /seconds/, /at most 12/]) assert.match(said, w);
+  const onPhoto = LF.checkLayout({ ...base, blocks: [
+    { id: "pic", type: "photo", at: { col: 1, row: 1, w: 6, h: 6 }, content: { image: "img:maple-bacon" } },
+    { id: "words", type: "text", at: { col: 2, row: 2, w: 3, h: 2 }, layer: 1, style: { size: "l" }, content: { title: "Hello" } },
+    { id: "band", type: "text", at: { col: 2, row: 4, w: 3, h: 2 }, layer: 1, style: { size: "l", surface: "panel" }, content: { title: "Hello" } }] });
+  assert.ok(onPhoto.warnings.some((w) => w.kind === "photo" && /"words"/.test(w.where)), "text straight on the picture");
+  assert.ok(!onPhoto.warnings.some((w) => /"band"/.test(w.where)), "text on a band is fine");
+  const bg = (dim) => LF.checkLayout({ ...base, theme: { background: { image: "img:shop", dim } }, blocks: [{ id: "t", type: "text", at: { col: 1, row: 1, w: 8, h: 2 }, style: { size: "xl" }, content: { title: "Hi" } }] });
+  assert.ok(bg(30).warnings.some((w) => w.kind === "photo" && /dimmed only 30%/.test(w.msg)));
+  assert.ok(!bg(70).warnings.some((w) => w.kind === "photo"));
+  assert.equal(bg(undefined).doc.theme.background.dim, 60, "dimmed 60% unless said");
+  // blocks in the same place on dates that never meet take turns, so they don't overlap (the fall box, then "Take some home")
+  const turns = (to) => LF.checkLayout({ ...base, blocks: [
+    { id: "a", type: "text", at: { col: 1, row: 1, w: 4, h: 2 }, style: { size: "l" }, content: { title: "Fall" }, when: { dates: { from: "2026-09-15", to } } },
+    { id: "b", type: "text", at: { col: 1, row: 1, w: 4, h: 2 }, style: { size: "l" }, content: { title: "Winter" }, when: { dates: { from: "2026-12-01" } } }] });
+  assert.ok(!turns("2026-11-30").warnings.some((w) => w.kind === "overlap"));
+  assert.ok(turns("2026-12-05").warnings.some((w) => w.kind === "overlap"), "dates that meet do overlap");
+});
+
+test("uploading pictures: 1Point only, a new file every time (never overwritten), a key fixed once made, cached for a year", async () => {
+  const admin = await login("scot@1pointusa.com", "admin-pass"), owner = await login("leighann@barber.test", "owner-pass");
+  const org = fake.T.organizations.find((o) => /Barber/.test(o.name));
+  const up = (body, token = admin) => lcall({ action: "upload", org_id: org.id, ...body }, token);
+  assert.equal((await up({ name: "Maple Bacon", data: dataUrl("picture.webp", "image/webp") }, owner)).status, 403);
+  assert.equal((await up({ name: "Maple Bacon", data: dataUrl("picture.webp", "image/webp") }, null)).status, 401);
+  let r = await up({ name: "Maple Bacon", data: dataUrl("picture.webp", "image/webp") });
+  assert.equal(r.status, 200);
+  const a = (await r.json()).picture;
+  assert.equal(a.key, "maple-bacon"); assert.match(a.url, new RegExp(`^/img/${org.id}/maple-bacon-[0-9a-f]{8}\\.webp$`));
+  assert.deepEqual([a.width, a.height], [320, 200]);
+  const stored = fake.storage.get(`layout-images/${a.url.slice(5)}`);
+  assert.ok(stored && stored.mime === "image/webp" && /max-age=31536000/.test(stored.cacheControl), "stored, cached a year");
+  r = await up({ name: "Maple Bacon", data: dataUrl("picture.jpg", "image/jpeg") });
+  const b = (await r.json()).picture;
+  assert.equal(b.key, "maple-bacon-2", "a second Maple Bacon gets its own key"); assert.notEqual(b.url, a.url); assert.match(b.url, /\.jpg$/);
+  assert.ok(fake.storage.has(`layout-images/${a.url.slice(5)}`), "the first file is untouched");
+  r = await up({ name: "Logo", data: dataUrl("picture-tiny.png", "image/png") });
+  assert.equal(r.status, 400); assert.match((await r.json()).error, /each side must be 16 to 4096/);
+  r = await up({ name: "!!!", data: dataUrl("picture.png", "image/png") });
+  assert.equal(r.status, 400); assert.match((await r.json()).error, /Give the picture a name/);
+  r = await lcall({ action: "upload", org_id: crypto.randomUUID(), name: "x", data: dataUrl("picture.png", "image/png") }, admin);
+  assert.equal(r.status, 404);
+  // signed-in users read their own account's pictures and may only rename them (1Point); nobody changes the file
+  const rest = async (path, method, body, token) => { const x = await fake.handle(new Request(`${SB}/rest/v1/${path}`, { method, body: body && JSON.stringify(body), headers: { apikey: ANON_KEY, Authorization: `Bearer ${token}`, "Content-Type": "application/json", Prefer: "return=representation" } })); return { status: x.status, data: x.status === 204 ? null : await x.json() }; };
+  assert.equal((await rest(`layout_images?select=key&org_id=eq.${org.id}`, "GET", null, owner)).data.length, 2, "the owner sees the account's pictures");
+  const otherOrg = fake.T.organizations.find((o) => o.id !== org.id);
+  if (![...fake.users.values()].some((u) => u.email === "stranger@other.test")) fake.addUser("stranger@other.test", "stranger-pass", "org_admin", otherOrg.id, "Stranger");
+  const stranger = await login("stranger@other.test", "stranger-pass");
+  assert.equal((await rest(`layout_images?select=key&org_id=eq.${org.id}`, "GET", null, stranger)).data.length, 0, "a stranger sees none");
+  assert.equal((await rest(`layout_images?id=eq.${a.id}`, "PATCH", { name: "Maple Bacon (box)" }, admin)).status, 200);
+  assert.equal((await rest(`layout_images?id=eq.${a.id}`, "PATCH", { path: "x/y.webp" }, admin)).status, 403, "the file can't be swapped");
+  assert.equal((await rest(`layout_images?id=eq.${a.id}`, "PATCH", { name: "mine" }, owner)).status, 403, "1Point names them");
+  const sql = readFileSync(new URL("../supabase/30-layout-images.sql", import.meta.url), "utf8");
+  assert.ok(sql.includes("1048576") && sql.includes("'image/webp'") && sql.includes("grant update (name)"), "30: the bucket's limit and types; only the name changes");
+});
+
+test("a layout's pictures: missing ones are problems, the screen gets each one's address, and one in use can't be removed", async () => {
+  const admin = await login("scot@1pointusa.com", "admin-pass");
+  const org = fake.T.organizations.find((o) => /Barber/.test(o.name));
+  const pic = fake.T.layout_images.find((i) => i.org_id === org.id && i.key === "maple-bacon");
+  const l = { id: crypto.randomUUID(), org_id: org.id, name: "Pictures test", family: "menu", orientation: "landscape", draft: {}, published_version: null, published_at: null, created_at: new Date().toISOString(), updated_at: new Date().toISOString() };
+  fake.T.layouts.push(l);
+  const doc = { format: 1, orientation: "landscape", grid: { cols: 12, rows: 12 }, blocks: [
+    { id: "hero", type: "rotator", at: { col: 1, row: 1, w: 6, h: 8 }, content: { items: [{ image: "img:maple-bacon", caption: "Maple Bacon", price: "$1.89" }, { image: "img:not-uploaded" }] } },
+    { id: "t", type: "text", at: { col: 7, row: 1, w: 6, h: 3 }, style: { size: "xl" }, content: { title: "Donuts" } }] };
+  let r = await lcall({ action: "check", layout_id: l.id, doc }, admin);
+  let j = await r.json();
+  assert.deepEqual(j.errors.map((e) => e.where), ['picture "img:not-uploaded"']); assert.match(j.errors[0].msg, /Upload it under Pictures, or fix the name/);
+  r = await lcall({ action: "publish", layout_id: l.id, doc }, admin);
+  assert.equal(r.status, 400, "can't publish with a picture missing");
+  doc.blocks[0].content.items.pop();
+  r = await lcall({ action: "preview", layout_id: l.id, doc, property_id: fake.T.properties.find((p) => p.org_id === org.id).id }, admin);
+  j = await r.json();
+  assert.deepEqual(j.payload.images, { "maple-bacon": { url: `/img/${pic.path}`, w: 320, h: 200 } }, "the preview has the picture");
+  r = await lcall({ action: "publish", layout_id: l.id, doc }, admin);
+  assert.equal((await r.json()).version, 1);
+  const scr = fake.T.screens.find((x) => x.orientation === "landscape");
+  const keep = { directory_id: scr.directory_id, layout_id: scr.layout_id ?? null, property_id: scr.property_id ?? null };
+  try {
+    Object.assign(scr, { directory_id: null, layout_id: l.id, property_id: fake.T.properties.find((p) => p.org_id === org.id).id });
+    const d = await (await screen(req(`/api/screen?key=${scr.key}`))).json();
+    assert.deepEqual(d.images, { "maple-bacon": { url: `/img/${pic.path}`, w: 320, h: 200 } }, "the screen gets only what the layout uses, by address");
+    assert.ok(!JSON.stringify(d.images).includes("org_id") && !JSON.stringify(d.images).includes("supabase"), "no storage details");
+  } finally { Object.assign(scr, keep); }
+  // removing: refused in plain words while a draft or a kept version uses it; the file goes with the row otherwise
+  r = await lcall({ action: "delete_image", id: pic.id }, admin);
+  assert.equal(r.status, 400); assert.match((await r.json()).error, /is used by .*Pictures test.*Roll back needs it/);
+  const spare = fake.T.layout_images.find((i) => i.org_id === org.id && i.key === "maple-bacon-2");
+  r = await lcall({ action: "delete_image", id: spare.id }, admin);
+  assert.equal(r.status, 200);
+  assert.ok(!fake.T.layout_images.includes(spare) && !fake.storage.has(`layout-images/${spare.path}`), "row and file gone");
+  assert.equal((await lcall({ action: "delete_image", id: spare.id }, (await login("leighann@barber.test", "owner-pass")))).status, 403);
+});
+
 test("the layout page's files: shared screen code, fonts with their licences, the offline cache, one display version", () => {
   const board = readFileSync(new URL("../public/board.js", import.meta.url), "utf8");
   assert.equal(board.match(/const VERSION = "([^"]+)"/)[1], DISPLAY_VERSION, "board.js and the live display version agree");
@@ -2174,9 +2303,11 @@ test("the layout page's files: shared screen code, fonts with their licences, th
   }
   const sw = readFileSync(new URL("../public/sw.js", import.meta.url), "utf8");
   for (const f of ["/screen-core.js", "/board.html", "/board.js", "/board.css", "/layout-format.mjs"]) assert.ok(sw.includes(`"${f}"`), `offline cache: ${f}`);
-  assert.ok(sw.includes('"directory-v5"') && sw.includes('startsWith("/fonts/")'));
+  assert.ok(sw.includes(`"directory-v6"`) && sw.includes(`startsWith("/fonts/")`) && sw.includes(`startsWith("/img/")`));
   const toml = readFileSync(new URL("../netlify.toml", import.meta.url), "utf8");
   assert.ok(/for = "\/\*\.mjs"[\s\S]*?Content-Type = "text\/javascript/.test(toml), "the module is served as JavaScript");
+  assert.ok(/from = "\/img\/\*"\s+to = "https:\/\/[a-z0-9]+\.supabase\.co\/storage\/v1\/object\/public\/layout-images\/:splat"\s+status = 200\s+force = true/.test(toml), "pictures come through /img/ from the bucket");
+  assert.ok(/for = "\/img\/\*"[\s\S]*?max-age=31536000, immutable/.test(toml), "and are cached a year");
 });
 
 let passed = 0;

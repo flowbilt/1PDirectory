@@ -6,7 +6,7 @@
 //                which blocks overflow their box (a guardrail).
 import { checkLayout, canvas, blockBox, blockShows, zonedNow, hoursNow, nowNext, niceTime, niceDays, FONTS, SIZES, SURFACES, STYLE_PX, TAGS } from "/layout-format.mjs";
 
-const VERSION = "2.16.0";   // = netlify/lib/version.mjs and display.js (a test keeps them equal)
+const VERSION = "2.17.0";   // = netlify/lib/version.mjs and display.js (a test keeps them equal)
 const C = window.ScreenCore;
 const { PREVIEW, CHECKS_IN, cache, esc } = C;
 const $ = (id) => document.getElementById(id);
@@ -44,6 +44,9 @@ function addFonts(names) {
 // ── Drawing ──
 const tagsHtml = (tags) => (tags || []).map((t) => `<span class="tag ${t}">${esc(TAGS[t])}</span>`).join("");
 const titleClass = (b) => `t-${b.style.font || "display"}`;
+// E1b: a layout's pictures, from the screen's answer (key -> { url, w, h }); "img:maple-bacon" -> its address on this site
+const picture = (ref) => { const m = /^img:(.+)$/.exec(ref || ""); return m ? data?.images?.[m[1]]?.url || "" : ""; };
+const FOCUS_POS = { center: "50% 50%", top: "50% 15%", bottom: "50% 85%", left: "15% 50%", right: "85% 50%" };
 const BODY = {
   text(b) {
     const c = b.content;
@@ -72,11 +75,27 @@ const BODY = {
     return `<div class="b-price">${c.label ? `<div class="label">${esc(c.label)}</div>` : ""}<div class="amount ${titleClass(b)}">${esc(c.price || "")}</div>${c.note ? `<div class="pnote">${esc(c.note)}</div>` : ""}</div>`;
   },
   photo(b) {
-    const c = b.content;
+    const c = b.content, src = picture(c.image);
     const cap = c.caption || c.line ? `<div class="photo-cap">${c.caption ? `<div class="b-title ${titleClass(b)}">${esc(c.caption)}</div>` : ""}${c.line ? `<div class="b-body">${esc(c.line)}</div>` : ""}</div>` : "";
-    return `<div class="photo-fill" role="img" aria-label="${esc(c.alt || c.caption || "")}"></div>${cap}${c.price ? `<div class="photo-price">${esc(c.price)}</div>` : ""}`;
+    // E1b: the picture itself; until it's uploaded (or if it's missing), the quiet panel as in E1a
+    const pic = src ? `<img class="photo-img" src="${esc(src)}" alt="${esc(c.alt || c.caption || "")}" style="object-fit:${c.fit || "cover"};object-position:${FOCUS_POS[c.focus || "center"]}">`
+      : `<div class="photo-fill" role="img" aria-label="${esc(c.alt || c.caption || "")}"></div>`;
+    return `${pic}${cap}${c.price ? `<div class="photo-price">${esc(c.price)}</div>` : ""}`;
   },
-  logo(b) { return `<div class="b-logo ${titleClass(b)}">${esc(b.content.text || data?.propertyName || "")}</div>`; },
+  rotator(b) {
+    // E1b: several pictures taking turns (cross-fading), each with its own caption, line and price
+    const c = b.content, items = (c.items || []).length ? c.items : [{}];
+    return items.map((it, i) => {
+      const src = picture(it.image);
+      const cap = it.caption || it.line ? `<div class="photo-cap">${it.caption ? `<div class="b-title ${titleClass(b)}">${esc(it.caption)}</div>` : ""}${it.line ? `<div class="b-body">${esc(it.line)}</div>` : ""}</div>` : "";
+      const pic = src ? `<img class="photo-img" src="${esc(src)}" alt="${esc(it.alt || it.caption || "")}" style="object-fit:${c.fit || "cover"};object-position:${FOCUS_POS[c.focus || "center"]}">` : `<div class="photo-fill"></div>`;
+      return `<div class="rot-slide${i === 0 ? " on" : ""}" data-slide="${i}">${pic}${cap}${it.price ? `<div class="photo-price">${esc(it.price)}</div>` : ""}</div>`;
+    }).join("");
+  },
+  logo(b) {
+    const src = picture(b.content.image), text = b.content.text || data?.propertyName || "";
+    return src ? `<img class="logo-img" src="${esc(src)}" alt="${esc(text)}">` : `<div class="b-logo ${titleClass(b)}">${esc(text)}</div>`;
+  },
   clock(b) { return `<div class="b-clock" data-live="clock" data-show="${b.content.show || "both"}"></div>`; },
   weather(b) { return `<div data-live="weather">${b.content.label ? `<span class="wlabel">${esc(b.content.label)}</span>` : ""}<div class="b-weather"></div></div>`; },
   hours(b) {
@@ -108,11 +127,11 @@ function blockHtml(b) {
   const align = b.style.align || (b.type === "price" ? "center" : "left");
   const styles = [`left:${box.left}px`, `top:${box.top}px`, `width:${box.width}px`, `height:${box.height}px`, `z-index:${1 + b.layer}`,
     `--back:${back}`, `--ink:${ink}`, `--radius:${Math.min(radius, Math.min(box.width, box.height) / 2)}px`, `--pad:${pad}px`,
-    `--align:${align}`, `--chip-justify:${{ left: "flex-start", center: "center", right: "flex-end" }[align]}`,
+    `--align:${align}`, `--logo-pos:${{ left: "left center", center: "center", right: "right center" }[align]}`, `--chip-justify:${{ left: "flex-start", center: "center", right: "flex-end" }[align]}`,
     `--valign:${{ top: "flex-start", middle: "center", bottom: "flex-end" }[b.style.valign || "top"]}`, `--fs:${SIZES[b.style.size || "m"]}px`];
   if (b.style.border) styles.push(`--border:${p[b.style.border]}`);
   if (b.style.tilt) styles.push(`transform:rotate(${b.style.tilt}deg)`);
-  const cls = ["b", b.type, b.style.border ? "bordered" : "", b.style.shadow ? "shadow" : "", b.style.case === "upper" ? "upper" : ""].filter(Boolean).join(" ");
+  const cls = ["b", b.type, b.type === "logo" && picture(b.content.image) ? "has-img" : "", b.style.border ? "bordered" : "", b.style.shadow ? "shadow" : "", b.style.case === "upper" ? "upper" : ""].filter(Boolean).join(" ");
   return `<div class="${cls}" data-id="${esc(b.id)}" style="${styles.join(";")}"><div class="b-in">${BODY[b.type](b)}</div></div>`;
 }
 
@@ -133,7 +152,12 @@ function render() {
   for (const [k, v] of Object.entries(p)) stage.style.setProperty(`--p-${k}`, v);
   for (const [k, v] of Object.entries(f)) stage.style.setProperty(`--f-${k}`, FONTS[v].css);
   sizeStage();
+  // E1b: the background picture, dimmed by the palette's bg colour
+  const bg = doc.theme.background, bgSrc = bg && picture(bg.image);
+  $("bgpic").hidden = !bgSrc;
+  if (bgSrc) { $("bgpic").innerHTML = `<img src="${esc(bgSrc)}" alt=""><div class="bg-dim" style="opacity:${bg.dim / 100}"></div>`; }
   blocksEl.innerHTML = [...doc.blocks].sort((a, b) => a.layer - b.layer).map(blockHtml).join("");
+  startRotators();
   drawn = sig;
   $("powered").hidden = data.poweredBy === false;           // "Powered by WayTuGo"; 1Point can hide it per screen
   live(true);
@@ -142,6 +166,23 @@ function render() {
     fitAll();
     stage.classList.remove("is-loading");
   });
+}
+
+// ── Rotating photos (E1b): each rotator turns on its own clock; every slide's picture is fetched when the board is drawn, so each is ready when its turn comes ──
+let rotTimers = [];
+function startRotators() {
+  rotTimers.forEach(clearInterval); rotTimers = [];
+  for (const b of doc.blocks.filter((x) => x.type === "rotator" && (x.content.items || []).length > 1)) {
+    const el = blocksEl.querySelector(`[data-id="${CSS.escape(b.id)}"]`);
+    let i = 0;
+    rotTimers.push(setInterval(() => {
+      if (!el || el.hidden) return;
+      const slides = el.querySelectorAll(".rot-slide");
+      slides[i].classList.remove("on");
+      i = (i + 1) % slides.length;
+      slides[i].classList.add("on");
+    }, (b.content.seconds || 8) * 1000));
+  }
 }
 
 // ── Fitting: each block's text shrinks until it fits its box; one that still doesn't is an overflow ──
@@ -276,4 +317,4 @@ if (PREVIEW) {
   C.registerOfflineCache();
 }
 setInterval(() => { C.showIdentify($("identify"), data); live(false); }, 1000);
-window.LayoutBoard = { fitAll, get doc() { return doc; } };   // for the browser checks
+window.LayoutBoard = { fitAll, get doc() { return doc; }, get images() { return data?.images || {}; } };   // for the browser checks

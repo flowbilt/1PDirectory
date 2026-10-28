@@ -25,3 +25,7 @@ grant usage on schema public to anon, authenticated, service_role;
 alter default privileges in schema public grant all on tables to anon, authenticated, service_role;
 alter default privileges in schema public grant all on functions to anon, authenticated, service_role;
 alter default privileges in schema public grant all on sequences to anon, authenticated, service_role;
+-- Supabase's storage schema, as far as the SQL files use it (DP-11 E1b: 30-layout-images.sql makes a bucket)
+create schema if not exists storage;
+create table if not exists storage.buckets (id text primary key, name text not null, owner uuid, public boolean default false,
+  file_size_limit bigint, allowed_mime_types text[], created_at timestamptz default now(), updated_at timestamptz default now());

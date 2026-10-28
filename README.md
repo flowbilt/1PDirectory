@@ -173,7 +173,23 @@ orientation), then paste the layout's JSON and:
 
 A layout belongs to the **account**, not a building, so later one layout can show at many sites (every block has an
 `id` that never changes, which leaves room for per-site overrides). Owners see their account's layouts and layout
-screens; customers' content editing comes with E2, pictures with E1b.
+screens; customers' content editing comes with E2.
+
+**Pictures (round E1b).** Below a layout's JSON, **Pictures** lists the account's pictures. **Upload pictures** takes
+one or many JPEG, PNG or WebP files; the console shrinks each in the browser first (longest side at most 1,920 pixels,
+WebP, under 900 KB; a logo keeps its transparency), then the site checks what the file really is from its own bytes and
+stores it. Each picture gets a **key** from its file name (`Maple Bacon.jpg` → `img:maple-bacon`), unique in the account
+(a second Maple Bacon becomes `img:maple-bacon-2`) and fixed once made, so a layout can be written before its pictures
+are uploaded. **Copy key**, **Rename** (the name only; the key stays) and **Remove**. Rules:
+- A picture's file is never changed or overwritten: uploading again makes a new file with a new key. So every address
+  is permanent and cached for a year, and each screen fetches a picture once and keeps it in its offline copy.
+- A picture can't be removed while any layout of the account uses it, in its draft or any kept version (Roll back
+  needs it); the console says which layout.
+- Check, Preview and Publish treat a key the account doesn't have as a problem ("There's no picture …").
+- Pictures live in Supabase Storage (the public `layout-images` bucket, at most 1 MB each, `supabase/30-layout-images.sql`)
+  and are served through this site at `/img/…` (a rewrite in `netlify.toml`), so screens only ever see the site's
+  address. The bucket's address in `netlify.toml` is the project's public URL; no key is involved.
+- Only 1Point uploads, renames and removes pictures for now; owners see their account's.
 
 **The format** (`public/layout-format.mjs` checks it; the site, the console and the screen all use that one file):
 
@@ -203,10 +219,17 @@ screens; customers' content editing comes with E2, pictures with E1b.
 - **Block types** and their content: `text` (kicker, title, body, note); `items` (heading, a group `price` such as
   "$1.89 each", `columns` 1–3, `leaders`, items with name, line, price and tags `sold-out seasonal new limited favorite`);
   `chips` (heading, items with tags); `price` (a sticker: label, price, note; round by default); `photo` (caption, line,
-  price; the picture itself with E1b, a quiet panel until then); `logo` (text until E1b); `clock` (time, date or both);
+  price, `image` as `img:<key>`, `fit` `cover` or `contain`, `focus` `center top bottom left right` for which part a cover
+  crop keeps; a quiet panel when there's no picture); `rotator` (E1b: up to 12 pictures taking turns, cross-fading every
+  `seconds` 4–60, default 8; each with image, alt, caption, line and price; `fit` and `focus` for all); `logo` (`image`,
+  else `text`); `clock` (time, date or both);
   `weather` (the building's, as on the directory); `hours` (opening hours by day: "Open now · until 6 PM", "Closed now ·
   opens tomorrow at 6 AM", and the week); `timetable` (columns and rows by day, today highlighted); `nownext` (sessions
   by day and time: what's on now and next).
+- **Background picture** (E1b): `theme.background` `{ "image": "img:…", "dim": 0–90 }` (dimmed by the `bg` colour,
+  60% unless said). **Guardrail:** text standing straight on a photo or rotator, or on a background dimmed below 60%,
+  is a warning; give the block a `surface` (a band behind the text). Blocks in the same place whose `dates` never meet
+  take turns, so they aren't an overlap (a fall box, then the box that follows it).
 - **Schedules:** `when` is one schedule or a list (the block shows when any matches): `days` 1 = Monday to 7 = Sunday,
   `from`/`to` 24-hour times in the building's time zone (`to` not included; past midnight works), `dates` from/to
   (both days included). `"on": false` hides a block by hand. The screen re-checks every second, so a block appears or
@@ -214,7 +237,9 @@ screens; customers' content editing comes with E2, pictures with E1b.
 - **Text fits itself:** each block's text shrinks to fit its box, down to 55% of its size; past that it overflows
   (the preview marks it and Publish warns).
 - The first layout, **Donut Joe's Pelham** (an internal spec from the DP-06 mockup, not for a public ad), is in
-  `layouts/donut-joes-pelham.json`.
+  `layouts/donut-joes-pelham.json`. The second, **Donut Joe's counter board** (55" landscape, with the shop's pictures:
+  the logo, a rotating hero, the energy drinks, a fall box that hands over to "Take some home" on December 1), is
+  `layouts/donut-joes-counter-55.json`; its menu source is `layouts/donut-joes-menu-source.md`. Internal spec only.
 
 ## Screens and cards (Raspberry Pi)
 
@@ -516,7 +541,7 @@ bash tests/kiosk-rotation-test.sh    # the kiosk: address from the serial, rotat
 python3 tests/agent-test.py          # the Pi's agent: schedule, results, reboot, updates, keys, Update Pi, Wi-Fi search and join, the status light, remote support (about 2 minutes)
 python3 tests/button-test.py         # the case button and status light, with key presses through a pipe (about 20 seconds)
 bash tests/setup-test.sh             # setup's options, Wi-Fi import, naming, TV keeper, pointer, HDMI, quiet start, start-up picture and animation, field Wi-Fi setup (seconds)
-node tests/browser-checks.mjs        # in Chromium (Playwright): the layout page, the console's Layouts tab, Orientation, the directory still working (about a minute)
+node tests/browser-checks.mjs        # in Chromium (Playwright): the layout page, the console's Layouts tab and Pictures, Orientation, the directory still working (about a minute)
 node tests/browser-checks.mjs --compare <older public/>   # also: directory screens drawn exactly as by an older copy of public/
 bash tests/sql-test.sh               # every supabase/ file from scratch on a local PostgreSQL 16, each check after its file and again at the end (PGHOST/PGPORT/PGUSER)
 ```
@@ -530,11 +555,11 @@ Local sample logins: `scot@1pointusa.com / admin-pass`, `leighann@barber.test / 
 
 ```
 public/             screen (index.html, display.*; board.* for a layout; screen-core.js, what every screen does, shared by both; layout-format.mjs, the layout format), sign-in, console (+ console-devices.js, console-setup.js, console-layouts.js), editor, technician page (tech.*), shared auth.js
-netlify/functions/  screen, users, config, weather, news, traffic, togo (the Directory to Go page), agent, devices, networks, alert-settings, alerts, layouts (check, preview, publish, roll back)
-netlify/lib/        Supabase client, RSS reader, shared helpers
-supabase/           database schema (01 to 29, run in order), starting data, check queries, setup guide
+netlify/functions/  screen, users, config, weather, news, traffic, togo (the Directory to Go page), agent, devices, networks, alert-settings, alerts, layouts (check, preview, publish, roll back; upload and remove pictures)
+netlify/lib/        Supabase client (and Storage), RSS reader, pictures (images.mjs: what a file really is), shared helpers
+supabase/           database schema (01 to 30, run in order), starting data, check queries, setup guide
 migration/          the Yodeck/Wix transcription the starting data was built from
 public/pi/          setup-kiosk.sh, agent.py, startup.png (the start-up picture) and startup/ (the start-up animation), served by the site so Pis can download them
-layouts/            layouts written as data (the first: Donut Joe's Pelham); not deployed, pasted into the console
+layouts/            layouts written as data (Donut Joe's Pelham; Donut Joe's counter board, 55" landscape) and the menu source; not deployed, pasted into the console
 tests/              function tests, fake Supabase, local test server, browser checks, the SQL runner and its Supabase stand-in
 ```
