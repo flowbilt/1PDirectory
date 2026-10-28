@@ -4,11 +4,13 @@
 // offline copy, handing back to the directory page) is screen-core.js, shared with the directory display.
 //   ?preview=1   the console's Layouts preview: no check-in; the layout arrives by message, and the page reports back
 //                which blocks overflow their box (a guardrail).
-import { checkLayout, canvas, blockBox, blockShows, zonedNow, hoursNow, nowNext, niceTime, niceDays, FONTS, SIZES, SURFACES, STYLE_PX, TAGS } from "/layout-format.mjs";
+//   ?menu=<code> "See the board" on the phone menu (E1c): the layout's published version from /api/menu, read-only, no
+//                check-in, never turned, pinch-zoom allowed.
+import { checkLayout, canvas, blockBox, blockShows, zonedNow, hoursNow, nowNext, niceTime, niceDays, FONTS, SIZES, SURFACES, STYLE_PX, TAGS, QR_LINE, qrSide } from "/layout-format.mjs";
 
-const VERSION = "2.17.0";   // = netlify/lib/version.mjs and display.js (a test keeps them equal)
+const VERSION = "2.18.0";   // = netlify/lib/version.mjs and display.js (a test keeps them equal)
 const C = window.ScreenCore;
-const { PREVIEW, CHECKS_IN, cache, esc } = C;
+const { PREVIEW, CHECKS_IN, MENU, cache, esc } = C;
 const $ = (id) => document.getElementById(id);
 const stage = $("stage"), boardEl = $("board"), blocksEl = $("blocks");
 let data = null, sig = "", doc = null, drawn = null;
@@ -110,6 +112,14 @@ const BODY = {
       + `${(c.rows || []).map((r) => `<tr data-days="${(r.days || []).join(",")}"><td class="day">${esc(r.label || niceDays(r.days || []))}</td>${(r.cells || []).map((x) => `<td>${esc(x)}</td>`).join("")}</tr>`).join("")}</table>`;
   },
   nownext(b) { return `<div class="nn" data-live="nownext"></div>`; },
+  // E1c: "Take this menu with you": the layout's own code (waytugo.com/m/<code>), drawn here, exactly the size the
+  // guardrail measured; until the layout has a code (a preview of a new one) a quiet square
+  qr(b) {
+    const side = Math.max(0, qrSide(doc, b)), url = data?.menu?.url || "";
+    let code = "";
+    if (url) { try { code = C.svgQR(url); } catch (e) { console.warn("QR failed", e); } }
+    return `<div class="b-qr"><div class="qr-code${code ? "" : " qr-empty"}" style="width:${side}px;height:${side}px">${code}</div><div class="qr-line">${esc(b.content.line || QR_LINE)}</div></div>`;
+  },
 };
 
 function blockHtml(b) {
@@ -283,6 +293,14 @@ function apply(d) {
 
 async function loadScreen() {
   if (PREVIEW) return;
+  if (MENU) {   // E1c: the phone menu's "See the board"
+    try {
+      const r = await fetch(`/api/menu?code=${encodeURIComponent(MENU)}`, { cache: "no-store" });
+      if (r.ok) apply({ ...(await r.json()), orientation: "auto" });
+      else if (!data) { $("note").textContent = "This menu isn't available right now."; $("note").hidden = false; stage.classList.remove("is-loading"); }
+    } catch { /* keep what's drawn */ }
+    return;
+  }
   try {
     const got = await C.fetchScreen(VERSION);    // the check-in, the site's clock, the kept copy, a newer display
     if (!got) return;
@@ -296,8 +314,8 @@ async function loadScreen() {
 }
 
 // ── Boot ──
-if (!C.DEVICE && !C.CHOSEN && !PREVIEW) location.replace("/");
-C.lockdown();
+if (!C.DEVICE && !C.CHOSEN && !PREVIEW && !MENU) location.replace("/");
+if (!MENU) C.lockdown();
 C.clock.onTrusted = () => { live(false); refitSoon(); };
 sizeStage();
 window.addEventListener("resize", () => { sizeStage(); });
@@ -307,6 +325,9 @@ if (PREVIEW) {
     sig = ""; apply({ ...e.data.data, kind: "layout" });
   });
   if (window.parent !== window) window.parent.postMessage({ type: "layout-ready" }, location.origin);
+} else if (MENU) {
+  loadScreen();
+  setInterval(loadScreen, 5 * 60 * 1000);
 } else {
   const cached = cache.get("directory");
   if (cached) apply(cached);

@@ -16,9 +16,9 @@ const CODE_ALPHA = "ABCDEFGHJKMNPQRSTUVWXYZ23456789";
 const newCode = () => Array.from({ length: 6 }, () => CODE_ALPHA[Math.floor(Math.random() * CODE_ALPHA.length)]).join("");
 
 export function createFake() {
-  const T = { organizations: [], profiles: [], properties: [], directories: [], tenants: [], screens: [], audit_log: [], devices: [], device_commands: [], device_daily: [], wifi_networks: [], prepare_codes: [], alert_recipients: [], mail_settings: [], togo_scans: [], companies: [], people: [], layouts: [], layout_versions: [], layout_images: [] };
+  const T = { organizations: [], profiles: [], properties: [], directories: [], tenants: [], screens: [], audit_log: [], devices: [], device_commands: [], device_daily: [], wifi_networks: [], prepare_codes: [], alert_recipients: [], mail_settings: [], togo_scans: [], companies: [], people: [], layouts: [], layout_versions: [], layout_images: [], menu_scans: [] };
   const storage = new Map();   // bucket/path -> { bytes, mime, cacheControl } (E1b)
-  const SERVICE_ONLY = new Set(["togo_scans", "devices", "device_commands", "device_daily", "wifi_networks", "prepare_codes", "alert_recipients", "mail_settings"]); // row-level security on, no policies: server key only
+  const SERVICE_ONLY = new Set(["togo_scans", "devices", "device_commands", "device_daily", "wifi_networks", "prepare_codes", "alert_recipients", "mail_settings", "menu_scans"]); // row-level security on, no policies: server key only
   // Columns of screens signed-in users may read (supabase/06-trust.sql, plus sizes from 18 and no_cec from 21). hardware is server-only.
   const SCREEN_COLS = new Set(["id", "directory_id", "key", "name", "location_note", "orientation", "last_seen", "last_report", "identify_until", "created_at", "sizes", "no_cec", "hide_powered_by", "touch", "screen_inches", "touch_idle_s", "layout_id", "property_id"]);
   const users = new Map(); // id -> {id,email,password,last_sign_in_at,invited_at,user_metadata}
@@ -179,7 +179,7 @@ export function createFake() {
     companies: () => ({ id: randomUUID(), show_people: false, show_title: true, show_phone: false, show_email: false, created_at: now(), updated_at: now() }),
     people: () => ({ id: randomUUID(), sort: 0, first_name: "", last_name: "", title: "", phone: "", email: "", suite: "", show: true, created_at: now(), updated_at: now() }),
     layout_images: () => ({ id: randomUUID(), name: "", created_at: now(), created_by: null }),
-    layouts: () => ({ id: randomUUID(), family: "menu", draft: {}, published_version: null, published_at: null, created_at: now(), updated_at: now(), updated_by: null }),
+    layouts: () => ({ id: randomUUID(), menu_code: newCode(), family: "menu", draft: {}, published_version: null, published_at: null, created_at: now(), updated_at: now(), updated_by: null }),
     screens: () => ({ id: randomUUID(), directory_id: null, layout_id: null, property_id: null, location_note: "", orientation: "auto", hardware: {}, last_seen: null, last_report: {}, sizes: {}, no_cec: false, traffic_at: null, hide_powered_by: false, touch: false, screen_inches: null, touch_idle_s: 45, created_at: now() }),
     profiles: () => ({ full_name: "", created_at: now() }),
     audit_log: () => ({ id: T.audit_log.length + 1, at: now(), detail: {} }),
@@ -285,7 +285,7 @@ export function createFake() {
           if (table === "people") touchCompany(existing.company_id, who.uid);
           result.push({ ...existing });
         } else {
-          if (table === "layouts" && !who.service && ["draft", "published_version", "published_at"].some((k) => k in item)) return err(403, "permission denied for table layouts");
+          if (table === "layouts" && !who.service && ["draft", "published_version", "published_at", "menu_code"].some((k) => k in item)) return err(403, "permission denied for table layouts");
           const row = { ...(defaults[table]?.() || {}), ...item };
           if (!canWrite(table, "insert", row, who)) return err(403, `new row violates row-level security policy for table "${table}"`);
           const bad = checkRow(table, row); if (bad) return err(409, bad);
@@ -309,7 +309,7 @@ export function createFake() {
         }
         const bad = checkRow(table, { ...r, ...body }, r); if (bad) return err(409, bad);
         // 29: signed-in users may not write a layout's draft or its published fields (the site does, after its checks)
-        if (table === "layouts" && !who.service && ["draft", "published_version", "published_at"].some((k) => k in body)) return err(403, "permission denied for table layouts");
+        if (table === "layouts" && !who.service && ["draft", "published_version", "published_at", "menu_code"].some((k) => k in body)) return err(403, "permission denied for table layouts");
         if (table === "layout_images" && !who.service && Object.keys(body).some((k) => k !== "name")) return err(403, "permission denied for table layout_images");
         if (table === "layout_images" && ["key", "path", "org_id", "mime", "width", "height", "bytes"].some((k) => k in body && body[k] !== r[k])) return err(409, "A picture can't be changed once it's uploaded (only its name). Upload the new picture instead.");
       }
@@ -353,7 +353,7 @@ export function createFake() {
   const MAX_ROWS = 1000;
   const addDays = (day, n) => new Date(Date.parse(day + "T12:00:00Z") + n * 86400_000).toISOString().slice(0, 10);
   // Functions signed-in users may call (they check access themselves); the rest are server-only
-  const USER_FUNCS = new Set(["set_screen_sizes", "togo_scan_count", "togo_replace_code"]);
+  const USER_FUNCS = new Set(["set_screen_sizes", "togo_scan_count", "togo_replace_code", "menu_scan_count"]);
   const FUNCS = {
     // Mirror of 18-sizes.sql and 22-widget-sizes.sql (SIZE_RANGES, exported below)
     set_screen_sizes({ p_screen, p_sizes = {} }, who) {
@@ -517,6 +517,30 @@ export function createFake() {
       d.togo_code = c; d.updated_at = now();
       return c;
     },
+    // 31-menu-to-go.sql: the phone menu's content, the building (the most recently seen screen showing it, else the
+    // account's first by name), and its opens
+    menu_page({ p_code, p_count = true }) {
+      const l = T.layouts.find((x) => x.menu_code === String(p_code || "").toUpperCase());
+      if (!l || l.published_version == null) return { missing: true };
+      const lv = T.layout_versions.find((x) => x.layout_id === l.id && x.version === l.published_version);
+      const scr = T.screens.filter((x) => x.layout_id === l.id && x.property_id).sort((a, b) => String(b.last_seen || "").localeCompare(String(a.last_seen || "")))[0];
+      const p = (scr && T.properties.find((x) => x.id === scr.property_id)) || order(T.properties.filter((x) => x.org_id === l.org_id), "name")[0] || null;
+      if (p_count) {
+        const day = new Intl.DateTimeFormat("en-CA", { timeZone: "America/Chicago" }).format(new Date(now()));
+        const row = T.menu_scans.find((x) => x.layout_id === l.id && x.day === day);
+        if (row) row.scans++; else T.menu_scans.push({ layout_id: l.id, day, scans: 1 });
+      }
+      return { layout: { id: l.id, name: l.name, orientation: l.orientation, version: lv.version, doc: lv.doc, menu_code: l.menu_code },
+        images: Object.fromEntries(T.layout_images.filter((i) => i.org_id === l.org_id && JSON.stringify(lv.doc).includes(`"img:${i.key}"`)).map((i) => [i.key, { path: i.path, w: i.width, h: i.height }])),
+        prop: p ? { id: p.id, name: p.name, address: p.address, timezone: p.timezone, lat: p.lat, lon: p.lon, updated_at: p.updated_at } : null };
+    },
+    menu_scan_count({ p_layout }, who) {
+      const me = who.profile;
+      if (!(who.service || me?.role === "platform_admin" || (me && layoutOrg(p_layout) === me.org_id))) throw Object.assign(new Error("That layout doesn't exist, or you don't have access to it."), { status: 403 });
+      const since = new Intl.DateTimeFormat("en-CA", { timeZone: "America/Chicago" }).format(new Date(Date.parse(now()) - 30 * 86400_000));
+      const rows = T.menu_scans.filter((x) => x.layout_id === p_layout);
+      return { last30: rows.filter((x) => x.day > since).reduce((n, x) => n + x.scans, 0), total: rows.reduce((n, x) => n + x.scans, 0) };
+    },
     // 30-layout-images.sql: a picture is removed only when no draft or kept version of the account's layouts uses it
     layout_image_delete({ p_id }) {
       const i = T.layout_images.find((x) => x.id === p_id);
@@ -563,11 +587,11 @@ export function createFake() {
         const l = T.layouts.find((x) => x.id === s.layout_id);
         const lv = l?.published_version != null ? T.layout_versions.find((x) => x.layout_id === l.id && x.version === l.published_version) : null;
         const lp = s.property_id ? T.properties.find((x) => x.id === s.property_id) : null;
-        const etag = createHash("md5").update(["layout", s.key, s.name, s.orientation, l.id, l.published_version ?? "-", l.name, s.identify_until || "-", lp?.updated_at || "-", String(!!s.hide_powered_by), String(!!s.touch), s.screen_inches ?? "-", String(s.touch_idle_s ?? 45)].join("|")).digest("hex");
+        const etag = createHash("md5").update(["layout", "menu", l.menu_code, s.key, s.name, s.orientation, l.id, l.published_version ?? "-", l.name, s.identify_until || "-", lp?.updated_at || "-", String(!!s.hide_powered_by), String(!!s.touch), s.screen_inches ?? "-", String(s.touch_idle_s ?? 45)].join("|")).digest("hex");
         if (etag === p_etag) return { etag, not_modified: true };
         return { etag, kind: "layout",
           screen: { key: s.key, name: s.name, orientation: s.orientation, identify_until: s.identify_until ?? null, hide_powered_by: !!s.hide_powered_by, touch: !!s.touch, screen_inches: s.screen_inches ?? null, touch_idle_s: s.touch_idle_s ?? 45 },
-          layout: { id: l.id, name: l.name, orientation: l.orientation, version: lv?.version ?? null, doc: lv ? lv.doc : null },
+          layout: { id: l.id, name: l.name, orientation: l.orientation, version: lv?.version ?? null, doc: lv ? lv.doc : null, menu_code: l.menu_code },
           images: lv ? Object.fromEntries(T.layout_images.filter((i) => i.org_id === l.org_id && JSON.stringify(lv.doc).includes(`"img:${i.key}"`)).map((i) => [i.key, { path: i.path, w: i.width, h: i.height }])) : {},
           prop: lp ? { id: lp.id, name: lp.name, address: lp.address, timezone: lp.timezone, lat: lp.lat, lon: lp.lon, updated_at: lp.updated_at } : null };
       }
@@ -670,6 +694,8 @@ export function createFake() {
 
   async function handle(req) {
     const url = new URL(req.url);
+    // 31-menu-to-go.sql: every layout has a menu code (a trigger makes it; tests that add layouts directly get one here)
+    for (const l of T.layouts) if (!l.menu_code) { let c; do { c = newCode(); } while (T.layouts.some((x) => x.menu_code === c)); l.menu_code = c; }
     if (req.method === "OPTIONS") return new Response(null, { status: 204, headers: cors });
     if (url.pathname === "/__outbox") return out(outbox);
     if (url.pathname.startsWith("/storage/v1/object/")) return storageApi(req, url.pathname.slice(19));

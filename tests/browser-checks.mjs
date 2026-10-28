@@ -372,6 +372,47 @@ try {
     await admin.fill("#layout-json", JSON.stringify(DOC, null, 2)); await admin.click("#layout-check"); await admin.waitForTimeout(600);
   });
 
+  // ── Take this menu with you (E1c) ──
+  const MENU_DOC = { format: 1, orientation: "portrait", grid: { cols: 12, rows: 24 }, viewing: { inches: 43, metres: 2 },
+    theme: { palette: { bg: "#fff7ec", ink: "#2b1a12" }, fonts: { display: "Fraunces", body: "Instrument Sans" } }, blocks: [
+      { id: "logo", type: "logo", at: { col: 1, row: 1, w: 12, h: 3 }, content: { image: "img:maple-bacon", text: "Browser shop" } },
+      { id: "menu", type: "items", at: { col: 1, row: 4, w: 12, h: 10 }, style: { size: "l" }, content: { heading: "Donuts", items: [
+        { name: "Maple Bacon", price: "$1.89", link: "https://example.com/maple-bacon" }, { name: "Glazed", price: "$1.29" }] } },
+      { id: "code", type: "qr", at: { col: 4, row: 15, w: 6, h: 7 }, style: { align: "center" }, content: {} }] };
+  let menuCode = "";
+  await check("Take this menu with you: the QR block draws the layout's own code; the console shows its address once published", async () => {
+    await admin.fill("#layout-json", JSON.stringify(MENU_DOC, null, 2));
+    await admin.click("#layout-preview"); await admin.waitForTimeout(4000);
+    const frame = admin.frameLocator("#layout-iframe");
+    assert(await frame.locator('[data-id="code"] .qr-code svg').count() === 1, "the preview draws the QR code");
+    await admin.click("#layout-publish"); await admin.waitForTimeout(1500);
+    if (await admin.isVisible("#layout-anyway")) { await admin.click("#layout-anyway"); await admin.waitForTimeout(1500); }
+    menuCode = (await sb(`layouts?name=eq.Browser%20check%20layout&select=menu_code`)).data[0].menu_code;
+    await admin.waitForFunction((c) => document.getElementById("layout-menu").textContent.includes(`waytugo.com/m/${c}`), menuCode, { timeout: 8000 });
+    assert((await admin.getAttribute("#layout-menu a", "target")) === "_blank", "opens in a new tab");
+  });
+
+  await check("Take this menu with you: the phone page as designed, links in a new tab, See the board draws the board; the open is counted", async () => {
+    const phone = await browser.newPage({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true });
+    const res = await phone.goto(`${B}/m/${menuCode}`); await phone.waitForTimeout(800);
+    assert(res.status() === 200, `status ${res.status()}`);
+    assert(await phone.locator("header img.logo").evaluate((i) => i.complete && i.naturalWidth > 0), "the logo picture loads");
+    const link = phone.locator('a[href="https://example.com/maple-bacon"]');
+    assert(await link.count() === 1 && (await link.getAttribute("target")) === "_blank", "Maple Bacon links out in a new tab");
+    assert(await phone.locator(".qr-code, .b-clock").count() === 0, "no QR code or clock on the phone");
+    const bodyFont = await phone.evaluate(() => getComputedStyle(document.querySelector(".head")).fontFamily);
+    assert(/Fraunces/.test(bodyFont), `the layout's display font: ${bodyFont}`);
+    assert(await phone.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1), "no sideways scrolling");
+    await phone.click(".board summary"); await phone.waitForTimeout(3500);
+    const board = phone.frameLocator(".board iframe");
+    assert(await board.locator(".b").count() >= 3 && await board.locator('[data-id="code"] .qr-code svg').count() === 1, "See the board draws the board, with its QR code");
+    await phone.close();
+    await admin.click("#layout-back"); await admin.waitForTimeout(300);
+    await admin.click(`[data-open-layout="${(await sb("layouts?name=eq.Browser%20check%20layout&select=id")).data[0].id}"]`); await admin.waitForTimeout(1500);
+    assert(/opened 1 time in the last 30 days \(1 in all\)/.test(await admin.textContent("#layout-menu")), await admin.textContent("#layout-menu"));
+    await admin.fill("#layout-json", JSON.stringify(DOC, null, 2)); await admin.click("#layout-check"); await admin.waitForTimeout(600);
+  });
+
   await check("Layouts tab: a layout a screen shows can't be removed, in plain words", async () => {
     await admin.click("#layout-back"); await admin.waitForTimeout(300);
     await admin.click(`[data-open-layout="${lay.id}"]`); await admin.waitForTimeout(800);

@@ -45,24 +45,31 @@ export const TAGS = { "sold-out": "Sold out", seasonal: "Seasonal", new: "New", 
 /** Where a cropped picture keeps its subject. */
 const FOCUS = ["center", "top", "bottom", "left", "right"];
 /** Block types and the content each may carry: [name, kind, max length or count]. */
-const ITEM = { name: ["text", 80], line: ["text", 160], price: ["text", 16], tags: ["tags"] };
+// E1c: "link" on items, text, photos and a rotator's pictures: a web address the phone menu opens in a new tab (the board
+// itself shows no links)
+const ITEM = { name: ["text", 80], line: ["text", 160], price: ["text", 16], tags: ["tags"], link: ["link"] };
 const SESSION = { days: ["days"], from: ["time"], to: ["time"], name: ["text", 60], line: ["text", 120] };
 export const TYPES = {
-  text:      { kicker: ["text", 60], title: ["text", 120], body: ["text", 400], note: ["text", 120] },
+  text:      { kicker: ["text", 60], title: ["text", 120], body: ["text", 400], note: ["text", 120], link: ["link"] },
   items:     { heading: ["text", 60], price: ["text", 24], columns: ["int", 1, 3], leaders: ["bool"], items: ["list", 60, ITEM] },
   chips:     { heading: ["text", 60], items: ["list", 40, { name: ["text", 40], tags: ["tags"] }] },
   price:     { label: ["text", 20], price: ["text", 16], note: ["text", 30] },
-  photo:     { image: ["image"], alt: ["text", 120], caption: ["text", 80], line: ["text", 120], price: ["text", 16], fit: ["enum", ["cover", "contain"]], focus: ["enum", FOCUS] },
+  photo:     { image: ["image"], alt: ["text", 120], caption: ["text", 80], line: ["text", 120], price: ["text", 16], fit: ["enum", ["cover", "contain"]], focus: ["enum", FOCUS], link: ["link"] },
   logo:      { image: ["image"], text: ["text", 60] },
   // E1b: several pictures taking turns, each with its own caption, line and price
   rotator:   { seconds: ["int", 4, 60], fit: ["enum", ["cover", "contain"]], focus: ["enum", FOCUS],
-               items: ["list", 12, { image: ["image"], alt: ["text", 120], caption: ["text", 80], line: ["text", 120], price: ["text", 16] }] },
+               items: ["list", 12, { image: ["image"], alt: ["text", 120], caption: ["text", 80], line: ["text", 120], price: ["text", 16], link: ["link"] }] },
   clock:     { show: ["enum", ["time", "date", "both"]] },
   weather:   { label: ["text", 30] },
   hours:     { heading: ["text", 40], hours: ["list", 14, { days: ["days"], open: ["time"], close: ["time"] }], note: ["text", 80] },
   timetable: { heading: ["text", 60], columns: ["strings", 6, 24], rows: ["list", 14, { days: ["days"], label: ["text", 16], cells: ["strings", 6, 40] }] },
   nownext:   { now: ["text", 20], next: ["text", 20], empty: ["text", 60], sessions: ["list", 40, SESSION] },
+  // E1c: the QR code for "Take this menu with you" (waytugo.com/m/<the layout's code>), with a line under it
+  qr:        { line: ["text", 80] },
 };
+export const QR_LINE = "Take this menu with you";
+/** A QR code reads from about 10 times its width; below this many millimetres across, the guardrail warns. */
+export const QR_MIN_MM = 100;
 export const FAMILIES = ["list", "schedule", "menu", "board"];
 
 const STYLE = {
@@ -76,7 +83,8 @@ const ID_RE = /^[a-z0-9][a-z0-9-]{0,39}$/;
 const HEX_RE = /^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/;
 const TIME_RE = /^([01]\d|2[0-4]):([0-5]\d)$/;
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
-const IMAGE_RE = /^img:[a-z0-9][a-z0-9-]{0,59}$/;   // E1b: a picture's key in the layout's account (console → Layouts → Pictures)
+const IMAGE_RE = /^img:[a-z0-9][a-z0-9-]{0,59}$/;
+const LINK_RE = /^https?:\/\/[^\s<>"']+\.[^\s<>"']+$/i;   // E1c: a web address, written in full   // E1b: a picture's key in the layout's account (console → Layouts → Pictures)
 
 const isObj = (v) => v && typeof v === "object" && !Array.isArray(v);
 
@@ -216,6 +224,9 @@ function checkValue(rule, v, where, label, err) {
     case "tags":
       if (!Array.isArray(v) || v.some((t) => !TAGS[t])) { err(where, `${label} are from: ${Object.keys(TAGS).join(", ")}.`); return undefined; }
       return [...new Set(v)];
+    case "link":
+      if (typeof v !== "string" || v.length > 300 || !LINK_RE.test(v)) { err(where, `${label} is a web address written in full, like "https://donutjoescoffee.com/pages/events" (at most 300 characters).`); return undefined; }
+      return v;
     case "image": return typeof v === "string" && IMAGE_RE.test(v) ? v : (err(where, `${label} is a picture's key, like "img:maple-bacon" (Layouts → Pictures shows each one's key).`), undefined);
     case "strings":
       if (!Array.isArray(v) || v.length > a || v.some((s) => typeof s !== "string" || s.length > b)) { err(where, `${label} is a list of up to ${a} short texts (${b} characters each).`); return undefined; }
@@ -305,6 +316,7 @@ function smallestShare(b) {
     case "hours": return c.heading || c.note ? 0.55 : 0.62;
     case "timetable": return 0.55;
     case "nownext": return 0.42;
+    case "qr": return 0.62;
     default: return 0.62;
   }
 }
@@ -336,8 +348,13 @@ function guardrails(doc, warn) {
     const smallest = size * smallestShare(b) * perPx;
     if (smallest < need) warn(where, `Its smallest text is about ${smallest.toFixed(0)} mm tall on a ${inches}" screen; from ${metres} m away it should be at least ${need.toFixed(0)} mm. Use a larger size.`, "small");
   }
+  // E1c: a QR code too small to read from where people stand
+  for (const b of doc.blocks.filter((x) => x.type === "qr")) {
+    const mm = Math.round(qrSide(doc, b) * perPx);
+    if (mm < QR_MIN_MM) warn(`block "${b.id}"`, `Its QR code is about ${Math.max(0, mm)} mm across on a ${inches}" screen, so phones read it from about ${(Math.max(0, mm) / 100).toFixed(1)} m (a code reads from about 10 times its width). Make the box bigger, so it reads from at least 1 m.`, "qr");
+  }
   // E1b: text standing straight on a picture, with no band behind it, can't be read reliably whatever its colour
-  const PICTURE = new Set(["photo", "rotator"]), BANDED = new Set(["photo", "rotator", "logo", "price"]);
+  const PICTURE = new Set(["photo", "rotator"]), BANDED = new Set(["photo", "rotator", "logo", "price", "qr"]);
   const overlaps = (a, b) => a.col < b.col + b.w && b.col < a.col + a.w && a.row < b.row + b.h && b.row < a.row + a.h;
   for (const b of doc.blocks) {
     if (BANDED.has(b.type) || (b.style.surface && b.style.surface !== "none")) continue;
@@ -437,3 +454,31 @@ export function blockBox(doc, b) {
 }
 
 export const STYLE_PX = { RADII, PADS };
+
+/** E1c: how many canvas pixels across a QR block draws its code (the board draws it exactly this size): the box less
+ *  its padding, and less one line of text under the code. */
+export function qrSide(doc, b) {
+  const box = blockBox(doc, b), surf = b.style.surface || "none";
+  const pad = PADS[b.style.pad || (surf === "none" ? "none" : "m")];
+  const line = SIZES[b.style.size || "m"] * 0.62 * 1.2 + 10;
+  return Math.floor(Math.min(box.width - 2 * pad, box.height - 2 * pad - line));
+}
+
+/** E1c: the order a person reads a layout's blocks in (the phone menu lists them this way). The board is cut into
+ *  columns wherever no block crosses the line, left first, or failing that into strips across, top first, and each
+ *  part the same way, and so on down; blocks that can't be separated go by row, then column. So a menu in three
+ *  columns reads each column top to bottom, and a stack of full-width bands reads top to bottom. */
+export function readingOrder(blocks) {
+  const cut = (list) => {
+    if (list.length <= 1) return list;
+    for (const [pos, size] of [["col", "w"], ["row", "h"]]) {
+      const starts = [...new Set(list.map((b) => b.at[pos]))].sort((a, b) => a - b).slice(1);
+      for (const s of starts) {
+        if (list.some((b) => b.at[pos] < s && b.at[pos] + b.at[size] > s)) continue;   // a block crosses this line
+        return [...cut(list.filter((b) => b.at[pos] < s)), ...cut(list.filter((b) => b.at[pos] >= s))];
+      }
+    }
+    return [...list].sort((a, b) => a.at.row - b.at.row || a.at.col - b.at.col);
+  };
+  return cut([...blocks]);
+}

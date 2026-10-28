@@ -52,7 +52,7 @@ const missingErrors = (missing) => missing.map((k) => ({ where: `picture "img:${
 
 async function loadLayout(id) {
   if (!/^[0-9a-f-]{36}$/.test(String(id || ""))) throw fail(400, "Choose a layout.");
-  const [l] = await db(`layouts?id=eq.${enc(id)}&select=id,org_id,name,orientation,published_version`);
+  const [l] = await db(`layouts?id=eq.${enc(id)}&select=id,org_id,name,orientation,published_version,menu_code`);
   if (!l) throw fail(404, "No such layout.");
   return l;
 }
@@ -86,7 +86,7 @@ export default async (req) => {
         }
         const payload = errors.length ? null : toLayoutPayload(
           { key: "preview", name: "Preview", orientation: clean.orientation, hide_powered_by: false, touch: false, screen_inches: clean.viewing.inches, touch_idle_s: 45 },
-          { id: layout?.id || null, name: layout?.name || "Preview", version: null, doc }, prop, pics.images);
+          { id: layout?.id || null, name: layout?.name || "Preview", version: null, doc, menu_code: layout?.menu_code }, prop, pics.images);
         return json({ errors, warnings, payload });
       }
 

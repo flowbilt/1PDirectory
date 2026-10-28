@@ -55,6 +55,8 @@ Do these once. The current site keeps running as it is until the new build is de
 
 31. For pictures in layouts (DP-11, round E1b): **before uploading that code**, new query, paste all of `30-layout-images.sql`, and click **Run**. Then new query, paste all of `check-layout-images.sql`, and click **Run**; it should read **ALL 8 CHECKS PASSED** (red on purpose). It makes the public Storage bucket `layout-images` (at most 1 MB a picture; WebP, JPEG or PNG) and the table that names each picture; you'll see the bucket under **Storage**. Nothing to set by hand.
 
+32. For Take this menu with you (DP-11, round E1c): **before uploading that code**, new query, paste all of `31-menu-to-go.sql`, and click **Run**. Then new query, paste all of `check-menu-to-go.sql`, and click **Run**; it should read **ALL 7 CHECKS PASSED** (red on purpose). It gives every layout its menu code (existing ones included), counts the phone menu's opens, and adds the code to a layout screen's answer.
+
 If any of them shows an error (other than the expected red messages from the `check-…sql` files), copy the message (it includes a line number) and send it to Claude.
 
 ## 3. Lock down sign-ups

@@ -25,7 +25,8 @@
         { "image": "img:maple-bacon", "alt": "Maple Bacon donuts", "caption": "Maple Bacon", "line": "Sweet, salty & satisfyingly Southern", "price": "$1.89" },
         { "image": "img:apple-fritter", "alt": "Apple fritters", "caption": "Classic Apple Fritter", "line": "Hand made & glazed fresh daily", "price": "$4.49" },
         { "image": "img:cinnamon-rolls", "alt": "Cinnamon rolls", "caption": "Handmade Cinnamon Rolls", "line": "Soft, swirled & glazed just right", "price": "$3.99" },
-        { "image": "img:smokey-joes", "alt": "Smokey Joes", "caption": "Our famous Smokey Joes", "line": "Southern sausage wrapped in donut dough", "price": "$3.59" }
+        { "image": "img:smokey-joes", "alt": "Smokey Joes", "caption": "Our famous Smokey Joes", "line": "Southern sausage wrapped in donut dough", "price": "$3.59" },
+        { "image": "img:blue-raspberry-bolt", "alt": "Blue Raspberry Bolt energy drink", "caption": "Jammin' Joe's energy drinks", "line": "Blue Raspberry Bolt, Lime Lightning, Orange Blast, Strawberry Spark", "price": "$4.99" }
       ] } },
 
     { "id": "hours", "type": "hours", "at": { "col": 1, "row": 10, "w": 7, "h": 3 },
@@ -55,7 +56,7 @@
 
     { "id": "party", "type": "text", "at": { "col": 8, "row": 11, "w": 9, "h": 2 },
       "style": { "surface": "highlight", "radius": "m", "size": "m", "pad": "m", "valign": "middle" },
-      "content": { "title": "Giant Birthday Donut $40.99 · party boxes", "body": "Call ahead for larger orders: (205) 663-6006" } },
+      "content": { "title": "Giant Birthday Donut $40.99 · party boxes", "body": "Call ahead for larger orders: (205) 663-6006", "link": "https://donutjoescoffee.com" } },
 
     { "id": "coffee", "type": "items", "at": { "col": 17, "row": 1, "w": 8, "h": 6 },
       "style": { "size": "m" },
@@ -65,18 +66,16 @@
         { "name": "Sugar-Free Vanilla Latte", "price": "$4.99" },
         { "name": "Mocha Joe Frappe", "price": "$5.25" },
         { "name": "Cold Brew", "price": "$4.29" },
-        { "name": "Joe to Go Carafe", "line": "Fresh brewed for meetings & events", "price": "$25.99" } ] } },
+        { "name": "Joe to Go Carafe", "line": "Fresh brewed for meetings & events", "price": "$25.99", "link": "https://donutjoescoffee.com" } ] } },
 
     { "id": "energy", "type": "chips", "at": { "col": 17, "row": 7, "w": 5, "h": 3 },
       "style": { "size": "m" },
       "content": { "heading": "Jammin' Joe's · $4.99", "items": [
         { "name": "Blue Raspberry Bolt" }, { "name": "Lime Lightning" }, { "name": "Orange Blast" }, { "name": "Strawberry Spark" } ] } },
 
-    { "id": "energy-pics", "type": "rotator", "at": { "col": 22, "row": 7, "w": 3, "h": 3 },
-      "style": { "radius": "m" },
-      "content": { "seconds": 5, "items": [
-        { "image": "img:blue-raspberry-bolt", "alt": "Blue Raspberry Bolt" }, { "image": "img:lime-lightning", "alt": "Lime Lightning" },
-        { "image": "img:orange-blast", "alt": "Orange Blast" }, { "image": "img:strawberry-spark", "alt": "Strawberry Spark" } ] } },
+    { "id": "menu-qr", "type": "qr", "at": { "col": 22, "row": 7, "w": 3, "h": 3 },
+      "style": { "surface": "panel", "radius": "m", "size": "m", "pad": "s", "align": "center" },
+      "content": { "line": "Scan for the menu" } },
 
     { "id": "fall", "type": "items", "at": { "col": 17, "row": 10, "w": 5, "h": 3 },
       "style": { "surface": "accent", "radius": "m", "size": "m", "pad": "m" },

@@ -16,10 +16,12 @@
   const CHOSEN = (q.get("screen") || q.get("key") || q.get("site") || "").toLowerCase();
   const PREVIEW = q.get("preview") === "1";
   const VIEW = q.get("view") === "1";
+  // E1c: "See the board" on the phone menu (board.html?menu=<code>): the published layout, drawn read-only
+  const MENU = /^[A-HJKMNP-Z2-9]{6}$/i.test(q.get("menu") || "") ? q.get("menu").toUpperCase() : "";
   const SITE = DEVICE ? `device-${DEVICE}` : CHOSEN || "preview";
   const SCREEN_URL = DEVICE ? `/api/screen?device=${encodeURIComponent(DEVICE)}` : `/api/screen?key=${encodeURIComponent(SITE)}`;
   const URL_ROTATE = ["90", "270"].includes(q.get("rotate")) ? Number(q.get("rotate")) : null;
-  const CHECKS_IN = !PREVIEW && !VIEW; // only a real screen records a check-in
+  const CHECKS_IN = !PREVIEW && !VIEW && !MENU; // only a real screen records a check-in
 
   const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 
@@ -158,6 +160,16 @@
     fog: '<g stroke="#c7cdd6" stroke-width="3.2" stroke-linecap="round"><path d="M8 18h32M12 26h28M8 34h26"/></g>',
   };
 
+  /** A QR code as an SVG: dark modules on white with the standard quiet zone of four (public/vendor/qrcode.js, which the
+   *  page loads first). Throws if the encoder can't take it. Used by the directory (Directory to Go, a place's card)
+   *  and the layout page (the QR block, E1c). */
+  function svgQR(url) {
+    const q = window.LobbyQR(url), n = q.size, Q = 4;
+    let d = "";
+    for (let r = 0; r < n; r++) for (let c = 0; c < n; c++) if (q.dark(r, c)) d += `M${c + Q} ${r + Q}h1v1h-1z`;
+    return `<svg viewBox="0 0 ${n + 2 * Q} ${n + 2 * Q}" shape-rendering="crispEdges" role="img" aria-label="QR code"><rect width="100%" height="100%" fill="#fff"/><path d="${d}" fill="#0d1b2e"/></svg>`;
+  }
+
   window.ScreenCore = { DEVICE, CHOSEN, PREVIEW, VIEW, SITE, SCREEN_URL, URL_ROTATE, CHECKS_IN, PAGE, esc, cache, clock, now, timeParts,
-    rotation, route, fetchScreen, WX, reloadIfOutdated, scheduleNightlyReload, showIdentify, lockdown, registerOfflineCache };
+    rotation, route, fetchScreen, WX, reloadIfOutdated, scheduleNightlyReload, showIdentify, lockdown, registerOfflineCache, svgQR, MENU };
 })();

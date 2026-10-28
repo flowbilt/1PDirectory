@@ -10,7 +10,7 @@
 */
 (() => {
   "use strict";
-  const VERSION = "2.17.0";   // = netlify/lib/version.mjs (a test keeps them equal)
+  const VERSION = "2.18.0";   // = netlify/lib/version.mjs (a test keeps them equal)
   // What every screen does (which screen, check-in, clock, rotation, Identify, lockdown, reloads, offline cache) is in
   // screen-core.js, shared with the layout page (DP-11, round E1a).
   const C = window.ScreenCore;
@@ -197,13 +197,8 @@
 
   // The QR code, drawn here (public/vendor/qrcode.js): dark modules on white with the standard quiet zone of four
   let qrFor = "";
-  /** A QR code as an SVG (also a place's card, round 18). Throws if the encoder can't take it. */
-  function svgQR(url) {
-    const q = window.LobbyQR(url), n = q.size, Q = 4;
-    let d = "";
-    for (let r = 0; r < n; r++) for (let c = 0; c < n; c++) if (q.dark(r, c)) d += `M${c + Q} ${r + Q}h1v1h-1z`;
-    return `<svg viewBox="0 0 ${n + 2 * Q} ${n + 2 * Q}" shape-rendering="crispEdges" role="img" aria-label="QR code"><rect width="100%" height="100%" fill="#fff"/><path d="${d}" fill="#0d1b2e"/></svg>`;
-  }
+  /** A QR code as an SVG (also a place's card, round 18); shared with the layout page's QR block (screen-core.js). */
+  const svgQR = (url) => C.svgQR(url);
   function drawQR(url) {
     if (url === qrFor) return;
     try {

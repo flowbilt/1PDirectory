@@ -34,6 +34,8 @@
   for = "/fonts/*"
   [headers.values]
     Cache-Control = "public, max-age=31536000, immutable"
+    # E1c: the phone menu is shown on waytugo.com and uses these fonts from here
+    Access-Control-Allow-Origin = "*"
 
 # Signed-in pages: never framed by other sites, never cached.
 [[headers]]

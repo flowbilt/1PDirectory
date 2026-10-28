@@ -45,6 +45,7 @@ Owner users can't read a screen's hardware record (serial, MACs, IPs, the Yodeck
 | `RESEND_API_KEY` | **Yes** | Optional instead of the SMTP settings: Resend, used only when `SMTP_HOST` isn't set |
 | `GOOGLE_MAPS_KEY` | No (public by design) | The traffic map's Google Maps **browser** key. It's sent to screens, so in Google Cloud it must be restricted to **Websites** `https://1pdirectory.netlify.app/*` and to the **Maps JavaScript API** only. Without it, the map stays off |
 | `TOGO_BASE` | No | Optional: the start of the Directory to Go link in the QR codes. Default `https://waytugo.com/d/`; set it to `https://1pdirectory.netlify.app/d/` only if waytugo.com isn't forwarding yet |
+| `MENU_BASE` | No | Optional (DP-11 E1c): the start of the Take this menu with you link in a layout's QR code. Default `https://waytugo.com/m/`; set it to `https://1pdirectory.netlify.app/m/` only if waytugo.com isn't forwarding `/m/*` yet |
 | `GOOGLE_ROUTES_KEY` | **Yes**, Functions only | The drive times' Google **server** key, restricted to the **Routes API** only. Never sent to a screen or the browser. Without it, drive times stay off |
 
 Without a way to send, alerts are only logged. Settings take effect at the next deploy (Deploys → Trigger deploy).
@@ -191,6 +192,20 @@ are uploaded. **Copy key**, **Rename** (the name only; the key stays) and **Remo
   address. The bucket's address in `netlify.toml` is the project's public URL; no key is involved.
 - Only 1Point uploads, renames and removes pictures for now; owners see their account's.
 
+**Take this menu with you (round E1c).** Every layout has a menu code (six letters and digits, like Directory to Go's),
+made when the layout is added. A `qr` block puts the code on the board; it opens **`waytugo.com/m/<code>`** on a phone
+(waytugo.com forwards `/m/*` here, as it does `/d/*`; `MENU_BASE` can point the codes elsewhere). The console shows the
+address under the layout's name, with how often it's been opened in the last 30 days and in all.
+- The phone page shows the layout's **published version as designed**: its colours, fonts, logo and pictures, laid out
+  to scroll down a phone in reading order (each column of the board top to bottom), with only the blocks on now by the
+  building's clock (the fall box shows on the phone only while it's on the board). No clock, weather or QR code.
+  A rotator becomes a strip of pictures to swipe.
+- Items, text, photos and a rotator's pictures can carry a `link` (a full web address); on the phone they're marked
+  and open in a new tab. The board itself shows no links.
+- **See the board** opens the board itself, scaled to the phone (pinch to zoom), for showing a prospect what they'd get.
+- The building: the one of the most recently seen screen showing the layout, else the account's first by name.
+- Each open is counted per layout per day; nothing about the visitor is kept. Not indexed by search engines.
+
 **The format** (`public/layout-format.mjs` checks it; the site, the console and the screen all use that one file):
 
 ```json
@@ -226,6 +241,12 @@ are uploaded. **Copy key**, **Rename** (the name only; the key stays) and **Remo
   `weather` (the building's, as on the directory); `hours` (opening hours by day: "Open now · until 6 PM", "Closed now ·
   opens tomorrow at 6 AM", and the week); `timetable` (columns and rows by day, today highlighted); `nownext` (sessions
   by day and time: what's on now and next).
+- **QR block** (E1c): `qr` with an optional `line` under the code (default "Take this menu with you"); it draws the
+  layout's own menu code, as large as its box allows less one line of text. **Guardrail:** a code reads from about 10
+  times its width, so one under 100 mm across on the screen size given is a warning ("reads from about 0.7 m").
+  On a 55" landscape board on the 24-column grid, 3 × 3 cells is enough.
+- **Links** (E1c): `link` on items, `text`, `photo` and a rotator's pictures: a web address written in full
+  (`https://…`, at most 300 characters); only the phone menu uses it.
 - **Background picture** (E1b): `theme.background` `{ "image": "img:…", "dim": 0–90 }` (dimmed by the `bg` colour,
   60% unless said). **Guardrail:** text standing straight on a photo or rotator, or on a background dimmed below 60%,
   is a warning; give the block a `surface` (a band behind the text). Blocks in the same place whose `dates` never meet
@@ -239,7 +260,9 @@ are uploaded. **Copy key**, **Rename** (the name only; the key stays) and **Remo
 - The first layout, **Donut Joe's Pelham** (an internal spec from the DP-06 mockup, not for a public ad), is in
   `layouts/donut-joes-pelham.json`. The second, **Donut Joe's counter board** (55" landscape, with the shop's pictures:
   the logo, a rotating hero, the energy drinks, a fall box that hands over to "Take some home" on December 1), is
-  `layouts/donut-joes-counter-55.json`; its menu source is `layouts/donut-joes-menu-source.md`. Internal spec only.
+  `layouts/donut-joes-counter-55.json`; its menu source is `layouts/donut-joes-menu-source.md`. Internal spec only. Since E1c it carries the QR code ("Scan for
+  the menu", where the drinks photo was; the drinks joined the hero) and links on the party box and the Joe to Go
+  Carafe (to the shop's home page until it has the exact pages).
 
 ## Screens and cards (Raspberry Pi)
 
@@ -541,7 +564,7 @@ bash tests/kiosk-rotation-test.sh    # the kiosk: address from the serial, rotat
 python3 tests/agent-test.py          # the Pi's agent: schedule, results, reboot, updates, keys, Update Pi, Wi-Fi search and join, the status light, remote support (about 2 minutes)
 python3 tests/button-test.py         # the case button and status light, with key presses through a pipe (about 20 seconds)
 bash tests/setup-test.sh             # setup's options, Wi-Fi import, naming, TV keeper, pointer, HDMI, quiet start, start-up picture and animation, field Wi-Fi setup (seconds)
-node tests/browser-checks.mjs        # in Chromium (Playwright): the layout page, the console's Layouts tab and Pictures, Orientation, the directory still working (about a minute)
+node tests/browser-checks.mjs        # in Chromium (Playwright): the layout page, the console's Layouts tab and Pictures, the QR block and the phone menu, Orientation, the directory still working (about a minute)
 node tests/browser-checks.mjs --compare <older public/>   # also: directory screens drawn exactly as by an older copy of public/
 bash tests/sql-test.sh               # every supabase/ file from scratch on a local PostgreSQL 16, each check after its file and again at the end (PGHOST/PGPORT/PGUSER)
 ```
@@ -555,9 +578,9 @@ Local sample logins: `scot@1pointusa.com / admin-pass`, `leighann@barber.test / 
 
 ```
 public/             screen (index.html, display.*; board.* for a layout; screen-core.js, what every screen does, shared by both; layout-format.mjs, the layout format), sign-in, console (+ console-devices.js, console-setup.js, console-layouts.js), editor, technician page (tech.*), shared auth.js
-netlify/functions/  screen, users, config, weather, news, traffic, togo (the Directory to Go page), agent, devices, networks, alert-settings, alerts, layouts (check, preview, publish, roll back; upload and remove pictures)
+netlify/functions/  screen, users, config, weather, news, traffic, togo (the Directory to Go page), menu (Take this menu with you: /m/<code> and /api/menu), agent, devices, networks, alert-settings, alerts, layouts (check, preview, publish, roll back; upload and remove pictures)
 netlify/lib/        Supabase client (and Storage), RSS reader, pictures (images.mjs: what a file really is), shared helpers
-supabase/           database schema (01 to 30, run in order), starting data, check queries, setup guide
+supabase/           database schema (01 to 31, run in order), starting data, check queries, setup guide
 migration/          the Yodeck/Wix transcription the starting data was built from
 public/pi/          setup-kiosk.sh, agent.py, startup.png (the start-up picture) and startup/ (the start-up animation), served by the site so Pis can download them
 layouts/            layouts written as data (Donut Joe's Pelham; Donut Joe's counter board, 55" landscape) and the menu source; not deployed, pasted into the console

@@ -66,7 +66,7 @@
     const frame = $("layout-frame");
     frame.className = `layout-frame ${l.orientation}`;
     $("layout-iframe").src = "about:blank"; L.frameReady = false;
-    meta(); await loadVersions(); await loadPictures();
+    meta(); await loadVersions(); await loadPictures(); await menuLine();
     history.replaceState(null, "", `#layouts`);
   }
   function meta() {
@@ -196,7 +196,21 @@
     L.current.published_version = version;
     await window.ConsoleRefresh();
     const [l] = await Auth.db(`layouts?id=eq.${L.current.id}&select=*`); if (l) L.current = l;
-    meta(); await loadVersions();
+    meta(); await loadVersions(); await menuLine();
+  }
+
+  // ── "Take this menu with you" (E1c): the layout's phone menu, its address and how often it's opened ──
+  async function menuLine() {
+    const l = L.current, el = $("layout-menu");
+    if (!l?.menu_code) { el.hidden = true; return; }
+    let base = "https://waytugo.com/m/";
+    try { const c = await Auth.config(); if (c.menuBase) base = c.menuBase; } catch { /* the default */ }
+    const url = base + l.menu_code, shown = url.replace(/^https?:\/\//, "");
+    if (!l.published_version) { el.innerHTML = `Take this menu with you: <strong>${esc(shown)}</strong> works once the layout is published. A <code>qr</code> block puts its code on the board.`; el.hidden = false; return; }
+    let opens = "";
+    try { const n = await Auth.db("rpc/menu_scan_count", { method: "POST", body: { p_layout: l.id } }); opens = ` · opened ${n.last30} time${n.last30 === 1 ? "" : "s"} in the last 30 days (${n.total} in all)`; } catch { /* leave it out */ }
+    el.innerHTML = `Take this menu with you: <a href="${esc(url)}" target="_blank" rel="noopener">${esc(shown)}</a>${opens}. A <code>qr</code> block puts its code on the board.`;
+    el.hidden = false;
   }
 
   // ── Pictures (E1b): the account's pictures, shared by its layouts; shrunk here, then sent to the site ──

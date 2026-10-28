@@ -164,6 +164,12 @@ export function cleanImages(images) {
 
 /** A screen that shows a layout (DP-11, round E1a; supabase/29-layout-engine.sql): the layout's published version, and
  *  from the screen's building only what a layout uses (time zone, weather point, name and address). */
+/** E1c: the phone menu's address for a layout's code (waytugo.com forwards /m/* to this site). */
+export function menuFor(code) {
+  const base = (process.env.MENU_BASE || "https://waytugo.com/m/").replace(/\/*$/, "/");
+  return /^[A-HJKMNP-Z2-9]{6}$/.test(String(code || "")) ? { url: base + code } : { url: "" };
+}
+
 export function toLayoutPayload(screen, layout, prop, images) {
   return {
     kind: "layout",
@@ -173,6 +179,8 @@ export function toLayoutPayload(screen, layout, prop, images) {
     layout: { id: layout?.id || null, name: layout?.name || "", version: layout?.version ?? null, doc: layout?.doc || null },
     // E1b: the pictures it uses, key -> where the site serves it (/img/, a pass-through to the storage bucket) and its size
     images: cleanImages(images),
+    // E1c: "Take this menu with you", for a QR block: MENU_BASE (default waytugo.com/m/, which forwards here) + the code
+    menu: menuFor(layout?.menu_code),
     propertyName: prop?.name || "",
     address: prop?.address || "",
     timezone: prop?.timezone || "America/Chicago",

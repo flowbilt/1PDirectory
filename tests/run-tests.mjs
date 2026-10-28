@@ -1079,7 +1079,7 @@ test("Send test email: sent to every recipient now, or the mail server's exact r
 // ── Config ──
 test("config hands the pages only the public settings", async () => {
   const d = await (await config()).json();
-  assert.deepEqual(d, { url: SB, anonKey: ANON_KEY, mapsKey: "", togoBase: "https://waytugo.com/d/" });
+  assert.deepEqual(d, { url: SB, anonKey: ANON_KEY, mapsKey: "", togoBase: "https://waytugo.com/d/", menuBase: "https://waytugo.com/m/" });
   assert.ok(!JSON.stringify(d).includes(SERVICE_KEY));
   // The Google Maps browser key is public by design (locked to the site's address); the Routes key never leaves the server
   Object.assign(process.env, { GOOGLE_MAPS_KEY: "browser-key-123", GOOGLE_ROUTES_KEY: "server-routes-key-456" });
@@ -2178,7 +2178,7 @@ test("pictures are known by their own bytes: WebP (all three kinds), JPEG and PN
   assert.equal(IMG.pictureKey("  Jalapeño Smokey Joe!! "), "jalapeno-smokey-joe");
   assert.equal(IMG.pictureKey("***"), "");
   const keys = IMG.pictureKeys(COUNTER);
-  assert.ok(keys.includes("donut-joes-logo") && keys.includes("maple-bacon") && keys.includes("strawberry-spark") && keys.includes("gift-cards"));
+  assert.ok(keys.includes("donut-joes-logo") && keys.includes("maple-bacon") && keys.includes("blue-raspberry-bolt") && keys.includes("gift-cards"));
   assert.ok(!keys.includes("img:maple-bacon") && new Set(keys).size === keys.length, "keys, once each");
 });
 
@@ -2283,6 +2283,91 @@ test("a layout's pictures: missing ones are problems, the screen gets each one's
   assert.equal(r.status, 200);
   assert.ok(!fake.T.layout_images.includes(spare) && !fake.storage.has(`layout-images/${spare.path}`), "row and file gone");
   assert.equal((await lcall({ action: "delete_image", id: spare.id }, (await login("leighann@barber.test", "owner-pass")))).status, 403);
+});
+
+// ── Take this menu with you (DP-11, round E1c; supabase/31-menu-to-go.sql, netlify/functions/menu.mjs) ──
+const menuFn = (await import("../netlify/functions/menu.mjs")).default;
+const ORIGIN = (process.env.URL || new URL(SITE).origin).replace(/\/+$/, "");   // the site the phone page takes fonts and pictures from
+const { menuFor } = await import("../netlify/functions/screen.mjs");
+
+test("the format's QR block and links: a link is a full web address; a QR code too small to read is warned about; reading order", () => {
+  const base = { format: 1, orientation: "landscape", grid: { cols: 24, rows: 13, gap: 16, margin: 30 }, viewing: { inches: 55, metres: 4 } };
+  const bad = LF.checkLayout({ ...base, blocks: [
+    { id: "a", type: "text", at: { col: 1, row: 1, w: 4, h: 2 }, content: { title: "x", link: "javascript:alert(1)" } },
+    { id: "b", type: "items", at: { col: 5, row: 1, w: 4, h: 4 }, content: { items: [{ name: "x", link: "donutjoescoffee.com" }] } },
+    { id: "c", type: "qr", at: { col: 9, row: 1, w: 3, h: 3 }, content: { line: "x".repeat(81) } }] });
+  assert.equal(bad.errors.filter((e) => /web address written in full/.test(e.msg)).length, 2, "no javascript:, no bare domain");
+  assert.ok(bad.errors.some((e) => /at most 80/.test(e.msg)));
+  const qr = (w, h) => LF.checkLayout({ ...base, blocks: [{ id: "q", type: "qr", at: { col: 1, row: 1, w, h }, style: { size: "m" }, content: {} }] });
+  const small = qr(2, 2).warnings.find((w) => w.kind === "qr");
+  assert.ok(small && /reads from at least 1 m/.test(small.msg) && /about 0\.\d m/.test(small.msg), JSON.stringify(small));
+  assert.ok(!qr(3, 3).warnings.some((w) => w.kind === "qr"), "3 × 3 cells on a 55\" board is big enough");
+  assert.ok(LF.qrSide(qr(3, 3).doc, qr(3, 3).doc.blocks[0]) * LF.mmPerPx(55) >= LF.QR_MIN_MM);
+  const order = LF.readingOrder(LF.checkLayout(COUNTER).doc.blocks).map((b) => b.id);
+  assert.deepEqual(order.slice(0, 6), ["logo", "hero", "hours", "donuts", "pastries", "party"], "the left column, then the middle");
+  assert.ok(order.indexOf("coffee") < order.indexOf("energy") && order.indexOf("energy") < order.indexOf("menu-qr") && order.at(-1) === "weather", order.join(" "));
+  const bands = LF.readingOrder([{ id: "z", at: { col: 1, row: 9, w: 12, h: 2 } }, { id: "y", at: { col: 7, row: 3, w: 6, h: 4 } }, { id: "x", at: { col: 1, row: 3, w: 6, h: 6 } }, { id: "w", at: { col: 1, row: 1, w: 12, h: 2 } }]).map((b) => b.id);
+  assert.deepEqual(bands, ["w", "x", "y", "z"], "bands top to bottom, columns within a band left to right");
+  assert.equal(menuFor("DJ7K2Q").url, "https://waytugo.com/m/DJ7K2Q"); assert.equal(menuFor("bad").url, "");
+});
+
+test("the phone menu: only a published layout, as designed, blocks on now in reading order, links in a new tab, opens counted", async () => {
+  const admin = await login("scot@1pointusa.com", "admin-pass");
+  const org = fake.T.organizations.find((o) => /Barber/.test(o.name));
+  const prop = fake.T.properties.find((p) => p.org_id === org.id);
+  const [l] = await (await fake.handle(new Request(`${SB}/rest/v1/layouts`, { method: "POST", body: JSON.stringify({ org_id: org.id, name: "Menu test", family: "menu", orientation: "landscape" }), headers: { apikey: SERVICE_KEY, "Content-Type": "application/json", Prefer: "return=representation" } }))).json();
+  const code = fake.T.layouts.find((x) => x.id === l.id).menu_code;
+  assert.match(code, /^[A-HJKMNP-Z2-9]{6}$/, "a new layout gets its code");
+  let r = await menuFn(req(`/m/${code}`));
+  assert.equal(r.status, 404, "not until it's published"); assert.match(await r.text(), /This menu link isn't active/);
+  assert.equal((await menuFn(req("/m/nope!!"))).status, 404);
+  const doc = { format: 1, orientation: "landscape", grid: { cols: 24, rows: 13 }, viewing: { inches: 55, metres: 4 },
+    theme: { palette: { bg: "#fff6ea", ink: "#3a2416" }, fonts: { display: "Oswald", body: "Instrument Sans" } }, blocks: [
+      { id: "logo", type: "logo", at: { col: 1, row: 1, w: 7, h: 2 }, content: { image: "img:maple-bacon", text: "Barber's" } },
+      { id: "right", type: "items", at: { col: 9, row: 1, w: 8, h: 6 }, style: { size: "l" }, content: { heading: "Coffee", items: [{ name: "Cold Brew", price: "$4.29", link: "https://example.com/cold-brew" }, { name: "Mocha", price: "$5.25", tags: ["sold-out"] }] } },
+      { id: "left", type: "text", at: { col: 1, row: 3, w: 7, h: 4 }, style: { size: "l" }, content: { title: "Party boxes <b>", body: "Call ahead", link: "https://example.com/party" } },
+      { id: "later", type: "text", at: { col: 1, row: 8, w: 7, h: 2 }, style: { size: "l" }, content: { title: "Next year's special" }, when: { dates: { from: "2099-01-01" } } },
+      { id: "clock", type: "clock", at: { col: 17, row: 1, w: 4, h: 2 }, style: { size: "l" }, content: {} },
+      { id: "qr", type: "qr", at: { col: 21, row: 1, w: 4, h: 4 }, content: {} }] };
+  r = await lcall({ action: "publish", layout_id: l.id, doc, override: true }, admin);
+  assert.equal(r.status, 200, JSON.stringify(await r.clone().json()));
+  const before = fake.T.menu_scans.filter((x) => x.layout_id === l.id).reduce((n, x) => n + x.scans, 0);
+  r = await menuFn(req(`/m/${code.toLowerCase()}`));
+  assert.equal(r.status, 200); assert.equal(r.headers.get("cache-control"), "no-store"); assert.equal(r.headers.get("x-robots-tag"), "noindex");
+  const html = await r.text();
+  const pic = fake.T.layout_images.find((i) => i.org_id === org.id && i.key === "maple-bacon");
+  assert.ok(html.includes(`class="logo" src="${ORIGIN}/img/${pic.path}"`), "the logo picture, from this site by full address");
+  assert.ok(html.indexOf("Party boxes &lt;b&gt;") > 0 && html.indexOf("Party boxes") < html.indexOf("Cold Brew"), "the left column first, words escaped");
+  assert.ok(html.includes('<a class="more" href="https://example.com/party" target="_blank" rel="noopener">') && html.includes('href="https://example.com/cold-brew" target="_blank" rel="noopener"'), "links open in a new tab");
+  assert.ok(html.includes('class="item sold"'), "sold out is shown as sold out");
+  assert.ok(!html.includes("Next year's special"), "a block not on now isn't shown");
+  assert.ok(!html.includes("b-clock") && !html.includes("LobbyQR"), "no clock or QR code on the phone");
+  assert.ok(html.includes(`url("${ORIGIN}/fonts/Oswald-Bold.ttf")`) && html.includes("--bg:#fff6ea"), "the layout's fonts and colours");
+  assert.ok(html.includes(`data-src="${ORIGIN}/board.html?menu=${code}"`), "See the board");
+  assert.equal(fake.T.menu_scans.filter((x) => x.layout_id === l.id).reduce((n, x) => n + x.scans, 0), before + 1, "the open is counted");
+  // See the board: the published layout as a screen's answer, with its menu address; not counted
+  r = await menuFn(req(`/api/menu?code=${code}`));
+  const p = await r.json();
+  assert.equal(p.kind, "layout"); assert.deepEqual(p.layout.doc, doc); assert.equal(p.menu.url, `https://waytugo.com/m/${code}`);
+  assert.equal(p.images["maple-bacon"].url, `/img/${pic.path}`); assert.equal(p.timezone, prop.timezone);
+  assert.equal(fake.T.menu_scans.filter((x) => x.layout_id === l.id).reduce((n, x) => n + x.scans, 0), before + 1, "See the board isn't another open");
+  assert.equal((await menuFn(req("/api/menu?code=ZZZZZZ"))).status, 404);
+  // the screen and the preview carry the menu address for the QR block
+  r = await lcall({ action: "preview", layout_id: l.id, doc, property_id: prop.id }, admin);
+  assert.equal((await r.json()).payload.menu.url, `https://waytugo.com/m/${code}`);
+  const scr = fake.T.screens.find((x) => x.orientation === "landscape");
+  const keep = { directory_id: scr.directory_id, layout_id: scr.layout_id ?? null, property_id: scr.property_id ?? null };
+  try {
+    Object.assign(scr, { directory_id: null, layout_id: l.id, property_id: prop.id });
+    assert.equal((await (await screen(req(`/api/screen?key=${scr.key}`))).json()).menu.url, `https://waytugo.com/m/${code}`);
+  } finally { Object.assign(scr, keep); }
+  // the opens, for the console: the account's own users, not strangers
+  const owner = await login("leighann@barber.test", "owner-pass"), stranger = await login("stranger@other.test", "stranger-pass");
+  const count = async (token) => fake.handle(new Request(`${SB}/rest/v1/rpc/menu_scan_count`, { method: "POST", body: JSON.stringify({ p_layout: l.id }), headers: { apikey: ANON_KEY, Authorization: `Bearer ${token}`, "Content-Type": "application/json" } }));
+  assert.equal((await (await count(owner)).json()).total, before + 1);
+  assert.equal((await count(stranger)).status, 403);
+  const sql = readFileSync(new URL("../supabase/31-menu-to-go.sql", import.meta.url), "utf8");
+  assert.ok(sql.includes("create trigger layouts_menu_new before insert") && !/menu_code set default/.test(sql), "31: the code comes from a trigger, not a default");
 });
 
 test("the layout page's files: shared screen code, fonts with their licences, the offline cache, one display version", () => {

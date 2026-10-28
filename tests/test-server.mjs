@@ -16,6 +16,7 @@ import networks from "../netlify/functions/networks.mjs";
 import alertSettings from "../netlify/functions/alert-settings.mjs";
 import traffic from "../netlify/functions/traffic.mjs";
 import togo from "../netlify/functions/togo.mjs";
+import menu from "../netlify/functions/menu.mjs";
 import layouts from "../netlify/functions/layouts.mjs";
 
 const port = Number(process.argv[2]) || 8888;
@@ -49,7 +50,7 @@ globalThis.fetch = async (url, init = {}) => {
   return new Response("offline", { status: 503 });
 };
 
-const ROUTES = { "/api/screen": screen, "/api/users": users, "/api/config": config, "/api/weather": weather, "/api/news": news, "/api/agent": agent, "/api/devices": devices, "/api/networks": networks, "/api/alert-settings": alertSettings, "/api/traffic": traffic, "/api/layouts": layouts };
+const ROUTES = { "/api/screen": screen, "/api/users": users, "/api/config": config, "/api/weather": weather, "/api/news": news, "/api/agent": agent, "/api/devices": devices, "/api/networks": networks, "/api/alert-settings": alertSettings, "/api/traffic": traffic, "/api/layouts": layouts, "/api/menu": menu };
 const TYPES = { ".html": "text/html", ".js": "text/javascript", ".mjs": "text/javascript", ".css": "text/css", ".ttf": "font/ttf", ".svg": "image/svg+xml", ".png": "image/png", ".jpg": "image/jpeg", ".webmanifest": "application/manifest+json" };
 // PUBLIC_DIR serves another copy of public/ (the browser checks compare directory screens with an older display)
 const PUB = process.env.PUBLIC_DIR ? join(process.env.PUBLIC_DIR, "/") : new URL("../public/", import.meta.url).pathname;
@@ -68,7 +69,7 @@ createServer(async (req, res) => {
     if (!f) { res.writeHead(404); return res.end("Not found"); }
     res.writeHead(200, { "Content-Type": f.mime, "Cache-Control": "public, max-age=31536000, immutable" }); return res.end(Buffer.from(f.bytes));
   }
-  const fn = ROUTES[url.pathname] || (url.pathname.startsWith("/d/") ? togo : null);   // Directory to Go phone pages
+  const fn = ROUTES[url.pathname] || (url.pathname.startsWith("/d/") ? togo : url.pathname.startsWith("/m/") ? menu : null);   // Directory to Go and menu phone pages
   if (fn) return send(await fn(new Request(url, { method: req.method, headers: req.headers, body })));
   const file = normalize(join(PUB, url.pathname === "/" ? "index.html" : url.pathname));
   if (!file.startsWith(PUB)) { res.writeHead(403); return res.end(); }

@@ -143,3 +143,11 @@ body { font-family: "Instrument Sans", "Segoe UI", Arial, sans-serif; -webkit-fo
 .bgpic img { width: 100%; height: 100%; object-fit: cover; display: block; }
 .bgpic .bg-dim { position: absolute; inset: 0; background: var(--p-bg); }
 @media (prefers-reduced-motion: reduce) { .rot-slide { transition: none; } }
+
+/* ── The QR code for "Take this menu with you" (E1c): drawn at the size the guardrail measured, a line under it ── */
+.b.qr .b-in { display: flex; flex-direction: column; align-items: var(--chip-justify, flex-start); }
+.b-qr { display: flex; flex-direction: column; align-items: inherit; }
+.qr-code { flex: none; border-radius: 0.15em; overflow: hidden; }
+.qr-code svg { display: block; width: 100%; height: 100%; }
+.qr-code.qr-empty { background: rgba(127, 127, 127, 0.18); }
+.qr-line { font-size: 0.62em; line-height: 1.2; margin-top: 10px; white-space: nowrap; font-weight: 600; }
