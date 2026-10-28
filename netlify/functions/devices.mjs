@@ -45,14 +45,15 @@ export function wifiPayload(body) {
 // Screens (id -> {key, name, org}) the caller may see
 async function visibleScreens(profile) {
   const [screens, dirs, props] = await Promise.all([
-    db("screens?select=id,key,name,directory_id"),
+    db("screens?select=id,key,name,directory_id,property_id"),
     db("directories?select=id,property_id"),
     db("properties?select=id,org_id"),
   ]);
   const orgOfDir = Object.fromEntries(dirs.map((d) => [d.id, props.find((p) => p.id === d.property_id)?.org_id]));
   const out = new Map();
   for (const s of screens) {
-    const org = orgOfDir[s.directory_id] || null;
+    // A layout screen (DP-11, 29-layout-engine.sql) has its building on the screen itself
+    const org = orgOfDir[s.directory_id] || (s.property_id && props.find((p) => p.id === s.property_id)?.org_id) || null;
     if (profile.role === "platform_admin" || (org && org === profile.org_id)) out.set(s.id, { ...s, org });
   }
   return out;
@@ -176,9 +177,10 @@ export default async (req) => {
         // Already saved (from the field or the office): the password that just worked replaces the old one
         await db(`wifi_networks?id=eq.${have.id}`, { method: "PATCH", prefer: "return=minimal", body: { psk: net.psk, hidden: net.hidden, ...stamp } });
       } else {
-        const [s] = await db(`screens?id=eq.${enc(d.screen_id || "")}&select=directory_id`);
-        const [dir] = s ? await db(`directories?id=eq.${enc(s.directory_id || "")}&select=property_id`) : [];
-        const [prop] = dir ? await db(`properties?id=eq.${enc(dir.property_id)}&select=name`) : [];
+        const [s] = await db(`screens?id=eq.${enc(d.screen_id || "")}&select=directory_id,property_id`);
+        const [dir] = s?.directory_id ? await db(`directories?id=eq.${enc(s.directory_id)}&select=property_id`) : [];
+        const pid = dir?.property_id || s?.property_id;   // a layout screen's building is on the screen (DP-11)
+        const [prop] = pid ? await db(`properties?id=eq.${enc(pid)}&select=name`) : [];
         await db("wifi_networks", { method: "POST", prefer: "return=minimal", body: { label: prop?.name || "", ...net, on_cards: false, ...stamp } });
       }
       await audit(user.id, have ? "update wifi from field" : "save wifi from field", "wifi_network", have?.id || null, { ssid: net.ssid, serial: d.serial });
@@ -287,7 +289,7 @@ export function computeSummary({ devices, windows, daily, screens, dirs, props, 
     };
     const s = screens.find((x) => x.id === d.screen_id);
     const dir = s && dirs.find((x) => x.id === s.directory_id);
-    const prop = dir && props.find((x) => x.id === dir.property_id);
+    const prop = (dir && props.find((x) => x.id === dir.property_id)) || (s?.property_id && props.find((x) => x.id === s.property_id)) || null;
     const org = prop && orgs.find((x) => x.id === prop.org_id);
     const h = d.last_health || {};
     const online = !!d.last_seen && now - Date.parse(d.last_seen) <= ONLINE_MIN * 60000;
@@ -333,7 +335,7 @@ async function summary() {
   const [devices, windows, screens, dirs, props, orgs] = await Promise.all([
     db("devices?select=id,serial,screen_id,status,model,agent_version,last_seen,last_health&order=serial.asc"),
     rpc("health_window", { p_today: centralDay() }),
-    db("screens?select=id,name,key,directory_id,no_cec"),
+    db("screens?select=id,name,key,directory_id,property_id,no_cec"),
     db("directories?select=id,property_id"),
     db("properties?select=id,name,org_id"),
     db("organizations?select=id,name"),

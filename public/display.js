@@ -10,12 +10,12 @@
 */
 (() => {
   "use strict";
-  const VERSION = "2.15.1";   // = netlify/lib/version.mjs (a test keeps them equal)
-  const q = new URLSearchParams(location.search);
-  const DEVICE = (q.get("device") || "").toLowerCase();
-  const CHOSEN = (q.get("screen") || q.get("key") || q.get("site") || "").toLowerCase();
-  const PREVIEW = q.get("preview") === "1";
-  const VIEW = q.get("view") === "1";
+  const VERSION = "2.16.0";   // = netlify/lib/version.mjs (a test keeps them equal)
+  // What every screen does (which screen, check-in, clock, rotation, Identify, lockdown, reloads, offline cache) is in
+  // screen-core.js, shared with the layout page (DP-11, round E1a).
+  const C = window.ScreenCore;
+  const { DEVICE, CHOSEN, PREVIEW, VIEW, SITE, CHECKS_IN, cache, esc } = C;
+  const clock = C.clock;
 
   // Nothing chosen: no directory, no polling, no check-in. (This used to fall back to landmark-center.)
   if (!DEVICE && !CHOSEN && !PREVIEW) {
@@ -24,17 +24,6 @@
     stage.innerHTML = `<div class="no-screen"><h1>Lobby Directory</h1><p>No screen chosen. Screens open this page with their own address.</p><p><a href="/console.html">Sign in to the console</a></p></div>`;
     return;
   }
-
-  const SITE = DEVICE ? `device-${DEVICE}` : CHOSEN || "preview";
-  const SCREEN_URL = DEVICE ? `/api/screen?device=${encodeURIComponent(DEVICE)}` : `/api/screen?key=${encodeURIComponent(SITE)}`;
-  const URL_ROTATE = ["90", "270"].includes(q.get("rotate")) ? Number(q.get("rotate")) : null;
-  const CHECKS_IN = !PREVIEW && !VIEW; // only a real screen records a check-in
-  // A Pi 4 has no battery-backed clock: after a power cut it starts at the last time it saved and corrects itself only
-  // once it's online. So a real screen shows the time and date only after it has reached the site since it started.
-  let clockTrusted = !CHECKS_IN;
-  // The site's own time comes with every answer, so the clock is right even where a building's network blocks the
-  // time service the Pi normally sets itself from (NTP).
-  let clockOffset = 0;
 
   const POLL_DIRECTORY_MS = 60 * 1000;
   const POLL_WEATHER_MS = 10 * 60 * 1000;
@@ -45,33 +34,18 @@
   let data = null;
   let dataSig = "";
 
-  // ── Cache helpers (last good data survives a reboot with no internet) ──
-  const cache = {
-    get(k) { try { return JSON.parse(localStorage.getItem(`dir:${SITE}:${k}`)); } catch { return null; } },
-    set(k, v) { try { localStorage.setItem(`dir:${SITE}:${k}`, JSON.stringify(v)); } catch { /* storage full or blocked */ } },
-  };
-
   async function getJSON(url, opts) {
     const res = await fetch(url, { cache: "no-store", ...opts });
     if (!res.ok) throw new Error(`${res.status} ${url}`);
     return res.json();
   }
 
-  const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
-
   // ── Stage sizing, orientation and software rotation ──
   // The screen's orientation (set in the console) decides the layout. If it doesn't match the way the
   // TV is being driven, the page rotates itself 90 degrees. ?rotate= in the address overrides that.
   function sizeStage() {
     const vw = window.innerWidth, vh = window.innerHeight;
-    const wanted = data?.orientation || "auto";           // portrait-flipped / landscape-flipped: the same layouts, the
-    const shape = wanted.split("-")[0];                   // Pi turns the picture the other way (setup-kiosk.sh)
-    const viewportPortrait = vh > vw;
-    let rotate = URL_ROTATE;
-    // The same direction the Pi turns its output (Wayland transform 90 is a quarter turn anticlockwise, which is
-    // rotate(-90deg) here), so the picture doesn't flip between a Layout change and the Pi's next restart.
-    if (rotate === null) rotate = shape === "portrait" && !viewportPortrait ? (wanted === "portrait-flipped" ? 90 : 270) : shape === "landscape" && viewportPortrait ? 90 : 0;
-    const W = rotate ? vh : vw, H = rotate ? vw : vh;
+    const { W, H, transform } = C.rotation(data?.orientation, vw, vh);
     const landscape = W > H;
     const root = document.documentElement.style;
     root.setProperty("--W", `${W}px`);
@@ -80,7 +54,7 @@
     // window never squeezes out the tenant list. 10.8px on both a 1080x1920 portrait and a 1920x1080 landscape screen.
     root.setProperty("--u", `${landscape ? Math.min(W / 177.78, H / 100) : Math.min(W / 100, H / 177.78)}px`);
     stage.classList.toggle("landscape", landscape);
-    stage.style.transform = rotate === 90 ? `translateX(${vw}px) rotate(90deg)` : rotate === 270 ? `translateY(${vh}px) rotate(-90deg)` : "";
+    stage.style.transform = transform;
   }
 
   // ── Tenant list layout ──
@@ -286,23 +260,12 @@
   async function loadDirectory() {
     if (draftMode) return;
     try {
-      // The size and version headers are the screen's check-in (they used to be a separate heartbeat call).
-      const headers = !CHECKS_IN ? {} : { "X-Screen-Size": `${screen.width}x${screen.height}`, "X-Display-Version": VERSION };
       // Round 15c: the drive times' status for the console (never Google's minutes or labels: its terms forbid keeping them)
-      if (CHECKS_IN && traffic.status) headers["X-Traffic"] = JSON.stringify({ ...traffic.status, shown: infoSlides().some((x) => x.kind === "times") });
-      const res = await fetch(SCREEN_URL, { cache: "no-cache", headers });
-      if (!res.ok) throw new Error(`directory ${res.status}`);
-      const d = await res.json();
-      const fromCache = res.headers.get("X-Served-From") === "offline-cache";
-      if (!fromCache) {
-        cache.set("directory", d);
-        const siteNow = Date.parse(res.headers.get("Date") || "");
-        if (siteNow) clockOffset = Math.abs(siteNow - Date.now()) > 2000 ? siteNow - Date.now() : 0;
-        if (!clockTrusted) { clockTrusted = true; tick(); }
-      }
-      $("offline").hidden = !fromCache;
-      if (!fromCache) reloadIfOutdated(d.display);
-      apply(d);
+      const extra = CHECKS_IN && traffic.status ? { "X-Traffic": JSON.stringify({ ...traffic.status, shown: infoSlides().some((x) => x.kind === "times") }) } : {};
+      const got = await C.fetchScreen(VERSION, extra);   // the check-in, the site's clock, the kept copy, a newer display
+      if (!got) return;                                  // this screen shows a layout now: the layout page takes over
+      $("offline").hidden = !got.fromCache;
+      apply(got.d);
     } catch (e) {
       console.warn("Directory fetch failed", e);
       if (!data) { const c = cache.get("directory"); if (c) apply(c); }
@@ -310,21 +273,8 @@
     }
   }
 
-  // A newer display is live (the site says which with every directory): fetch the new code fresh, then reload, once.
-  // The note in localStorage stops a loop if a reload somehow still gets the old code: it tries again after 30 minutes.
-  async function reloadIfOutdated(live) {
-    if (PREVIEW || !CHECKS_IN || !live || live === VERSION || reloadIfOutdated.busy) return;
-    let last = null;
-    try { last = JSON.parse(localStorage.getItem("display-reload") || "null"); } catch { /* storage off: no guard needed */ }
-    if (last && last.to === live && Date.now() - last.at < 30 * 60000) return;
-    reloadIfOutdated.busy = true;
-    try { localStorage.setItem("display-reload", JSON.stringify({ to: live, at: Date.now() })); } catch { /* ignore */ }
-    console.info(`Display ${live} is live (this is ${VERSION}): reloading`);
-    await Promise.all(["/display.js", "/display.css", "/vendor/qrcode.js", "/"].map((u) => fetch(u, { cache: "reload" }).catch(() => null)));
-    location.reload();
-  }
-
   function apply(d) {
+    if (C.route(d)) return;                     // an answer for a layout (the console changed what this screen shows)
     const sig = JSON.stringify(d);
     if (sig === dataSig) return;
     // A visitor is using the touch directory: hold the update until they're done (or the screen goes idle)
@@ -339,44 +289,19 @@
     if (coordsChanged) loadWeather();
   }
 
-  // ── Identify: the console flashes this screen's name so a tech knows which one they're standing at ──
-  function showIdentify() {
-    const until = Date.parse(data?.identifyUntil || "");
-    const on = Number.isFinite(until) && until > Date.now();
-    const el = $("identify");
-    if (on && el.hidden) el.innerHTML = `<div class="identify-name">${esc(data.screenName || data.key || "")}</div><div class="identify-key">${esc(data.key || "")}${DEVICE ? ` · Pi ${esc(DEVICE)}` : ""}</div>`;
-    el.hidden = !on;
-  }
-
   // ── Clock ──
   function tick() {
-    showIdentify();
+    C.showIdentify($("identify"), data);
     const tz = data?.timezone || "America/Chicago";
-    $("time").hidden = $("date").hidden = !clockTrusted;
-    if (!clockTrusted) return;
-    const now = new Date(Date.now() + clockOffset);
-    let timeParts;
-    try { timeParts = new Intl.DateTimeFormat("en-US", { hour: "numeric", minute: "2-digit", hour12: true, timeZone: tz }).formatToParts(now); }
-    catch { timeParts = new Intl.DateTimeFormat("en-US", { hour: "numeric", minute: "2-digit", hour12: true }).formatToParts(now); }
-    const hm = timeParts.filter((p) => p.type !== "dayPeriod").map((p) => p.value).join("").trim();
-    const ap = timeParts.find((p) => p.type === "dayPeriod")?.value || "";
-    $("time").innerHTML = `${esc(hm)}<small>${esc(ap)}</small>`;
-    try { $("date").textContent = now.toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric", timeZone: tz }); }
-    catch { $("date").textContent = now.toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric" }); }
+    $("time").hidden = $("date").hidden = !clock.trusted;
+    if (!clock.trusted) return;
+    const t = C.timeParts(tz);
+    $("time").innerHTML = `${esc(t.hm)}<small>${esc(t.ap)}</small>`;
+    $("date").textContent = t.date;
   }
 
   // ── Weather bug ──
-  const WX = {
-    "clear-day": '<circle cx="24" cy="24" r="8" fill="#f2c14e"/><g stroke="#f2c14e" stroke-width="3" stroke-linecap="round"><path d="M24 6v5M24 37v5M6 24h5M37 24h5M11.3 11.3l3.5 3.5M33.2 33.2l3.5 3.5M11.3 36.7l3.5-3.5M33.2 14.8l3.5-3.5"/></g>',
-    "clear-night": '<path d="M30 8a15 15 0 1 0 10 26A13 13 0 0 1 30 8z" fill="#c7cdd6"/>',
-    "partly-day": '<circle cx="18" cy="17" r="7" fill="#f2c14e"/><g stroke="#f2c14e" stroke-width="2.6" stroke-linecap="round"><path d="M18 3v4M4 17h4M8 7l2.8 2.8M28 7l-2.8 2.8"/></g><path d="M15 38h20a8 8 0 0 0 0-16 11 11 0 0 0-20 3 6.5 6.5 0 0 0 0 13z" fill="#dfe3ea"/>',
-    "partly-night": '<path d="M22 6a10 10 0 1 0 8 15A9 9 0 0 1 22 6z" fill="#c7cdd6"/><path d="M15 40h20a8 8 0 0 0 0-16 11 11 0 0 0-20 3 6.5 6.5 0 0 0 0 13z" fill="#dfe3ea"/>',
-    cloud: '<path d="M13 37h22a9 9 0 0 0 0-18 12 12 0 0 0-22 3.5A7.3 7.3 0 0 0 13 37z" fill="#dfe3ea"/>',
-    rain: '<path d="M13 30h22a9 9 0 0 0 0-18 12 12 0 0 0-22 3.5A7.3 7.3 0 0 0 13 30z" fill="#dfe3ea"/><g stroke="#7fb3e6" stroke-width="3" stroke-linecap="round"><path d="M17 35l-2 6M25 35l-2 6M33 35l-2 6"/></g>',
-    storm: '<path d="M13 28h22a9 9 0 0 0 0-18 12 12 0 0 0-22 3.5A7.3 7.3 0 0 0 13 28z" fill="#b9c0cc"/><path d="M25 29l-6 9h5l-3 8 9-11h-5l3-6z" fill="#f2c14e"/>',
-    snow: '<path d="M13 30h22a9 9 0 0 0 0-18 12 12 0 0 0-22 3.5A7.3 7.3 0 0 0 13 30z" fill="#dfe3ea"/><g fill="#ffffff"><circle cx="17" cy="37" r="2.2"/><circle cx="25" cy="41" r="2.2"/><circle cx="33" cy="37" r="2.2"/></g>',
-    fog: '<g stroke="#c7cdd6" stroke-width="3.2" stroke-linecap="round"><path d="M8 18h32M12 26h28M8 34h26"/></g>',
-  };
+  const WX = C.WX;   // the weather icons (screen-core.js, shared with the layout page)
 
   function showWeather(w) {
     if (!w || typeof w.tempF !== "number" || data?.weather?.enabled === false) return;
@@ -499,7 +424,7 @@
   function timesHtml() {
     const dests = data?.traffic?.destinations || [];
     const rows = CHECKS_IN && traffic.times ? traffic.times : dests.map((label) => ({ label, minutes: null }));
-    const at = traffic.at && CHECKS_IN ? new Date(traffic.at + clockOffset).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit", timeZone: data?.timezone || "America/Chicago" }) : "";
+    const at = traffic.at && CHECKS_IN ? new Date(traffic.at + clock.offset).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit", timeZone: data?.timezone || "America/Chicago" }) : "";
     return `<div class="info-head">Drive times now</div><ul class="info-list">${rows.map((r) => {
       const extra = r.minutes != null && r.usualMinutes != null && r.minutes - r.usualMinutes >= 3 ? `<div class="info-line">+${r.minutes - r.usualMinutes} min for traffic</div>` : "";
       return `<li><div class="info-row"><span class="info-name">${esc(r.label)}</span><span class="info-value">${r.minutes != null ? `${r.minutes}<small> min</small>` : "—"}</span></div>${extra}</li>`;
@@ -517,7 +442,7 @@
       const r = await res.json().catch(() => ({}));
       if (Array.isArray(r.times)) {
         traffic.times = r.times; traffic.at = Date.now();
-        traffic.status = { s: "ok", n: r.times.filter((t) => t.minutes != null).length, of: r.times.length, at: new Date(Date.now() + clockOffset).toISOString() };
+        traffic.status = { s: "ok", n: r.times.filter((t) => t.minutes != null).length, of: r.times.length, at: new Date(C.now()).toISOString() };
       } else if (r.wait) { next = Math.max(60, r.wait + 30) * 1000; if (traffic.status?.s !== "ok") traffic.status = { s: "wait" }; }
       else if (r.off) { traffic.times = null; traffic.status = { s: "off", why: String(r.off) }; }
       else traffic.status = { s: "error", why: String(r.error || `answer ${res.status}`) };
@@ -603,15 +528,6 @@
     fitTenants(); // decides whether news fits alongside the tenants
     ensureRotation();
   }
-
-  // ── Daily reload at 3 a.m. picks up code updates and clears browser memory ──
-  function scheduleNightlyReload() {
-    const now = new Date(), next = new Date(now);
-    next.setHours(3, 0, 0, 0);
-    if (next <= now) next.setDate(next.getDate() + 1);
-    setTimeout(() => location.reload(), next - now);
-  }
-
 
   // ── The touch directory (DP-09 round 15): on a screen marked touch, a visitor taps a company for its card (suite and
   // the people the owner shows); an A to Z strip when the list is too long to fit; the customer's accessible keyboard,
@@ -888,14 +804,11 @@
   document.addEventListener("pointerdown", () => { if (data?.touch) armIdle(); }, true);
   $("list-frame").addEventListener("scroll", () => { if (data?.touch) armIdle(); }, { passive: true });
 
-  // ── Touch lockdown (DP-08 round 13): on a touch screen nothing can be zoomed, selected, dragged or long-pressed
-  // into a menu, so a passer-by can't leave the directory in a mess. On every screen (harmless without touch);
-  // the styles are in display.css. The touch directory (a later round) opens its own taps on purpose.
-  for (const type of ["contextmenu", "selectstart", "dragstart", "gesturestart"]) document.addEventListener(type, (e) => e.preventDefault());
-  document.addEventListener("touchmove", (e) => { if (e.touches.length > 1) e.preventDefault(); }, { passive: false });   // no pinch
-  document.addEventListener("wheel", (e) => { if (e.ctrlKey) e.preventDefault(); }, { passive: false });                  // no pinch on a touchpad
+  // ── Touch lockdown (DP-08 round 13; screen-core.js): nothing can be zoomed, selected, dragged or long-pressed ──
+  C.lockdown();
 
   // ── Boot ──
+  clock.onTrusted = tick;   // the first answer from the site: show the time and date
   sizeStage();
   window.addEventListener("resize", () => { sizeStage(); fitTenants(); if (data) placeBackground(); });
   const cached = cache.get("directory");
@@ -905,7 +818,7 @@
   setInterval(loadWeather, POLL_WEATHER_MS);
   setInterval(loadNews, POLL_NEWS_MS);
   setInterval(tick, 1000);
-  scheduleNightlyReload();
+  C.scheduleNightlyReload();
 
   // When settings change (rotation time, news, map, travel times or amenities on/off), restart the rotator.
   let lastPanel = null;
@@ -928,5 +841,5 @@
     });
   }
 
-  if (CHECKS_IN && "serviceWorker" in navigator) navigator.serviceWorker.register("/sw.js").catch(() => {});
+  C.registerOfflineCache();
 })();

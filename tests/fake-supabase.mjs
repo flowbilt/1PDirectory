@@ -16,10 +16,10 @@ const CODE_ALPHA = "ABCDEFGHJKMNPQRSTUVWXYZ23456789";
 const newCode = () => Array.from({ length: 6 }, () => CODE_ALPHA[Math.floor(Math.random() * CODE_ALPHA.length)]).join("");
 
 export function createFake() {
-  const T = { organizations: [], profiles: [], properties: [], directories: [], tenants: [], screens: [], audit_log: [], devices: [], device_commands: [], device_daily: [], wifi_networks: [], prepare_codes: [], alert_recipients: [], mail_settings: [], togo_scans: [], companies: [], people: [] };
+  const T = { organizations: [], profiles: [], properties: [], directories: [], tenants: [], screens: [], audit_log: [], devices: [], device_commands: [], device_daily: [], wifi_networks: [], prepare_codes: [], alert_recipients: [], mail_settings: [], togo_scans: [], companies: [], people: [], layouts: [], layout_versions: [] };
   const SERVICE_ONLY = new Set(["togo_scans", "devices", "device_commands", "device_daily", "wifi_networks", "prepare_codes", "alert_recipients", "mail_settings"]); // row-level security on, no policies: server key only
   // Columns of screens signed-in users may read (supabase/06-trust.sql, plus sizes from 18 and no_cec from 21). hardware is server-only.
-  const SCREEN_COLS = new Set(["id", "directory_id", "key", "name", "location_note", "orientation", "last_seen", "last_report", "identify_until", "created_at", "sizes", "no_cec", "hide_powered_by", "touch", "screen_inches", "touch_idle_s"]);
+  const SCREEN_COLS = new Set(["id", "directory_id", "key", "name", "location_note", "orientation", "last_seen", "last_report", "identify_until", "created_at", "sizes", "no_cec", "hide_powered_by", "touch", "screen_inches", "touch_idle_s", "layout_id", "property_id"]);
   const users = new Map(); // id -> {id,email,password,last_sign_in_at,invited_at,user_metadata}
   const tokens = new Map(); // token -> user id
   const outbox = [];
@@ -81,6 +81,8 @@ export function createFake() {
   // ── access rules (mirror of 01-schema.sql) ──
   const profileOf = (uid) => T.profiles.find((p) => p.user_id === uid);
   const companyOrg = (cid) => { const c = T.companies.find((x) => x.id === cid); return T.properties.find((x) => x.id === c?.property_id)?.org_id; };
+  const propOrg = (pid) => T.properties.find((x) => x.id === pid)?.org_id;
+  const layoutOrg = (lid) => T.layouts.find((x) => x.id === lid)?.org_id;
   const dirOrg = (did) => { const d = T.directories.find((x) => x.id === did); const p = d && T.properties.find((x) => x.id === d.property_id); return p?.org_id; };
   function canSee(table, row, who) {
     if (who.service) return true;
@@ -93,7 +95,9 @@ export function createFake() {
       case "properties": return row.org_id === me.org_id;
       case "directories": return dirOrg(row.id) === me.org_id;
       case "tenants": return dirOrg(row.directory_id) === me.org_id;
-      case "screens": return dirOrg(row.directory_id) === me.org_id;
+      case "screens": return dirOrg(row.directory_id) === me.org_id || (!!row.property_id && propOrg(row.property_id) === me.org_id);   // 29
+      case "layouts": return row.org_id === me.org_id;                   // 29-layout-engine.sql
+      case "layout_versions": return layoutOrg(row.layout_id) === me.org_id;
       case "companies": return companyOrg(row.id) === me.org_id;
       case "people": return companyOrg(row.company_id) === me.org_id;
       default: return false;
@@ -103,7 +107,7 @@ export function createFake() {
     if (who.service) return true;
     if (SERVICE_ONLY.has(table)) return false;
     const me = who.profile; if (!me) return false;
-    if (me.role === "platform_admin") return table !== "profiles" && table !== "audit_log";
+    if (me.role === "platform_admin") return table !== "profiles" && table !== "audit_log" && table !== "layout_versions";   // versions: the site only
     if (table === "tenants") return dirOrg(row.directory_id) === me.org_id;
     if (table === "people") return companyOrg(row.company_id) === me.org_id;            // 26-people.sql
     if (op === "update" && table === "companies") return companyOrg(row.id) === me.org_id; // no insert: the tenant list makes them
@@ -170,7 +174,8 @@ export function createFake() {
     tenants: () => ({ id: randomUUID(), sort: 0, suite: "", arrow: "", note: "", company_id: null }),
     companies: () => ({ id: randomUUID(), show_people: false, show_title: true, show_phone: false, show_email: false, created_at: now(), updated_at: now() }),
     people: () => ({ id: randomUUID(), sort: 0, first_name: "", last_name: "", title: "", phone: "", email: "", suite: "", show: true, created_at: now(), updated_at: now() }),
-    screens: () => ({ id: randomUUID(), directory_id: null, location_note: "", orientation: "auto", hardware: {}, last_seen: null, last_report: {}, sizes: {}, no_cec: false, traffic_at: null, hide_powered_by: false, touch: false, screen_inches: null, touch_idle_s: 45, created_at: now() }),
+    layouts: () => ({ id: randomUUID(), family: "menu", draft: {}, published_version: null, published_at: null, created_at: now(), updated_at: now(), updated_by: null }),
+    screens: () => ({ id: randomUUID(), directory_id: null, layout_id: null, property_id: null, location_note: "", orientation: "auto", hardware: {}, last_seen: null, last_report: {}, sizes: {}, no_cec: false, traffic_at: null, hide_powered_by: false, touch: false, screen_inches: null, touch_idle_s: 45, created_at: now() }),
     profiles: () => ({ full_name: "", created_at: now() }),
     audit_log: () => ({ id: T.audit_log.length + 1, at: now(), detail: {} }),
     devices: () => ({ id: randomUUID(), screen_id: null, key_hash: null, enroll_until: null, refused_at: null, refused_why: null, status: "active", model: "", hostname: "", agent_version: "", last_seen: null, last_health: {}, screenshot: "", screenshot_at: null, alert_state: {}, created_at: now() }),
@@ -199,7 +204,29 @@ export function createFake() {
     if (!c) { c = { ...defaults.companies(), property_id: prop, name: String(row.name).trim() }; T.companies.push(c); }
     row.company_id = c.id;
   }
-  function checkRow(table, row) {
+  const shapeOf = (o) => (o === "portrait" || o === "portrait-flipped" ? "portrait" : "landscape");
+  const LABEL = { auto: "Automatic", portrait: "Portrait", "portrait-flipped": "Portrait (turned the other way)", landscape: "Landscape", "landscape-flipped": "Landscape (upside down)" };
+  /** guard_screen_layout and the one-content check (29-layout-engine.sql), in its words */
+  function layoutRule(row, before) {
+    if (row.directory_id && row.layout_id) return "new row for relation \"screens\" violates check constraint \"screens_one_content\"";
+    if (!row.layout_id) return null;
+    const l = T.layouts.find((x) => x.id === row.layout_id);
+    if (!l) return "insert or update on table \"screens\" violates foreign key constraint \"screens_layout_id_fkey\"";
+    if (l.published_version == null && (!before || before.layout_id !== row.layout_id)) return `The layout "${l.name}" hasn't been published yet. Publish it on the Layouts tab first.`;
+    if (!row.property_id) return "Choose the building this screen is in. A layout takes its time zone, weather and address from the screen's building.";
+    if (propOrg(row.property_id) !== l.org_id) return `That building belongs to a different account from the layout "${l.name}". Choose one of the layout's account's buildings.`;
+    if (shapeOf(row.orientation) !== l.orientation) {
+      const other = shapeOf(row.orientation);
+      return `The layout "${l.name}" is ${l.orientation}, and this screen's Orientation is ${LABEL[row.orientation] || "Automatic"}. Change the screen's Orientation to ${l.orientation === "portrait" ? "Portrait" : "Landscape"} first, or choose a ${other} layout.`;
+    }
+    return null;
+  }
+  function checkRow(table, row, before) {
+    if (table === "screens") { const bad = layoutRule(row, before); if (bad) return bad; }
+    if (table === "layouts" && before && (row.orientation !== before.orientation || row.org_id !== before.org_id)) {
+      const n = T.screens.filter((x) => x.layout_id === before.id).length;
+      if (n) return `The layout "${before.name}" is shown on ${n} screen(s). Choose something else for those screens first.`;
+    }
     if (table === "directories" && T.directories.some((d) => d.slug === row.slug && d.id !== row.id)) return "duplicate key value violates unique constraint \"directories_slug_key\"";
     if (table === "screens" && T.screens.some((s) => s.key === row.key && s.id !== row.id)) return "duplicate key value violates unique constraint \"screens_key_key\"";
     if (table === "screens" && row.touch_idle_s != null && !(row.touch_idle_s >= 15 && row.touch_idle_s <= 300)) return "new row violates check constraint \"screens_touch_idle_range\"";
@@ -244,13 +271,14 @@ export function createFake() {
           if (!canSee(table, existing, who) || !canWrite(table, "update", existing, who)) return err(403, `new row violates row-level security policy for table "${table}"`);
           const next = { ...existing, ...item };
           if (!canWrite(table, "update", next, who)) return err(403, `new row violates row-level security policy for table "${table}"`);
-          const bad = checkRow(table, next); if (bad) return err(409, bad);
+          const bad = checkRow(table, next, existing); if (bad) return err(409, bad);
           const before = { ...existing };
           Object.assign(existing, item);
           if (table === "tenants") { linkTenant(existing, before); touchDir(existing.directory_id, who.uid); }
           if (table === "people") touchCompany(existing.company_id, who.uid);
           result.push({ ...existing });
         } else {
+          if (table === "layouts" && !who.service && ["draft", "published_version", "published_at"].some((k) => k in item)) return err(403, "permission denied for table layouts");
           const row = { ...(defaults[table]?.() || {}), ...item };
           if (!canWrite(table, "insert", row, who)) return err(403, `new row violates row-level security policy for table "${table}"`);
           const bad = checkRow(table, row); if (bad) return err(409, bad);
@@ -272,7 +300,9 @@ export function createFake() {
           if (table === "directories" && ((body.slug && body.slug !== r.slug) || (body.property_id && body.property_id !== r.property_id))) return err(400, "Only 1Point admins can move or rename a directory");
           if (table === "companies" && ((body.name !== undefined && body.name !== r.name) || (body.property_id && body.property_id !== r.property_id))) return err(400, "A company takes its name from the tenant list: rename the tenant instead");
         }
-        const bad = checkRow(table, { ...r, ...body }); if (bad) return err(409, bad);
+        const bad = checkRow(table, { ...r, ...body }, r); if (bad) return err(409, bad);
+        // 29: signed-in users may not write a layout's draft or its published fields (the site does, after its checks)
+        if (table === "layouts" && !who.service && ["draft", "published_version", "published_at"].some((k) => k in body)) return err(403, "permission denied for table layouts");
       }
       rows.forEach((r) => {
         const before = { ...r };
@@ -288,6 +318,8 @@ export function createFake() {
     if (req.method === "DELETE") {
       const rows = T[table].filter((r) => canSee(table, r, who) && match(r));
       for (const r of rows) if (!canWrite(table, "delete", r, who)) return err(403, `permission denied for table ${table}`);
+      if (table === "layouts") for (const r of rows) { const n = T.screens.filter((x) => x.layout_id === r.id).length; if (n) return err(409, `The layout "${r.name}" is shown on ${n} screen(s). Choose something else for those screens first.`); }
+      if (table === "layouts") { const ids = new Set(rows.map((r) => r.id)); T.layout_versions = T.layout_versions.filter((v) => !ids.has(v.layout_id)); }
       T[table] = T[table].filter((r) => !rows.includes(r));
       if (table === "tenants") new Set(rows.map((r) => r.directory_id)).forEach((d) => touchDir(d, who.uid));
       if (table === "people") new Set(rows.map((r) => r.company_id)).forEach((c) => touchCompany(c, who.uid));
@@ -476,6 +508,27 @@ export function createFake() {
       d.togo_code = c; d.updated_at = now();
       return c;
     },
+    // 29-layout-engine.sql: publish and roll back, the site only (not in USER_FUNCS)
+    layout_publish({ p_layout, p_doc, p_checks, p_overridden, p_note, p_by }) {
+      const l = T.layouts.find((x) => x.id === p_layout);
+      if (!l) throw Object.assign(new Error("No such layout."), { status: 404 });
+      if ((p_doc?.orientation || "") !== l.orientation) throw Object.assign(new Error(`This layout is ${l.orientation}, so the layout's "orientation" must be "${l.orientation}".`), { status: 400 });
+      const v = Math.max(0, ...T.layout_versions.filter((x) => x.layout_id === l.id).map((x) => x.version)) + 1;
+      T.layout_versions.push({ layout_id: l.id, version: v, doc: p_doc, checks: p_checks || {}, overridden: !!p_overridden, note: String(p_note || "").slice(0, 200), rolled_back_from: null, published_at: now(), published_by: p_by || null });
+      Object.assign(l, { draft: p_doc, published_version: v, published_at: now(), updated_at: now(), updated_by: p_by || null });
+      T.audit_log.push({ id: T.audit_log.length + 1, at: now(), user_id: p_by, action: "publish layout", entity: "layout", entity_id: l.id, detail: { version: v } });
+      return v;
+    },
+    layout_rollback({ p_layout, p_version, p_by }) {
+      const l = T.layouts.find((x) => x.id === p_layout);
+      if (!l) throw Object.assign(new Error("No such layout."), { status: 404 });
+      const old = T.layout_versions.find((x) => x.layout_id === l.id && x.version === p_version);
+      if (!old) throw Object.assign(new Error(`This layout has no version ${p_version}.`), { status: 404 });
+      const v = Math.max(...T.layout_versions.filter((x) => x.layout_id === l.id).map((x) => x.version)) + 1;
+      T.layout_versions.push({ ...old, version: v, note: `Rolled back to version ${p_version}`, rolled_back_from: p_version, published_at: now(), published_by: p_by || null });
+      Object.assign(l, { draft: old.doc, published_version: v, published_at: now(), updated_at: now(), updated_by: p_by || null });
+      return v;
+    },
     screen_state({ p_key, p_device, p_etag, p_report }) {
       let s;
       if (p_device) {
@@ -487,6 +540,17 @@ export function createFake() {
         if (!s) return { missing: true };
       }
       if (p_report && (!s.last_seen || Date.parse(s.last_seen) < Date.now() - 4 * 60000)) Object.assign(s, { last_seen: now(), last_report: p_report });
+      if (s.layout_id) {   // 29-layout-engine.sql: a layout screen
+        const l = T.layouts.find((x) => x.id === s.layout_id);
+        const lv = l?.published_version != null ? T.layout_versions.find((x) => x.layout_id === l.id && x.version === l.published_version) : null;
+        const lp = s.property_id ? T.properties.find((x) => x.id === s.property_id) : null;
+        const etag = createHash("md5").update(["layout", s.key, s.name, s.orientation, l.id, l.published_version ?? "-", l.name, s.identify_until || "-", lp?.updated_at || "-", String(!!s.hide_powered_by), String(!!s.touch), s.screen_inches ?? "-", String(s.touch_idle_s ?? 45)].join("|")).digest("hex");
+        if (etag === p_etag) return { etag, not_modified: true };
+        return { etag, kind: "layout",
+          screen: { key: s.key, name: s.name, orientation: s.orientation, identify_until: s.identify_until ?? null, hide_powered_by: !!s.hide_powered_by, touch: !!s.touch, screen_inches: s.screen_inches ?? null, touch_idle_s: s.touch_idle_s ?? 45 },
+          layout: { id: l.id, name: l.name, orientation: l.orientation, version: lv?.version ?? null, doc: lv ? lv.doc : null },
+          prop: lp ? { id: lp.id, name: lp.name, address: lp.address, timezone: lp.timezone, lat: lp.lat, lon: lp.lon, updated_at: lp.updated_at } : null };
+      }
       const d = s.directory_id ? T.directories.find((x) => x.id === s.directory_id) : null;
       const p = d ? T.properties.find((x) => x.id === d.property_id) : null;
       const etag = createHash("md5").update([s.key, s.name, s.orientation, s.directory_id || "-", s.identify_until || "-", d?.updated_at || "-", p?.updated_at || "-", JSON.stringify(s.sizes || {}), String(!!s.hide_powered_by), String(!!s.touch), s.screen_inches ?? "-", String(s.touch_idle_s ?? 45)].join("|")).digest("hex");

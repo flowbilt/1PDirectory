@@ -51,6 +51,8 @@ Do these once. The current site keeps running as it is until the new build is de
 
 29. For the touch directory (DP-09 round 15): **before uploading that code**, new query, paste all of `28-touch-directory.sql`, and click **Run**. Then new query, paste all of `check-touch-directory.sql`, and click **Run**; it should read **ALL 6 CHECKS PASSED** (red on purpose). (The new console and editor read and save the two new columns, so they must exist first.)
 
+30. For layouts, the new kind of screen content (DP-11, round E1a): **before uploading that code**, new query, paste all of `29-layout-engine.sql`, and click **Run**. Then new query, paste all of `check-layout-engine.sql`, and click **Run**; it should read **ALL 10 CHECKS PASSED** (red on purpose). (The new console reads the new tables and screen columns, so they must exist first; the old code never asks for them, and directory screens are answered exactly as before.)
+
 If any of them shows an error (other than the expected red messages from the `check-…sql` files), copy the message (it includes a line number) and send it to Claude.
 
 ## 3. Lock down sign-ups

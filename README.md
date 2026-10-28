@@ -7,11 +7,11 @@ Tenant directories for lobby screens, replacing Yodeck and Wix. Hosted on Netlif
 | Address | Who | What |
 |---|---|---|
 | `/login.html` | everyone | Sign in, forgotten password, and setting a password from an invitation or reset email |
-| `/console.html` | signed in | Screens (status, search, layout), Buildings, People, and Accounts (1Point only) |
-| `/tech.html` | 1Point | The technician page, sized for a phone: Identify, Reload screen, Reboot Pi, Layout, and Wi-Fi search and join. Add it to the phone's home screen |
+| `/console.html` | signed in | Screens (status, search, orientation, what each shows), Buildings, People, and (1Point only) Health, Pi setup, **Layouts** (DP-11) and Accounts |
+| `/tech.html` | 1Point | The technician page, sized for a phone: Identify, Reload screen, Reboot Pi, Orientation (called Layout before DP-11), and Wi-Fi search and join. Add it to the phone's home screen |
 | `/edit.html?d=…` | signed in | Edit one directory's tenants, plus its building's shared settings (address, logo, an owner or manager logo, background photo, contacts), with a live preview. **Sizes** (per screen; `&s=` picks the screen, as the console's Edit tenants link does): title, top logo, bottom logo and Bottom line, each 50–250% of standard within limits (`supabase/18-sizes.sql`); and since DP-08 round 10 the clock and date, weather, news and contacts, each 70–150% (`supabase/22-widget-sizes.sql`; a larger news panel grows with its text and still steps aside when the tenants need the room). Only the sliders for parts the screen shows appear. **Since DP-08 round 11:** per directory, **Show traffic map**, **Show drive times** and **Show nearby places** (all off until ticked), and per building the drive time destinations (up to 3) and nearby places (up to 20: name, distance or walking time, a short line); see The information panel. Standard is unchanged; anyone who can see the screen can change them; the screen picks them up within a minute of publishing |
 | `/d/<code>` (and `waytugo.com/d/<code>`) | anyone | **Directory to Go** (DP-08 round 12): the phone page a screen's QR code opens. Read-only: the building, address (with Open in Maps), tenants and suites (a search box for longer directories), contacts (tap to call) and the place lists when the directory shows them; the WayTuGo mark at the bottom. Only for directories with Directory to Go switched on; every open is counted per directory per day (no personal data). waytugo.com forwards `/d/*` here (see The information panel and Directory to Go) |
-| `/?device=<serial>` | lobby screens | What a Pi shows: whichever screen the console assigns it to |
+| `/?device=<serial>` | lobby screens | What a Pi shows: whichever screen the console assigns it to. A screen that shows a **layout** (DP-11) moves itself to `/board.html` with the same options, and back to `/` when it shows a directory again, so a Pi's address never changes |
 | `/?screen=ppi-2s` | lobby screens | A fixed screen. Older screens use `?site=landmark-center`, which still works |
 | `/?screen=ppi-2s&view=1` | anyone | Looking at a screen (the console's **View** button). Shows the same thing but doesn't count as the screen checking in |
 | `/` | anyone | A short note that no screen was chosen. (It used to show The Landmark Center.) |
@@ -150,6 +150,71 @@ Only on screens marked **This is a touch screen** (console, Screen settings). Di
   works as a tap.
 - `supabase/28-touch-directory.sql`: `screens.touch_idle_s`, `directories.touch_keyboard`, and `screen_state` sending
   the idle time.
+
+## Layouts (DP-11, round E1a)
+
+A screen can show a **layout** instead of a directory: a grid, a theme and blocks, kept as data (never code), the
+start of the display templates in `expansion-brief.md` (menus, schedules, boards). The directory is untouched: a
+directory screen is drawn exactly as before (the browser checks compare it element by element with the previous display).
+
+**In the console (1Point only in E1a):** the **Layouts** tab lists layouts. **Add layout** (account, name, kind,
+orientation), then paste the layout's JSON and:
+- **Check**: problems (it can't be published until they're fixed) and warnings (the guardrails: text too small for the
+  screen size and viewing distance, low contrast, blocks overlapping); keeps it as the draft.
+- **Preview** in one of the account's buildings: drawn exactly as a screen draws it now (its schedules follow that
+  building's clock); a block whose text doesn't fit even at the smallest size allowed is marked in red and becomes a warning.
+- **Publish** (with an optional note): a new version. With warnings it asks first; **Publish anyway** is recorded with
+  the version. Every version is kept and never changed; **Roll back to this** publishes an earlier one again as the
+  newest. Screens showing the layout change within a minute.
+- Then point a screen at it in **Screen settings → Shows** (layouts are listed by account) and choose the **Building**
+  it's in (the layout takes its time zone, weather and address from it). A layout's orientation is fixed: a portrait
+  layout goes only on a screen whose Orientation is Portrait (or Portrait turned the other way), and the console says so
+  in plain words if not. To go back, choose the screen's directory again in Shows.
+
+A layout belongs to the **account**, not a building, so later one layout can show at many sites (every block has an
+`id` that never changes, which leaves room for per-site overrides). Owners see their account's layouts and layout
+screens; customers' content editing comes with E2, pictures with E1b.
+
+**The format** (`public/layout-format.mjs` checks it; the site, the console and the screen all use that one file):
+
+```json
+{ "format": 1, "orientation": "portrait",
+  "grid": { "cols": 12, "rows": 24, "gap": 16, "margin": 40 },
+  "viewing": { "inches": 43, "metres": 3 },
+  "theme": { "palette": { "bg": "#fff7ec", "ink": "#2b1a12", "accent": "#c0392b", "onAccent": "#ffffff" },
+             "fonts": { "display": "Fraunces", "body": "Instrument Sans" } },
+  "blocks": [ { "id": "hero", "type": "photo", "at": { "col": 1, "row": 4, "w": 12, "h": 7 }, "layer": 0,
+                "style": { "surface": "panel", "radius": "l", "size": "xl" },
+                "content": { "caption": "Maple Bacon", "price": "$1.89" },
+                "when": { "days": [2, 3, 4, 5, 6], "from": "06:00", "to": "11:00", "dates": { "to": "2026-11-30" } } } ] }
+```
+
+- **Canvas:** 1080 × 1920 (portrait) or 1920 × 1080 (landscape) whatever the screen; the screen scales it to fit and
+  turns it to its Orientation. `gap` and `margin` are canvas pixels; the bottom margin is never less than 36, where
+  "Powered by WayTuGo" sits (only 1Point's per-screen switch hides it).
+- **Grid:** 4–24 columns, 4–48 rows; each block's `at` is whole cells (`col` and `row` from 1). Blocks on the same
+  `layer` (0–9) shouldn't overlap (a warning) unless their schedules never show them together; a higher layer sits on top.
+- **Palette** names: `bg ink muted accent onAccent panel onPanel highlight onHighlight line` (colours as `#rrggbb`).
+  A block's `surface` (`none bg accent panel highlight`) picks its background and the matching text colour; `ink` overrides it.
+- **Fonts** (stored on the site, from google/fonts, so they work offline): Instrument Sans, Lora, Oswald, Bebas Neue,
+  Alfa Slab One, Fraunces, Playfair Display, Pacifico, Crimson Pro; roles `display`, `body`, `accent`.
+- **Style:** `surface`, `ink`, `font` (role), `size` (`xs s m l xl xxl huge`: 24 to 120 canvas pixels), `align`, `valign`,
+  `radius` (`none s m l round`), `pad` (`none s m l`), `border` (palette name), `tilt` (−8 to 8°), `shadow`, `case` (`upper`).
+- **Block types** and their content: `text` (kicker, title, body, note); `items` (heading, a group `price` such as
+  "$1.89 each", `columns` 1–3, `leaders`, items with name, line, price and tags `sold-out seasonal new limited favorite`);
+  `chips` (heading, items with tags); `price` (a sticker: label, price, note; round by default); `photo` (caption, line,
+  price; the picture itself with E1b, a quiet panel until then); `logo` (text until E1b); `clock` (time, date or both);
+  `weather` (the building's, as on the directory); `hours` (opening hours by day: "Open now · until 6 PM", "Closed now ·
+  opens tomorrow at 6 AM", and the week); `timetable` (columns and rows by day, today highlighted); `nownext` (sessions
+  by day and time: what's on now and next).
+- **Schedules:** `when` is one schedule or a list (the block shows when any matches): `days` 1 = Monday to 7 = Sunday,
+  `from`/`to` 24-hour times in the building's time zone (`to` not included; past midnight works), `dates` from/to
+  (both days included). `"on": false` hides a block by hand. The screen re-checks every second, so a block appears or
+  goes on the minute.
+- **Text fits itself:** each block's text shrinks to fit its box, down to 55% of its size; past that it overflows
+  (the preview marks it and Publish warns).
+- The first layout, **Donut Joe's Pelham** (an internal spec from the DP-06 mockup, not for a public ad), is in
+  `layouts/donut-joes-pelham.json`.
 
 ## Screens and cards (Raspberry Pi)
 
@@ -298,8 +363,8 @@ anyone else is told it's for 1Point technicians. Pick a screen from the list (or
 status in plain words, then:
 
 - **Identify**, **Reload screen**, **Reboot Pi**.
-- **Layout:** choose one and **Save and restart Pi**, so the picture turns now (dark for about a minute). With no
-  enrolled Pi, it just saves the layout.
+- **Orientation** (called Layout before DP-11): choose one and **Save and restart Pi**, so the picture turns now (dark for about a minute). With no
+  enrolled Pi, it just saves the orientation. A screen showing a layout can only be turned to its layout's orientation.
 - **Wi-Fi:** **Search for networks** lists what the Pi can pick up, strongest first, and which one it's on. Tap one,
   type its password, **Join**; or **Join a network that isn't listed** for a hidden one. If the Pi can't join it, or
   joins but can't reach the site within a minute, it drops it and goes back to the network it had, and the page says
@@ -394,11 +459,11 @@ Update Pi. Saved Wi-Fi changes still reach a Pi only on a new card (see the road
 On a freshly flashed Pi, open Terminal and run the same commands without `--prepare` (the code is only needed to
 save the Wi-Fi; a wired Pi can leave out `--code`), then `sudo reboot`.
 
-Rotation is automatic. Each time the Pi starts, it asks the site how its screen's **Layout** is set in the console, and turns the picture to match: Portrait 90°, **Portrait (turned the other way)** 270° for a portrait TV hung the other way round, **Landscape (upside down)** 180°; landscape, new and unassigned Pis stay upright. Without internet it keeps its last answer. So after assigning a Pi or changing a Layout, use **Pi → Reboot Pi** to turn it. The Pi never reboots on its own; reboot scheduling will come to the console with maintenance windows.
+Rotation is automatic. Each time the Pi starts, it asks the site how its screen's **Orientation** is set in the console (called Layout before DP-11), and turns the picture to match: Portrait 90°, **Portrait (turned the other way)** 270° for a portrait TV hung the other way round, **Landscape (upside down)** 180°; landscape, new and unassigned Pis stay upright. Without internet it keeps its last answer. So after assigning a Pi or changing an Orientation, use **Pi → Reboot Pi** to turn it. The Pi never reboots on its own; reboot scheduling will come to the console with maintenance windows.
 
 SSH is switched off by setup (from the restart that finishes it), so the Pi opens no ports. The agent covers remote management. Use `--ssh` for a Pi that needs it, and re-run setup without `--ssh` to switch it off again.
 
-Options (`sudo bash setup-kiosk.sh --help` lists them all): `--rotate 0|90|180|270` to fix the turn by hand (for good; the console's Layout is the usual way), `--ssh` to leave SSH on, `--no-tv` to leave the TV alone, `--no-button` and `--led-gpio N|none` for the case button and light, `--connect` for Raspberry Pi Connect, `--no-agent` to skip the agent, and `--url` to pin a fixed screen address the old way.
+Options (`sudo bash setup-kiosk.sh --help` lists them all): `--rotate 0|90|180|270` to fix the turn by hand (for good; the console's Orientation is the usual way), `--ssh` to leave SSH on, `--no-tv` to leave the TV alone, `--no-button` and `--led-gpio N|none` for the case button and light, `--connect` for Raspberry Pi Connect, `--no-agent` to skip the agent, and `--url` to pin a fixed screen address the old way.
 
 ## Remote management (the agent)
 
@@ -451,18 +516,25 @@ bash tests/kiosk-rotation-test.sh    # the kiosk: address from the serial, rotat
 python3 tests/agent-test.py          # the Pi's agent: schedule, results, reboot, updates, keys, Update Pi, Wi-Fi search and join, the status light, remote support (about 2 minutes)
 python3 tests/button-test.py         # the case button and status light, with key presses through a pipe (about 20 seconds)
 bash tests/setup-test.sh             # setup's options, Wi-Fi import, naming, TV keeper, pointer, HDMI, quiet start, start-up picture and animation, field Wi-Fi setup (seconds)
+node tests/browser-checks.mjs        # in Chromium (Playwright): the layout page, the console's Layouts tab, Orientation, the directory still working (about a minute)
+node tests/browser-checks.mjs --compare <older public/>   # also: directory screens drawn exactly as by an older copy of public/
+bash tests/sql-test.sh               # every supabase/ file from scratch on a local PostgreSQL 16, each check after its file and again at the end (PGHOST/PGPORT/PGUSER)
 ```
+
+The browser checks and the SQL runner joined the repo in DP-11 (before that they were rebuilt in each chat). The SQL
+runner uses `tests/sql/supabase-standin.sql`, a stand-in for Supabase's roles and `auth` schema.
 
 Local sample logins: `scot@1pointusa.com / admin-pass`, `leighann@barber.test / owner-pass`, `editor@barber.test / editor-pass`.
 
 ## Files
 
 ```
-public/             screen (index.html, display.*), sign-in, console (+ console-devices.js, console-setup.js), editor, technician page (tech.*), shared auth.js
-netlify/functions/  screen, users, config, weather, news, traffic, togo (the Directory to Go page), agent, devices, networks, alert-settings, alerts
+public/             screen (index.html, display.*; board.* for a layout; screen-core.js, what every screen does, shared by both; layout-format.mjs, the layout format), sign-in, console (+ console-devices.js, console-setup.js, console-layouts.js), editor, technician page (tech.*), shared auth.js
+netlify/functions/  screen, users, config, weather, news, traffic, togo (the Directory to Go page), agent, devices, networks, alert-settings, alerts, layouts (check, preview, publish, roll back)
 netlify/lib/        Supabase client, RSS reader, shared helpers
-supabase/           database schema (01 to 25, run in order), starting data, check queries, setup guide
+supabase/           database schema (01 to 29, run in order), starting data, check queries, setup guide
 migration/          the Yodeck/Wix transcription the starting data was built from
 public/pi/          setup-kiosk.sh, agent.py, startup.png (the start-up picture) and startup/ (the start-up animation), served by the site so Pis can download them
-tests/              function tests, fake Supabase, local test server
+layouts/            layouts written as data (the first: Donut Joe's Pelham); not deployed, pasted into the console
+tests/              function tests, fake Supabase, local test server, browser checks, the SQL runner and its Supabase stand-in
 ```

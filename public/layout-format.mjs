@@ -1,0 +1,410 @@
+// The layout format (DP-11, round E1a): what a layout is, how it's checked, and when a block shows.
+// One module for all three places that need it: the site (netlify/functions/layouts.mjs checks a layout before it's
+// published), the console (the Layouts tab), and the screen (public/board.js draws it). Data only, never code
+// (expansion-brief.md): everything a layout can say is in this file, and anything else is refused.
+//
+// A layout:
+//   { "format": 1, "orientation": "portrait" | "landscape",
+//     "grid":    { "cols": 12, "rows": 24, "gap": 16, "margin": 40 },     gap and margin in canvas pixels
+//     "viewing": { "inches": 43, "metres": 3 },                            for the text-size guardrail
+//     "theme":   { "palette": { "bg": "#…", "ink": "#…", … }, "fonts": { "display": "Fraunces", "body": "Instrument Sans", "accent": "Pacifico" } },
+//     "blocks":  [ { "id": "hero", "type": "photo", "at": { "col": 1, "row": 4, "w": 12, "h": 7 }, "layer": 0,
+//                    "style": { … }, "content": { … }, "when": { "days": [1,2,3,4,5], "from": "11:00", "to": "14:00" }, "on": true } ] }
+// The canvas is 1080 x 1920 (portrait) or 1920 x 1080 (landscape) whatever the screen; the screen scales it to fit.
+// Days are 1 = Monday to 7 = Sunday. Times are 24-hour "HH:MM" in the building's time zone; "to" is not included.
+
+export const FORMAT = 1;
+export const canvas = (orientation) => (orientation === "landscape" ? { w: 1920, h: 1080 } : { w: 1080, h: 1920 });
+export const POWERED_STRIP = 36;   // the bottom margin is never less than this: "Powered by WayTuGo" sits in it
+
+/** The curated fonts (public/fonts; Scot, 2026-10-28: from google/fonts, stored on the site so they work offline). */
+export const FONTS = {
+  "Instrument Sans":  { css: '"Instrument Sans", system-ui, sans-serif', files: [["InstrumentSans-Regular.ttf", 400], ["InstrumentSans-Bold.ttf", 700]] },
+  "Lora":             { css: '"Lora", Georgia, serif', files: [["Lora-Bold.ttf", 700]] },
+  "Oswald":           { css: '"Oswald", "Arial Narrow", sans-serif', files: [["Oswald-Medium.ttf", 500], ["Oswald-Bold.ttf", 700]] },
+  "Bebas Neue":       { css: '"Bebas Neue", Impact, sans-serif', files: [["BebasNeue-Regular.ttf", 400]] },
+  "Alfa Slab One":    { css: '"Alfa Slab One", Rockwell, serif', files: [["AlfaSlabOne-Regular.ttf", 400]] },
+  "Fraunces":         { css: '"Fraunces", Georgia, serif', files: [["Fraunces-SemiBold.ttf", 600], ["Fraunces-ExtraBold.ttf", 800]] },
+  "Playfair Display": { css: '"Playfair Display", Georgia, serif', files: [["PlayfairDisplay-Variable.ttf", "400 900"]] },
+  "Pacifico":         { css: '"Pacifico", cursive', files: [["Pacifico-Regular.ttf", 400]] },
+  "Crimson Pro":      { css: '"Crimson Pro", Georgia, serif', files: [["CrimsonPro-SemiBold.ttf", 600]] },
+};
+
+/** The palette's names. Each surface has the colour of the text that goes on it ("onAccent" on "accent"). */
+export const PALETTE_KEYS = ["bg", "ink", "muted", "accent", "onAccent", "panel", "onPanel", "highlight", "onHighlight", "line"];
+export const SURFACES = { none: null, bg: "ink", accent: "onAccent", panel: "onPanel", highlight: "onHighlight" };
+const DEFAULT_PALETTE = { bg: "#ffffff", ink: "#1b1f24", muted: "#5b6470", accent: "#0d3b66", onAccent: "#ffffff",
+  panel: "#f1f3f6", onPanel: "#1b1f24", highlight: "#f2c14e", onHighlight: "#1b1f24", line: "#d9dde3" };
+
+/** Text sizes, in canvas pixels (the canvas's short side is always 1080). */
+export const SIZES = { xs: 24, s: 30, m: 38, l: 50, xl: 66, xxl: 88, huge: 120 };
+const RADII = { none: 0, s: 8, m: 18, l: 30, round: 9999 };
+const PADS = { none: 0, s: 12, m: 24, l: 40 };
+export const TAGS = { "sold-out": "Sold out", seasonal: "Seasonal", new: "New", limited: "Limited", favorite: "Favorite" };
+
+/** Block types and the content each may carry: [name, kind, max length or count]. */
+const ITEM = { name: ["text", 80], line: ["text", 160], price: ["text", 16], tags: ["tags"] };
+const SESSION = { days: ["days"], from: ["time"], to: ["time"], name: ["text", 60], line: ["text", 120] };
+export const TYPES = {
+  text:      { kicker: ["text", 60], title: ["text", 120], body: ["text", 400], note: ["text", 120] },
+  items:     { heading: ["text", 60], price: ["text", 24], columns: ["int", 1, 3], leaders: ["bool"], items: ["list", 60, ITEM] },
+  chips:     { heading: ["text", 60], items: ["list", 40, { name: ["text", 40], tags: ["tags"] }] },
+  price:     { label: ["text", 20], price: ["text", 16], note: ["text", 30] },
+  photo:     { image: ["image"], alt: ["text", 120], caption: ["text", 80], line: ["text", 120], price: ["text", 16] },
+  logo:      { image: ["image"], text: ["text", 60] },
+  clock:     { show: ["enum", ["time", "date", "both"]] },
+  weather:   { label: ["text", 30] },
+  hours:     { heading: ["text", 40], hours: ["list", 14, { days: ["days"], open: ["time"], close: ["time"] }], note: ["text", 80] },
+  timetable: { heading: ["text", 60], columns: ["strings", 6, 24], rows: ["list", 14, { days: ["days"], label: ["text", 16], cells: ["strings", 6, 40] }] },
+  nownext:   { now: ["text", 20], next: ["text", 20], empty: ["text", 60], sessions: ["list", 40, SESSION] },
+};
+export const FAMILIES = ["list", "schedule", "menu", "board"];
+
+const STYLE = {
+  surface: ["enum", Object.keys(SURFACES)], ink: ["palette"], font: ["enum", ["display", "body", "accent"]],
+  size: ["enum", Object.keys(SIZES)], align: ["enum", ["left", "center", "right"]], valign: ["enum", ["top", "middle", "bottom"]],
+  radius: ["enum", Object.keys(RADII)], pad: ["enum", Object.keys(PADS)], border: ["palette"], tilt: ["int", -8, 8], shadow: ["bool"],
+  case: ["enum", ["normal", "upper"]],
+};
+
+const ID_RE = /^[a-z0-9][a-z0-9-]{0,39}$/;
+const HEX_RE = /^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/;
+const TIME_RE = /^([01]\d|2[0-4]):([0-5]\d)$/;
+const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
+const IMAGE_RE = /^img:[a-z0-9-]{1,80}$/;   // E1b: an image record; E1a has no pictures, so a photo shows its caption on a panel
+
+const isObj = (v) => v && typeof v === "object" && !Array.isArray(v);
+
+/**
+ * Checks a layout. Returns { errors, warnings, doc }: errors stop it being published (a malformed layout or something
+ * the format doesn't allow); warnings are the guardrails (expansion-brief.md: a customer designer will be stopped by
+ * them, 1Point is warned and may publish anyway). doc is the layout with defaults filled in, as the screen draws it.
+ * Each problem is { where, msg } in plain words.
+ */
+export function checkLayout(input) {
+  const errors = [], warnings = [];
+  const err = (where, msg) => errors.push({ where, msg });
+  const warn = (where, msg, kind) => warnings.push({ where, msg, kind });
+  if (!isObj(input)) { err("layout", "A layout is a JSON object: { \"format\": 1, \"orientation\": …, \"grid\": …, \"theme\": …, \"blocks\": [ … ] }."); return { errors, warnings, doc: null }; }
+  const known = (obj, keys, where) => { for (const k of Object.keys(obj)) if (!keys.includes(k)) err(where, `"${k}" isn't something a layout can say here (allowed: ${keys.join(", ")}).`); };
+  known(input, ["format", "orientation", "grid", "viewing", "theme", "blocks", "name", "notes"], "layout");
+  if (input.format !== FORMAT) err("format", `"format" must be ${FORMAT}.`);
+  const orientation = input.orientation;
+  if (!["portrait", "landscape"].includes(orientation)) err("orientation", "\"orientation\" must be \"portrait\" or \"landscape\".");
+
+  // Grid
+  const g = isObj(input.grid) ? input.grid : {};
+  if (!isObj(input.grid)) err("grid", "\"grid\" is missing: { \"cols\": 12, \"rows\": 24 }.");
+  else known(g, ["cols", "rows", "gap", "margin"], "grid");
+  const int = (v, lo, hi, dflt, where, label) => {
+    if (v === undefined) return dflt;
+    if (!Number.isInteger(v) || v < lo || v > hi) { err(where, `${label} must be a whole number from ${lo} to ${hi}.`); return dflt; }
+    return v;
+  };
+  const grid = { cols: int(g.cols, 4, 24, 12, "grid.cols", "Columns"), rows: int(g.rows, 4, 48, 24, "grid.rows", "Rows"),
+    gap: int(g.gap, 0, 60, 16, "grid.gap", "The gap"), margin: int(g.margin, 0, 120, 40, "grid.margin", "The margin") };
+
+  const vw = isObj(input.viewing) ? input.viewing : {};
+  if (input.viewing !== undefined && !isObj(input.viewing)) err("viewing", "\"viewing\" is { \"inches\": 43, \"metres\": 3 }.");
+  const num = (v, lo, hi, dflt, where, label) => (v === undefined ? dflt : typeof v === "number" && v >= lo && v <= hi ? v : (err(where, `${label} must be a number from ${lo} to ${hi}.`), dflt));
+  const viewing = { inches: num(vw.inches, 7, 100, 43, "viewing.inches", "The screen size (inches)"), metres: num(vw.metres, 0.5, 15, 3, "viewing.metres", "The viewing distance (metres)") };
+
+  // Theme
+  const th = isObj(input.theme) ? input.theme : {};
+  if (input.theme !== undefined && !isObj(input.theme)) err("theme", "\"theme\" is { \"palette\": { … }, \"fonts\": { … } }.");
+  else if (isObj(input.theme)) known(th, ["palette", "fonts"], "theme");
+  const palette = { ...DEFAULT_PALETTE };
+  if (th.palette !== undefined) {
+    if (!isObj(th.palette)) err("theme.palette", "The palette is { \"bg\": \"#ffffff\", \"ink\": \"#1b1f24\", … }.");
+    else for (const [k, v] of Object.entries(th.palette)) {
+      if (!PALETTE_KEYS.includes(k)) err(`theme.palette.${k}`, `"${k}" isn't a palette colour (allowed: ${PALETTE_KEYS.join(", ")}).`);
+      else if (typeof v !== "string" || !HEX_RE.test(v)) err(`theme.palette.${k}`, `${k} must be a colour like "#c0392b".`);
+      else palette[k] = v.length === 4 ? `#${v[1]}${v[1]}${v[2]}${v[2]}${v[3]}${v[3]}` : v.toLowerCase();
+    }
+  }
+  const fonts = { display: "Instrument Sans", body: "Instrument Sans", accent: "Instrument Sans" };
+  if (th.fonts !== undefined) {
+    if (!isObj(th.fonts)) err("theme.fonts", "The fonts are { \"display\": \"Fraunces\", \"body\": \"Instrument Sans\", \"accent\": \"Pacifico\" }.");
+    else for (const [k, v] of Object.entries(th.fonts)) {
+      if (!["display", "body", "accent"].includes(k)) err(`theme.fonts.${k}`, `"${k}" isn't a font role (display, body, accent).`);
+      else if (!FONTS[v]) err(`theme.fonts.${k}`, `"${v}" isn't on the font list (${Object.keys(FONTS).join(", ")}).`);
+      else fonts[k] = v;
+    }
+  }
+  if (th.fonts && fonts.accent === "Instrument Sans" && !th.fonts.accent) fonts.accent = fonts.display;
+
+  // Blocks
+  const blocks = [];
+  if (!Array.isArray(input.blocks)) err("blocks", "\"blocks\" must be a list: [ { \"id\": …, \"type\": …, \"at\": … }, … ].");
+  else if (input.blocks.length > 60) err("blocks", "A layout can have up to 60 blocks.");
+  const ids = new Set();
+  (Array.isArray(input.blocks) ? input.blocks.slice(0, 60) : []).forEach((b, i) => {
+    const where = `block ${i + 1}${isObj(b) && typeof b.id === "string" ? ` ("${b.id}")` : ""}`;
+    if (!isObj(b)) { err(where, "Each block is an object."); return; }
+    known(b, ["id", "type", "at", "layer", "style", "content", "when", "on", "label"], where);
+    if (typeof b.id !== "string" || !ID_RE.test(b.id)) err(where, "Each block needs an \"id\": lowercase letters, numbers and dashes, up to 40 (it stays the same for the life of the layout).");
+    else if (ids.has(b.id)) err(where, `Two blocks share the id "${b.id}".`);
+    else ids.add(b.id);
+    if (!TYPES[b.type]) { err(where, `"type" must be one of: ${Object.keys(TYPES).join(", ")}.`); return; }
+    const at = isObj(b.at) ? b.at : {};
+    if (!isObj(b.at)) err(where, "\"at\" is missing: { \"col\": 1, \"row\": 1, \"w\": 12, \"h\": 2 }.");
+    else known(at, ["col", "row", "w", "h"], `${where} at`);
+    const pos = { col: int(at.col, 1, grid.cols, 1, `${where} at.col`, "col"), row: int(at.row, 1, grid.rows, 1, `${where} at.row`, "row"),
+      w: int(at.w, 1, grid.cols, 1, `${where} at.w`, "w"), h: int(at.h, 1, grid.rows, 1, `${where} at.h`, "h") };
+    if (pos.col + pos.w - 1 > grid.cols) err(where, `It runs past the grid's ${grid.cols} columns (col ${pos.col} + w ${pos.w}).`);
+    if (pos.row + pos.h - 1 > grid.rows) err(where, `It runs past the grid's ${grid.rows} rows (row ${pos.row} + h ${pos.h}).`);
+    const layer = int(b.layer, 0, 9, 0, `${where} layer`, "layer");
+    const style = checkStyle(b.style, where, err);
+    const content = checkContent(TYPES[b.type], b.content, where, err);
+    const when = checkWhen(b.when, where, err);
+    if (b.on !== undefined && typeof b.on !== "boolean") err(where, "\"on\" is true or false.");
+    blocks.push({ id: b.id, type: b.type, at: pos, layer, style, content, when, on: b.on !== false, label: typeof b.label === "string" ? b.label.slice(0, 60) : "" });
+  });
+
+  const doc = { format: FORMAT, orientation, grid, viewing, theme: { palette, fonts }, blocks };
+  if (!errors.length) guardrails(doc, warn);
+  return { errors, warnings, doc };
+}
+
+function checkStyle(s, where, err) {
+  const out = {};
+  if (s === undefined) return out;
+  if (!isObj(s)) { err(where, "\"style\" is an object."); return out; }
+  for (const [k, v] of Object.entries(s)) {
+    const rule = STYLE[k];
+    if (!rule) { err(`${where} style`, `"${k}" isn't a style (allowed: ${Object.keys(STYLE).join(", ")}).`); continue; }
+    const [kind, a, b] = rule;
+    if (kind === "enum" && !a.includes(v)) err(`${where} style.${k}`, `${k} must be one of: ${a.join(", ")}.`);
+    else if (kind === "palette" && !PALETTE_KEYS.includes(v)) err(`${where} style.${k}`, `${k} must be a palette colour name (${PALETTE_KEYS.join(", ")}).`);
+    else if (kind === "int" && !(Number.isInteger(v) && v >= a && v <= b)) err(`${where} style.${k}`, `${k} must be a whole number from ${a} to ${b}.`);
+    else if (kind === "bool" && typeof v !== "boolean") err(`${where} style.${k}`, `${k} is true or false.`);
+    else out[k] = v;
+  }
+  return out;
+}
+
+function checkValue(rule, v, where, label, err) {
+  const [kind, a, b] = rule;
+  switch (kind) {
+    case "text":
+      if (typeof v !== "string") { err(where, `${label} is text.`); return undefined; }
+      if (v.length > a) { err(where, `${label} is ${v.length} characters; at most ${a}.`); return v.slice(0, a); }
+      return v;
+    case "int": return Number.isInteger(v) && v >= a && v <= b ? v : (err(where, `${label} must be a whole number from ${a} to ${b}.`), undefined);
+    case "bool": return typeof v === "boolean" ? v : (err(where, `${label} is true or false.`), undefined);
+    case "enum": return a.includes(v) ? v : (err(where, `${label} must be one of: ${a.join(", ")}.`), undefined);
+    case "time": return typeof v === "string" && TIME_RE.test(v) && v <= "24:00" ? v : (err(where, `${label} is a 24-hour time like "06:00" or "18:30".`), undefined);
+    case "days":
+      if (!Array.isArray(v) || !v.length || v.some((d) => !Number.isInteger(d) || d < 1 || d > 7)) { err(where, `${label} is a list of days, 1 = Monday to 7 = Sunday, e.g. [2,3,4,5,6].`); return undefined; }
+      return [...new Set(v)].sort();
+    case "tags":
+      if (!Array.isArray(v) || v.some((t) => !TAGS[t])) { err(where, `${label} are from: ${Object.keys(TAGS).join(", ")}.`); return undefined; }
+      return [...new Set(v)];
+    case "image": return typeof v === "string" && IMAGE_RE.test(v) ? v : (err(where, `${label} is a picture's id (pictures come with the next round).`), undefined);
+    case "strings":
+      if (!Array.isArray(v) || v.length > a || v.some((s) => typeof s !== "string" || s.length > b)) { err(where, `${label} is a list of up to ${a} short texts (${b} characters each).`); return undefined; }
+      return v;
+    case "list": {
+      if (!Array.isArray(v)) { err(where, `${label} is a list.`); return undefined; }
+      if (v.length > a) err(where, `${label} has ${v.length} entries; at most ${a}.`);
+      return v.slice(0, a).map((it, i) => {
+        if (!isObj(it)) { err(where, `${label} ${i + 1} is an object.`); return null; }
+        const o = {};
+        for (const [k, x] of Object.entries(it)) {
+          if (!b[k]) { err(where, `${label} ${i + 1}: "${k}" isn't allowed (${Object.keys(b).join(", ")}).`); continue; }
+          const val = checkValue(b[k], x, where, `${label} ${i + 1} ${k}`, err);
+          if (val !== undefined) o[k] = val;
+        }
+        return o;
+      }).filter(Boolean);
+    }
+    default: return undefined;
+  }
+}
+
+function checkContent(spec, c, where, err) {
+  const out = {};
+  if (c === undefined) return out;
+  if (!isObj(c)) { err(where, "\"content\" is an object."); return out; }
+  for (const [k, v] of Object.entries(c)) {
+    if (!spec[k]) { err(`${where} content`, `"${k}" isn't part of this block (allowed: ${Object.keys(spec).join(", ")}).`); continue; }
+    const val = checkValue(spec[k], v, `${where} content.${k}`, k, err);
+    if (val !== undefined) out[k] = val;
+  }
+  return out;
+}
+
+function checkWhen(w, where, err) {
+  if (w === undefined) return null;
+  const list = Array.isArray(w) ? w : [w];
+  if (!list.length || list.length > 8) { err(`${where} when`, "\"when\" is one schedule, or a list of up to 8 (the block shows when any of them matches)."); return null; }
+  return list.map((x, i) => {
+    const at = `${where} when${list.length > 1 ? ` ${i + 1}` : ""}`;
+    if (!isObj(x)) { err(at, "A schedule is { \"days\": [1,2,3,4,5], \"from\": \"11:00\", \"to\": \"14:00\", \"dates\": { \"from\": \"2026-10-01\", \"to\": \"2026-11-30\" } }."); return null; }
+    const o = {};
+    for (const k of Object.keys(x)) if (!["days", "from", "to", "dates"].includes(k)) err(at, `"${k}" isn't part of a schedule (days, from, to, dates).`);
+    if (x.days !== undefined) o.days = checkValue(["days"], x.days, at, "days", err);
+    if (x.from !== undefined) o.from = checkValue(["time"], x.from, at, "from", err);
+    if (x.to !== undefined) o.to = checkValue(["time"], x.to, at, "to", err);
+    if ((o.from === undefined) !== (o.to === undefined) && !(x.from === undefined && x.to === undefined)) err(at, "Give both \"from\" and \"to\", or neither.");
+    if (x.dates !== undefined) {
+      if (!isObj(x.dates) || Object.keys(x.dates).some((k) => !["from", "to"].includes(k))
+          || Object.values(x.dates).some((d) => typeof d !== "string" || !DATE_RE.test(d) || Number.isNaN(Date.parse(d)))) err(at, "\"dates\" is { \"from\": \"2026-10-01\", \"to\": \"2026-11-30\" } (either may be left out; both days included).");
+      else o.dates = { ...x.dates };
+    }
+    return o;
+  }).filter(Boolean);
+}
+
+// ── Guardrails (warnings) ──
+function hexRgb(h) { const n = parseInt(h.slice(1), 16); return [(n >> 16) & 255, (n >> 8) & 255, n & 255]; }
+function luminance(h) { return hexRgb(h).map((v) => { v /= 255; return v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4; }).reduce((s, v, i) => s + v * [0.2126, 0.7152, 0.0722][i], 0); }
+export function contrast(a, b) { const x = luminance(a), y = luminance(b); return (Math.max(x, y) + 0.05) / (Math.min(x, y) + 0.05); }
+
+/** The colours a block's text is drawn in, and what it's drawn on. */
+export function blockColours(doc, b) {
+  const p = doc.theme.palette, surf = b.style.surface || "none";
+  const back = surf === "none" ? p.bg : p[surf];
+  const ink = b.style.ink ? p[b.style.ink] : surf === "none" ? p.ink : p[SURFACES[surf]];
+  return { back, ink };
+}
+
+/** Millimetres per canvas pixel on a screen of this size (the canvas's short side is 1080). */
+export const mmPerPx = (inches) => (inches * 25.4 * 9 / Math.hypot(16, 9)) / 1080;
+/** The smallest text (its full height, in mm) that reads comfortably from this distance: 1 mm for every 300 mm. */
+export const minTextMm = (metres) => metres * 1000 / 300;
+/** The smallest text a block draws, as a share of its size (board.css draws these shares: small lines 0.62, tags 0.55,
+ *  kickers and notes 0.5, and so on). It looks at what the block actually holds, so a line on its own is full size. */
+function smallestShare(b) {
+  const c = b.content || {};
+  switch (b.type) {
+    case "text": return c.kicker || c.note ? 0.5 : c.title && c.body ? 0.62 : 1;
+    case "items": return (c.items || []).some((i) => (i.tags || []).length) ? 0.55 : (c.items || []).some((i) => i.line) ? 0.62 : 1;
+    case "chips": return 0.8;
+    case "price": return c.note ? 0.35 : c.label ? 0.4 : 1;
+    case "photo": return c.line ? 0.55 : 1;
+    case "logo": return 1;
+    case "clock": return (c.show || "both") === "both" ? 0.4 : 0.5;
+    case "weather": return c.label ? 0.4 : 0.45;
+    case "hours": return c.heading || c.note ? 0.55 : 0.62;
+    case "timetable": return 0.55;
+    case "nownext": return 0.42;
+    default: return 0.62;
+  }
+}
+/** Whether two blocks ever show at the same moment (each day of the week, every 15 minutes; date ranges left aside). */
+function everTogether(a, b) {
+  if (!a.when?.length || !b.when?.length) return true;
+  for (let dow = 1; dow <= 7; dow++) for (let m = 0; m < 1440; m += 15) {
+    const hm = `${String(Math.floor(m / 60)).padStart(2, "0")}:${String(m % 60).padStart(2, "0")}`;
+    const at = { dow, hm, date: "" };
+    const on = (x) => x.when.some((w) => inSchedule({ ...w, dates: undefined }, at));
+    if (on(a) && on(b)) return true;
+  }
+  return false;
+}
+
+function guardrails(doc, warn) {
+  const { inches, metres } = doc.viewing;
+  const need = minTextMm(metres), perPx = mmPerPx(inches);
+  for (const b of doc.blocks) {
+    const where = `block "${b.id}"`;
+    const { back, ink } = blockColours(doc, b);
+    const size = SIZES[b.style.size || "m"];
+    const c = contrast(ink, back), large = size >= SIZES.l;
+    if (c < (large ? 3 : 4.5)) warn(where, `Its text is hard to read on its background (contrast ${c.toFixed(1)}:1; at least ${large ? 3 : 4.5}:1 is needed).`, "contrast");
+    const smallest = size * smallestShare(b) * perPx;
+    if (smallest < need) warn(where, `Its smallest text is about ${smallest.toFixed(0)} mm tall on a ${inches}" screen; from ${metres} m away it should be at least ${need.toFixed(0)} mm. Use a larger size.`, "small");
+  }
+  // Blocks on the same layer that overlap (put one on a higher layer if it's meant to sit on top)
+  const bs = doc.blocks;
+  for (let i = 0; i < bs.length; i++) for (let j = i + 1; j < bs.length; j++) {
+    const a = bs[i].at, b = bs[j].at;
+    if (bs[i].layer === bs[j].layer && a.col < b.col + b.w && b.col < a.col + a.w && a.row < b.row + b.h && b.row < a.row + a.h && everTogether(bs[i], bs[j]))
+      warn(`blocks "${bs[i].id}" and "${bs[j].id}"`, "They overlap on the same layer. Move one, or give the one on top a higher \"layer\".", "overlap");
+  }
+}
+
+// ── Time: when a block shows, and today's hours ──
+/** Now in a time zone: { dow: 1..7 (Monday 1), hm: "HH:MM", date: "YYYY-MM-DD" }. */
+export function zonedNow(ms, tz) {
+  let parts;
+  try { parts = new Intl.DateTimeFormat("en-US", { timeZone: tz, hourCycle: "h23", weekday: "short", year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" }).formatToParts(new Date(ms)); }
+  catch { parts = new Intl.DateTimeFormat("en-US", { hourCycle: "h23", weekday: "short", year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" }).formatToParts(new Date(ms)); }
+  const get = (t) => parts.find((p) => p.type === t)?.value || "";
+  const dow = { Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6, Sun: 7 }[get("weekday")] || 1;
+  return { dow, hm: `${get("hour").replace(/^24$/, "00")}:${get("minute")}`, date: `${get("year")}-${get("month")}-${get("day")}` };
+}
+
+const inSchedule = (w, now) => (!w.days || w.days.includes(now.dow))
+  && (!w.from || (w.from <= w.to ? now.hm >= w.from && now.hm < w.to : now.hm >= w.from || now.hm < w.to))
+  && (!w.dates || ((!w.dates.from || now.date >= w.dates.from) && (!w.dates.to || now.date <= w.dates.to)));
+
+/** Whether a block shows now: switched on, and inside one of its schedules (or it has none). */
+export const blockShows = (b, now) => b.on !== false && (!b.when || !b.when.length || b.when.some((w) => inSchedule(w, now)));
+
+/** "06:00" -> "6 AM", "18:30" -> "6:30 PM", "12:00" -> "Noon". */
+export function niceTime(t) {
+  const [h, m] = t.split(":").map(Number);
+  if (h === 12 && m === 0) return "Noon";
+  if ((h === 0 || h === 24) && m === 0) return "Midnight";
+  const h12 = h % 12 || 12, ap = h % 24 < 12 ? "AM" : "PM";
+  return m ? `${h12}:${String(m).padStart(2, "0")} ${ap}` : `${h12} ${ap}`;
+}
+const DAY = ["", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+const DAYNAME = ["", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
+/** [2,3,4,5,6] -> "Tue–Sat"; [1,3,5] -> "Mon, Wed, Fri". */
+export function niceDays(days) {
+  const d = [...days].sort();
+  const runs = [];
+  for (const x of d) { const r = runs[runs.length - 1]; if (r && x === r[1] + 1) r[1] = x; else runs.push([x, x]); }
+  return runs.map(([a, b]) => (a === b ? DAY[a] : b === a + 1 ? `${DAY[a]}, ${DAY[b]}` : `${DAY[a]}–${DAY[b]}`)).join(", ");
+}
+
+/** Open or closed now, from a week of opening hours: { open, line, week: ["Tue–Sat · 6 AM – 6 PM", …] }. */
+export function hoursNow(hours, now) {
+  const list = (hours || []).filter((h) => h.days && h.open && h.close);
+  const today = list.filter((h) => h.days.includes(now.dow));
+  const openNow = today.find((h) => now.hm >= h.open && now.hm < h.close);
+  let line;
+  if (openNow) line = `Open now · until ${niceTime(openNow.close)}`;
+  else {
+    const later = today.filter((h) => now.hm < h.open).sort((a, b) => a.open.localeCompare(b.open))[0];
+    if (later) line = `Closed now · opens at ${niceTime(later.open)}`;
+    else {
+      let next = null;
+      for (let k = 1; k <= 7 && !next; k++) {
+        const d = ((now.dow - 1 + k) % 7) + 1;
+        const h = list.filter((x) => x.days.includes(d)).sort((a, b) => a.open.localeCompare(b.open))[0];
+        if (h) next = { d, h, k };
+      }
+      line = next ? `Closed now · opens ${next.k === 1 ? "tomorrow" : DAYNAME[next.d]} at ${niceTime(next.h.open)}` : "Closed";
+    }
+  }
+  return { open: !!openNow, line, week: list.map((h) => `${niceDays(h.days)} · ${niceTime(h.open)} – ${niceTime(h.close)}`) };
+}
+
+/** The current and next session of a timetable-like list, for "on now / next". */
+export function nowNext(sessions, now) {
+  const list = (sessions || []).filter((s) => s.from && s.to);
+  const cur = list.find((s) => (!s.days || s.days.includes(now.dow)) && now.hm >= s.from && now.hm < s.to) || null;
+  let next = null;
+  for (let k = 0; k <= 7 && !next; k++) {
+    const d = ((now.dow - 1 + k) % 7) + 1;
+    const cands = list.filter((s) => (!s.days || s.days.includes(d)) && (k > 0 || s.from > now.hm)).sort((a, b) => a.from.localeCompare(b.from));
+    if (cands.length) next = { ...cands[0], day: k === 0 ? "" : k === 1 ? "Tomorrow" : DAYNAME[d] };
+  }
+  return { now: cur, next };
+}
+
+/** Where a block sits on the canvas, in canvas pixels. */
+export function blockBox(doc, b) {
+  const { w: W, h: H } = canvas(doc.orientation), g = doc.grid;
+  const bottom = Math.max(g.margin, POWERED_STRIP);
+  const cw = (W - 2 * g.margin - (g.cols - 1) * g.gap) / g.cols;
+  const ch = (H - g.margin - bottom - (g.rows - 1) * g.gap) / g.rows;
+  return { left: g.margin + (b.at.col - 1) * (cw + g.gap), top: g.margin + (b.at.row - 1) * (ch + g.gap),
+    width: b.at.w * cw + (b.at.w - 1) * g.gap, height: b.at.h * ch + (b.at.h - 1) * g.gap };
+}
+
+export const STYLE_PX = { RADII, PADS };

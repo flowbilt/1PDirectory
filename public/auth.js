@@ -88,7 +88,8 @@ window.Auth = (() => {
       body: body === undefined ? undefined : JSON.stringify(body),
     });
     const d = await r.json().catch(() => null);
-    if (!r.ok) throw new Error(d?.error || `Request failed (${r.status}).`);
+    // The status and the whole answer go with the error (DP-11: a layout's warnings come back as 409 with the list)
+    if (!r.ok) throw Object.assign(new Error(d?.error || `Request failed (${r.status}).`), { status: r.status, data: d });
     return d;
   }
 

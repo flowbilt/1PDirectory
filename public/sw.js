@@ -1,7 +1,10 @@
 // Network first, cache as fallback. Keeps the display up if the building's internet drops,
 // including after a reboot. Only same-origin GET requests are handled.
-const CACHE = "directory-v4";
-const SHELL = ["/", "/index.html", "/display.css", "/display.js", "/vendor/qrcode.js", "/fonts/InstrumentSans-Regular.ttf", "/fonts/InstrumentSans-Bold.ttf", "/fonts/Lora-Bold.ttf"];
+// v5 (DP-11, round E1a): the shared screen code and the layout page; a layout's own fonts are kept as they're first used.
+const CACHE = "directory-v5";
+const SHELL = ["/", "/index.html", "/display.css", "/display.js", "/screen-core.js", "/vendor/qrcode.js",
+  "/board.html", "/board.css", "/board.js", "/layout-format.mjs",
+  "/fonts/InstrumentSans-Regular.ttf", "/fonts/InstrumentSans-Bold.ttf", "/fonts/Lora-Bold.ttf"];
 
 self.addEventListener("install", (e) => {
   e.waitUntil(caches.open(CACHE).then((c) => c.addAll(SHELL)).then(() => self.skipWaiting()));
@@ -16,7 +19,7 @@ self.addEventListener("activate", (e) => {
 self.addEventListener("fetch", (e) => {
   const url = new URL(e.request.url);
   if (e.request.method !== "GET" || url.origin !== location.origin) return;
-  const cacheable = SHELL.includes(url.pathname) || ["/api/screen", "/api/weather", "/api/news"].includes(url.pathname);
+  const cacheable = SHELL.includes(url.pathname) || url.pathname.startsWith("/fonts/") || ["/api/screen", "/api/weather", "/api/news"].includes(url.pathname);
   if (!cacheable || e.request.headers.has("x-admin-password")) return;
   e.respondWith(
     fetch(e.request)
@@ -28,7 +31,7 @@ self.addEventListener("fetch", (e) => {
         return res;
       })
       .catch(async () => {
-        const hit = await caches.match(e.request, { ignoreSearch: url.pathname === "/" || url.pathname === "/index.html" });
+        const hit = await caches.match(e.request, { ignoreSearch: ["/", "/index.html", "/board.html"].includes(url.pathname) });
         if (!hit) return Response.error();
         // Mark it so the page can show the "Reconnecting" note.
         const headers = new Headers(hit.headers);

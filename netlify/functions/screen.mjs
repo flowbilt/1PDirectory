@@ -152,6 +152,29 @@ export function toPayload(screen, dir, prop, tenants) {
   };
 }
 
+/** A screen that shows a layout (DP-11, round E1a; supabase/29-layout-engine.sql): the layout's published version, and
+ *  from the screen's building only what a layout uses (time zone, weather point, name and address). */
+export function toLayoutPayload(screen, layout, prop) {
+  return {
+    kind: "layout",
+    key: screen.key,
+    screenName: screen.name,
+    orientation: screen.orientation || "auto",
+    layout: { id: layout?.id || null, name: layout?.name || "", version: layout?.version ?? null, doc: layout?.doc || null },
+    propertyName: prop?.name || "",
+    address: prop?.address || "",
+    timezone: prop?.timezone || "America/Chicago",
+    weather: { enabled: prop?.lat != null && prop?.lon != null, lat: prop?.lat ?? null, lon: prop?.lon ?? null },
+    poweredBy: !screen.hide_powered_by,                    // "Powered by WayTuGo"; 1Point can hide it per screen
+    touch: !!screen.touch,
+    screenInches: Number.isFinite(Number(screen.screen_inches)) && screen.screen_inches !== null ? Number(screen.screen_inches) : null,
+    touchIdle: Math.min(300, Math.max(15, Math.round(Number(screen.touch_idle_s)) || 45)),
+    display: DISPLAY_VERSION,
+    assigned: true,
+    identifyUntil: screen.identify_until || null,
+  };
+}
+
 export const NEW_DEVICE = (device) => ({ key: null, device, assigned: false, newDevice: true, orientation: "auto", propertyName: "New display", buildingLabel: "", tenants: [], managedBy: {}, leasedBy: {}, welcome: "", weather: { enabled: false }, news: { enabled: false }, background: {}, traffic: { map: false, times: false, destinations: [] }, amenities: [], placeLists: [], togo: { enabled: false, url: "", line: "" }, poweredBy: true, touch: false, screenInches: null, touchIdle: 45, keyboard: false, sizes: {}, display: DISPLAY_VERSION, logo: "", timezone: "America/Chicago" });
 
 export default async (req) => {
@@ -167,6 +190,7 @@ export default async (req) => {
     if (r?.missing) return send({ error: `No screen named "${key}".` }, 404);
     const etag = `"${TAG}-${r.etag}"`;
     if (r.not_modified) return new Response(null, { status: 304, headers: { ...HEADERS, ETag: etag } });
+    if (r.kind === "layout") return send(toLayoutPayload(r.screen, r.layout, r.prop), 200, etag);
     return send(toPayload(r.screen, r.dir, r.prop, r.tenants), 200, etag);
   } catch (e) {
     return send({ error: e.message }, e.status && e.status < 500 ? e.status : 502);

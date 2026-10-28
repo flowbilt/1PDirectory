@@ -1771,8 +1771,12 @@ test("touch settings: off and blank by default, then they reach the screen and c
 test("the touch lockdown is on every screen: no zooming, selecting, dragging or long-press menus", () => {
   const css = readFileSync(new URL("../public/display.css", import.meta.url), "utf8");
   for (const w of ["touch-action: none", "user-select: none", "-webkit-touch-callout: none", "-webkit-user-drag: none", "overscroll-behavior: none"]) assert.ok(css.includes(w), w);
-  const js = readFileSync(new URL("../public/display.js", import.meta.url), "utf8");
-  for (const w of ['"contextmenu", "selectstart", "dragstart", "gesturestart"', "e.touches.length > 1", "e.ctrlKey"]) assert.ok(js.includes(w), w);
+  // DP-11 E1a: the lockdown itself is in screen-core.js, shared by the directory and the layout page; both switch it on
+  const core = readFileSync(new URL("../public/screen-core.js", import.meta.url), "utf8");
+  for (const w of ['"contextmenu", "selectstart", "dragstart", "gesturestart"', "e.touches.length > 1", "e.ctrlKey"]) assert.ok(core.includes(w), w);
+  for (const page of ["display.js", "board.js"]) assert.ok(readFileSync(new URL(`../public/${page}`, import.meta.url), "utf8").includes("C.lockdown();"), page);
+  const bcss = readFileSync(new URL("../public/board.css", import.meta.url), "utf8");
+  for (const w of ["touch-action: none", "user-select: none", "-webkit-touch-callout: none", "-webkit-user-drag: none", "overscroll-behavior: none"]) assert.ok(bcss.includes(w), `board.css ${w}`);
   assert.ok(DISPLAY_VERSION >= "2.12.0");
 });
 
@@ -1962,7 +1966,7 @@ test("the touch directory's settings: idle time per screen (15–300, 45), the k
   assert.ok(sql.includes("touch_idle_s between 15 and 300") && sql.includes("default 45") && sql.includes("touch_keyboard boolean not null default false")
     && sql.includes("'touch_idle_s', s.touch_idle_s") && sql.includes("s.touch_idle_s::text") && sql.includes("'people', case when not s.touch"), "28 keeps round 14's people and adds the idle time");
   const con = readFileSync(new URL("../public/console.js", import.meta.url), "utf8");
-  assert.ok(con.includes(",touch_idle_s\"") && con.includes('id="s-idle"') && con.includes("from 15 to 300"), "Screen settings has the idle time");
+  assert.ok(/SCREEN_COLS = "[^"]*,touch_idle_s[,"]/.test(con) && con.includes('id="s-idle"') && con.includes("from 15 to 300"), "Screen settings has the idle time");
   const ed = readFileSync(new URL("../public/edit.js", import.meta.url), "utf8");
   assert.ok(ed.includes("touch_keyboard: !!d.touch_keyboard") && ed.includes('$("kbd-on")'), "the editor saves the keyboard switch");
 });
@@ -1974,7 +1978,7 @@ test("the touch directory is only on touch screens: cards, A to Z, the keyboard 
   assert.ok(js.includes("if (data?.touch) return fitTouch(u);") && js.includes('if (!data?.touch) return;'), "display-only screens keep the old fit and ignore taps");
   assert.ok(js.includes("(data.tenants || [])[Number(r.dataset.i)]") && !/people[^\n]*includes\(q/.test(js), "the keyboard searches company names, never people");
   assert.ok(js.includes("Number(data.touchIdle) || 45") && js.includes("goIdle"), "back to the directory after the idle time");
-  assert.equal(DISPLAY_VERSION, "2.15.1");
+  assert.ok(DISPLAY_VERSION >= "2.15.1");
   assert.ok(js.includes("new ResizeObserver") && js.includes("frameSize() !== fittedAt"), "the list refits when its space changes size (15b)");
 });
 
@@ -2000,7 +2004,7 @@ test("drive times' status reaches the Pi panel, never Google's minutes or labels
     const r = await screen(req("/api/screen?key=ppi-1s", { headers: { "X-Screen-Size": "1920x1080", "X-Display-Version": DISPLAY_VERSION, "X-Traffic": sent } }));
     assert.equal(r.status, 200);
     assert.deepEqual(scr.last_report.traffic, { s: "ok", n: 3, of: 3, at: "2026-10-26T23:15:00.000Z", shown: true });
-    assert.ok(!JSON.stringify(scr.last_report).includes("Airport") && !JSON.stringify(scr.last_report).includes("16"), "nothing Google returned is kept");
+    assert.ok(!JSON.stringify(scr.last_report).includes("Airport") && !JSON.stringify(scr.last_report.traffic).includes("16"), "nothing Google returned is kept");
   } finally { Object.assign(scr, keep); }
   const { trafficStatus } = await import("../netlify/functions/screen.mjs");
   assert.deepEqual(trafficStatus('{"s":"off","why":"hours"}'), { s: "off", why: "hours", shown: false });
@@ -2009,9 +2013,170 @@ test("drive times' status reaches the Pi panel, never Google's minutes or labels
   assert.equal(trafficStatus("not json"), null); assert.equal(trafficStatus('{"s":"dance"}'), null);
   assert.equal(trafficStatus('{"s":"ok","n":99,"of":-4}').n, 3);
   const js = readFileSync(new URL("../public/display.js", import.meta.url), "utf8");
-  assert.ok(js.includes('headers["X-Traffic"]') && js.includes("traffic.status = null; return;"), "screens without drive times report nothing");
+  assert.ok(js.includes('"X-Traffic": JSON.stringify') && js.includes("traffic.status = null; return;"), "screens without drive times report nothing");
   const dev = readFileSync(new URL("../public/console-devices.js", import.meta.url), "utf8");
   assert.ok(dev.includes('row("Drive times", trafficLine(s))') && dev.includes("weekdays from 6 a.m. to 7 p.m."), "the Pi panel says what the screen reported");
+});
+
+// ── Layouts (DP-11, round E1a; supabase/29-layout-engine.sql, public/layout-format.mjs, netlify/functions/layouts.mjs) ──
+const LF = await import("../public/layout-format.mjs");
+const layoutsFn = (await import("../netlify/functions/layouts.mjs")).default;
+const DJ = JSON.parse(readFileSync(new URL("../layouts/donut-joes-pelham.json", import.meta.url), "utf8"));
+const lcall = (body, token) => layoutsFn(req("/api/layouts", { method: "POST", body, token }));
+
+test("the layout format: Donut Joe's is clean; what the format doesn't allow is refused in plain words", () => {
+  const ok = LF.checkLayout(DJ);
+  assert.deepEqual([ok.errors, ok.warnings], [[], []]);
+  assert.equal(ok.doc.blocks.length, DJ.blocks.length);
+  const bad = LF.checkLayout({ format: 1, orientation: "portrait", grid: { cols: 12, rows: 24 }, theme: { palette: { bg: "red", glow: "#fff" }, fonts: { display: "Comic Sans" } }, script: "x",
+    blocks: [{ id: "a", type: "banner", at: { col: 1, row: 1, w: 2, h: 1 } }, { id: "a", type: "text", at: { col: 11, row: 23, w: 3, h: 3 }, style: { color: "#f00" }, content: { html: "<b>" } },
+             { id: "b", type: "text", at: { col: 1, row: 1, w: 1, h: 1 }, when: { days: [0, 8], from: "25:00" } }] });
+  const msgs = bad.errors.map((e) => e.msg).join(" | ");
+  for (const w of ["\"script\" isn't something a layout can say", "bg must be a colour", "\"glow\" isn't a palette colour", "\"Comic Sans\" isn't on the font list", "\"type\" must be one of",
+                   "Two blocks share the id", "runs past the grid's 12 columns", "runs past the grid's 24 rows", "\"color\" isn't a style", "\"html\" isn't part of this block", "1 = Monday to 7 = Sunday", "24-hour time"])
+    assert.ok(msgs.includes(w), `missing: ${w}\n${msgs}`);
+  assert.equal(LF.checkLayout("nope").doc, null);
+});
+
+test("the guardrails warn: low contrast, text too small for the screen and distance, blocks overlapping (not ones that take turns)", () => {
+  const base = { format: 1, orientation: "portrait", grid: { cols: 12, rows: 24 }, viewing: { inches: 32, metres: 4 }, theme: { palette: { bg: "#ffffff", ink: "#dddddd" } } };
+  const r = LF.checkLayout({ ...base, blocks: [
+    { id: "pale", type: "text", at: { col: 1, row: 1, w: 12, h: 2 }, style: { size: "m" }, content: { title: "Hard to read" } },
+    { id: "tiny", type: "text", at: { col: 1, row: 3, w: 6, h: 2 }, style: { size: "xs", ink: "ink" }, content: { title: "Small", note: "smaller" } },
+    { id: "over", type: "text", at: { col: 4, row: 3, w: 6, h: 2 }, style: { size: "xl" }, content: { title: "Over" } },
+    { id: "am", type: "text", at: { col: 1, row: 10, w: 6, h: 2 }, when: { from: "06:00", to: "11:00" }, style: { size: "xl" }, content: { title: "Morning" } },
+    { id: "pm", type: "text", at: { col: 1, row: 10, w: 6, h: 2 }, when: { from: "11:00", to: "23:00" }, style: { size: "xl" }, content: { title: "Later" } } ] });
+  const kinds = (id) => r.warnings.filter((w) => w.where.includes(`"${id}"`)).map((w) => w.kind);
+  assert.ok(kinds("pale").includes("contrast"), JSON.stringify(r.warnings));
+  assert.ok(kinds("tiny").includes("small"));
+  assert.ok(r.warnings.some((w) => w.kind === "overlap" && w.where.includes('"tiny"') && w.where.includes('"over"')));
+  assert.ok(!r.warnings.some((w) => w.kind === "overlap" && w.where.includes('"am"')), "blocks that take turns by schedule don't overlap");
+  assert.equal(r.errors.length, 0);
+  assert.ok(LF.contrast("#000000", "#ffffff") > 20 && LF.contrast("#777777", "#888888") < 1.5);
+});
+
+test("when a block shows (days 1 = Monday, times in the building's zone, dates, overnight), today's hours and what's on now", () => {
+  const b = (when, on) => ({ when: Array.isArray(when) ? when : when ? [when] : null, on });
+  const wed830 = LF.zonedNow(Date.parse("2026-10-28T13:30:00Z"), "America/Chicago");
+  assert.deepEqual(wed830, { dow: 3, hm: "08:30", date: "2026-10-28" });
+  assert.equal(LF.zonedNow(Date.parse("2026-10-28T13:30:00Z"), "America/New_York").hm, "09:30");
+  assert.ok(LF.blockShows(b({ days: [1, 2, 3, 4, 5], from: "06:00", to: "11:00" }), wed830));
+  assert.ok(!LF.blockShows(b({ days: [6, 7] }), wed830));
+  assert.ok(!LF.blockShows(b({ from: "11:00", to: "14:00" }), wed830));
+  assert.ok(LF.blockShows(b({ from: "22:00", to: "09:00" }), wed830), "a schedule past midnight");
+  assert.ok(!LF.blockShows(b({ dates: { to: "2026-10-27" } }), wed830) && LF.blockShows(b({ dates: { from: "2026-10-28" } }), wed830));
+  assert.ok(!LF.blockShows(b(null, false), wed830), "switched off by hand");
+  assert.ok(LF.blockShows(b([{ from: "00:00", to: "01:00" }, { days: [3] }]), wed830), "any of several schedules");
+  const hours = [{ days: [2, 3, 4, 5, 6], open: "06:00", close: "18:00" }];
+  assert.deepEqual(LF.hoursNow(hours, wed830), { open: true, line: "Open now · until 6 PM", week: ["Tue–Sat · 6 AM – 6 PM"] });
+  assert.equal(LF.hoursNow(hours, { dow: 3, hm: "05:00" }).line, "Closed now · opens at 6 AM");
+  assert.equal(LF.hoursNow(hours, { dow: 6, hm: "19:00" }).line, "Closed now · opens Tuesday at 6 AM");
+  assert.equal(LF.niceDays([1, 3, 5]), "Mon, Wed, Fri"); assert.equal(LF.niceDays([6, 7]), "Sat, Sun"); assert.equal(LF.niceTime("12:00"), "Noon");
+  const nn = LF.nowNext([{ days: [1, 2, 3, 4, 5], from: "05:30", to: "06:30", name: "Morning" }, { days: [1, 2, 3, 4, 5], from: "12:00", to: "13:00", name: "Noon" }], { dow: 3, hm: "12:15" });
+  assert.equal(nn.now.name, "Noon"); assert.equal(nn.next.name, "Morning"); assert.equal(nn.next.day, "Tomorrow");
+});
+
+test("/api/layouts: 1Point only; check keeps the draft; publish refuses problems, asks about warnings, publishes; roll back", async () => {
+  const admin = await login("scot@1pointusa.com", "admin-pass"), owner = await login("leighann@barber.test", "owner-pass");
+  assert.equal((await lcall({ action: "check", doc: DJ })).status, 401);
+  assert.equal((await lcall({ action: "check", doc: DJ }, owner)).status, 403);
+  const org = fake.T.organizations.find((o) => /Barber/.test(o.name));
+  const l = { id: crypto.randomUUID(), org_id: org.id, name: "DJ test", family: "menu", orientation: "portrait", draft: {}, published_version: null, published_at: null, created_at: new Date().toISOString(), updated_at: new Date().toISOString() };
+  fake.T.layouts.push(l);
+  let r = await lcall({ action: "check", doc: JSON.stringify(DJ), layout_id: l.id }, admin);
+  assert.equal(r.status, 200); assert.deepEqual(await r.json(), { errors: [], warnings: [] });
+  assert.deepEqual(l.draft, DJ, "kept as the draft");
+  r = await lcall({ action: "check", doc: "{ nope", layout_id: l.id }, admin);
+  assert.equal(r.status, 400); assert.match((await r.json()).error, /isn't valid JSON/);
+  r = await lcall({ action: "publish", layout_id: l.id, doc: { ...DJ, orientation: "landscape" } }, admin);
+  assert.equal(r.status, 400); assert.ok((await r.json()).errors.some((e) => /must be "portrait"/.test(e.msg)));
+  r = await lcall({ action: "publish", layout_id: l.id, doc: DJ, overflow: ["more"] }, admin);
+  assert.equal(r.status, 409, "a preview's overflow is a warning: 1Point is asked");
+  assert.equal(l.published_version, null);
+  r = await lcall({ action: "publish", layout_id: l.id, doc: DJ, overflow: ["more"], override: true, note: "anyway" }, admin);
+  assert.equal(r.status, 200); assert.equal((await r.json()).version, 1);
+  const v1 = fake.T.layout_versions.find((v) => v.layout_id === l.id && v.version === 1);
+  assert.ok(v1.overridden && v1.checks.warnings.some((w) => w.kind === "overflow") && v1.note === "anyway");
+  const changed = JSON.parse(JSON.stringify(DJ)); changed.blocks[0].content.text = "Donut Joe's!";
+  r = await lcall({ action: "publish", layout_id: l.id, doc: changed }, admin);
+  assert.equal((await r.json()).version, 2);
+  r = await lcall({ action: "rollback", layout_id: l.id, version: 1 }, admin);
+  assert.equal((await r.json()).version, 3);
+  assert.deepEqual(l.draft, DJ); assert.equal(l.published_version, 3);
+  assert.equal(fake.T.layout_versions.find((v) => v.layout_id === l.id && v.version === 3).rolled_back_from, 1);
+  r = await lcall({ action: "preview", doc: DJ, property_id: fake.T.properties[0].id }, admin);
+  const pv = await r.json();
+  assert.equal(pv.payload.kind, "layout"); assert.deepEqual(pv.payload.layout.doc, DJ); assert.equal(pv.payload.timezone, fake.T.properties[0].timezone);
+});
+
+test("a layout screen's answer: the published version, the building's time zone and weather, no tenants; directory screens as before", async () => {
+  const l = fake.T.layouts.find((x) => x.name === "DJ test");
+  const scr = fake.T.screens.find((x) => x.orientation === "portrait");
+  const keep = { directory_id: scr.directory_id, layout_id: scr.layout_id ?? null, property_id: scr.property_id ?? null };
+  const prop = fake.T.properties.find((p) => p.org_id === l.org_id);
+  try {
+    Object.assign(scr, { directory_id: null, layout_id: l.id, property_id: prop.id });
+    const r = await screen(req(`/api/screen?key=${scr.key}`));
+    const d = await r.json();
+    assert.equal(d.kind, "layout"); assert.equal(d.layout.version, 3); assert.deepEqual(d.layout.doc, DJ);
+    assert.equal(d.timezone, prop.timezone); assert.equal(d.weather.enabled, prop.lat != null);
+    assert.ok(!("tenants" in d) && !("togo" in d) && d.poweredBy === true && d.display === DISPLAY_VERSION);
+    const etag = r.headers.get("etag");
+    assert.equal((await screen(req(`/api/screen?key=${scr.key}`, { headers: { "If-None-Match": etag } }))).status, 304);
+    const admin = await login("scot@1pointusa.com", "admin-pass");
+    const ch = JSON.parse(JSON.stringify(DJ)); ch.blocks[0].content.text = "Changed";
+    await lcall({ action: "publish", layout_id: l.id, doc: ch }, admin);
+    const again = await screen(req(`/api/screen?key=${scr.key}`, { headers: { "If-None-Match": etag } }));
+    assert.equal(again.status, 200, "a new version reaches the screen"); assert.equal((await again.json()).layout.doc.blocks[0].content.text, "Changed");
+  } finally { Object.assign(scr, keep); }
+  const dir = await (await screen(req("/api/screen?key=ppi-1s"))).json();
+  assert.ok(!("kind" in dir) && dir.tenants.length === 5, "a directory screen's answer is unchanged");
+});
+
+test("choosing a layout for a screen: the database's rules, in its words, as the console gets them", async () => {
+  const admin = await login("scot@1pointusa.com", "admin-pass");
+  const rest = async (path, method, body) => { const r = await fake.handle(new Request(`${SB}/rest/v1/${path}`, { method, body: JSON.stringify(body), headers: { apikey: ANON_KEY, Authorization: `Bearer ${admin}`, "Content-Type": "application/json" } })); return { status: r.status, data: r.status === 204 ? null : await r.json() }; };
+  const l = fake.T.layouts.find((x) => x.name === "DJ test");
+  const land = fake.T.screens.find((x) => x.orientation === "landscape");
+  const prop = fake.T.properties.find((p) => p.org_id === l.org_id);
+  let r = await rest(`screens?id=eq.${land.id}`, "PATCH", { directory_id: null, layout_id: l.id, property_id: prop.id });
+  assert.match(r.data.message, /is portrait, and this screen's Orientation is Landscape\. Change the screen's Orientation to Portrait first, or choose a landscape layout\./);
+  r = await rest(`screens?id=eq.${land.id}`, "PATCH", { directory_id: land.directory_id, layout_id: l.id, property_id: prop.id, orientation: "portrait" });
+  assert.match(r.data.message, /screens_one_content/);
+  const other = fake.T.properties.find((p) => p.org_id !== l.org_id);
+  r = await rest(`screens?id=eq.${land.id}`, "PATCH", { directory_id: null, layout_id: l.id, property_id: other.id, orientation: "portrait" });
+  assert.match(r.data.message, /different account/);
+  const sql = readFileSync(new URL("../supabase/29-layout-engine.sql", import.meta.url), "utf8");
+  for (const w of ["is %, and this screen''s Orientation is %. Change the screen''s Orientation to % first, or choose a % layout.", "hasn''t been published yet. Publish it on the Layouts tab first.", "belongs to a different account from the layout"])
+    assert.ok(sql.includes(w), `29 says: ${w}`);
+  // signed-in users can't write the draft or the published version, or call the publish functions
+  r = await rest(`layouts?id=eq.${l.id}`, "PATCH", { draft: {} });
+  assert.equal(r.status, 403);
+  const rp = await fake.handle(new Request(`${SB}/rest/v1/rpc/layout_publish`, { method: "POST", body: "{}", headers: { apikey: ANON_KEY, Authorization: `Bearer ${admin}` } }));
+  assert.equal(rp.status, 403);
+});
+
+test("the layout page's files: shared screen code, fonts with their licences, the offline cache, one display version", () => {
+  const board = readFileSync(new URL("../public/board.js", import.meta.url), "utf8");
+  assert.equal(board.match(/const VERSION = "([^"]+)"/)[1], DISPLAY_VERSION, "board.js and the live display version agree");
+  const html = readFileSync(new URL("../public/board.html", import.meta.url), "utf8");
+  assert.ok(html.indexOf("/screen-core.js") < html.indexOf("/board.js") && html.includes('type="module"'));
+  const idx = readFileSync(new URL("../public/index.html", import.meta.url), "utf8");
+  assert.ok(idx.indexOf("/screen-core.js") > 0 && idx.indexOf("/screen-core.js") < idx.indexOf("/display.js"), "the directory loads the shared code first");
+  for (const page of ["display.js", "board.js"]) {
+    const js = readFileSync(new URL(`../public/${page}`, import.meta.url), "utf8");
+    for (const w of ["C.fetchScreen(VERSION", "C.lockdown()", "C.scheduleNightlyReload()", "C.registerOfflineCache()", "C.showIdentify("]) assert.ok(js.includes(w), `${page}: ${w}`);
+  }
+  const fonts = readdirSync(new URL("../public/fonts/", import.meta.url));
+  for (const [name, f] of Object.entries(LF.FONTS)) {
+    for (const [file] of f.files) assert.ok(fonts.includes(file), `${name}: ${file}`);
+    assert.ok(fonts.includes(`${f.files[0][0].split("-")[0]}-OFL.txt`), `${name}'s licence`);
+  }
+  const sw = readFileSync(new URL("../public/sw.js", import.meta.url), "utf8");
+  for (const f of ["/screen-core.js", "/board.html", "/board.js", "/board.css", "/layout-format.mjs"]) assert.ok(sw.includes(`"${f}"`), `offline cache: ${f}`);
+  assert.ok(sw.includes('"directory-v5"') && sw.includes('startsWith("/fonts/")'));
+  const toml = readFileSync(new URL("../netlify.toml", import.meta.url), "utf8");
+  assert.ok(/for = "\/\*\.mjs"[\s\S]*?Content-Type = "text\/javascript/.test(toml), "the module is served as JavaScript");
 });
 
 let passed = 0;

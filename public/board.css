@@ -1,0 +1,131 @@
+/* A screen that shows a layout (DP-11, round E1a). The layout is drawn on a canvas of 1080 x 1920 (portrait) or
+   1920 x 1080 (landscape) and scaled to the screen; every size below is in canvas pixels. The layout's own fonts are
+   added by board.js from the curated list (layout-format.mjs). */
+@font-face { font-family: "Instrument Sans"; src: url("/fonts/InstrumentSans-Regular.ttf") format("truetype"); font-weight: 400; font-display: block; }
+@font-face { font-family: "Instrument Sans"; src: url("/fonts/InstrumentSans-Bold.ttf") format("truetype"); font-weight: 700; font-display: block; }
+
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+[hidden] { display: none !important; }
+html, body { width: 100%; height: 100%; overflow: hidden; background: #000; cursor: none; }
+/* Touch lockdown (DP-08 round 13; screen-core.js too): no zooming, scrolling, selecting, dragging or long-press menus */
+html, body { touch-action: none; overscroll-behavior: none; -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
+img, svg { -webkit-user-drag: none; }
+body { font-family: "Instrument Sans", "Segoe UI", Arial, sans-serif; -webkit-font-smoothing: antialiased; }
+
+#stage { position: absolute; left: 0; top: 0; width: var(--W, 100vw); height: var(--H, 100vh); overflow: hidden;
+  background: var(--p-bg, #0d1b2e); transform-origin: 0 0; transition: opacity 0.6s ease; }
+#stage.is-loading { opacity: 0; }
+
+.board { position: absolute; left: 0; top: 0; transform-origin: 0 0; background: var(--p-bg); color: var(--p-ink); overflow: hidden; }
+#blocks { position: absolute; inset: 0; }
+
+/* ── A block ── */
+.b { position: absolute; display: flex; flex-direction: column; overflow: hidden; color: var(--ink); background: var(--back, transparent);
+  border-radius: var(--radius, 0); padding: var(--pad, 0); text-align: var(--align, left); justify-content: var(--valign, flex-start); }
+.b.bordered { border: 4px solid var(--border); }
+.b.shadow { box-shadow: 0 10px 28px rgba(0, 0, 0, 0.28); }
+.b-in { font-size: calc(var(--fs) * var(--fit, 1)); line-height: 1.15; min-height: 0; width: 100%; font-family: var(--f-body); }
+.b .t-display { font-family: var(--f-display); }
+.b .t-accent { font-family: var(--f-accent); }
+.b.upper .b-title, .b.upper .items-head { text-transform: uppercase; letter-spacing: 0.02em; }
+.b.overflow-mark { outline: 6px dashed #e5484d; outline-offset: -6px; }   /* the console's preview only */
+
+.b-kicker { font-size: 0.5em; letter-spacing: 0.22em; text-transform: uppercase; opacity: 0.85; font-weight: 700; margin-bottom: 0.25em; }
+.b-title { font-size: 1em; font-weight: 700; line-height: 1.05; }
+.b-body { font-size: 0.62em; line-height: 1.35; margin-top: 0.3em; white-space: pre-line; }
+.b-body.alone { font-size: 1em; margin-top: 0; }
+.b-note { font-size: 0.5em; opacity: 0.8; margin-top: 0.4em; }
+
+/* items: a menu list */
+.items-head { display: flex; justify-content: space-between; align-items: baseline; gap: 0.6em; font-size: 1.15em; font-weight: 700; line-height: 1.1; margin-bottom: 0.35em; }
+.items-head .group-price { font-family: var(--f-body); font-size: 0.8em; white-space: nowrap; }
+.items-list { list-style: none; display: grid; grid-template-columns: repeat(var(--cols, 1), minmax(0, 1fr)); column-gap: 1.2em; row-gap: 0.18em; }
+.item { break-inside: avoid; padding: 0.12em 0; }
+.item-row { display: flex; align-items: baseline; gap: 0.4em; font-weight: 600; }
+.item-name { min-width: 0; }
+.item-row .leader { flex: 1 1 auto; border-bottom: 0.08em dotted currentColor; opacity: 0.45; transform: translateY(-0.2em); min-width: 0.6em; }
+.item-row .spacer { flex: 1 1 auto; }
+.item-price { font-weight: 700; white-space: nowrap; }
+.item-line { font-size: 0.62em; opacity: 0.8; line-height: 1.3; margin-top: 0.05em; }
+.item.sold .item-name, .item.sold .item-price { text-decoration: line-through; opacity: 0.5; }
+.tag { display: inline-block; font-size: 0.55em; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; vertical-align: 0.25em;
+  padding: 0.18em 0.55em; border-radius: 999px; margin-left: 0.4em; background: var(--p-highlight); color: var(--p-onHighlight); white-space: nowrap; text-decoration: none; }
+.tag.sold-out { background: transparent; color: inherit; border: 0.12em solid currentColor; opacity: 0.75; }
+
+/* chips */
+.chips-head { font-size: 1.15em; font-weight: 700; margin-bottom: 0.35em; line-height: 1.1; }
+.chips { display: flex; flex-wrap: wrap; gap: 0.3em; justify-content: var(--chip-justify, flex-start); }
+.chip { font-size: 0.8em; padding: 0.2em 0.7em; border-radius: 999px; background: rgba(255, 255, 255, 0.85); color: #1b1f24; white-space: nowrap; }
+.chip.sold { text-decoration: line-through; opacity: 0.55; }
+.chip.special { background: var(--p-highlight); color: var(--p-onHighlight); }
+
+/* price sticker */
+.b-price { height: 100%; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; line-height: 1; }
+.b-price .label { font-size: 0.4em; letter-spacing: 0.12em; text-transform: uppercase; font-weight: 700; }
+.b-price .amount { font-size: 1em; font-weight: 700; }
+.b-price .pnote { font-size: 0.35em; margin-top: 0.2em; }
+
+/* photo: until pictures arrive (E1b), the space shows as a quiet panel with its caption */
+.b.photo { padding: 0; }
+.photo-fill { position: absolute; inset: 0; background:
+  repeating-linear-gradient(135deg, rgba(255, 255, 255, 0.06) 0 22px, rgba(255, 255, 255, 0) 22px 44px), var(--back, var(--p-panel)); }
+.photo-cap { position: absolute; left: 0; bottom: 0; max-width: 78%; padding: 0.35em 0.6em 0.4em; background: var(--p-accent); color: var(--p-onAccent); border-radius: 0 0.35em 0 0; }
+.photo-cap .b-title { font-size: 1em; }
+.photo-cap .b-body { font-size: 0.55em; margin-top: 0.1em; }
+.photo-price { position: absolute; right: 0.4em; top: 0.4em; background: var(--p-highlight); color: var(--p-onHighlight); font-weight: 700; padding: 0.2em 0.5em; border-radius: 0.3em; font-size: 0.9em; }
+
+/* logo (text until pictures arrive) */
+.b-logo { font-weight: 800; line-height: 0.95; white-space: pre-line; }
+
+/* clock and weather */
+.b-clock .time { font-size: 1em; font-weight: 700; line-height: 1; font-variant-numeric: tabular-nums; }
+.b-clock .time small { font-size: 0.5em; margin-left: 0.15em; font-weight: 700; }
+.b-clock .date { font-size: 0.4em; margin-top: 0.2em; opacity: 0.85; }
+.b-weather { display: flex; flex-wrap: wrap; align-items: center; column-gap: 0.3em; justify-content: var(--chip-justify, flex-start); }
+.b-weather .wnow { display: inline-flex; align-items: center; gap: 0.2em; white-space: nowrap; }
+.b-weather svg { width: 1.1em; height: 1.1em; flex: none; }
+.b-weather .temp { font-size: 1em; font-weight: 700; line-height: 1; }
+.b-weather .wtext { font-size: 0.45em; opacity: 0.85; line-height: 1.2; }
+.b-weather .wlabel { font-size: 0.4em; letter-spacing: 0.14em; text-transform: uppercase; opacity: 0.8; display: block; }
+
+/* hours */
+.hours-head { font-size: 0.55em; letter-spacing: 0.16em; text-transform: uppercase; font-weight: 700; opacity: 0.9; }
+.hours-now { font-size: 1em; font-weight: 700; line-height: 1.1; margin: 0.08em 0 0.12em; }
+.hours-now.closed { opacity: 0.8; }
+.hours-week { font-size: 0.62em; line-height: 1.35; }
+.hours-note { font-size: 0.55em; opacity: 0.85; margin-top: 0.2em; }
+
+/* timetable */
+.tt-head { font-size: 1.1em; font-weight: 700; margin-bottom: 0.3em; }
+.tt { width: 100%; border-collapse: collapse; }
+.tt th { font-size: 0.55em; letter-spacing: 0.14em; text-transform: uppercase; text-align: left; opacity: 0.7; font-weight: 600; padding: 0 0 0.3em; }
+.tt td { font-size: 0.8em; padding: 0.22em 0; border-top: 0.04em solid var(--p-line); }
+.tt td.day { font-family: var(--f-display); font-weight: 700; width: 22%; }
+.tt tr.today td { color: var(--p-highlight); }
+
+/* on now / next */
+.nn { display: flex; gap: 0.4em; height: 100%; }
+.nn > div { flex: 1; min-width: 0; padding: 0.3em 0.5em; border-radius: 0.3em; background: rgba(255, 255, 255, 0.06); }
+.nn > div.live { box-shadow: inset 0 0 0 0.12em var(--p-highlight); }
+.nn .lbl { font-size: 0.42em; letter-spacing: 0.2em; text-transform: uppercase; color: var(--p-highlight); font-weight: 700; }
+.nn .val { font-size: 1em; font-weight: 700; line-height: 1.05; }
+.nn .sub { font-size: 0.45em; opacity: 0.8; margin-top: 0.15em; }
+
+/* "Powered by WayTuGo" (DP-08 round 12) sits in the bottom margin, which a layout always leaves (layout-format.mjs);
+   hidden while the Reconnecting note is up so the two never overlap */
+.powered, .offline { position: absolute; bottom: 0; height: 36px; line-height: 36px; font-size: 18px; color: var(--p-muted); opacity: 0.7; white-space: nowrap; }
+.powered { left: 0; right: 0; text-align: center; letter-spacing: 0.02em; }
+.offline { right: 24px; }
+.board:has(#offline:not([hidden])) .powered { visibility: hidden; }
+
+/* Identify: big, unmistakable, temporary (as on the directory) */
+.identify { position: absolute; inset: 0; z-index: 5; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2vmin;
+  background: rgba(8, 19, 34, 0.9); border: 1.2vmin solid #f2c14e; text-align: center; padding: 6vmin; color: #fff; }
+.identify-name { font-size: 9vmin; font-weight: 700; line-height: 1.05; }
+.identify-key { font-size: 3.4vmin; color: #f2c14e; font-variant-numeric: tabular-nums; }
+
+/* A screen with nothing to show yet */
+.note { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; text-align: center; padding: 8vmin;
+  color: #c7cdd6; background: #0d1b2e; font-size: 3.2vmin; line-height: 1.45; }
+
+@media (prefers-reduced-motion: reduce) { #stage { transition: none; } }

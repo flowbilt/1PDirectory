@@ -1,0 +1,26 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="referrer" content="strict-origin-when-cross-origin">
+<title>Layout</title>
+<link rel="stylesheet" href="/board.css">
+</head>
+<body>
+<!-- A screen that shows a layout (DP-11, round E1a). The Pi's address doesn't change: the directory page (/) hands over
+     to this page when the console chooses a layout for the screen, and this page hands back when it chooses a directory.
+     What every screen does (check-in, clock, Identify, lockdown, reloads, offline cache) comes from screen-core.js. -->
+<div id="stage" class="is-loading">
+  <div id="board" class="board">
+    <div id="blocks"></div>
+    <p id="powered" class="powered" hidden>Powered by WayTuGo · waytugo.com</p>
+    <p id="offline" class="offline" hidden>Showing saved information. Reconnecting…</p>
+  </div>
+  <div id="note" class="note" hidden></div>
+  <div id="identify" class="identify" hidden></div>
+</div>
+<script src="/screen-core.js"></script>
+<script type="module" src="/board.js"></script>
+</body>
+</html>

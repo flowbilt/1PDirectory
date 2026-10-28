@@ -22,6 +22,14 @@
   [headers.values]
     Cache-Control = "public, max-age=0, must-revalidate"
 
+# The layout format (DP-11, E1a) is a JavaScript module shared by the layout page, the console and the site; a module
+# must be served as JavaScript, and always revalidated like the display's own code.
+[[headers]]
+  for = "/*.mjs"
+  [headers.values]
+    Content-Type = "text/javascript; charset=utf-8"
+    Cache-Control = "public, max-age=0, must-revalidate"
+
 [[headers]]
   for = "/fonts/*"
   [headers.values]

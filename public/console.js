@@ -4,12 +4,13 @@
   const { esc, toast, since, slug, roleName } = window.UI;
   const PAGE = 25;
   const ONLINE_MIN = 15;
-  const LAYOUTS = { auto: "Automatic (match the TV)", portrait: "Portrait", "portrait-flipped": "Portrait (turned the other way)",
+  // A screen's Orientation (DP-11: called "Layout" until layouts, the new kind of screen content, arrived)
+  const ORIENTATIONS = { auto: "Automatic (match the TV)", portrait: "Portrait", "portrait-flipped": "Portrait (turned the other way)",
                     landscape: "Landscape", "landscape-flipped": "Landscape (upside down)" };
   // Signed-in users may read only these screen columns (supabase/06-trust.sql); hardware comes from /api/devices.
-  const SCREEN_COLS = "id,directory_id,key,name,location_note,orientation,last_seen,last_report,identify_until,created_at,no_cec,hide_powered_by,touch,screen_inches,touch_idle_s";
+  const SCREEN_COLS = "id,directory_id,key,name,location_note,orientation,last_seen,last_report,identify_until,created_at,no_cec,hide_powered_by,touch,screen_inches,touch_idle_s,layout_id,property_id";
 
-  const S = { me: null, admin: false, orgs: [], props: [], dirs: [], screens: [], tenantCount: {}, tenantText: {}, people: [], page: 0 };
+  const S = { me: null, admin: false, orgs: [], props: [], dirs: [], screens: [], layouts: [], tenantCount: {}, tenantText: {}, people: [], page: 0 };
   window.ConsoleState = S;
   const Dev = window.ConsoleDevices;
 
@@ -22,7 +23,9 @@
       Auth.db(`screens?select=${SCREEN_COLS}&order=name.asc`),
       Auth.db("tenants?select=directory_id,name"),
     ]);
-    Object.assign(S, { orgs, props, dirs, screens, tenantCount: {}, tenantText: {} });
+    // Layouts (DP-11, 29-layout-engine.sql); before 29 is run there are none
+    const layouts = await Auth.db("layouts?select=id,org_id,name,family,orientation,published_version,published_at,updated_at&order=name.asc").catch(() => []);
+    Object.assign(S, { orgs, props, dirs, screens, layouts, tenantCount: {}, tenantText: {} });
     for (const t of tenants) {
       S.tenantCount[t.directory_id] = (S.tenantCount[t.directory_id] || 0) + 1;
       S.tenantText[t.directory_id] = (S.tenantText[t.directory_id] || "") + " " + t.name.toLowerCase();
@@ -31,6 +34,10 @@
   const prop = (id) => S.props.find((p) => p.id === id);
   const dir = (id) => S.dirs.find((d) => d.id === id);
   const org = (id) => S.orgs.find((o) => o.id === id);
+  const layout = (id) => S.layouts.find((l) => l.id === id);
+  /** A screen's building: its directory's, or (a layout screen) its own */
+  const screenProp = (s) => { const d = dir(s.directory_id); return d ? prop(d.property_id) : s.property_id ? prop(s.property_id) : null; };
+  window.ConsoleLookup = { prop, dir, org, layout, screenProp };
   const status = (s) => (!s.last_seen ? "never" : (Date.now() - Date.parse(s.last_seen)) / 60000 <= ONLINE_MIN ? "online" : "offline");
 
   // ── Tabs ──
@@ -48,6 +55,7 @@
     if (name === "people") renderPeople();
     if (name === "health") Dev.loadHealth();
     if (name === "setup") window.ConsoleSetup?.load();
+    if (name === "layouts") window.ConsoleLayouts?.show();
   }
 
   // ── Screens ──
@@ -55,12 +63,12 @@
     const q = $("screen-search").value.trim().toLowerCase();
     const ownerF = $("screen-owner").value, statusF = $("screen-status").value;
     const rows = S.screens.filter((s) => {
-      const d = dir(s.directory_id), p = d && prop(d.property_id);
+      const d = dir(s.directory_id), p = screenProp(s), l = layout(s.layout_id);
       if (ownerF && p?.org_id !== ownerF) return false;
       if (statusF && status(s) !== statusF) return false;
       if (!q) return true;
       const pi = Dev.list().find((x) => x.screen_id === s.id);
-      return [s.name, s.key, s.location_note, d?.title, d?.subtitle, p?.name, S.tenantText[s.directory_id], pi?.serial, pi?.last_health?.ip].join(" ").toLowerCase().includes(q);
+      return [s.name, s.key, s.location_note, d?.title, d?.subtitle, p?.name, l?.name, S.tenantText[s.directory_id], pi?.serial, pi?.last_health?.ip].join(" ").toLowerCase().includes(q);
     });
     const counts = { online: 0, offline: 0, never: 0 };
     S.screens.forEach((s) => counts[status(s)]++);
@@ -70,14 +78,16 @@
     S.page = Math.min(S.page, pages - 1);
     const shown = rows.slice(S.page * PAGE, S.page * PAGE + PAGE);
     $("screen-rows").innerHTML = shown.length ? shown.map((s) => {
-      const d = dir(s.directory_id), p = d && prop(d.property_id), st = status(s);
+      const d = dir(s.directory_id), p = screenProp(s), l = layout(s.layout_id), st = status(s);
       const rep = s.last_report || {};
       return `<tr>
         <td><span class="dot ${st}"></span>${{ online: "Online", offline: "Offline", never: "Not yet" }[st]}${Dev.statusNote(s)}</td>
         ${Dev.thumbCell(s)}
         <td><strong>${esc(s.name)}</strong><div class="sub">${esc(s.key)}${s.location_note ? ` · ${esc(s.location_note)}` : ""}</div></td>
-        <td>${d ? `${esc(d.title)}${d.subtitle ? ` · ${esc(d.subtitle)}` : ""}<div class="sub">${esc(p?.name || "")} · ${S.tenantCount[d.id] || 0} tenants</div>` : `<span class="warn">Not assigned</span>`}</td>
-        <td>${esc({ ...LAYOUTS, auto: "Automatic" }[s.orientation] || s.orientation)}${rep.w ? `<div class="sub">${rep.w}×${rep.h}</div>` : ""}</td>
+        <td>${d ? `${esc(d.title)}${d.subtitle ? ` · ${esc(d.subtitle)}` : ""}<div class="sub">${esc(p?.name || "")} · ${S.tenantCount[d.id] || 0} tenants</div>`
+          : l ? `Layout: ${esc(l.name)}<div class="sub">${esc(p?.name || "")} · ${l.published_version ? `version ${l.published_version}` : "not published"}</div>`
+          : `<span class="warn">Not assigned</span>`}</td>
+        <td>${esc({ ...ORIENTATIONS, auto: "Automatic" }[s.orientation] || s.orientation)}${rep.w ? `<div class="sub">${rep.w}×${rep.h}</div>` : ""}</td>
         <td>${since(s.last_seen)}</td>
         <td class="actions">
           ${d ? `<a class="ghost" href="/edit.html?d=${d.id}&s=${s.id}">Edit tenants</a>` : ""}
@@ -96,10 +106,15 @@
   $("screen-rows").addEventListener("click", (e) => { const b = e.target.closest("[data-screen]"); if (b) screenDialog(S.screens.find((s) => s.id === b.dataset.screen)); });
   $("add-screen").addEventListener("click", () => screenDialog(null));
 
-  const dirOptions = (selected) => `<option value="">Not assigned</option>` + S.props.map((p) => {
+  // What a screen shows: a directory (grouped by building), or a layout (grouped by account; DP-11). Values "d:<id>" / "l:<id>".
+  const showsOptions = (s) => `<option value="">Not assigned</option>` + S.props.map((p) => {
     const ds = S.dirs.filter((d) => d.property_id === p.id);
-    return ds.length ? `<optgroup label="${esc(p.name)}">${ds.map((d) => `<option value="${d.id}"${d.id === selected ? " selected" : ""}>${esc(d.title)}${d.subtitle ? ` · ${esc(d.subtitle)}` : ""}</option>`).join("")}</optgroup>` : "";
+    return ds.length ? `<optgroup label="${esc(p.name)}">${ds.map((d) => `<option value="d:${d.id}"${d.id === s?.directory_id ? " selected" : ""}>${esc(d.title)}${d.subtitle ? ` · ${esc(d.subtitle)}` : ""}</option>`).join("")}</optgroup>` : "";
+  }).join("") + S.orgs.map((o) => {
+    const ls = S.layouts.filter((l) => l.org_id === o.id);
+    return ls.length ? `<optgroup label="Layouts · ${esc(o.name)}">${ls.map((l) => `<option value="l:${l.id}"${l.id === s?.layout_id ? " selected" : ""}>Layout: ${esc(l.name)} (${l.orientation}${l.published_version ? "" : ", not published"})</option>`).join("")}</optgroup>` : "";
   }).join("");
+  const propOptions = (orgId, selected) => S.props.filter((p) => p.org_id === orgId).map((p) => `<option value="${p.id}"${p.id === selected ? " selected" : ""}>${esc(p.name)}</option>`).join("");
 
   function screenDialog(s) {
     const isNew = !s;
@@ -108,8 +123,9 @@
       body: `
         ${field("s-name", "Name", `<input id="s-name" required maxlength="80" value="${esc(s?.name || "")}">`)}
         ${field("s-key", "Screen address", `<input id="s-key" required pattern="[a-z0-9][a-z0-9-]{0,47}" value="${esc(s?.key || "")}" ${isNew ? "" : "readonly"}>`, isNew ? "Lowercase letters, numbers and dashes. The Pi opens this address, so it can't change later." : `The Pi opens ${location.origin}/?screen=${esc(s.key)}`)}
-        ${field("s-dir", "Shows directory", `<select id="s-dir">${dirOptions(s?.directory_id)}</select>`)}
-        ${field("s-orient", "Layout", `<select id="s-orient">${Object.entries(LAYOUTS).map(([o, label]) => `<option value="${o}"${(s?.orientation || "auto") === o ? " selected" : ""}>${label}</option>`).join("")}</select>`, "A Pi turns its picture to match at its next start (Pi → Reboot Pi). A portrait TV that comes out upside down is mounted the other way round: choose Portrait (turned the other way).")}
+        ${field("s-dir", "Shows", `<select id="s-dir">${showsOptions(s)}</select>`, "A directory, or a layout (Layouts tab). A layout's orientation must match this screen's Orientation.")}
+        ${field("s-prop", "Building", `<select id="s-prop"></select>`, "The building this screen is in: a layout takes its time zone, weather and address from it.")}
+        ${field("s-orient", "Orientation", `<select id="s-orient">${Object.entries(ORIENTATIONS).map(([o, label]) => `<option value="${o}"${(s?.orientation || "auto") === o ? " selected" : ""}>${label}</option>`).join("")}</select>`, "A Pi turns its picture to match at its next start (Pi → Reboot Pi). A portrait TV that comes out upside down is mounted the other way round: choose Portrait (turned the other way).")}
         <div class="field" id="f-s-nocec"><label class="check"><input type="checkbox" id="s-nocec"${s?.no_cec ? " checked" : ""}> This display has no HDMI-CEC</label>
           <span class="hint">Tick for a computer monitor or touch display the Pi can't switch on or ask over HDMI (e.g. the Beetronics). Health then stops counting "TV not answering" for this screen. Set the display's own power-on-after-power-loss instead.</span></div>
         <div class="field" id="f-s-nopowered"><label class="check"><input type="checkbox" id="s-nopowered"${s?.hide_powered_by ? " checked" : ""}> Hide "Powered by WayTuGo"</label>
@@ -126,6 +142,16 @@
           if (!hw || !Object.keys(hw).length || !$("s-hw")) return;
           $("s-hw").innerHTML = `<details class="hw"><summary>Hardware</summary><dl>${Object.entries(hw).map(([k, v]) => `<dt>${esc(k.replace(/_/g, " "))}</dt><dd>${esc(v)}</dd>`).join("")}</dl></details>`;
         });
+        // A layout needs the screen's building (one of the layout's account's)
+        const syncProp = () => {
+          const v = $("s-dir").value, l = v.startsWith("l:") ? layout(v.slice(2)) : null;
+          $("f-s-prop").hidden = !l;
+          if (l) {
+            const keep = $("s-prop").value || s?.property_id || (s?.directory_id ? dir(s.directory_id)?.property_id : "");
+            $("s-prop").innerHTML = propOptions(l.org_id, keep);
+          }
+        };
+        $("s-dir").addEventListener("change", syncProp); syncProp();
         $("s-name").addEventListener("input", () => { if (isNew && !$("s-key").dataset.touched) $("s-key").value = slug($("s-name").value); });
         $("s-key").addEventListener("input", () => ($("s-key").dataset.touched = "1"));
         $("s-delete")?.addEventListener("click", async () => {
@@ -135,10 +161,14 @@
         });
       },
       async save() {
-        const body = { name: $("s-name").value.trim(), directory_id: $("s-dir").value || null, orientation: $("s-orient").value, location_note: $("s-loc").value.trim(), no_cec: $("s-nocec").checked, hide_powered_by: $("s-nopowered").checked,
+        const shows = $("s-dir").value, isLayout = shows.startsWith("l:");
+        const body = { name: $("s-name").value.trim(), directory_id: shows.startsWith("d:") ? shows.slice(2) : null,
+          layout_id: isLayout ? shows.slice(2) : null, property_id: isLayout ? $("s-prop").value || null : null, orientation: $("s-orient").value, location_note: $("s-loc").value.trim(), no_cec: $("s-nocec").checked, hide_powered_by: $("s-nopowered").checked,
           touch: $("s-touch").checked, screen_inches: $("s-inches").value.trim() === "" ? null : Number($("s-inches").value),
           touch_idle_s: $("s-idle").value.trim() === "" ? 45 : Number($("s-idle").value) };
         if (!body.name) throw new Error("Enter a name.");
+        if (isLayout && !body.property_id) throw new Error("Choose the building this screen is in (the layout's account has no buildings yet: add one on the Buildings tab).");
+        if (!S.layouts.length && !isLayout) { delete body.layout_id; delete body.property_id; }   // before 29-layout-engine.sql is run
         if (body.screen_inches !== null && !(body.screen_inches >= 7 && body.screen_inches <= 100)) throw new Error("Screen size: a number of inches from 7 to 100, or leave it blank.");
         if (!(Number.isInteger(body.touch_idle_s) && body.touch_idle_s >= 15 && body.touch_idle_s <= 300)) throw new Error("Back to the directory after: a whole number of seconds from 15 to 300.");
         if (isNew) {
@@ -167,7 +197,8 @@
           const scr = S.screens.filter((s) => s.directory_id === d.id);
           return `<li><a href="/edit.html?d=${d.id}"><strong>${esc(d.title)}</strong>${d.subtitle ? ` · ${esc(d.subtitle)}` : ""}</a>
             <span class="sub">${S.tenantCount[d.id] || 0} tenants · ${scr.length ? scr.map((s) => `<span class="dot ${status(s)}" title="${esc(s.name)}"></span>`).join("") : "no screen"}</span></li>`;
-        }).join("") || `<li class="sub">No directories yet.</li>`}</ul>
+        }).join("") || `<li class="sub">No directories yet.</li>`}${S.screens.filter((s) => s.layout_id && s.property_id === p.id).map((s) =>
+          `<li><span><strong>${esc(s.name)}</strong> · layout: ${esc(layout(s.layout_id)?.name || "")}</span><span class="sub"><span class="dot ${status(s)}" title="${esc(s.name)}"></span></span></li>`).join("")}</ul>
         ${S.admin ? `<footer><button type="button" class="ghost" data-add-dir="${p.id}">Add directory</button><button type="button" class="ghost" data-edit-prop="${p.id}">Building details</button>
 </footer>` : ""}
       </article>`;
@@ -210,7 +241,7 @@
         ${field("d-sub", "Subtitle", `<input id="d-sub" maxlength="80" placeholder="e.g. North Tower">`, "Optional second line.")}
         ${field("d-slug", "Directory address", `<input id="d-slug" required pattern="[a-z0-9][a-z0-9-]{0,47}">`)}
         <label class="check"><input type="checkbox" id="d-screen" checked> Also create a screen for it, with the same address</label>
-        ${field("d-orient", "Screen layout", `<select id="d-orient"><option value="auto">Automatic</option><option value="landscape">Landscape</option><option value="portrait">Portrait</option></select>`)}`,
+        ${field("d-orient", "Screen orientation", `<select id="d-orient"><option value="auto">Automatic</option><option value="landscape">Landscape</option><option value="portrait">Portrait</option></select>`)}`,
       afterOpen() {
         $("d-title").addEventListener("input", () => { if (!$("d-slug").dataset.touched) $("d-slug").value = slug($("d-title").value); });
         $("d-slug").addEventListener("input", () => ($("d-slug").dataset.touched = "1"));
@@ -293,7 +324,7 @@
     $("account-summary").textContent = `${S.orgs.length} account${S.orgs.length === 1 ? "" : "s"}`;
     $("account-rows").innerHTML = S.orgs.map((o) => {
       const ps = S.props.filter((p) => p.org_id === o.id);
-      const sc = S.screens.filter((s) => ps.some((p) => p.id === dir(s.directory_id)?.property_id));
+      const sc = S.screens.filter((s) => ps.some((p) => p.id === screenProp(s)?.id));
       return `<tr><td><strong>${esc(o.name)}</strong></td><td>${o.kind === "manager" ? "Owner / manager" : "Owner"}</td><td>${ps.length}</td><td>${sc.length}</td>
         <td><button type="button" class="linkish" data-people="${o.id}">View people</button></td>
         <td class="actions"><button type="button" class="ghost" data-edit-org="${o.id}">Rename</button></td></tr>`;
@@ -352,6 +383,7 @@
     await Dev.load(S.admin);
     Dev.renderNew(S.screens);
     renderScreens(); renderBuildings(); renderAccounts();
+    window.ConsoleLayouts?.refreshed();
   }
   window.ConsoleRefresh = refresh;
   // DP-10 round 17: an open Pi panel and a waiting command refresh the Pi list; the Screens list follows at once
@@ -367,12 +399,13 @@
       $("tab-accounts").hidden = !S.admin;
       $("tab-health").hidden = !S.admin;
       $("tab-setup").hidden = !S.admin;
+      $("tab-layouts").hidden = !S.admin;   // DP-11 E1a: 1Point makes and publishes layouts
       $("tab-people").hidden = S.me.role === "org_editor";
       await refresh();
       $("who").textContent = `${S.me.full_name || S.me.email} · ${S.admin ? "1Point" : org(S.me.org_id)?.name || ""} · ${roleName(S.me.role)}`;
       if (S.admin) { $("screen-owner").hidden = false; $("screen-owner").innerHTML = `<option value="">All accounts</option>` + orgOptions(); }
       const tab = location.hash.slice(1);
-      showTab(["screens", "buildings", "people", "health", "setup", "accounts"].includes(tab) && !document.querySelector(`[data-tab=${tab}]`).hidden ? tab : "screens");
+      showTab(["screens", "buildings", "people", "health", "setup", "layouts", "accounts"].includes(tab) && !document.querySelector(`[data-tab=${tab}]`).hidden ? tab : "screens");
       // Once a minute, but only while this tab is on screen (a console left open in a background tab costs nothing),
       // and at once when it comes back. An open Pi panel refreshes itself instead (console-devices.js).
       const minuteRefresh = async () => {

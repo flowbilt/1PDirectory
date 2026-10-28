@@ -1,5 +1,5 @@
 /* The technician page (/tech.html): one screen at a time, on a phone. 1Point logins only.
-   Identify, Reload screen, Reboot Pi, Layout, and Wi-Fi search and join. Everything goes through /api/devices, which
+   Identify, Reload screen, Reboot Pi, Orientation (DP-11: was "Layout"), and Wi-Fi search and join. Everything goes through /api/devices, which
    refuses anyone who isn't 1Point, so this page adds no access of its own. Reset device key, Unassign and the updates
    stay in the console. */
 (() => {
@@ -107,7 +107,7 @@
 
     const canPi = !!d?.enrolled;
     document.querySelectorAll("[data-pi]").forEach((b) => (b.disabled = !canPi));
-    $("layout-save").textContent = canPi ? "Save and restart Pi" : "Save layout";
+    $("layout-save").textContent = canPi ? "Save and restart Pi" : "Save orientation";
     $("layout-hint").textContent = canPi ? "The Pi restarts to turn the picture (dark for about a minute)." : "Saved for this screen; a Pi turns to match at its next start.";
 
     renderWifi(d);
@@ -271,11 +271,11 @@
     finally { b.disabled = what !== "identify" && !d?.enrolled; }
   });
 
-  // ── Layout ──
+  // ── Orientation (the "layout" action keeps its name) ──
   $("layout-save").addEventListener("click", async () => {
     const s = S.screens.find((x) => x.id === S.id), d = piFor(s), orientation = $("layout").value;
     const restart = !!d?.enrolled;
-    if (restart && !confirm(`Set the layout to ${LAYOUTS[orientation]} and restart the Pi? The screen is dark for about a minute.`)) return;
+    if (restart && !confirm(`Set the orientation to ${LAYOUTS[orientation]} and restart the Pi? The screen is dark for about a minute.`)) return;
     try {
       const r = await Auth.api("/api/devices", { method: "POST", body: { action: "layout", screen_id: s.id, orientation, restart } });
       s.orientation = orientation;

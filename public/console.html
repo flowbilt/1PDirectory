@@ -24,6 +24,7 @@
   <button role="tab" data-tab="people" aria-selected="false" id="tab-people">People</button>
   <button role="tab" data-tab="health" aria-selected="false" id="tab-health" hidden>Health</button>
   <button role="tab" data-tab="setup" aria-selected="false" id="tab-setup" hidden>Pi setup</button>
+  <button role="tab" data-tab="layouts" aria-selected="false" id="tab-layouts" hidden>Layouts</button>
   <button role="tab" data-tab="accounts" aria-selected="false" id="tab-accounts" hidden>Accounts</button>
 </nav>
 
@@ -49,7 +50,7 @@
     </section>
     <div class="table-wrap">
       <table class="grid">
-        <thead><tr><th>Status</th><th class="admin-only"><span class="sr-only">Screenshot</span></th><th>Screen</th><th>Shows</th><th>Layout</th><th>Last check-in</th><th><span class="sr-only">Actions</span></th></tr></thead>
+        <thead><tr><th>Status</th><th class="admin-only"><span class="sr-only">Screenshot</span></th><th>Screen</th><th>Shows</th><th>Orientation</th><th>Last check-in</th><th><span class="sr-only">Actions</span></th></tr></thead>
         <tbody id="screen-rows"></tbody>
       </table>
     </div>
@@ -143,6 +144,49 @@
     </div>
   </section>
 
+  <!-- Layouts (1Point only; DP-11 E1a): the new kind of screen content, written as data, checked, previewed, published -->
+  <section id="panel-layouts" class="tabpanel" hidden>
+    <div id="layout-list-view">
+      <div class="toolbar">
+        <div class="summary" id="layout-summary"></div>
+        <div class="toolbar-controls"><button type="button" id="add-layout" class="primary">Add layout</button></div>
+      </div>
+      <div class="table-wrap">
+        <table class="grid">
+          <thead><tr><th>Layout</th><th>Account</th><th>Orientation</th><th>Published</th><th>Screens</th><th><span class="sr-only">Actions</span></th></tr></thead>
+          <tbody id="layout-rows"></tbody>
+        </table>
+      </div>
+    </div>
+    <div id="layout-detail" class="layout-detail" hidden>
+      <div class="toolbar">
+        <div class="summary"><button type="button" id="layout-back" class="link-btn">← All layouts</button> <strong id="layout-title"></strong> <span class="sub" id="layout-meta"></span></div>
+        <div class="toolbar-controls"><button type="button" id="layout-rename" class="ghost">Rename</button><button type="button" id="layout-remove" class="ghost danger">Remove</button></div>
+      </div>
+      <div class="layout-work">
+        <div class="layout-edit">
+          <label for="layout-json" class="layout-label">Layout (JSON)</label>
+          <textarea id="layout-json" class="layout-json" spellcheck="false" autocomplete="off" aria-describedby="layout-help"></textarea>
+          <p class="hint" id="layout-help">The layout as data: grid, theme and blocks (see the README, Layouts). Check keeps it as the draft; nothing reaches a screen until Publish.</p>
+          <div class="layout-actions">
+            <button type="button" id="layout-check" class="ghost">Check</button>
+            <label class="layout-prop">Preview in <select id="layout-prop" aria-label="Building for the preview"></select></label>
+            <button type="button" id="layout-preview" class="ghost">Preview</button>
+            <input id="layout-note" maxlength="200" placeholder="Note for this version (optional)" aria-label="Note for this version">
+            <button type="button" id="layout-publish" class="primary">Publish</button>
+          </div>
+          <div id="layout-results" class="layout-results" aria-live="polite"></div>
+          <h3 class="section-title">Versions</h3>
+          <div class="table-wrap"><table class="grid"><thead><tr><th>Version</th><th>Published</th><th>Checks</th><th>Note</th><th><span class="sr-only">Actions</span></th></tr></thead><tbody id="layout-versions"></tbody></table></div>
+        </div>
+        <div class="layout-preview-col">
+          <div id="layout-frame" class="layout-frame"><iframe id="layout-iframe" title="Layout preview" src="about:blank"></iframe></div>
+          <p class="hint" id="layout-frame-note">Preview: Check and Preview to see it here, drawn as a screen draws it.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
   <!-- Accounts (1Point only) -->
   <section id="panel-accounts" class="tabpanel" hidden>
     <div class="toolbar">
@@ -174,6 +218,7 @@
 <script src="/auth.js"></script>
 <script src="/console-devices.js"></script>
 <script src="/console-setup.js"></script>
+<script src="/console-layouts.js"></script>
 <script src="/console.js"></script>
 </body>
 </html>
