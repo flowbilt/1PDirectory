@@ -151,3 +151,8 @@ body { font-family: "Instrument Sans", "Segoe UI", Arial, sans-serif; -webkit-fo
 .qr-code svg { display: block; width: 100%; height: 100%; }
 .qr-code.qr-empty { background: rgba(127, 127, 127, 0.18); }
 .qr-line { font-size: 0.62em; line-height: 1.2; margin-top: 10px; white-space: nowrap; font-weight: 600; }
+
+/* E1c: "See the board" on a phone (board.html?menu=<code>) isn't a lobby screen, so the kiosk lockdown above is lifted:
+   pinch-zoom, touches and selecting work */
+html.menu-view, html.menu-view body { touch-action: auto; overscroll-behavior: auto; -webkit-user-select: auto; user-select: auto; -webkit-touch-callout: default; cursor: auto; }
+html.menu-view, html.menu-view body { overflow: auto; }

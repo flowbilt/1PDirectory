@@ -177,6 +177,7 @@ try {
     assert(await p.isVisible("#powered"), "Powered by shows");
     const prevented = await p.evaluate(() => { const e = new Event("contextmenu", { cancelable: true, bubbles: true }); document.body.dispatchEvent(e); return e.defaultPrevented; });
     assert(prevented, "long-press menu blocked");
+    assert(await p.evaluate(() => getComputedStyle(document.documentElement).touchAction) === "none", "a screen still ignores pinch");
     await sb(`screens?id=eq.${portrait.id}`, { method: "PATCH", body: JSON.stringify({ identify_until: new Date(Date.now() + 60000).toISOString(), hide_powered_by: true }) });
     await p.reload(); await p.waitForTimeout(2000);
     assert(await p.isVisible("#identify") && (await p.textContent("#identify")).includes(portrait.key), "Identify shows");
@@ -406,6 +407,13 @@ try {
     await phone.click(".board summary"); await phone.waitForTimeout(3500);
     const board = phone.frameLocator(".board iframe");
     assert(await board.locator(".b").count() >= 3 && await board.locator('[data-id="code"] .qr-code svg').count() === 1, "See the board draws the board, with its QR code");
+    // a phone, not a lobby screen: pinch-zoom and touches aren't locked (Scot, 2026-10-28: nothing reacted on an iPhone)
+    assert(await board.locator("html").evaluate((h) => getComputedStyle(h).touchAction) === "auto", "pinch-zoom works in See the board");
+    assert((await phone.getAttribute('.board a[target="_blank"]', "href")).endsWith(`/board.html?menu=${menuCode}`), "Open it full screen");
+    const full = await browser.newPage({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true });
+    await full.goto(`${B}/board.html?menu=${menuCode}`); await full.waitForTimeout(2500);
+    assert(await full.locator(".b").count() >= 3 && await full.evaluate(() => getComputedStyle(document.body).touchAction) === "auto", "full screen draws the board, zoomable");
+    await full.close();
     await phone.close();
     await admin.click("#layout-back"); await admin.waitForTimeout(300);
     await admin.click(`[data-open-layout="${(await sb("layouts?name=eq.Browser%20check%20layout&select=id")).data[0].id}"]`); await admin.waitForTimeout(1500);

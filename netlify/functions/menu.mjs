@@ -203,7 +203,7 @@ export function renderMenu(r, base, code, nowMs = Date.now()) {
 <header>${logoSrc ? `<img class="logo" src="${esc(logoSrc)}" alt="${esc(brand)}">` : `<h1>${esc(brand || title)}</h1>`}</header>
 ${blocks}
 ${r.prop?.address ? `<p class="addr">${esc(r.prop.address)}${maps ? ` · <a href="${esc(maps)}" target="_blank" rel="noopener">Open in Maps</a>` : ""}</p>` : ""}
-<details class="board"><summary>See the board</summary><iframe title="The menu board" loading="lazy" style="aspect-ratio:${ratio}${doc.orientation === "portrait" ? ";max-height:80vh;width:auto;margin-inline:auto" : ""}" data-src="${esc(base)}/board.html?menu=${esc(code)}"></iframe><p>As it shows on the screen in the shop now. Pinch to zoom.</p></details>
+<details class="board"><summary>See the board</summary><iframe title="The menu board" loading="lazy" style="aspect-ratio:${ratio}${doc.orientation === "portrait" ? ";max-height:80vh;width:auto;margin-inline:auto" : ""}" data-src="${esc(base)}/board.html?menu=${esc(code)}"></iframe><p>As it shows on the screen in the shop now. <a href="${esc(base)}/board.html?menu=${esc(code)}" target="_blank" rel="noopener">Open it full screen</a>${doc.orientation === "landscape" ? " (turn your phone sideways)" : ""}, then pinch to zoom.</p></details>
 </main>
 <script>(function(){var d=document.querySelector(".board");if(!d)return;d.addEventListener("toggle",function(){var f=d.querySelector("iframe");if(d.open&&!f.src)f.src=f.getAttribute("data-src");});})();</script>`;
   return page(base, title, body, `${fonts}${vars}`, p.bg);

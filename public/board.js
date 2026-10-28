@@ -8,7 +8,7 @@
 //                check-in, never turned, pinch-zoom allowed.
 import { checkLayout, canvas, blockBox, blockShows, zonedNow, hoursNow, nowNext, niceTime, niceDays, FONTS, SIZES, SURFACES, STYLE_PX, TAGS, QR_LINE, qrSide } from "/layout-format.mjs";
 
-const VERSION = "2.18.0";   // = netlify/lib/version.mjs and display.js (a test keeps them equal)
+const VERSION = "2.18.1";   // = netlify/lib/version.mjs and display.js (a test keeps them equal)
 const C = window.ScreenCore;
 const { PREVIEW, CHECKS_IN, MENU, cache, esc } = C;
 const $ = (id) => document.getElementById(id);
@@ -326,6 +326,7 @@ if (PREVIEW) {
   });
   if (window.parent !== window) window.parent.postMessage({ type: "layout-ready" }, location.origin);
 } else if (MENU) {
+  document.documentElement.classList.add("menu-view");   // a phone, not a lobby screen: touches and pinch-zoom work
   loadScreen();
   setInterval(loadScreen, 5 * 60 * 1000);
 } else {
