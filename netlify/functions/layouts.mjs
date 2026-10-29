@@ -11,7 +11,8 @@
 // Pictures (E1b; supabase/30-layout-images.sql), per account:
 //   POST { action: "upload", org_id, name, data }            -> { picture } (data: a WebP, JPEG or PNG data URL, already
 //        shrunk by the console; its key comes from the name and is fixed: "Maple Bacon" -> img:maple-bacon)
-//   POST { action: "delete_image", id }                      -> { ok } (refused while any draft or kept version uses it)
+//   POST { action: "delete_image", id }                      -> { ok } (refused while on the boards: a menu's lists now, or
+//        any layout's draft or kept version; E2c: the file is removed from Storage and checked gone before the row goes)
 // Check, preview and publish also check that every picture a layout says exists in its account.
 // Menus (E2a, DP-12; supabase/32-menus.sql): a layout's blocks may show lists of its menu ({"list": "donuts"}); check,
 // preview and publish check each one against the menu, and the preview carries the menu as it is now.
@@ -23,9 +24,9 @@
 // straight to the database (1Point only; the database checks every rule); the customer's saves go to menu_save.
 import { checkLayout } from "../../public/layout-format.mjs";
 import { extractMenu } from "../../public/menu-format.mjs";
-import { db, rpc, caller, enc, storagePut, storageRemove } from "../lib/sb.mjs";
-import { readPicture, pictureKey, pictureKeys } from "../lib/images.mjs";
-import { randomUUID } from "node:crypto";
+import { db, rpc, caller, enc } from "../lib/sb.mjs";
+import { pictureKeys } from "../lib/images.mjs";
+import { uploadPicture, removePicture } from "../lib/pictures.mjs";
 import { toLayoutPayload } from "./screen.mjs";
 
 const json = (obj, status = 200) => new Response(JSON.stringify(obj), { status, headers: { "Content-Type": "application/json; charset=utf-8", "Cache-Control": "no-store" } });
@@ -172,29 +173,12 @@ export default async (req) => {
       if (!/^[0-9a-f-]{36}$/.test(String(body.org_id || ""))) throw fail(400, "Choose the account the picture belongs to.");
       const [org] = await db(`organizations?id=eq.${enc(body.org_id)}&select=id`);
       if (!org) throw fail(404, "No such account.");
-      const pic = readPicture(body.data);
-      if (pic.error) throw fail(400, pic.error);
-      const name = String(body.name || "").trim().slice(0, 80);
-      let key = pictureKey(body.key || name);
-      if (!key) throw fail(400, "Give the picture a name (letters or numbers), e.g. Maple Bacon.");
-      // A key is fixed once made and unique in the account: a second "Maple Bacon" becomes maple-bacon-2
-      const taken = new Set((await db(`layout_images?org_id=eq.${enc(org.id)}&key=like.${enc(key)}*&select=key`)).map((r) => r.key));
-      if (taken.has(key)) { let n = 2; while (taken.has(`${key.slice(0, 56)}-${n}`)) n++; key = `${key.slice(0, 56)}-${n}`; }
-      const path = `${org.id}/${key}-${randomUUID().slice(0, 8)}.${pic.ext}`;   // a new file every time: never overwritten
-      await storagePut(BUCKET, path, pic.bytes, pic.mime);
-      let row;
-      try {
-        [row] = await db("layout_images", { method: "POST", prefer: "return=representation",
-          body: { org_id: org.id, key, name: name || key, path, mime: pic.mime, width: pic.width, height: pic.height, bytes: pic.bytes.length, created_by: user.id } });
-      } catch (e) { await storageRemove(BUCKET, [path]).catch(() => {}); throw e; }
-      return json({ picture: { id: row.id, key: row.key, name: row.name, url: `/img/${row.path}`, width: row.width, height: row.height, bytes: row.bytes } });
+      return json(await uploadPicture(org.id, body, user.id));
     }
 
     if (body.action === "delete_image") {
-      if (!/^[0-9a-f-]{36}$/.test(String(body.id || ""))) throw fail(400, "Choose a picture.");
-      const path = await rpc("layout_image_delete", { p_id: body.id });   // refuses, in plain words, while anything uses it
-      await storageRemove(BUCKET, [path]).catch(() => {});                 // the row is gone; a stray file harms nothing
-      return json({ ok: true });
+      // E2c: the file goes from Storage first, Storage is asked again, then the row (netlify/lib/pictures.mjs)
+      return json(await removePicture(body.id));
     }
 
     throw fail(400, "Unknown action.");

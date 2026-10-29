@@ -10,7 +10,11 @@
 // E2b: on a list WayTuGo has set up with dates and times, each entry has a When (first and last day, days, times) and
 // says whether it's on now; Preview full size opens the board with the changes in its own window; every board on the
 // menu is checked as the customer types (hidden checker frames), and a list that won't fit is marked at once.
-import { checkMenuContent, menuChanges, newEntryId, capOf, shownEntries, describeWhen, entryStatus, ITEM_TAGS, FIELD_LABEL } from "/menu-format.mjs";
+// E2c: Your pictures: the account's own pictures (upload, rename, remove one that isn't on the boards; the room per
+// account, "12 of 100"); an item's picture is chosen in a picker with thumbnails, where a new one can be uploaded too
+// (/api/pictures). Restoring a save whose picture has since been removed brings the item back without it, and says so.
+import { checkMenuContent, menuChanges, newEntryId, capOf, shownEntries, describeWhen, entryStatus, menuPictureKeys, ITEM_TAGS, FIELD_LABEL } from "/menu-format.mjs";
+import { shrink, asDataUrl, niceName } from "/picture-shrink.mjs";
 import { zonedNow } from "/layout-format.mjs";
 const nowHere = () => zonedNow(Date.now(), E.tz);
 
@@ -20,7 +24,8 @@ const MENU_ID = new URLSearchParams(location.search).get("m") || "";
 const DAYS = ["M", "T", "W", "T", "F", "S", "S"], DAYNAMES = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
 const E = { me: null, admin: false, menu: null, spec: null, saved: null, draft: null, boards: [], pics: [], revs: [], tz: "America/Chicago",
   menuBase: "https://waytugo.com/m/", frameReady: false, waiters: [], reportWaiter: null, lastReport: null, board: null,
-  openWhen: new Set(), full: null, checkers: [], nofit: new Map(), checkGen: 0 };
+  openWhen: new Set(), full: null, checkers: [], nofit: new Map(), checkGen: 0,
+  picRoom: 100, picChange: false, renaming: null, picTarget: null };
 const canEdit = () => E.admin || (E.menu?.customer_edit && ["org_admin", "org_editor"].includes(E.me?.role));
 const today = () => zonedNow(Date.now(), E.tz).date;
 const clone = (x) => JSON.parse(JSON.stringify(x));
@@ -37,12 +42,11 @@ async function load() {
   E.saved = normalise(m.content);
   E.draft = clone(E.saved);
   try { const c = await Auth.config(); if (c.menuBase) E.menuBase = c.menuBase; } catch { /* the default */ }
-  const [layouts, pics, props] = await Promise.all([
+  const [layouts, props] = await Promise.all([
     Auth.db(`layouts?menu_id=eq.${MENU_ID}&select=id,name,orientation,published_version,menu_code&order=name.asc`),
-    Auth.db(`layout_images?org_id=eq.${m.org_id}&select=key,name,path&order=name.asc`).catch(() => []),
     Auth.db(`properties?org_id=eq.${m.org_id}&select=id,name,timezone&order=name.asc`).catch(() => []),
+    loadPics(),
   ]);
-  E.pics = pics;
   const live = layouts.filter((l) => l.published_version);
   const versions = live.length ? await Auth.db(`layout_versions?layout_id=in.(${live.map((l) => l.id).join(",")})&select=layout_id,version,doc`) : [];
   const screens = live.length ? await Auth.db(`screens?layout_id=in.(${live.map((l) => l.id).join(",")})&select=layout_id,property_id`).catch(() => []) : [];
@@ -67,10 +71,10 @@ function normalise(content) {
 
 // ── Drawing the lists ──
 const pickPic = (L, e, i) => {
-  const opts = [`<option value="">(no picture)</option>`, ...E.pics.map((p) => `<option value="img:${esc(p.key)}"${e.image === `img:${p.key}` ? " selected" : ""}>${esc(p.name || p.key)}</option>`)];
-  if (e.image && !E.pics.some((p) => `img:${p.key}` === e.image)) opts.push(`<option value="${esc(e.image)}" selected>${esc(e.image.slice(4))} (missing)</option>`);
   const pic = E.pics.find((p) => `img:${p.key}` === e.image);
-  return `<div class="me-pic">${pic ? `<img src="/img/${esc(pic.path)}" alt="">` : `<span class="me-nopic"></span>`}<select data-f="image" aria-label="Picture for item ${i + 1}">${opts.join("")}</select></div>`;
+  const name = pic ? esc(pic.name || pic.key) : e.image ? `<span class="me-pic-missing">${esc(e.image.slice(4))}: removed. Choose another.</span>` : `<span class="sub">No picture</span>`;
+  return `<div class="me-pic">${pic ? `<img src="/img/${esc(pic.path)}" alt="">` : `<span class="me-nopic"></span>`}<span class="me-pic-name">${name}</span>
+    <button type="button" class="ghost me-pic-btn" data-pick aria-label="Choose the picture for item ${i + 1}">${e.image ? "Change" : "Choose…"}</button></div>`;
 };
 const textBox = (L, f, e, i, wide) => {
   const cap = capOf(L, f), v = e[f] || "";
@@ -208,7 +212,6 @@ $("lists").addEventListener("input", (ev) => {
   if (t.dataset.wf && e) { setWhen(e, t.dataset.wf, t.value); refreshWhen(t, L, e); dirty(); schedulePreview(); return; }
   if (t.dataset.listF) { C[t.dataset.listF] = t.value; if (!t.value) delete C[t.dataset.listF]; }
   else if (e && t.dataset.f) { if (t.value) e[t.dataset.f] = t.value; else delete e[t.dataset.f]; }
-  if (t.dataset.f === "image") { drawLists(); return; }
   dirty(); schedulePreview();
 });
 $("lists").addEventListener("change", (ev) => {
@@ -225,6 +228,7 @@ $("lists").addEventListener("change", (ev) => {
 $("lists").addEventListener("click", (ev) => {
   const b = ev.target.closest("button"); if (!b || b.disabled) return;
   const { L, C, i } = entryAt(b); if (!L) return;
+  if (b.dataset.pick !== undefined) { const e = C.entries[i]; if (e) openPicker(L, e); return; }
   if (b.dataset.whenToggle !== undefined || b.dataset.whenClear !== undefined) {
     const e = C.entries[i] || (L.kind === "text" ? C.entries[0] : null); if (!e) return;
     const k = `${L.key}:${e.id}`;
@@ -419,8 +423,8 @@ async function save(anyway = false) {
     const r = await Auth.db("rpc/menu_save", { method: "POST", body: { p_menu: E.menu.id, p_base_rev: E.menu.rev, p_content: content } });
     E.menu.rev = r.rev;
     E.saved = normalise(content); E.draft = clone(E.saved);
-    await loadHistory();
-    drawLists(); drawHistory();
+    await Promise.all([loadHistory(), loadPics()]);
+    drawLists(); drawHistory(); drawPics();
     toast("Saved. Every board on this menu shows it within a minute.");
   } catch (ex) {
     showProblems(`<strong>Not saved:</strong> ${esc(ex.message)}`);
@@ -452,8 +456,9 @@ $("history").addEventListener("click", async (ev) => {
     E.menu.rev = r.rev;
     const [m] = await Auth.db(`menus?id=eq.${MENU_ID}&select=content,rev`);
     E.saved = normalise(m.content); E.draft = clone(E.saved);
-    await loadHistory(); drawLists(); drawHistory(); previewNow();
-    toast(`Save ${b.dataset.restore} is back on the boards.`);
+    await Promise.all([loadHistory(), loadPics()]); drawLists(); drawHistory(); drawPics(); previewNow();
+    const n = r.pictures_cleared || 0;
+    toast(`Save ${b.dataset.restore} is back on the boards.${n ? ` ${n} item${n === 1 ? "" : "s"} came back without a picture, because ${n === 1 ? "its picture was" : "their pictures were"} removed since. Choose new ones if you like.` : ""}`);
   } catch (ex) { toast(ex.message, true); }
 });
 
@@ -467,7 +472,7 @@ $("history").addEventListener("click", async (ev) => {
     $("board-pick").innerHTML = E.boards.length ? E.boards.map((b) => `<option value="${b.id}">${esc(b.name)}</option>`).join("") : `<option value="">No board shows this menu yet</option>`;
     if (E.boards[0]) $("phone-line").innerHTML = phoneLine(E.boards[0]);
     else $("pv-note").textContent = "Once WayTuGo publishes a board on this menu, it shows here.";
-    drawLists(); drawHistory();
+    drawLists(); drawHistory(); drawPics();
     makeCheckers();
     $("full").disabled = !E.boards.length;
     if (E.boards.length) previewNow();
@@ -477,5 +482,125 @@ $("history").addEventListener("click", async (ev) => {
     $("load-error").textContent = ex.message; $("load-error").hidden = false;
   }
 })();
+
+// ── Your pictures (E2c): the account's own, from /api/pictures ──
+async function loadPics() {
+  try {
+    const r = await Auth.api("/api/pictures", { method: "POST", body: { action: "list", org_id: E.menu.org_id } });
+    E.pics = r.pictures.map((p) => ({ ...p, path: p.url.replace(/^\/img\//, "") }));
+    E.picRoom = r.room; E.picChange = r.can_change;
+  } catch {
+    // before E2c's site is up: the pictures can still be shown and chosen
+    E.pics = await Auth.db(`layout_images?org_id=eq.${E.menu.org_id}&select=id,key,name,path,width,height&order=name.asc`).catch(() => []);
+    E.picChange = false;
+  }
+}
+function useText(p, unsaved) {
+  if (p.use === "menu") return "On the boards now";
+  if (p.use === "layout") return "Part of the board's design (WayTuGo's)";
+  return unsaved.has(p.key) ? "In your unsaved changes" : "Not on the boards";
+}
+function drawPics() {
+  const n = E.pics.length, change = E.picChange && canEdit();
+  $("pics-count").textContent = `· ${n} of ${E.picRoom}`;
+  $("pics-upload").hidden = !change || n >= E.picRoom;
+  $("pics-note").textContent = n >= E.picRoom
+    ? `Your account has ${n} pictures, the most it holds. Remove ones you no longer use, or ask WayTuGo for more room.`
+    : "Pictures you add belong to your account and can be used on any of your boards. One on the boards now can't be removed.";
+  const unsaved = new Set(menuPictureKeys(tidy(E.draft)));
+  $("pics").innerHTML = n ? E.pics.map((p) => {
+    const editing = E.renaming === p.id;
+    return `<li class="my-pic" data-id="${esc(p.id)}"><img src="/img/${esc(p.path)}" alt="" loading="lazy">
+      <div class="my-pic-body">${editing
+        ? `<input class="my-pic-in" maxlength="80" value="${esc(p.name)}" aria-label="New name for ${esc(p.name)}"><span class="my-pic-acts"><button type="button" class="primary" data-pic-save>Save</button><button type="button" class="ghost" data-pic-cancel>Cancel</button></span>`
+        : `<span class="my-pic-name" title="${esc(p.name)}">${esc(p.name || p.key)}</span><span class="sub">${esc(useText(p, unsaved))}</span>`}</div>
+      ${change && !editing ? `<span class="my-pic-acts"><button type="button" class="ghost" data-pic-rename>Rename</button>${p.use ? "" : `<button type="button" class="ghost danger" data-pic-remove>Remove</button>`}</span>` : ""}</li>`;
+  }).join("") : `<li class="hint">No pictures yet.${change ? " Upload your own: they're made the right size for the boards." : ""}</li>`;
+}
+/** Shrinks and uploads files; returns the pictures made. Progress shows in el. */
+async function uploadFiles(files, el) {
+  el.hidden = false;
+  const made = [], failed = [];
+  for (const [i, f] of files.entries()) {
+    el.textContent = `Uploading ${i + 1} of ${files.length}: ${f.name}…`;
+    try {
+      const data = await asDataUrl(await shrink(f));
+      const r = await Auth.api("/api/pictures", { method: "POST", body: { action: "upload", org_id: E.menu.org_id, name: niceName(f.name), data } });
+      made.push(r.picture);
+    } catch (ex) { failed.push(`${f.name}: ${ex.message}`); if (/the most it holds/.test(ex.message)) break; }
+  }
+  await loadPics(); drawPics();
+  el.textContent = `${made.length} uploaded.${failed.length ? ` Not uploaded: ${failed.join("; ")}` : ""}`;
+  return made;
+}
+$("pics-file").addEventListener("change", async (ev) => {
+  const files = [...ev.target.files]; ev.target.value = "";
+  if (files.length) await uploadFiles(files, $("pics-progress"));
+});
+$("pics").addEventListener("click", async (ev) => {
+  const b = ev.target.closest("button"); if (!b) return;
+  const p = E.pics.find((x) => x.id === b.closest("[data-id]")?.dataset.id); if (!p) return;
+  if (b.dataset.picRename !== undefined) { E.renaming = p.id; drawPics(); $("pics").querySelector(".my-pic-in")?.select(); return; }
+  if (b.dataset.picCancel !== undefined) { E.renaming = null; drawPics(); return; }
+  if (b.dataset.picSave !== undefined) { await renamePic(p); return; }
+  if (b.dataset.picRemove !== undefined) {
+    if (menuPictureKeys(tidy(E.draft)).includes(p.key)) { toast("Your unsaved changes use this picture: choose another picture for those items first.", true); return; }
+    if (!confirm(`Remove the picture "${p.name || p.key}"? It's deleted from your account and from storage. This can't be undone.`)) return;
+    b.disabled = true; b.textContent = "Removing…";
+    try {
+      await Auth.api("/api/pictures", { method: "POST", body: { action: "delete", id: p.id } });
+      toast(`Removed "${p.name || p.key}". Checked: it's gone from storage.`);
+    } catch (ex) { toast(ex.message, true); }
+    await loadPics(); drawPics(); drawLists();
+  }
+});
+$("pics").addEventListener("keydown", (ev) => {
+  if (!ev.target.classList.contains("my-pic-in")) return;
+  if (ev.key === "Enter") { ev.preventDefault(); const p = E.pics.find((x) => x.id === E.renaming); if (p) renamePic(p); }
+  if (ev.key === "Escape") { E.renaming = null; drawPics(); }
+});
+async function renamePic(p) {
+  const name = $("pics").querySelector(".my-pic-in")?.value.trim();
+  if (!name) { toast("Give the picture a name.", true); return; }
+  try { await Auth.api("/api/pictures", { method: "POST", body: { action: "rename", id: p.id, name } }); }
+  catch (ex) { toast(ex.message, true); return; }
+  E.renaming = null; await loadPics(); drawPics(); drawLists();
+}
+
+// The picker: thumbnails to choose from, a new one uploaded right here, or no picture
+function openPicker(L, e) {
+  E.picTarget = { key: L.key, id: e.id };
+  $("pic-search").value = "";
+  $("pic-dlg-progress").hidden = true;
+  $("pic-dlg-upload").hidden = !(E.picChange && canEdit()) || E.pics.length >= E.picRoom;
+  $("pic-dialog-title").textContent = `Choose a picture for ${e.name ? `"${e.name}"` : "this item"}`;
+  drawChoices();
+  $("pic-dialog").showModal();
+  $("pic-search").focus();
+}
+function drawChoices() {
+  const q = $("pic-search").value.trim().toLowerCase(), now = pickedEntry()?.image;
+  const list = E.pics.filter((p) => !q || (p.name || p.key).toLowerCase().includes(q));
+  $("pic-choices").innerHTML = list.length ? list.map((p) => `<li><button type="button" class="pic-choice${now === `img:${p.key}` ? " is-on" : ""}" data-choose="${esc(p.key)}" aria-pressed="${now === `img:${p.key}`}">
+      <img src="/img/${esc(p.path)}" alt="" loading="lazy"><span>${esc(p.name || p.key)}</span></button></li>`).join("")
+    : `<li class="hint">${E.pics.length ? "No picture by that name." : "No pictures yet: upload one."}</li>`;
+}
+function pickedEntry() { const t = E.picTarget; return t ? E.draft.lists[t.key]?.entries.find((x) => x.id === t.id) : null; }
+function choose(key) {
+  const e = pickedEntry(); $("pic-dialog").close();
+  if (!e) return;
+  if (key) e.image = `img:${key}`; else delete e.image;
+  drawLists(); drawPics(); schedulePreview();
+}
+$("pic-search").addEventListener("input", drawChoices);
+$("pic-choices").addEventListener("click", (ev) => { const b = ev.target.closest("[data-choose]"); if (b) choose(b.dataset.choose); });
+$("pic-none").addEventListener("click", () => choose(null));
+$("pic-cancel").addEventListener("click", () => $("pic-dialog").close());
+$("pic-dlg-file").addEventListener("change", async (ev) => {
+  const files = [...ev.target.files]; ev.target.value = "";
+  if (!files.length) return;
+  const [made] = await uploadFiles(files, $("pic-dlg-progress"));
+  if (made) choose(made.key); else drawChoices();
+});
 
 window.MenuEditor = { get state() { return E; }, tidy: () => tidy(E.draft), shown: (key) => shownEntries(E.spec.lists.find((l) => l.key === key), E.draft.lists[key]) };   // for the browser checks

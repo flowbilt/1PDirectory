@@ -176,7 +176,7 @@ export function createFake() {
     return [...rows].sort((a, b) => { for (const [c, d] of keys) { if (a[c] < b[c]) return -d; if (a[c] > b[c]) return d; } return 0; });
   }
   const defaults = {
-    organizations: () => ({ id: randomUUID(), kind: "owner", notes: "", created_at: now() }),
+    organizations: () => ({ id: randomUUID(), kind: "owner", notes: "", picture_room: 100, created_at: now() }),
     properties: () => ({ id: randomUUID(), address: "", timezone: "America/Chicago", lat: null, lon: null, logo: "", logo_replaces_name: false, company_logo: "", logo_swap: false, background: {}, destinations: [], amenities: [], place_lists: [], managed_by: {}, leased_by: {}, footer: "", created_at: now(), updated_at: now() }),
     directories: () => ({ id: randomUUID(), subtitle: "", footer_override: null, news_enabled: true, rotate_seconds: 12, weather_enabled: true, map_enabled: false, times_enabled: false, amenities_enabled: false, togo_enabled: false, togo_line: "", togo_code: newCode(), touch_keyboard: false, created_at: now(), updated_at: now() }),
     tenants: () => ({ id: randomUUID(), sort: 0, suite: "", arrow: "", note: "", company_id: null }),
@@ -254,6 +254,11 @@ export function createFake() {
     if (table === "layouts" && row.menu_id && T.menus.find((m) => m.id === row.menu_id)?.org_id !== row.org_id) return `That menu belongs to a different account from the layout "${row.name}".`;
     if (table === "screens") { const bad = layoutRule(row, before); if (bad) return bad; }
     if (table === "layout_images" && !before && T.layout_images.some((x) => x.org_id === row.org_id && x.key === row.key)) return "duplicate key value violates unique constraint \"layout_images_org_id_key_key\"";
+    if (table === "layout_images" && !before) {   // 34-customer-pictures.sql: the room per account
+      const have = T.layout_images.filter((x) => x.org_id === row.org_id).length, room = T.organizations.find((o) => o.id === row.org_id)?.picture_room ?? 100;
+      if (have >= room) return `This account has ${have} pictures, the most it holds. Remove ones you no longer use, or ask WayTuGo for more room.`;
+    }
+    if (table === "organizations" && row.picture_room !== undefined && !(Number.isInteger(row.picture_room) && row.picture_room >= 0 && row.picture_room <= 10000)) return "new row violates check constraint \"organizations_picture_room_range\"";
     if (table === "layout_images" && !/^[a-z0-9][a-z0-9-]{0,59}$/.test(String(row.key || ""))) return "new row violates check constraint \"layout_images_key_check\"";
     if (table === "layouts" && before && (row.orientation !== before.orientation || row.org_id !== before.org_id)) {
       const n = T.screens.filter((x) => x.layout_id === before.id).length;
@@ -572,16 +577,22 @@ export function createFake() {
       const rows = T.menu_scans.filter((x) => x.layout_id === p_layout);
       return { last30: rows.filter((x) => x.day > since).reduce((n, x) => n + x.scans, 0), total: rows.reduce((n, x) => n + x.scans, 0) };
     },
-    // 30-layout-images.sql: a picture is removed only when no draft or kept version of the account's layouts uses it
-    layout_image_delete({ p_id }) {
+    // 34-customer-pictures.sql: refused while on the boards now (a menu's lists, or a layout's draft or kept version);
+    // a picture only an old menu save used can go
+    layout_image_check({ p_id }) {
       const i = T.layout_images.find((x) => x.id === p_id);
-      if (!i) throw Object.assign(new Error("No such picture."), { status: 404 });
+      if (!i) throw Object.assign(new Error("That picture is already gone."), { status: 404 });
       const says = (doc) => JSON.stringify(doc || {}).includes(`"img:${i.key}"`);
-      const users = [...T.layouts.filter((l) => l.org_id === i.org_id && (says(l.draft) || T.layout_versions.some((v) => v.layout_id === l.id && says(v.doc)))),
-        ...T.menus.filter((m) => m.org_id === i.org_id && (says(m.content) || T.menu_revisions.some((r) => r.menu_id === m.id && says(r.content))))];   // 32
-      if (users.length) throw Object.assign(new Error(`The picture "${i.name || i.key}" is used by ${users.map((l) => l.name).join(", ")}, now or in a kept version, so it can't be removed (Roll back and Restore need it).`), { status: 400 });
-      T.layout_images = T.layout_images.filter((x) => x !== i);
+      const menus = T.menus.filter((m) => m.org_id === i.org_id && says(m.content));
+      if (menus.length) throw Object.assign(new Error(`The picture "${i.name || i.key}" is on the boards now (${menus.map((m) => m.name).join(", ")}). Choose another picture for those items first.`), { status: 400 });
+      const lays = T.layouts.filter((l) => l.org_id === i.org_id && (says(l.draft) || T.layout_versions.some((v) => v.layout_id === l.id && says(v.doc))));
+      if (lays.length) throw Object.assign(new Error(`The picture "${i.name || i.key}" is part of the layout ${lays.map((l) => l.name).join(", ")}, so only WayTuGo can take it off. Ask WayTuGo.`), { status: 400 });
       return i.path;
+    },
+    layout_image_delete({ p_id }, who) {
+      const path = FUNCS.layout_image_check({ p_id }, who);
+      T.layout_images = T.layout_images.filter((x) => x.id !== p_id);
+      return path;
     },
     // 32-menus.sql: saving a menu as the signed-in user (menu_write's rules), restoring, and "Make lists" (the site only)
     menu_save({ p_menu, p_base_rev, p_content }, who) { return menuWrite(p_menu, p_base_rev, p_content, null, who); },
@@ -590,7 +601,12 @@ export function createFake() {
       if (!m || !(who.service || me?.role === "platform_admin" || me?.org_id === m.org_id)) throw Object.assign(new Error("That menu doesn't exist, or you don't have access to it."), { status: 403 });
       const old = T.menu_revisions.find((x) => x.menu_id === p_menu && x.rev === p_rev);
       if (!old) throw Object.assign(new Error(`This menu has no revision ${p_rev}.`), { status: 404 });
-      return menuWrite(p_menu, p_base_rev, old.content, p_rev, who);
+      // 34: entries whose picture has since been removed come back without it
+      let cleared = 0;
+      const pics = new Set(T.layout_images.filter((i) => i.org_id === m.org_id).map((i) => `img:${i.key}`));
+      const content = JSON.parse(JSON.stringify(old.content));
+      for (const c of Object.values(content.lists || {})) for (const e of c.entries || []) if (e.image && !pics.has(e.image)) { delete e.image; cleared++; }
+      return { ...menuWrite(p_menu, p_base_rev, content, p_rev, who), pictures_cleared: cleared };
     },
     menu_create({ p_org, p_name, p_spec, p_content, p_by, p_layout, p_draft }) {
       const row = { ...defaults.menus(), org_id: p_org, name: p_name, spec: p_spec, content: p_content, rev: 1, updated_by: p_by || null };
@@ -759,20 +775,30 @@ export function createFake() {
   }
 
   // Supabase Storage, as far as the site uses it (E1b): upload with the service key (never overwriting), remove
+  const storageStuck = new Set();   // tests: paths Storage "fails" to remove (to prove nothing else is removed then)
   async function storageApi(req, rest) {
     const who = whoFrom(req);
     if (!who?.service) return err(403, "new row violates row-level security policy");
+    if (req.method === "POST" && rest.startsWith("list/")) {   // Storage's list of a folder (E2c)
+      const bucket = rest.slice(5);
+      const { prefix = "", search = "", limit = 100, offset = 0 } = await req.json().catch(() => ({}));
+      const dir = `${bucket}/${prefix.replace(/\/+$/, "")}/`;
+      const names = [...storage.keys()].filter((k) => k.startsWith(dir) && !k.slice(dir.length).includes("/")).map((k) => k.slice(dir.length))
+        .filter((n) => n.toLowerCase().startsWith(String(search).toLowerCase())).sort();
+      return out(names.slice(offset, offset + limit).map((name) => ({ name, id: randomUUID(), created_at: storage.get(dir + name).at || "2026-01-01T00:00:00Z", metadata: {} })));
+    }
     if (req.method === "POST") {
       if (storage.has(rest)) return err(409, "The resource already exists");
       const bytes = new Uint8Array(await req.arrayBuffer());
       if (bytes.length > 1048576) return err(413, "The object exceeded the maximum allowed size");
-      storage.set(rest, { bytes, mime: req.headers.get("content-type"), cacheControl: req.headers.get("cache-control") });
+      storage.set(rest, { bytes, mime: req.headers.get("content-type"), cacheControl: req.headers.get("cache-control"), at: new Date().toISOString() });
       return out({ Key: rest }, 200);
     }
     if (req.method === "DELETE") {
       const { prefixes = [] } = await req.json().catch(() => ({}));
-      for (const p of prefixes) storage.delete(`${rest}/${p}`);
-      return out([]);
+      const gone = [];
+      for (const p of prefixes) if (!storageStuck.has(p) && storage.delete(`${rest}/${p}`)) gone.push({ name: p });
+      return out(gone);
     }
     return err(405, "Method not allowed");
   }
@@ -791,5 +817,6 @@ export function createFake() {
   }
 
   seed();
-  return { handle, T, storage, users, outbox, addUser, rpcCalls, restCalls, deviceCredit, setClock: (d) => { clock = d ? new Date(d) : null; } };
+  for (const o of T.organizations) o.picture_room ??= 100;   // 34-customer-pictures.sql
+  return { handle, T, storage, storageStuck, users, outbox, addUser, rpcCalls, restCalls, deviceCredit, setClock: (d) => { clock = d ? new Date(d) : null; } };
 }

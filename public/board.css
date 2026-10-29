@@ -51,6 +51,11 @@ body { font-family: "Instrument Sans", "Segoe UI", Arial, sans-serif; -webkit-fo
 .tag { display: inline-block; font-size: 0.55em; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; vertical-align: 0.25em;
   padding: 0.18em 0.55em; border-radius: 999px; margin-left: 0.4em; background: var(--p-highlight); color: var(--p-onHighlight); white-space: nowrap; text-decoration: none; }
 .tag.sold-out { background: transparent; color: inherit; border: 0.12em solid currentColor; opacity: 0.75; }
+/* DP-12 E2c: the sold-out mark is laid over the end of the row (the struck-through price), never beside the name, so
+   marking an item sold out can't make a list run out of its box */
+.item-row { position: relative; }
+.sold-mark { position: absolute; right: 0; top: 50%; transform: translateY(-50%); margin: 0; opacity: 1;
+  background: var(--p-highlight); color: var(--p-onHighlight); border-color: transparent; vertical-align: baseline; }
 
 /* chips */
 .chips-head { font-size: 1.15em; font-weight: 700; margin-bottom: 0.35em; line-height: 1.1; }

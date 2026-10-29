@@ -2275,9 +2275,9 @@ test("a layout's pictures: missing ones are problems, the screen gets each one's
     assert.deepEqual(d.images, { "maple-bacon": { url: `/img/${pic.path}`, w: 320, h: 200 } }, "the screen gets only what the layout uses, by address");
     assert.ok(!JSON.stringify(d.images).includes("org_id") && !JSON.stringify(d.images).includes("supabase"), "no storage details");
   } finally { Object.assign(scr, keep); }
-  // removing: refused in plain words while a draft or a kept version uses it; the file goes with the row otherwise
+  // removing: refused in plain words while a draft or a kept version uses it; otherwise the file goes, then the row (E2c)
   r = await lcall({ action: "delete_image", id: pic.id }, admin);
-  assert.equal(r.status, 400); assert.match((await r.json()).error, /is used by .*Pictures test.*Roll back and Restore need it/);
+  assert.equal(r.status, 400); assert.match((await r.json()).error, /part of the layout Pictures test, so only WayTuGo can take it off/);
   const spare = fake.T.layout_images.find((i) => i.org_id === org.id && i.key === "maple-bacon-2");
   r = await lcall({ action: "delete_image", id: spare.id }, admin);
   assert.equal(r.status, 200);
@@ -2589,7 +2589,7 @@ test("menus: Make lists (1Point only), the board and phone menu get the lists (h
     assert.equal(r.status, 409); assert.match((await r.json()).message, /"donuts" is shown by the layout "Counter test"/);
     const pic = fake.T.layout_images.find((i) => i.org_id === org.id && i.key === "smokey-joes");
     r = await lcall({ action: "delete_image", id: pic.id }, admin);
-    assert.equal(r.status, 400); assert.match((await r.json()).error, /Counter test.*Roll back and Restore need it/);
+    assert.equal(r.status, 400); assert.match((await r.json()).error, /is on the boards now \(Counter test: menu\)/);
   } finally { Object.assign(scr, keep); }
 });
 
@@ -2699,6 +2699,106 @@ test("more lists on a layout's menu (1Point): Add lists from this layout, a key 
   for (const w of ['window.open("/board.html?preview=1"', "function checkAll(", "Doesn't fit on", "function whenHtml(", "data-when-toggle"]) assert.ok(js.includes(w), w);
   const board = readFileSync(new URL("../public/board.js", import.meta.url), "utf8");
   assert.ok(board.includes("window.opener") && board.includes("menuMoment(data.lists, now) !== drawnMoment"));
+});
+
+// ── Customers' own pictures (DP-12, round E2c; supabase/34-customer-pictures.sql, netlify/functions/pictures.mjs) ──
+const picturesFn = (await import("../netlify/functions/pictures.mjs")).default;
+const pcall = (body, token) => picturesFn(req("/api/pictures", { method: "POST", body, token }));
+test("customers' pictures: admins and editors upload, rename and remove their own; the room per account; removal checked in Storage first", async () => {
+  const org = fake.T.organizations.find((o) => /Barber/.test(o.name));
+  const admin = await login("scot@1pointusa.com", "admin-pass"), owner = await login("leighann@barber.test", "owner-pass"), editor = await login("editor@barber.test", "editor-pass");
+  const menu = fake.T.menus.find((m) => m.org_id === org.id && m.spec.lists.some((l) => l.key === "donuts"));
+  const other = fake.T.organizations.find((o) => o.id !== org.id);
+  const editWas = menu.customer_edit; menu.customer_edit = true;
+  // who: their own account only; signed in
+  assert.equal((await pcall({ action: "list", org_id: org.id }, null)).status, 401);
+  assert.equal((await pcall({ action: "list", org_id: other.id }, owner)).status, 403);
+  let r = await pcall({ action: "list", org_id: org.id }, editor);
+  let d = await r.json();
+  assert.equal(r.status, 200, JSON.stringify(d)); assert.equal(d.room, 100); assert.equal(d.can_change, true);
+  const before = d.pictures.length;
+  assert.ok(d.pictures.some((p) => p.key === "smokey-joes" && p.use === "menu"), "a picture in the lists now says so");
+  // upload as the editor and the owner; a key from the name, a new file each time
+  r = await pcall({ action: "upload", org_id: org.id, name: "Pumpkin Spice", data: dataUrl("picture.webp", "image/webp") }, editor);
+  const pumpkin = (await r.json()).picture;
+  assert.equal(r.status, 200); assert.equal(pumpkin.key, "pumpkin-spice");
+  r = await pcall({ action: "upload", org_id: org.id, name: "Old special", data: dataUrl("picture.jpg", "image/jpeg") }, owner);
+  const old = (await r.json()).picture;
+  assert.equal(r.status, 200);
+  assert.ok(fake.storage.has(`layout-images/${fake.T.layout_images.find((i) => i.id === old.id).path}`));
+  assert.match((await (await pcall({ action: "upload", org_id: org.id, name: "Bad", data: dataUrl("picture.png", "image/webp") }, owner)).json()).error, /don't match its type/);
+  // rename: the name only
+  r = await pcall({ action: "rename", id: pumpkin.id, name: "Pumpkin spice (fall)" }, editor);
+  assert.equal(r.status, 200); assert.equal((await r.json()).picture.key, "pumpkin-spice");
+  // the room: 1Point sets it in Accounts; the customer can't; the one past it is refused in plain words
+  const have = fake.T.layout_images.filter((i) => i.org_id === org.id).length;
+  r = await fake.handle(new Request(`${SB}/rest/v1/organizations?id=eq.${org.id}`, { method: "PATCH", body: JSON.stringify({ picture_room: 500 }), headers: { apikey: ANON_KEY, Authorization: `Bearer ${owner}`, "Content-Type": "application/json", Prefer: "return=representation" } }));
+  assert.equal(org.picture_room, 100, "the customer can't raise their own room");
+  r = await fake.handle(new Request(`${SB}/rest/v1/organizations?id=eq.${org.id}`, { method: "PATCH", body: JSON.stringify({ picture_room: have }), headers: { apikey: ANON_KEY, Authorization: `Bearer ${admin}`, "Content-Type": "application/json", Prefer: "return=representation" } }));
+  assert.equal(org.picture_room, have, "1Point sets the room");
+  const files0 = fake.storage.size;
+  r = await pcall({ action: "upload", org_id: org.id, name: "One too many", data: dataUrl("picture.webp", "image/webp") }, owner);
+  assert.equal(r.status, 409); assert.match((await r.json()).error, new RegExp(`This account has ${have} pictures, the most it holds\\. .*ask WayTuGo for more room\\.`));
+  assert.equal(fake.storage.size, files0, "no file stored past the room");
+  org.picture_room = 100;
+  // the menu uses "old-special", then moves on to "pumpkin-spice" (old-special is only in an old save now)
+  const entries = (pic) => ({ lists: { ...menu.content.lists, donuts: { ...menu.content.lists.donuts, entries: menu.content.lists.donuts.entries.map((e, i) => (i === 0 ? { ...e, image: `img:${pic}` } : e)) } } });
+  const save = async (content, tok) => fake.handle(new Request(`${SB}/rest/v1/rpc/menu_save`, { method: "POST", body: JSON.stringify({ p_menu: menu.id, p_base_rev: menu.rev, p_content: content }), headers: { apikey: ANON_KEY, Authorization: `Bearer ${tok}`, "Content-Type": "application/json" } }));
+  assert.equal((await save(entries("old-special"), owner)).status, 200);
+  const oldRev = menu.rev;
+  assert.equal((await save(entries("pumpkin-spice"), owner)).status, 200);
+  // on the boards now: refused, naming the menu; nothing removed
+  r = await pcall({ action: "delete", id: pumpkin.id }, editor);
+  assert.equal(r.status, 400); assert.match((await r.json()).error, /"Pumpkin spice \(fall\)" is on the boards now \(.+\)\. Choose another picture/);
+  assert.ok(fake.T.layout_images.some((i) => i.id === pumpkin.id) && fake.storage.has(`layout-images/${fake.T.layout_images.find((i) => i.id === pumpkin.id).path}`));
+  // part of a layout: the customer is told to ask WayTuGo
+  const inLayout = fake.T.layout_images.find((i) => i.org_id === org.id && fake.T.layout_versions.some((v) => JSON.stringify(v.doc).includes(`"img:${i.key}"`)) && !fake.T.menus.some((m) => JSON.stringify(m.content).includes(`"img:${i.key}"`)));
+  if (inLayout) { r = await pcall({ action: "delete", id: inLayout.id }, owner); assert.equal(r.status, 400); assert.match((await r.json()).error, /so only WayTuGo can take it off/); }
+  // Storage fails to remove the file: nothing is removed, and it says so
+  const oldPath = fake.T.layout_images.find((i) => i.id === old.id).path;
+  fake.storageStuck.add(oldPath);
+  r = await pcall({ action: "delete", id: old.id }, owner);
+  assert.equal(r.status, 502); assert.match((await r.json()).error, /Storage still has that picture's file, so nothing was removed/);
+  assert.ok(fake.T.layout_images.some((i) => i.id === old.id), "the row stays when the file couldn't be removed");
+  fake.storageStuck.delete(oldPath);
+  // only an old save used it: removed, file first and checked gone, then the row
+  r = await pcall({ action: "delete", id: old.id }, owner);
+  d = await r.json();
+  assert.equal(r.status, 200, JSON.stringify(d)); assert.equal(d.verified, true);
+  assert.ok(!fake.T.layout_images.some((i) => i.id === old.id) && !fake.storage.has(`layout-images/${oldPath}`), "row and file gone");
+  assert.equal((await pcall({ action: "delete", id: old.id }, owner)).status, 404);
+  assert.ok(fake.T.audit_log.some((a) => a.action === "picture.remove" && a.detail.path === oldPath && a.detail.verified === true));
+  // Restore that old save: the item comes back without its picture, and it says how many
+  r = await fake.handle(new Request(`${SB}/rest/v1/rpc/menu_restore`, { method: "POST", body: JSON.stringify({ p_menu: menu.id, p_rev: oldRev, p_base_rev: menu.rev }), headers: { apikey: ANON_KEY, Authorization: `Bearer ${owner}`, "Content-Type": "application/json" } }));
+  d = await r.json();
+  assert.equal(r.status, 200, JSON.stringify(d)); assert.equal(d.pictures_cleared, 1);
+  assert.ok(!menu.content.lists.donuts.entries[0].image, "restored without the removed picture");
+  // customer editing off: they can still see their pictures, not change them
+  menu.customer_edit = false;
+  const saved = fake.T.menus.filter((m) => m.org_id === org.id && m !== menu).map((m) => [m, m.customer_edit]);
+  saved.forEach(([m]) => { m.customer_edit = false; });
+  d = await (await pcall({ action: "list", org_id: org.id }, editor)).json();
+  assert.equal(d.can_change, false);
+  r = await pcall({ action: "upload", org_id: org.id, name: "Nope", data: dataUrl("picture.webp", "image/webp") }, editor);
+  assert.equal(r.status, 403); assert.match((await r.json()).error, /WayTuGo keeps this menu up to date for you/);
+  assert.equal((await pcall({ action: "list", org_id: org.id }, admin)).status, 200, "1Point always");
+  menu.customer_edit = true; saved.forEach(([m, v]) => { m.customer_edit = v; });
+  // Check storage (1Point only): a left-over file and a missing one are found; left-overs are removed and checked gone
+  assert.equal((await pcall({ action: "check_storage", org_id: org.id }, owner)).status, 403);
+  fake.storage.set(`layout-images/${org.id}/stray-1a2b3c4d.webp`, { bytes: new Uint8Array(40), mime: "image/webp", at: "2026-01-01T00:00:00Z" });
+  fake.storage.set(`layout-images/${org.id}/just-now-1a2b3c4d.webp`, { bytes: new Uint8Array(40), mime: "image/webp", at: new Date().toISOString() });
+  const missing0 = (await (await pcall({ action: "check_storage", org_id: org.id }, admin)).json()).missing.map((m) => m.key);   // the test's seeded pictures have no files
+  const lost = fake.T.layout_images.find((i) => i.id === pumpkin.id);
+  const lostFile = fake.storage.get(`layout-images/${lost.path}`); fake.storage.delete(`layout-images/${lost.path}`);
+  d = await (await pcall({ action: "check_storage", org_id: org.id }, admin)).json();
+  assert.deepEqual(d.leftover, [`${org.id}/stray-1a2b3c4d.webp`], "an upload in the last few minutes isn't counted as left over");
+  assert.deepEqual(d.missing.map((m) => m.key).filter((k) => !missing0.includes(k)), ["pumpkin-spice"]);
+  d = await (await pcall({ action: "remove_leftovers", org_id: org.id }, admin)).json();
+  assert.equal(d.removed, 1); assert.deepEqual(d.still, []);
+  assert.ok(!fake.storage.has(`layout-images/${org.id}/stray-1a2b3c4d.webp`) && fake.storage.has(`layout-images/${org.id}/just-now-1a2b3c4d.webp`));
+  fake.storage.set(`layout-images/${lost.path}`, lostFile); fake.storage.delete(`layout-images/${org.id}/just-now-1a2b3c4d.webp`);
+  menu.customer_edit = editWas;
+  assert.ok(fake.T.layout_images.filter((i) => i.org_id === org.id).length >= before);
 });
 
 let passed = 0;

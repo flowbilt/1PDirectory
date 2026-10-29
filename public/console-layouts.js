@@ -213,12 +213,13 @@
     el.hidden = false;
   }
 
-  // ── Pictures (E1b): the account's pictures, shared by its layouts; shrunk here, then sent to the site ──
-  const MAX_SIDE = 1920, MAX_KB = 900;
+  // ── Pictures (E1b): the account's pictures, shared by its layouts and its menus; shrunk here, then sent to the site ──
   async function loadPictures() {
     const l = L.current; if (!l) return;
     $("pics-account").textContent = `· ${look().org(l.org_id)?.name || ""}`;
     L.pics = await Auth.db(`layout_images?org_id=eq.${l.org_id}&select=id,key,name,path,width,height,bytes,created_at&order=key.asc`).catch(() => []);
+    const room = look().org(l.org_id)?.picture_room;
+    if (room) $("pics-account").textContent += ` · ${L.pics.length} of ${room} pictures`;
     $("pics-grid").innerHTML = L.pics.length ? L.pics.map((p) => `<div class="pic">
         <img src="/img/${esc(p.path)}" alt="" loading="lazy">
         <div class="pic-body"><span class="pic-name" title="${esc(p.name)}">${esc(p.name || p.key)}</span>
@@ -229,25 +230,11 @@
           <button type="button" class="ghost danger" data-pic-delete="${p.id}">Remove</button></div></div>`).join("")
       : `<p class="empty-rows">No pictures yet for this account.</p>`;
   }
-  /** A picture made small enough for a Pi: longest side at most 1,920 pixels, WebP (keeps a logo's transparency), under 900 KB. */
-  async function shrink(file) {
-    const bmp = await createImageBitmap(file);
-    const scale = Math.min(1, MAX_SIDE / Math.max(bmp.width, bmp.height));
-    const w = Math.max(16, Math.round(bmp.width * scale)), h = Math.max(16, Math.round(bmp.height * scale));
-    const cv = document.createElement("canvas"); cv.width = w; cv.height = h;
-    cv.getContext("2d").drawImage(bmp, 0, 0, w, h);
-    for (const q of [0.86, 0.78, 0.7, 0.6, 0.5]) {
-      const blob = await new Promise((res) => cv.toBlob(res, "image/webp", q));
-      if (blob && blob.type === "image/webp" && blob.size <= MAX_KB * 1024) return blob;
-    }
-    throw new Error(`${file.name} is still too large after shrinking.`);
-  }
-  const asDataUrl = (blob) => new Promise((res, rej) => { const r = new FileReader(); r.onload = () => res(r.result); r.onerror = rej; r.readAsDataURL(blob); });
-  const niceName = (fileName) => fileName.replace(/\.[a-z0-9]+$/i, "").replace(/[-_]+/g, " ").replace(/\s+/g, " ").trim().replace(/\b\w/g, (c) => c.toUpperCase());
   $("pics-file").addEventListener("change", async (e) => {
     const files = [...e.target.files]; e.target.value = "";
     if (!files.length || !L.current) return;
     const prog = $("pics-progress"); prog.hidden = false;
+    const { shrink, asDataUrl, niceName } = await import("/picture-shrink.mjs");   // shared with the menu editor (E2c)
     const done = [], failed = [];
     for (const [i, f] of files.entries()) {
       prog.textContent = `Uploading ${i + 1} of ${files.length}: ${f.name}…`;

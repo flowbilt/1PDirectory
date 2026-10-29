@@ -380,3 +380,26 @@ dialog.wide #dlg-body { max-height: 72vh; overflow: auto; padding-right: 4px; }
 /* The menu editor's character count, near a box's limit */
 .me-chars { position: fixed; z-index: 30; font-size: 12px; font-weight: 700; padding: 2px 8px; border-radius: 6px; background: var(--ink); color: #fff; pointer-events: none; white-space: nowrap; }
 .me-chars.full { background: #8a5a00; }
+
+/* E2c (DP-12): the menu editor's Your pictures, and the picture picker */
+.me-pic-name { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 14px; }
+.me-pic-missing { color: var(--danger); font-size: 13px; white-space: normal; }
+.me-pic-btn { padding: 5px 10px; }
+.my-pics { list-style: none; margin: 6px 0 14px; padding: 0; display: grid; gap: 6px; max-height: 360px; overflow: auto; }
+.my-pic { display: grid; grid-template-columns: 52px 1fr auto; gap: 8px; align-items: center; border: 1px solid var(--line); border-radius: 8px; padding: 6px; background: #fff; }
+.my-pic img { width: 52px; height: 39px; object-fit: cover; border-radius: 4px; background: var(--bg); }
+.my-pic-body { display: grid; min-width: 0; }
+.my-pic-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600; font-size: 14px; }
+.my-pic-acts { display: flex; gap: 4px; flex-wrap: wrap; }
+.my-pic-acts button { padding: 4px 9px; font-size: 13px; }
+.my-pic-in { width: 100%; padding: 5px 8px; border: 1px solid var(--line); border-radius: 6px; margin-bottom: 4px; }
+#pics-upload { display: inline-block; margin: 2px 0 4px; }
+#pics-upload[hidden], #pic-dlg-upload[hidden] { display: none; }
+.pic-dialog h2 { margin: 0 0 10px; font-size: 18px; }
+.pic-dialog input[type=search] { width: 100%; padding: 8px 10px; border: 1px solid var(--line); border-radius: 6px; margin-bottom: 10px; }
+.pic-choices { list-style: none; margin: 0 0 12px; padding: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 10px; max-height: 56vh; overflow: auto; }
+.pic-choice { display: grid; gap: 6px; width: 100%; padding: 6px; text-align: left; white-space: normal; background: #fff; }
+.pic-choice img { width: 100%; aspect-ratio: 4 / 3; object-fit: cover; border-radius: 4px; background: var(--bg); }
+.pic-choice span { font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pic-choice:hover { border-color: var(--navy); }
+.pic-choice.is-on { border: 2px solid var(--navy); }

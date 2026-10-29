@@ -18,6 +18,7 @@ import traffic from "../netlify/functions/traffic.mjs";
 import togo from "../netlify/functions/togo.mjs";
 import menu from "../netlify/functions/menu.mjs";
 import layouts from "../netlify/functions/layouts.mjs";
+import pictures from "../netlify/functions/pictures.mjs";
 
 const port = Number(process.argv[2]) || 8888;
 const ORIGIN = `http://localhost:${port}`;
@@ -50,7 +51,7 @@ globalThis.fetch = async (url, init = {}) => {
   return new Response("offline", { status: 503 });
 };
 
-const ROUTES = { "/api/screen": screen, "/api/users": users, "/api/config": config, "/api/weather": weather, "/api/news": news, "/api/agent": agent, "/api/devices": devices, "/api/networks": networks, "/api/alert-settings": alertSettings, "/api/traffic": traffic, "/api/layouts": layouts, "/api/menu": menu };
+const ROUTES = { "/api/screen": screen, "/api/users": users, "/api/config": config, "/api/weather": weather, "/api/news": news, "/api/agent": agent, "/api/devices": devices, "/api/networks": networks, "/api/alert-settings": alertSettings, "/api/traffic": traffic, "/api/layouts": layouts, "/api/menu": menu, "/api/pictures": pictures };
 const TYPES = { ".html": "text/html", ".js": "text/javascript", ".mjs": "text/javascript", ".css": "text/css", ".ttf": "font/ttf", ".svg": "image/svg+xml", ".png": "image/png", ".jpg": "image/jpeg", ".webmanifest": "application/manifest+json" };
 // PUBLIC_DIR serves another copy of public/ (the browser checks compare directory screens with an older display)
 const PUB = process.env.PUBLIC_DIR ? join(process.env.PUBLIC_DIR, "/") : new URL("../public/", import.meta.url).pathname;

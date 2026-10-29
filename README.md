@@ -304,7 +304,7 @@ asks the company to change one). Desktop first; the phone version of the editor 
   screens within a minute (the screen's answer carries the menu's revision).
 - **History:** every save is kept, whole, with who made it and whether it was 1Point (the terms' errors-and-omissions
   line); the editor lists what changed in plain lines ("Coffee bar · Cold Brew: price $4.29 → $4.49") and **Restore**
-  puts an earlier save back as a new one. A picture a menu uses, now or in a kept save, can't be removed.
+  puts an earlier save back as a new one. A picture a menu uses can't be removed (E2c: only while it's on the boards now).
 - **Making a menu (1Point):** on a layout's page in the Layouts tab, **Make lists from this layout** checks the JSON,
   then offers each items, chips, pictures, text and hours block as a list, with a name and a room (about a third more
   than it holds now) to change; it makes the menu from what the blocks say, points the blocks at the lists and keeps
@@ -352,6 +352,30 @@ asks the company to change one). Desktop first; the phone version of the editor 
   the form doesn't do, such as taking a list off.
 - **The character count:** near a box's limit (80%) the menu editor shows "22 of 25" by the box; at the limit, "25 of
   25 · the most this box holds on the board", so a customer knows why typing stopped.
+
+### E2c (DP-12): customers' own pictures, and sold out taking no room
+
+- **Your pictures** (menu editor): an account's Account Admins and Editors upload their own pictures (shrunk in the
+  browser to WebP, longest side 1,920, under 900 KB; the site reads each file's own bytes, as for 1Point), rename them,
+  and remove ones not on the boards. Each says *On the boards now*, *Part of the board's design (WayTuGo's)*, *In your
+  unsaved changes* or *Not on the boards*. Only while customer editing is on for one of the account's menus; 1Point
+  always (`/api/pictures`, `netlify/lib/pictures.mjs`; shared shrink in `public/picture-shrink.mjs`).
+- **Choosing an item's picture:** **Choose…** / **Change** on the row opens a picker with thumbnails, a find-by-name
+  box, **Upload a new picture** (chosen at once) and **No picture**.
+- **Room for pictures:** 100 per account to start ("12 of 100"); 1Point changes it per account in **Accounts → Edit**
+  (a picture expansion). The database refuses the one past it: "This account has 100 pictures, the most it holds.
+  Remove ones you no longer use, or ask WayTuGo for more room." (`supabase/34-customer-pictures.sql`).
+- **Removing** (Scot: verify the pictures are removed from Supabase as well): refused while the picture is on the
+  boards now (a menu's lists, or any layout's draft or kept version); otherwise the site deletes the file from Storage,
+  **asks Storage again** that it's gone, and only then removes the picture's row. If Storage still has it, nothing is
+  removed and it says so. A picture only an *old* menu save used can go; **Restore** of that save brings its items back
+  with no picture and says how many. The same order applies to 1Point's Remove in the Layouts tab.
+- **Check storage** (1Point, Accounts → Edit): the account's files in Storage against its pictures: left-over files
+  (with no picture; ones uploaded in the last 10 minutes are left alone) can be removed and are checked gone; missing
+  files are named, to upload again.
+- **Sold out today takes no room** (Scot, 2026-10-29: ticking sold out made the fall list not fit): the *Sold out* mark
+  is laid over the end of the row (the struck-through price), never beside the name, so marking an item sold out can't
+  change whether a list fits. Display 2.21.0.
 
 ## Screens and cards (Raspberry Pi)
 

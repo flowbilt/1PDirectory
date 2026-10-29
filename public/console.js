@@ -17,7 +17,7 @@
   // ── Load ──
   async function load() {
     const [orgs, props, dirs, screens, tenants] = await Promise.all([
-      Auth.db("organizations?select=id,name,kind&order=name.asc"),
+      Auth.db("organizations?select=*&order=name.asc"),
       Auth.db("properties?select=id,org_id,name,address&order=name.asc"),
       Auth.db("directories?select=id,property_id,slug,title,subtitle,updated_at&order=title.asc"),
       Auth.db(`screens?select=${SCREEN_COLS}&order=name.asc`),
@@ -347,7 +347,7 @@
       const sc = S.screens.filter((s) => ps.some((p) => p.id === screenProp(s)?.id));
       return `<tr><td><strong>${esc(o.name)}</strong></td><td>${o.kind === "manager" ? "Owner / manager" : "Owner"}</td><td>${ps.length}</td><td>${sc.length}</td>
         <td><button type="button" class="linkish" data-people="${o.id}">View people</button></td>
-        <td class="actions"><button type="button" class="ghost" data-edit-org="${o.id}">Rename</button></td></tr>`;
+        <td class="actions"><button type="button" class="ghost" data-edit-org="${o.id}">Edit</button></td></tr>`;
     }).join("");
   }
   $("account-rows").addEventListener("click", (e) => {
@@ -358,19 +358,47 @@
   $("add-account").addEventListener("click", () => accountDialog(null));
   function accountDialog(o) {
     openDialog({
+      orgId: o?.id,
       title: o ? `Account: ${o.name}` : "Add account",
       body: `${field("a-name", "Name", `<input id="a-name" required maxlength="80" value="${esc(o?.name || "")}">`)}
         ${field("a-kind", "Type", `<select id="a-kind"><option value="owner"${o?.kind === "owner" ? " selected" : ""}>Owner</option><option value="manager"${o?.kind === "manager" ? " selected" : ""}>Owner / manager</option></select>`)}
+        ${o && "picture_room" in o ? field("a-pics", "Room for pictures", `<input id="a-pics" type="number" min="0" max="10000" step="1" value="${o.picture_room}">`,
+          "How many pictures the account can keep (its own and WayTuGo's). More room is a picture expansion.")
+          + `<div class="row"><button type="button" class="ghost" id="a-check">Check storage</button><span class="sub" id="a-check-out"></span></div>` : ""}
         ${o ? "" : `<p class="hint">Next, add their buildings on the Buildings tab and invite their people.</p>`}`,
       async save() {
         const body = { name: $("a-name").value.trim(), kind: $("a-kind").value };
         if (!body.name) throw new Error("Enter a name.");
+        if ($("a-pics")) {   // E2c (DP-12)
+          const n = Number($("a-pics").value);
+          if (!Number.isInteger(n) || n < 0 || n > 10000) throw new Error("Room for pictures is a whole number from 0 to 10,000.");
+          body.picture_room = n;
+        }
         if (o) await Auth.db(`organizations?id=eq.${o.id}`, { method: "PATCH", body, prefer: "return=minimal" });
         else await Auth.db("organizations", { method: "POST", body, prefer: "return=minimal" });
         toast("Saved."); await refresh();
       },
     });
   }
+
+  // E2c: Check storage, for one account: its files in Storage against its pictures; left-over files can be removed
+  document.addEventListener("click", async (ev) => {
+    if (ev.target.id !== "a-check" && ev.target.id !== "a-tidy") return;
+    const id = current?.orgId, out = $("a-check-out"); if (!id || !out) return;
+    ev.target.disabled = true; out.textContent = "Checking…";
+    try {
+      const tidy = ev.target.id === "a-tidy";
+      const r = await Auth.api("/api/pictures", { method: "POST", body: { action: tidy ? "remove_leftovers" : "check_storage", org_id: id } });
+      const rep = tidy ? r.report : r;
+      const lines = [`${rep.pictures} picture${rep.pictures === 1 ? "" : "s"}, ${rep.files} file${rep.files === 1 ? "" : "s"} in storage.`];
+      if (tidy) lines.push(`Removed ${r.removed} left-over file${r.removed === 1 ? "" : "s"}${r.still.length ? `; ${r.still.length} would not go: try again later` : ", checked gone"}.`);
+      if (rep.leftover.length) lines.push(`${rep.leftover.length} left-over file${rep.leftover.length === 1 ? "" : "s"} with no picture. <button type="button" class="ghost danger" id="a-tidy">Remove them</button>`);
+      if (rep.missing.length) lines.push(`Missing file${rep.missing.length === 1 ? "" : "s"} (the picture shows blank): ${rep.missing.map((m) => esc(m.name || m.key)).join(", ")}. Upload ${rep.missing.length === 1 ? "it" : "them"} again.`);
+      if (!rep.leftover.length && !rep.missing.length) lines.push("Everything matches.");
+      out.innerHTML = lines.join(" ");
+    } catch (ex) { out.textContent = ex.message; }
+    ev.target.disabled = false;
+  });
 
   // ── Dialog helper ──
   const field = (id, label, control, hint = "") => `<div class="field" id="f-${id}"><label for="${id}">${label}</label>${control}${hint ? `<span class="hint">${hint}</span>` : ""}</div>`;

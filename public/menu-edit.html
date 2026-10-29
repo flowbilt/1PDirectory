@@ -37,11 +37,29 @@
     <label class="check inline"><input type="checkbox" id="show-room"> Show the empty room</label>
     <p class="hint" id="pv-note">As the board will show it, with your changes, before you save.</p>
     <p class="hint" id="phone-line"></p>
+    <!-- E2c: the account's own pictures -->
+    <h3 class="section-title">Your pictures <span class="sub" id="pics-count"></span></h3>
+    <p class="hint" id="pics-note">Pictures you add belong to your account and can be used on any of your boards. One on the boards now can't be removed.</p>
+    <label class="file-btn ghost" id="pics-upload" hidden>Upload pictures<input type="file" id="pics-file" accept="image/jpeg,image/png,image/webp" multiple></label>
+    <p class="hint" id="pics-progress" role="status" hidden></p>
+    <ul class="my-pics" id="pics"></ul>
     <h3 class="section-title">History</h3>
     <p class="hint">Every save is kept. Restore puts an earlier one back on the boards (as a new save).</p>
     <ol class="menu-history" id="history"></ol>
   </aside>
 </div>
+<!-- E2c: choosing an item's picture -->
+<dialog id="pic-dialog" class="wide pic-dialog" aria-labelledby="pic-dialog-title">
+  <h2 id="pic-dialog-title">Choose a picture</h2>
+  <input type="search" id="pic-search" placeholder="Find a picture by name" aria-label="Find a picture by name">
+  <ul class="pic-choices" id="pic-choices"></ul>
+  <p class="hint" id="pic-dlg-progress" role="status" hidden></p>
+  <div class="dialog-actions">
+    <label class="file-btn ghost" id="pic-dlg-upload">Upload a new picture<input type="file" id="pic-dlg-file" accept="image/jpeg,image/png,image/webp"></label>
+    <button type="button" class="ghost" id="pic-none">No picture</button>
+    <button type="button" class="ghost" id="pic-cancel">Cancel</button>
+  </div>
+</dialog>
 <!-- E2b: each board on the menu, drawn out of sight, to check every change fits as it's typed -->
 <div id="checkers" class="me-checkers" aria-hidden="true"></div>
 <script src="/auth.js"></script>

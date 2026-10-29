@@ -208,6 +208,11 @@ begin
      or r -> 'images' -> 'menus-check' ->> 'path' is distinct from v_org || '/menus-check-1a2b3c4d.webp' then
     fails := fails || format('9 the screen''s answer %s', r - 'screen');
   end if;
+  begin
+    perform public.layout_image_delete(v_pic);
+    fails := fails || '9 a picture on the boards now was removed'::text;
+  exception when check_violation then null;
+  end;
   perform set_config('request.jwt.claims', json_build_object('sub', u_owner, 'role', 'authenticated')::text, true);
   perform set_config('role', 'authenticated', true);
   perform public.menu_save(v_menu, 5, c1);
@@ -225,11 +230,6 @@ begin
     update public.menus m set spec = jsonb_build_object('lists', (m.spec -> 'lists') - 0) where id = v_menu;
     fails := fails || '9 a list the board shows was taken off'::text;
   exception when check_violation then if sqlerrm not like '%"donuts" is shown by the layout%' then fails := fails || format('9 message: %s', sqlerrm); end if;
-  end;
-  begin
-    perform public.layout_image_delete(v_pic);
-    fails := fails || '9 a picture the menu used was removed'::text;
-  exception when check_violation then null;
   end;
   begin
     delete from public.menus where id = v_menu;

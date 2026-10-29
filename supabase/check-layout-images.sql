@@ -98,7 +98,7 @@ begin
     perform public.layout_image_delete(v_img);
     fails := fails || '5 a picture in use was removed'::text;
   exception when check_violation then
-    if sqlerrm not like '%is used by Picture test layout%' then fails := fails || format('5 message: %s', sqlerrm); end if;
+    if sqlerrm not like '%Picture test layout%' then fails := fails || format('5 message: %s', sqlerrm); end if;
   end;
   v_path := public.layout_image_delete(v_img2);
   if v_path not like '%/check-spare-5e6f7a8b.webp' or exists (select 1 from public.layout_images where id = v_img2) then

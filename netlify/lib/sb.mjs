@@ -67,6 +67,21 @@ export async function storageRemove(bucket, paths) {
   if (!res.ok) throw Object.assign(new Error(`Storage refused to remove the file (${res.status}).`), { status: 502 });
 }
 
+/** E2c: lists a folder of a bucket (Storage's own record of its files, so a removed file is never shown from a cache).
+ *  Each item: { name, id, created_at, ... }; a sub-folder has id null. */
+export async function storageList(bucket, prefix, { search = "", limit = 1000, offset = 0 } = {}) {
+  const key = serviceKey();
+  const res = await fetch(`${base()}/storage/v1/object/list/${bucket}`, {
+    method: "POST",
+    headers: { apikey: key, ...(key.startsWith("eyJ") ? { Authorization: `Bearer ${key}` } : {}), "Content-Type": "application/json" },
+    body: JSON.stringify({ prefix, search, limit, offset, sortBy: { column: "name", order: "asc" } }),
+    signal: AbortSignal.timeout(10000),
+  });
+  if (!res.ok) throw Object.assign(new Error(`Storage couldn't list the pictures (${res.status}).`), { status: 502 });
+  const items = await res.json().catch(() => []);
+  return Array.isArray(items) ? items : [];
+}
+
 /** Auth admin endpoints with the service key. path like "/admin/users" */
 export const auth = (path, opts = {}) => call(`/auth/v1${path}`, { ...opts, apikey: serviceKey() });
 

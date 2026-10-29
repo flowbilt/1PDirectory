@@ -12,7 +12,7 @@
 import { applyMenu, menuMoment } from "/menu-format.mjs";
 import { checkLayout, canvas, blockBox, blockShows, zonedNow, hoursNow, nowNext, niceTime, niceDays, FONTS, SIZES, SURFACES, STYLE_PX, TAGS, QR_LINE, qrSide } from "/layout-format.mjs";
 
-const VERSION = "2.20.0";   // = netlify/lib/version.mjs and display.js (a test keeps them equal)
+const VERSION = "2.21.0";   // = netlify/lib/version.mjs and display.js (a test keeps them equal)
 const C = window.ScreenCore;
 const { PREVIEW, CHECKS_IN, MENU, cache, esc } = C;
 const $ = (id) => document.getElementById(id);
@@ -69,8 +69,10 @@ const BODY = {
     const ghosts = Math.max(0, (c.room || 0) - (c.items || []).length);
     return `${head}<ul class="items-list" style="--cols:${c.columns || 1}">${(c.items || []).map((it) => {
       const sold = (it.tags || []).includes("sold-out");
-      return `<li class="item${sold ? " sold" : ""}"><div class="item-row"><span class="item-name">${esc(it.name || "")}${tagsHtml(it.tags)}</span>`
-        + `${it.price ? `<span class="${c.leaders ? "leader" : "spacer"}"></span><span class="item-price">${esc(it.price)}</span>` : ""}</div>`
+      // Sold out today takes no room (Scot, DP-12 E2c): the mark sits over the price, so ticking it never changes the fit
+      return `<li class="item${sold ? " sold" : ""}"><div class="item-row"><span class="item-name">${esc(it.name || "")}${tagsHtml((it.tags || []).filter((t) => t !== "sold-out"))}</span>`
+        + `${it.price ? `<span class="${c.leaders ? "leader" : "spacer"}"></span><span class="item-price">${esc(it.price)}</span>` : ""}`
+        + `${sold ? `<span class="tag sold-out sold-mark">${esc(TAGS["sold-out"])}</span>` : ""}</div>`
         + `${it.line ? `<div class="item-line">${esc(it.line)}</div>` : ""}</li>`;
     }).join("")}${'<li class="item ghost" aria-hidden="true"><div class="item-row"><span class="item-name">&nbsp;</span></div></li>'.repeat(ghosts)}</ul>`;
   },

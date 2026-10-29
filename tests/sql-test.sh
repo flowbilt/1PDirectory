@@ -24,7 +24,7 @@ psql -X -q -d $DB -v ON_ERROR_STOP=1 -f "$HERE/sql/supabase-standin.sql" >/dev/n
 # Which check file follows which numbered file, and what it should read
 declare -A CHECK=([04]=agent [05]=tuning [06]=trust [07]=uptime [08]=networks [09]=update [10]=refused [11]=layouts [12]=alerts
   [13]=tech [14]=saved-wifi [15]=logos [16]=remote [17]=hardening [18]=sizes [19]=mail [20]=save-wifi [21]=no-cec [22]=widget-sizes
-  [23]=info-panel [24]=directory-to-go [25]=touch [26]=people [27]=new-directory [28]=touch-directory [29]=layout-engine [30]=layout-images [31]=menu-to-go [32]=menus [33]=menu-specials)
+  [23]=info-panel [24]=directory-to-go [25]=touch [26]=people [27]=new-directory [28]=touch-directory [29]=layout-engine [30]=layout-images [31]=menu-to-go [32]=menus [33]=menu-specials [34]=customer-pictures)
 
 check() {   # a check passes when it says ALL N CHECKS PASSED, or (the older true/false ones) every value is true
   local name=$1 out

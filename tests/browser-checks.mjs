@@ -804,6 +804,127 @@ try {
     assert(!(await sec.evaluate((x) => x.classList.contains("nofit"))), "cleared");
   });
 
+  await check("sold out today takes no room (Scot): every item of the tightest lists ticked sold out still fits, at the same size", async () => {
+    await owner.goto(`${B}/menu-edit.html?m=${menuId}&fresh=${Date.now()}`); await owner.waitForTimeout(3500);
+    const size = () => owner.frameLocator("#pv").locator("body").evaluate(() => JSON.stringify(["pastries", "fall", "coffee"].map((k) => {
+      const el = document.querySelector(`[data-id="${k}"] .item-name`), list = document.querySelector(`[data-id="${k}"] .items-list`);
+      return el && list ? [k, getComputedStyle(el).fontSize, list.scrollHeight] : [k, null];
+    })));
+    // the fall box as on Scot's board: three items in a small box
+    const fall = owner.locator('.me-list[data-key="fall"]');
+    const want = [["Pumpkin Spice Cake", "$1.89"], ["Caramel Apple", "$1.89"], ["Pumpkin Spice Latte", "$4.99"]];
+    while (await fall.locator(".me-row").count() < 3) await fall.locator("[data-add]").click();
+    for (const [i, [n, pr]] of want.entries()) { await fall.locator(`.me-row[data-i="${i}"] input[data-f="name"]`).fill(n); await fall.locator(`.me-row[data-i="${i}"] input[data-f="price"]`).fill(pr); }
+    await owner.waitForTimeout(4500);
+    assert(!(await owner.$$eval(".me-list.nofit", (xs) => xs.length)), "fits before ticking");
+    const before = await size();
+    for (const key of ["pastries", "fall", "coffee"]) {
+      const boxes = owner.locator(`.me-list[data-key="${key}"] [data-sw="sold"]`);
+      for (let i = 0; i < await boxes.count(); i++) await boxes.nth(i).check();
+    }
+    await owner.waitForTimeout(4500);
+    const marked = await owner.$$eval(".me-list.nofit", (xs) => xs.map((x) => x.dataset.key));
+    assert(!marked.length, `marked as not fitting: ${marked}`);
+    assert(await size() === before, `the size changed: ${before} -> ${await size()}`);
+    // nothing is added beside the name (that's what wrapped "Pumpkin Spice Cake" onto a second line in a narrow box)
+    const r = await owner.frameLocator("#pv").locator('[data-id="pastries"] .item.sold').first().evaluate((li) => {
+      const row = li.querySelector(".item-row").getBoundingClientRect(), mark = li.querySelector(".sold-mark").getBoundingClientRect();
+      return { inline: li.querySelectorAll(".item-name .tag.sold-out").length, inside: mark.left >= row.left - 1 && mark.right <= row.right + 1, oneLine: li.querySelector(".item-row").offsetHeight < 2.2 * parseFloat(getComputedStyle(li).fontSize) };
+    });
+    assert(!r.inline && r.inside && r.oneLine, JSON.stringify(r));
+    await shot(owner, "menu-editor-all-sold-out");
+    await owner.click("#undo"); await owner.waitForTimeout(1500);
+  });
+  // ── Customers' own pictures (E2c) ──
+  copyFileSync(new URL("./fixtures/picture.jpg", import.meta.url), join(picDir, "Pumpkin Spice.jpg"));
+  copyFileSync(new URL("./fixtures/picture.png", import.meta.url), join(picDir, "Spare one.png"));
+  copyFileSync(new URL("./fixtures/picture.webp", import.meta.url), join(picDir, "Apple Cider.webp"));
+  const picRows = async () => (await sb(`layout_images?org_id=eq.${home.org_id}&select=id,key,name,path`)).data;
+  await check("E2c: Your pictures: the owner uploads (shrunk to WebP), N of 100, each says whether it's on the boards", async () => {
+    await owner.goto(`${B}/menu-edit.html?m=${menuId}&fresh=${Date.now()}`); await owner.waitForTimeout(3000);
+    const n0 = (await picRows()).length;
+    assert((await owner.textContent("#pics-count")).includes(`${n0} of 100`), await owner.textContent("#pics-count"));
+    await owner.setInputFiles("#pics-file", [join(picDir, "Pumpkin Spice.jpg"), join(picDir, "Spare one.png")]);
+    await owner.waitForFunction(() => /2 uploaded/.test(document.getElementById("pics-progress").textContent), null, { timeout: 15000 });
+    const rows = await picRows();
+    const ps = rows.find((r) => r.key === "pumpkin-spice"), sp = rows.find((r) => r.key === "spare-one");
+    assert(ps && sp && /\.webp$/.test(ps.path), JSON.stringify(rows.map((r) => r.key)));
+    assert((await owner.textContent("#pics-count")).includes(`${n0 + 2} of 100`), "count follows");
+    const card = owner.locator(`.my-pic[data-id="${ps.id}"]`);
+    assert((await card.textContent()).includes("Not on the boards") && await card.locator("[data-pic-remove]").count() === 1, await card.textContent());
+    const onBoard = (await theMenu()).content.lists.hero.entries[0].image.slice(4);
+    const used = owner.locator(`.my-pic[data-id="${rows.find((r) => r.key === onBoard).id}"]`);
+    assert((await used.textContent()).includes("On the boards now") && await used.locator("[data-pic-remove]").count() === 0, "one on the boards has no Remove");
+    await shot(owner, "menu-editor-pictures");
+  });
+  await check("E2c: the picker: thumbnails, find by name, choose; Save puts it on the board; Rename keeps what the menu says", async () => {
+    const hero = owner.locator('.me-list[data-key="hero"]');
+    await hero.locator('.me-row[data-i="0"] [data-pick]').click();
+    assert(await owner.isVisible("#pic-dialog"), "the picker opens");
+    await owner.fill("#pic-search", "pumpk");
+    const found = await owner.locator("#pic-choices [data-choose]").evaluateAll((bs) => bs.map((x) => x.dataset.choose));
+    assert(found.includes("pumpkin-spice") && found.every((k) => k.startsWith("pumpkin")), `found by name: ${found}`);
+    await shot(owner, "menu-editor-picker");
+    await owner.click('#pic-choices [data-choose="pumpkin-spice"]');
+    assert(!(await owner.isVisible("#pic-dialog")), "closed");
+    assert((await hero.locator('.me-row[data-i="0"] .me-pic-name').textContent()).includes("Pumpkin Spice"), "shown on the row");
+    await owner.click("#save"); await owner.waitForTimeout(4000);
+    assert(await owner.isHidden("#save-problems"), await owner.textContent("#save-problems"));
+    assert((await theMenu()).content.lists.hero.entries[0].image === "img:pumpkin-spice", "saved");
+    const ps = (await picRows()).find((r) => r.key === "pumpkin-spice");
+    await owner.locator(`.my-pic[data-id="${ps.id}"] [data-pic-rename]`).click();
+    await owner.fill(".my-pic-in", "Pumpkin spice (fall)"); await owner.keyboard.press("Enter"); await owner.waitForTimeout(1200);
+    assert((await picRows()).find((r) => r.id === ps.id).name === "Pumpkin spice (fall)", "renamed");
+    assert((await owner.locator(`.my-pic[data-id="${ps.id}"]`).textContent()).includes("On the boards now"), "still on the boards");
+  });
+  await check("E2c: Upload a new picture from the picker chooses it; removing one checks it's gone from storage; one on the boards can't go", async () => {
+    const hero = owner.locator('.me-list[data-key="hero"]');
+    await hero.locator('.me-row[data-i="0"] [data-pick]').click();
+    await owner.setInputFiles("#pic-dlg-file", join(picDir, "Apple Cider.webp"));
+    await owner.waitForFunction(() => !document.getElementById("pic-dialog").open, null, { timeout: 15000 });
+    assert((await hero.locator('.me-row[data-i="0"] .me-pic-name').textContent()).includes("Apple Cider"), "the new one is chosen");
+    await owner.click("#save"); await owner.waitForTimeout(4000);
+    assert((await theMenu()).content.lists.hero.entries[0].image === "img:apple-cider", "saved");
+    // the spare: never used; removed, and its file is gone
+    const sp = (await picRows()).find((r) => r.key === "spare-one");
+    assert((await fetch(`${B}/img/${sp.path}`)).status === 200, "the file is there first");
+    await owner.locator(`.my-pic[data-id="${sp.id}"] [data-pic-remove]`).click(); await owner.waitForTimeout(1500);
+    assert((await owner.textContent(".toast")).includes("Checked: it's gone from storage"), await owner.textContent(".toast"));
+    assert(!(await picRows()).some((r) => r.id === sp.id) && (await fetch(`${B}/img/${sp.path}`)).status === 404, "row and file gone");
+    // the one on the boards: refused by the site too
+    const ac = (await picRows()).find((r) => r.key === "apple-cider");
+    const err = await owner.evaluate(async (id) => { try { await Auth.api("/api/pictures", { method: "POST", body: { action: "delete", id } }); return "removed"; } catch (e) { return e.message; } }, ac.id);
+    assert(/is on the boards now/.test(err), err);
+  });
+  await check("E2c: a picture only an old save used can go; Restoring that save brings the item back without it, and says so", async () => {
+    const ps = (await picRows()).find((r) => r.key === "pumpkin-spice");
+    await owner.reload(); await owner.waitForTimeout(3000);
+    const card = owner.locator(`.my-pic[data-id="${ps.id}"]`);
+    assert((await card.textContent()).includes("Not on the boards"), await card.textContent());
+    await card.locator("[data-pic-remove]").click(); await owner.waitForTimeout(1500);
+    assert(!(await picRows()).some((r) => r.id === ps.id) && (await fetch(`${B}/img/${ps.path}`)).status === 404, "removed");
+    const revs = (await sb(`menu_revisions?menu_id=eq.${menuId}&select=rev,content&order=rev.desc`)).data;
+    const old = revs.find((r) => r.content.lists.hero?.entries[0]?.image === "img:pumpkin-spice");
+    await owner.click(`[data-restore="${old.rev}"]`); await owner.waitForTimeout(2500);
+    assert(/came back without a picture, because its picture was removed since/.test(await owner.textContent(".toast")), await owner.textContent(".toast"));
+    const e0 = (await theMenu()).content.lists.hero.entries[0];
+    assert(!e0.image, JSON.stringify(e0));
+    assert((await owner.locator('.me-list[data-key="hero"] .me-row[data-i="0"] [data-pick]').textContent()).includes("Choose"), "the row offers Choose…");
+    // put a picture back, as it was
+    await owner.locator('.me-list[data-key="hero"] .me-row[data-i="0"] [data-pick]').click();
+    await owner.click('#pic-choices [data-choose="apple-cider"]'); await owner.click("#save"); await owner.waitForTimeout(4000);
+  });
+  await check("E2c: Accounts (1Point): room for pictures, and Check storage compares the account's files with its pictures", async () => {
+    await boss.goto(`${B}/console.html?fresh=${Date.now()}#accounts`); await boss.waitForTimeout(1500);
+    await boss.click(`[data-edit-org="${home.org_id}"]`); await boss.waitForTimeout(500);
+    assert(await boss.inputValue("#a-pics") === "100", "room shown");
+    await boss.click("#a-check"); await boss.waitForTimeout(1500);
+    const out = await boss.textContent("#a-check-out");
+    assert(/\d+ pictures?, \d+ files? in storage\./.test(out) && /Missing files?/.test(out), out);   // the seeded pictures have no files
+    await shot(boss, "accounts-check-storage");
+    await boss.fill("#a-pics", "150"); await boss.click("#dlg-ok"); await boss.waitForTimeout(1200);
+    assert((await sb(`organizations?id=eq.${home.org_id}&select=picture_room`)).data[0].picture_room === 150, "saved");
+  });
   await check("E2b: Add lists from this layout (1Point): a second board on the same menu; a key already there gets -2", async () => {
     const [chalk] = (await sb("layouts", { method: "POST", body: JSON.stringify({ org_id: home.org_id, name: "Chalkboard check", family: "menu", orientation: "portrait" }) })).data;
     await boss.goto(`${B}/console.html?fresh=${Date.now()}#layouts`); await boss.waitForTimeout(1500);   // a new address, so the page reloads
