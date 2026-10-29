@@ -672,19 +672,56 @@ try {
   await check("List settings (1Point): room changed for a list; below what's in it is refused in plain words; a stranger sees no menu", async () => {
     await boss.goto(`${B}/console.html#layouts`); await boss.waitForTimeout(1500);
     await boss.click(`[data-open-layout="${counter.id}"]`); await boss.waitForTimeout(900);
-    await boss.click("#menu-spec"); await boss.waitForTimeout(500);
-    const spec = JSON.parse(await boss.inputValue("#spec-json"));
-    spec.lists.find((x) => x.key === "coffee").room = 3;
-    await boss.fill("#spec-json", JSON.stringify(spec));
+    await boss.click("#menu-spec"); await boss.waitForTimeout(800);   // since after E2b: a form, one card per list
+    const room = boss.locator('.ls-card[data-ls-key="coffee"] [data-ls="room"]');
+    await room.fill("3");
     await boss.click("#dlg-ok"); await boss.waitForTimeout(800);
     assert(/Coffee bar.*has room for 3; this has 7/.test(await boss.textContent("#dlg-error")), await boss.textContent("#dlg-error"));
-    spec.lists.find((x) => x.key === "coffee").room = 10;
-    await boss.fill("#spec-json", JSON.stringify(spec));
+    await room.fill("10");
     await boss.click("#dlg-ok"); await boss.waitForTimeout(1000);
     assert((await theMenu()).spec.lists.find((x) => x.key === "coffee").room === 10, "saved");
     const other = await fetch(`${B}/sb/rest/v1/menus?select=id`, { headers: { apikey: "test-anon-key" } });
     assert((await other.json()).length === 0, "signed out: nothing");
   });
+  await check("List settings form: boxes ticked with their most characters, dates and times switched on, a hint; a box in use can't go; JSON only under Advanced", async () => {
+    await boss.click("#menu-spec"); await boss.waitForTimeout(800);
+    assert(await boss.locator("#dlg.wide .ls-card").count() >= 8, "a card per list, in a wide dialog");
+    await shot(boss, "list-settings-form");
+    assert(!(await boss.isVisible("#spec-json")), "the JSON is behind Advanced");
+    const pastries = boss.locator('.ls-card[data-ls-key="pastries"]');
+    assert(await pastries.locator('[data-ls-cap="line"]').isDisabled(), "a box's most is off until it's ticked");
+    await pastries.locator('[data-ls-field="line"]').check();
+    await pastries.locator('[data-ls-cap="line"]').fill("40");
+    await boss.locator('.ls-card[data-ls-key="take-home"] [data-ls-sw="schedule"]').check();
+    await boss.locator('.ls-card[data-ls-key="take-home"] [data-ls="hint"]').fill("Gifts and things to carry out");
+    await boss.locator('.ls-card[data-ls-key="coffee"] [data-ls-field="price"]').uncheck();
+    await boss.click("#dlg-ok"); await boss.waitForTimeout(800);
+    assert(/doesn't fit these settings.*Coffee bar.*no price box/.test(await boss.textContent("#dlg-error")), await boss.textContent("#dlg-error"));
+    await boss.locator('.ls-card[data-ls-key="coffee"] [data-ls-field="price"]').check();
+    await boss.click("#dlg-ok"); await boss.waitForTimeout(1200);
+    const m = await theMenu(), P = m.spec.lists.find((x) => x.key === "pastries"), T = m.spec.lists.find((x) => x.key === "take-home");
+    assert(P.fields.includes("line") && P.caps.line === 40 && T.schedule === true && T.hint === "Gifts and things to carry out", JSON.stringify([P, T]));
+    await owner.goto(`${B}/menu-edit.html?m=${menuId}`); await owner.waitForTimeout(3000);
+    assert(await owner.locator('.me-list[data-key="pastries"] input[data-f="line"]').count() > 0, "the customer gets the new box");
+    assert((await owner.textContent('.me-list[data-key="take-home"]')).includes("Gifts and things to carry out") && await owner.locator('.me-list[data-key="take-home"] [data-when-toggle]').count() > 0, "the hint and When");
+  });
+
+  await check("the character count: shown near a box's limit, and at the limit it says why typing stops", async () => {
+    const box = owner.locator('.me-list[data-key="energy"] .me-row[data-i="0"] input[data-f="name"]');
+    const cap = Number(await box.getAttribute("maxlength"));
+    await box.fill(""); await box.type("x".repeat(cap - 3));
+    assert(await owner.isVisible(".me-chars") && (await owner.textContent(".me-chars")) === `${cap - 3} of ${cap}`, await owner.textContent(".me-chars"));
+    const tip = await owner.locator(".me-chars").boundingBox();
+    assert(tip && tip.y >= 0 && tip.y + tip.height <= 1000, `on screen: ${JSON.stringify(tip)}`);
+    await box.type("xxxxxx");
+    assert((await box.inputValue()).length === cap, "stops at the limit");
+    assert((await owner.textContent(".me-chars")) === `${cap} of ${cap} · the most this box holds on the board` && await owner.locator(".me-chars.full").count() === 1, await owner.textContent(".me-chars"));
+    await shot(owner, "menu-editor-chars");
+    await box.fill("Blue Raspberry Bolt"); await owner.waitForTimeout(200);
+    assert(await owner.isHidden(".me-chars"), "gone when well under");
+    if (await owner.isEnabled("#undo")) { await owner.click("#undo"); await owner.waitForTimeout(400); }
+  });
+
   // ── E2b (DP-12): WayTuGo to customers, specials with dates and times, showWhen, Preview full size, fit while typing, more lists ──
   const LISTS = JSON.parse(readFileSync(new URL("../layouts/donut-joes-counter-55-lists.json", import.meta.url), "utf8"));
 

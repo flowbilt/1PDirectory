@@ -341,6 +341,18 @@ asks the company to change one). Desktop first; the phone version of the editor 
   more lists on that menu (kept as a new save by 1Point); a key the menu already has gets `-2`. So a second board (the
   chalkboard) can **Use this menu**, then add its own lists beside the shared ones.
 
+### After E2b (DP-12): List settings as a form, and the character count
+
+- **List settings is a form** (Scot: menu edits never need code; layouts may stay scripted): on a layout's Menu box,
+  one card per list with the name the customer sees, its room (not below what's on it now), the boxes the customer
+  fills as ticks, each text box with its **most** characters (live only while ticked), **Price over the whole list**,
+  **Line under the hours**, **Dates and times on each entry**, and a hint. Saving checks the rules and that what's on
+  the lists now still fits them ("…doesn't fit these settings: "Coffee bar", item 1: This list has no price box…"); the
+  database checks again. The JSON is still there under **Advanced** (used instead of the form when changed), for what
+  the form doesn't do, such as taking a list off.
+- **The character count:** near a box's limit (80%) the menu editor shows "22 of 25" by the box; at the limit, "25 of
+  25 · the most this box holds on the board", so a customer knows why typing stopped.
+
 ## Screens and cards (Raspberry Pi)
 
 Every Pi runs from a **prepared card**, and every card is the same. A card carries no identity until it's in a Pi:

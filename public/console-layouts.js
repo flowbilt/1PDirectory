@@ -346,24 +346,81 @@
         },
       });
     }
-    if (e.target.id === "menu-spec") {
-      const m = look().menu(l.menu_id);
-      const [full] = await Auth.db(`menus?id=eq.${m.id}&select=id,name,spec`);
-      D.open({
-        title: `List settings: ${m.name}`,
-        body: `<p class="hint">Each list: <code>key</code> (blocks say it; never changes), <code>name</code> (what the customer sees), <code>kind</code> (items, text, hours), <code>room</code>, <code>fields</code> (the boxes the customer fills: name, line, price, image, tags, link; text: title, body, link), <code>caps</code> (most characters per box), <code>groupPrice</code>, <code>note</code>, <code>hint</code>, <code>schedule</code> (E2b: each entry may have dates, days and times; items or text lists). A list a published layout shows can't be taken off; room can't go below what's in it.</p>
-          <textarea id="spec-json" class="spec-json" spellcheck="false">${esc(JSON.stringify(full.spec, null, 2))}</textarea>
-          ${D.field("spec-name", "Menu name", `<input id="spec-name" maxlength="80" value="${esc(full.name)}">`)}`,
-        async save() {
-          let spec; try { spec = JSON.parse($("spec-json").value); } catch (ex) { throw new Error(`That isn't valid JSON: ${ex.message}`); }
-          const { checkMenuSpec } = await import("/menu-format.mjs");
-          const c = checkMenuSpec(spec); if (c.errors.length) throw new Error(c.errors.map((x) => `${x.where}: ${x.msg}`).join(" "));
-          await Auth.db(`menus?id=eq.${m.id}`, { method: "PATCH", body: { spec, name: $("spec-name").value.trim() || full.name }, prefer: "return=minimal" });
-          await window.ConsoleRefresh(); menuBox(); toast("List settings saved. Boards on this menu follow within a minute.");
-        },
-      });
-    }
+    if (e.target.id === "menu-spec") openListSettings(look().menu(l.menu_id));
   });
+
+  // ── List settings as a form (DP-12, after E2b; Scot: menu edits never need code): one card per list. The JSON is
+  //    still there behind Advanced, for 1Point. The database checks every rule again on save. ──
+  const BOXES = { items: [["name", "Name"], ["line", "Description"], ["price", "Price"], ["image", "Picture"], ["tags", "Tags"], ["link", "Web link"]],
+    text: [["title", "Heading"], ["body", "Text"], ["link", "Web link"]], hours: [] };
+  const KIND_LABEL = { items: "Items", text: "Text (one entry)", hours: "Hours" };
+  function listCard(Lt, used, F) {
+    const boxes = BOXES[Lt.kind].map(([f, label]) => {
+      const on = Lt.fields.includes(f), capped = F.FIELD_MAX[f], must = f === "name" && Lt.kind === "items";
+      return `<div class="ls-box"><label class="check inline"><input type="checkbox" data-ls-field="${f}"${on ? " checked" : ""}${must ? " disabled" : ""}> ${label}</label>
+        ${capped ? `<label class="ls-cap">most <input type="number" min="4" max="${capped}" value="${F.capOf(Lt, f)}" data-ls-cap="${f}" aria-label="Most characters for ${label}"${on ? "" : " disabled"}></label>` : ""}</div>`;
+    }).join("");
+    const sw = (k, label, show) => (show ? `<label class="check inline"><input type="checkbox" data-ls-sw="${k}"${Lt[k] ? " checked" : ""}> ${label}</label>` : "");
+    return `<section class="ls-card" data-ls-key="${esc(Lt.key)}" data-ls-kind="${Lt.kind}">
+      <div class="ls-head"><strong>${esc(Lt.name)}</strong> <span class="sub">${esc(KIND_LABEL[Lt.kind])} · key ${esc(Lt.key)} · ${used} on it now</span></div>
+      <div class="ls-row">
+        <label class="ls-name">Name the customer sees <input data-ls="name" maxlength="60" value="${esc(Lt.name)}"></label>
+        <label class="ls-room">Room <input type="number" data-ls="room" min="${Math.max(1, used)}" max="${F.KINDS[Lt.kind].maxRoom}" value="${Lt.room}"${Lt.kind === "text" ? " disabled" : ""}></label>
+      </div>
+      ${BOXES[Lt.kind].length ? `<div class="ls-boxes"><span class="field-label">Boxes the customer fills</span>${boxes}</div>` : ""}
+      <div class="ls-row">${sw("groupPrice", "Price over the whole list (e.g. $1.89 each)", Lt.kind === "items")}${sw("note", "Line under the hours", Lt.kind === "hours")}${sw("schedule", "Dates and times on each entry", Lt.kind !== "hours")}</div>
+      <label class="ls-hint">Hint for the customer <span class="hint">optional, shown above the list</span><input data-ls="hint" maxlength="200" value="${esc(Lt.hint || "")}"></label>
+    </section>`;
+  }
+  function specFromForm(old) {
+    return { lists: old.lists.map((Lt) => {
+      const card = document.querySelector(`.ls-card[data-ls-key="${CSS.escape(Lt.key)}"]`);
+      if (!card) return Lt;
+      const v = (k) => card.querySelector(`[data-ls="${k}"]`)?.value ?? "";
+      const out = { key: Lt.key, name: v("name").trim(), kind: Lt.kind };
+      if (Lt.kind === "text") out.room = 1; else out.room = Number(v("room"));
+      if (Lt.kind !== "hours") {
+        out.fields = BOXES[Lt.kind].map(([f]) => f).filter((f) => card.querySelector(`[data-ls-field="${f}"]`).checked || (f === "name" && Lt.kind === "items"));
+        const caps = {};
+        for (const f of out.fields) { const c = card.querySelector(`[data-ls-cap="${f}"]`); if (c) caps[f] = Number(c.value); }
+        if (Object.keys(caps).length) out.caps = caps;
+      }
+      for (const k of ["groupPrice", "note", "schedule"]) { const c = card.querySelector(`[data-ls-sw="${k}"]`); if (c?.checked) out[k] = true; }
+      if (v("hint").trim()) out.hint = v("hint").trim();
+      return out;
+    }) };
+  }
+  async function openListSettings(m) {
+    const D = window.ConsoleDialog, F = await import("/menu-format.mjs");
+    const [full] = await Auth.db(`menus?id=eq.${m.id}&select=id,name,spec,content`);
+    const spec = F.checkMenuSpec(full.spec).spec || full.spec;
+    const used = (k) => (full.content?.lists?.[k]?.entries || []).length;
+    D.open({
+      title: `List settings: ${full.name}`, wide: true,
+      body: `${D.field("spec-name", "Menu name", `<input id="spec-name" maxlength="80" value="${esc(full.name)}">`, "The customer sees it in the console.")}
+        <p class="hint">What the customer can do with each list on the boards. The headings, sizes and places on a board are its layout's. Room can't go below what's on a list now; a box can't be taken away while an entry uses it.</p>
+        <div class="ls-cards">${spec.lists.map((Lt) => listCard(Lt, used(Lt.key), F)).join("")}</div>
+        <details class="ls-advanced"><summary>Advanced: edit as JSON</summary>
+          <p class="hint">For what the form doesn't do (taking a list off, which a published board mustn't show). Used instead of the form when changed.</p>
+          <textarea id="spec-json" class="spec-json" spellcheck="false">${esc(JSON.stringify(full.spec, null, 2))}</textarea></details>`,
+      afterOpen() {
+        // a box's "most" is live only while the box is ticked
+        $("dlg-body").addEventListener("change", (ev) => { const f = ev.target.dataset.lsField; if (f) { const c = ev.target.closest(".ls-box")?.querySelector("[data-ls-cap]"); if (c) c.disabled = !ev.target.checked; } });
+      },
+      async save() {
+        const jsonBox = $("spec-json"), jsonChanged = jsonBox.value !== JSON.stringify(full.spec, null, 2);
+        let next;
+        if (jsonChanged) { try { next = JSON.parse(jsonBox.value); } catch (ex) { throw new Error(`The JSON under Advanced isn't valid: ${ex.message}`); } }
+        else next = specFromForm(spec);
+        const c = F.checkMenuSpec(next);
+        if (c.errors.length) throw new Error(c.errors.map((x) => `${x.where}: ${x.msg}`).join(" "));
+        const cc = F.checkMenuContent(c.spec, full.content || { lists: {} });
+        if (cc.errors.length) throw new Error(`What's on the lists now doesn't fit these settings: ${cc.errors.slice(0, 4).map((x) => `${x.where}: ${x.msg}`).join(" ")}`);
+        await Auth.db(`menus?id=eq.${m.id}`, { method: "PATCH", body: { spec: next, name: $("spec-name").value.trim() || full.name }, prefer: "return=minimal" });
+        await window.ConsoleRefresh(); menuBox(); toast("List settings saved. Boards on this menu follow within a minute.");
+      },
+    });
+  }
   $("layout-room").addEventListener("change", () => $("layout-iframe").contentWindow?.postMessage({ type: "layout-room", on: $("layout-room").checked }, location.origin));
 
   window.ConsoleLayouts = {

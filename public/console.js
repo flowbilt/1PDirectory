@@ -380,6 +380,7 @@
     $("dlg-title").textContent = opts.title;
     $("dlg-body").innerHTML = opts.body;
     $("dlg-ok").textContent = opts.ok || "Save";
+    $("dlg").classList.toggle("wide", !!opts.wide);   // a dialog with more in it (List settings)
     $("dlg-error").hidden = true;
     $("dlg").showModal();
     opts.afterOpen?.();

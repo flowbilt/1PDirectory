@@ -361,3 +361,22 @@ td.thumb { width: 96px; padding: 6px 8px; }
 .me-checkers { position: absolute; left: -10000px; top: 0; width: 480px; height: 270px; overflow: hidden; }
 .me-checkers iframe { width: 480px; height: 270px; border: 0; }
 #full { justify-self: start; }
+/* List settings as a form (DP-12, after E2b) */
+dialog.wide { width: min(980px, 96vw); }
+dialog.wide #dlg-body { max-height: 72vh; overflow: auto; padding-right: 4px; }
+.ls-cards { display: grid; gap: 10px; }
+.ls-card { border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px; display: grid; gap: 8px; background: #fff; }
+.ls-head strong { font-size: 15px; }
+.ls-row { display: flex; flex-wrap: wrap; gap: 8px 18px; align-items: flex-end; }
+.ls-name { flex: 1 1 260px; display: grid; gap: 3px; font-size: 13px; font-weight: 700; }
+.ls-room { width: 110px; display: grid; gap: 3px; font-size: 13px; font-weight: 700; }
+.ls-hint { display: grid; gap: 3px; font-size: 13px; font-weight: 700; }
+.ls-boxes { display: flex; flex-wrap: wrap; gap: 6px 14px; align-items: center; }
+.ls-boxes .field-label { flex: 1 1 100%; font-size: 13px; }
+.ls-box { display: flex; gap: 6px; align-items: center; border: 1px solid var(--line); border-radius: 6px; padding: 4px 8px; }
+.ls-cap { display: flex; gap: 4px; align-items: center; font-size: 12px; color: var(--muted); }
+.ls-cap input { width: 66px; padding: 4px 6px; }
+.ls-advanced summary { cursor: pointer; color: var(--muted); font-size: 13px; }
+/* The menu editor's character count, near a box's limit */
+.me-chars { position: fixed; z-index: 30; font-size: 12px; font-weight: 700; padding: 2px 8px; border-radius: 6px; background: var(--ink); color: #fff; pointer-events: none; white-space: nowrap; }
+.me-chars.full { background: #8a5a00; }

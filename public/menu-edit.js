@@ -167,6 +167,27 @@ function entryAt(el) {
   if (L.kind === "text" && !C.entries[0] && row) C.entries[0] = { id: newEntryId() };
   return { L, C, i, e: C.entries[i] };
 }
+// ── The character count (after E2b; Scot: a box at its limit just stopped taking letters, with nothing said) ──
+// Near a box's limit (80% of it) a small count shows under the box; at the limit it says why it stops.
+const chars = document.createElement("div");
+chars.className = "me-chars"; chars.hidden = true; chars.setAttribute("role", "status"); chars.setAttribute("aria-live", "polite");
+document.body.appendChild(chars);
+function showChars(el) {
+  const max = Number(el?.getAttribute?.("maxlength")) || 0;
+  if (!max || !(el.matches("input:not([type]), input[type=text], textarea"))) { chars.hidden = true; return; }
+  const n = el.value.length;
+  if (n < Math.floor(max * 0.8)) { chars.hidden = true; return; }
+  chars.textContent = n >= max ? `${max} of ${max} · the most this box holds on the board` : `${n} of ${max}`;
+  chars.classList.toggle("full", n >= max);
+  const r = el.getBoundingClientRect();
+  // under the box, or above it when the box is near the bottom of the window
+  chars.style.left = `${Math.round(r.left)}px`; chars.style.top = `${Math.round(r.bottom + 28 > window.innerHeight ? r.top - 26 : r.bottom + 4)}px`;
+  chars.hidden = false;
+}
+$("lists").addEventListener("focusin", (ev) => showChars(ev.target));
+$("lists").addEventListener("focusout", () => { chars.hidden = true; });
+window.addEventListener("scroll", () => { if (!chars.hidden) showChars(document.activeElement); }, { passive: true });
+
 /** One part of an entry's When, from the editor's boxes (an empty box takes that part out) */
 function setWhen(e, part, v) {
   const w = e.when || {};
@@ -181,6 +202,7 @@ function refreshWhen(t, L, e) {
   box.querySelector(".me-when-sum").innerHTML = `When: <strong>${esc(describeWhen(e.when && Object.keys(e.when).length ? e.when : null))}</strong>${st ? ` <span class="me-status ${st === "On now" ? "on" : "off"}">${esc(st)}</span>` : ""}`;
 }
 $("lists").addEventListener("input", (ev) => {
+  showChars(ev.target);
   const t = ev.target, { L, C, e } = entryAt(t);
   if (!L) return;
   if (t.dataset.wf && e) { setWhen(e, t.dataset.wf, t.value); refreshWhen(t, L, e); dirty(); schedulePreview(); return; }
