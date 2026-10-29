@@ -10,7 +10,7 @@
 */
 (() => {
   "use strict";
-  const VERSION = "2.21.0";   // = netlify/lib/version.mjs (a test keeps them equal)
+  const VERSION = "2.21.1";   // = netlify/lib/version.mjs (a test keeps them equal)
   // What every screen does (which screen, check-in, clock, rotation, Identify, lockdown, reloads, offline cache) is in
   // screen-core.js, shared with the layout page (DP-11, round E1a).
   const C = window.ScreenCore;

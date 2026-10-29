@@ -375,7 +375,8 @@ asks the company to change one). Desktop first; the phone version of the editor 
   files are named, to upload again.
 - **Sold out today takes no room** (Scot, 2026-10-29: ticking sold out made the fall list not fit): the *Sold out* mark
   is laid over the end of the row (the struck-through price), never beside the name, so marking an item sold out can't
-  change whether a list fits. Display 2.21.0.
+  change whether a list fits. Display 2.21.0. **2.21.1** (Scot: the first mark was muddy): a small, solid red *Sold out*
+  with a thin white edge, the price under it hidden.
 
 ## Screens and cards (Raspberry Pi)
 

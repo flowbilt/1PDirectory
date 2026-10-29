@@ -829,9 +829,11 @@ try {
     // nothing is added beside the name (that's what wrapped "Pumpkin Spice Cake" onto a second line in a narrow box)
     const r = await owner.frameLocator("#pv").locator('[data-id="pastries"] .item.sold').first().evaluate((li) => {
       const row = li.querySelector(".item-row").getBoundingClientRect(), mark = li.querySelector(".sold-mark").getBoundingClientRect();
-      return { inline: li.querySelectorAll(".item-name .tag.sold-out").length, inside: mark.left >= row.left - 1 && mark.right <= row.right + 1, oneLine: li.querySelector(".item-row").offsetHeight < 2.2 * parseFloat(getComputedStyle(li).fontSize) };
+      const ms = getComputedStyle(li.querySelector(".sold-mark")), price = li.querySelector(".item-price");
+      return { solid: ms.backgroundColor === "rgb(200, 16, 46)" && ms.opacity === "1", priceHidden: !price || getComputedStyle(price).visibility === "hidden",
+        inline: li.querySelectorAll(".item-name .tag.sold-out").length, inside: mark.left >= row.left - 1 && mark.right <= row.right + 1, oneLine: li.querySelector(".item-row").offsetHeight < 2.2 * parseFloat(getComputedStyle(li).fontSize) };
     });
-    assert(!r.inline && r.inside && r.oneLine, JSON.stringify(r));
+    assert(r.solid && r.priceHidden && !r.inline && r.inside && r.oneLine, JSON.stringify(r));   // 2.21.1: solid red, the price under it hidden
     await shot(owner, "menu-editor-all-sold-out");
     await owner.click("#undo"); await owner.waitForTimeout(1500);
   });

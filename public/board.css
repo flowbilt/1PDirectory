@@ -54,8 +54,10 @@ body { font-family: "Instrument Sans", "Segoe UI", Arial, sans-serif; -webkit-fo
 /* DP-12 E2c: the sold-out mark is laid over the end of the row (the struck-through price), never beside the name, so
    marking an item sold out can't make a list run out of its box */
 .item-row { position: relative; }
-.sold-mark { position: absolute; right: 0; top: 50%; transform: translateY(-50%); margin: 0; opacity: 1;
-  background: var(--p-highlight); color: var(--p-onHighlight); border-color: transparent; vertical-align: baseline; }
+/* 2.21.1 (Scot): small, solid red with a thin white edge, the price hidden under it (the selector outranks .tag.sold-out) */
+.item-row .tag.sold-out.sold-mark { position: absolute; right: 0; top: 50%; transform: translateY(-50%); margin: 0; opacity: 1;
+  background: #c8102e; color: #fff; border: 0.1em solid #fff; vertical-align: baseline; }
+.item.sold .item-price { visibility: hidden; }
 
 /* chips */
 .chips-head { font-size: 1.15em; font-weight: 700; margin-bottom: 0.35em; line-height: 1.1; }
