@@ -25,6 +25,7 @@
   <button role="tab" data-tab="health" aria-selected="false" id="tab-health" hidden>Health</button>
   <button role="tab" data-tab="setup" aria-selected="false" id="tab-setup" hidden>Pi setup</button>
   <button role="tab" data-tab="layouts" aria-selected="false" id="tab-layouts" hidden>Layouts</button>
+  <button role="tab" data-tab="menus" aria-selected="false" id="tab-menus" hidden>Menus</button>
   <button role="tab" data-tab="accounts" aria-selected="false" id="tab-accounts" hidden>Accounts</button>
 </nav>
 
@@ -177,6 +178,9 @@
             <button type="button" id="layout-publish" class="primary">Publish</button>
           </div>
           <div id="layout-results" class="layout-results" aria-live="polite"></div>
+          <!-- E2a: the layout's menu: the lists its blocks show ({"list": "donuts"}), which the customer edits -->
+          <h3 class="section-title">Menu</h3>
+          <div id="layout-menu-box" class="layout-menu-box"></div>
           <h3 class="section-title">Versions</h3>
           <div class="table-wrap"><table class="grid"><thead><tr><th>Version</th><th>Published</th><th>Checks</th><th>Note</th><th><span class="sr-only">Actions</span></th></tr></thead><tbody id="layout-versions"></tbody></table></div>
           <!-- E1b: the account's pictures. A layout uses one by its key: "image": "img:maple-bacon" -->
@@ -191,8 +195,21 @@
         <div class="layout-preview-col">
           <div id="layout-frame" class="layout-frame"><iframe id="layout-iframe" title="Layout preview" src="about:blank"></iframe></div>
           <p class="hint" id="layout-frame-note">Preview: Check and Preview to see it here, drawn as a screen draws it.</p>
+          <label class="check inline"><input type="checkbox" id="layout-room"> Show the lists' empty room</label>
         </div>
       </div>
+    </div>
+  </section>
+
+  <!-- Menus (DP-12 E2a): the customer's lists, edited in menu-edit.html; owners and editors see their account's -->
+  <section id="panel-menus" class="tabpanel" hidden>
+    <div class="toolbar"><div class="summary" id="menu-summary"></div></div>
+    <p class="hint">A menu's lists feed every board on it and the phone menu (Take this menu with you). Saving goes live on the boards within a minute.</p>
+    <div class="table-wrap">
+      <table class="grid">
+        <thead><tr><th>Menu</th><th>Boards</th><th>Last saved</th><th>Who keeps it up to date</th><th><span class="sr-only">Actions</span></th></tr></thead>
+        <tbody id="menu-rows"></tbody>
+      </table>
     </div>
   </section>
 

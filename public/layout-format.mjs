@@ -13,6 +13,8 @@
 // The canvas is 1080 x 1920 (portrait) or 1920 x 1080 (landscape) whatever the screen; the screen scales it to fit.
 // Days are 1 = Monday to 7 = Sunday. Times are 24-hour "HH:MM" in the building's time zone; "to" is not included.
 
+import { BINDS, PROVIDES } from "./menu-format.mjs";
+
 export const FORMAT = 1;
 export const canvas = (orientation) => (orientation === "landscape" ? { w: 1920, h: 1080 } : { w: 1080, h: 1920 });
 export const POWERED_STRIP = 36;   // the bottom margin is never less than this: "Powered by WayTuGo" sits in it
@@ -45,23 +47,25 @@ export const TAGS = { "sold-out": "Sold out", seasonal: "Seasonal", new: "New", 
 /** Where a cropped picture keeps its subject. */
 const FOCUS = ["center", "top", "bottom", "left", "right"];
 /** Block types and the content each may carry: [name, kind, max length or count]. */
+// E2a (DP-12): "list" on items, chips, rotator, photo, text and hours blocks: the block shows that list of the layout's
+// menu (public/menu-format.mjs), and the content the list gives can't also be written in the layout.
 // E1c: "link" on items, text, photos and a rotator's pictures: a web address the phone menu opens in a new tab (the board
 // itself shows no links)
 const ITEM = { name: ["text", 80], line: ["text", 160], price: ["text", 16], tags: ["tags"], link: ["link"] };
 const SESSION = { days: ["days"], from: ["time"], to: ["time"], name: ["text", 60], line: ["text", 120] };
 export const TYPES = {
-  text:      { kicker: ["text", 60], title: ["text", 120], body: ["text", 400], note: ["text", 120], link: ["link"] },
-  items:     { heading: ["text", 60], price: ["text", 24], columns: ["int", 1, 3], leaders: ["bool"], items: ["list", 60, ITEM] },
-  chips:     { heading: ["text", 60], items: ["list", 40, { name: ["text", 40], tags: ["tags"] }] },
+  text:      { kicker: ["text", 60], title: ["text", 120], body: ["text", 400], note: ["text", 120], link: ["link"], list: ["listkey"] },
+  items:     { heading: ["text", 60], price: ["text", 24], columns: ["int", 1, 3], leaders: ["bool"], items: ["list", 60, ITEM], list: ["listkey"] },
+  chips:     { heading: ["text", 60], price: ["text", 24], items: ["list", 60, { name: ["text", 80], tags: ["tags"] }], list: ["listkey"] },
   price:     { label: ["text", 20], price: ["text", 16], note: ["text", 30] },
-  photo:     { image: ["image"], alt: ["text", 120], caption: ["text", 80], line: ["text", 120], price: ["text", 16], fit: ["enum", ["cover", "contain"]], focus: ["enum", FOCUS], link: ["link"] },
+  photo:     { image: ["image"], alt: ["text", 120], caption: ["text", 80], line: ["text", 120], price: ["text", 16], fit: ["enum", ["cover", "contain"]], focus: ["enum", FOCUS], link: ["link"], list: ["listkey"] },
   logo:      { image: ["image"], text: ["text", 60] },
   // E1b: several pictures taking turns, each with its own caption, line and price
   rotator:   { seconds: ["int", 4, 60], fit: ["enum", ["cover", "contain"]], focus: ["enum", FOCUS],
-               items: ["list", 12, { image: ["image"], alt: ["text", 120], caption: ["text", 80], line: ["text", 120], price: ["text", 16], link: ["link"] }] },
+               items: ["list", 12, { image: ["image"], alt: ["text", 120], caption: ["text", 80], line: ["text", 120], price: ["text", 16], link: ["link"] }], list: ["listkey"] },
   clock:     { show: ["enum", ["time", "date", "both"]] },
   weather:   { label: ["text", 30] },
-  hours:     { heading: ["text", 40], hours: ["list", 14, { days: ["days"], open: ["time"], close: ["time"] }], note: ["text", 80] },
+  hours:     { heading: ["text", 40], hours: ["list", 14, { days: ["days"], open: ["time"], close: ["time"] }], note: ["text", 80], list: ["listkey"] },
   timetable: { heading: ["text", 60], columns: ["strings", 6, 24], rows: ["list", 14, { days: ["days"], label: ["text", 16], cells: ["strings", 6, 40] }] },
   nownext:   { now: ["text", 20], next: ["text", 20], empty: ["text", 60], sessions: ["list", 40, SESSION] },
   // E1c: the QR code for "Take this menu with you" (waytugo.com/m/<the layout's code>), with a line under it
@@ -93,8 +97,10 @@ const isObj = (v) => v && typeof v === "object" && !Array.isArray(v);
  * the format doesn't allow); warnings are the guardrails (expansion-brief.md: a customer designer will be stopped by
  * them, 1Point is warned and may publish anyway). doc is the layout with defaults filled in, as the screen draws it.
  * Each problem is { where, msg } in plain words.
+ * ctx.lists (E2a): the layout's menu's lists (its spec's lists), or null when the layout has no menu; given, each block's
+ * "list" must be one of them, of a kind the block can show. Left out (a screen drawing a published version), not checked.
  */
-export function checkLayout(input) {
+export function checkLayout(input, ctx = {}) {
   const errors = [], warnings = [];
   const err = (where, msg) => errors.push({ where, msg });
   const warn = (where, msg, kind) => warnings.push({ where, msg, kind });
@@ -169,6 +175,16 @@ export function checkLayout(input) {
     const layer = int(b.layer, 0, 9, 0, `${where} layer`, "layer");
     const style = checkStyle(b.style, where, err);
     const content = checkContent(TYPES[b.type], b.content, where, err);
+    if (content.list) {
+      const given = PROVIDES[b.type].filter((k) => content[k] !== undefined);
+      if (given.length) err(where, `It shows the list "${content.list}", so its ${given.join(", ")} come from the menu; take ${given.length === 1 ? "it" : "them"} out of the layout.`);
+      if (ctx.lists === null) err(where, `It shows the list "${content.list}", but this layout has no menu yet. Make lists from this layout, or choose a menu for it.`);
+      else if (Array.isArray(ctx.lists)) {
+        const L = ctx.lists.find((x) => x.key === content.list);
+        if (!L) err(where, `There's no list "${content.list}" on this layout's menu (it has: ${ctx.lists.map((x) => x.key).join(", ") || "none"}).`);
+        else if (BINDS[b.type] !== L.kind) err(where, `The list "${content.list}" is ${L.kind === "items" ? "an items" : `a ${L.kind}`} list; a ${b.type} block shows ${BINDS[b.type] === "items" ? "an items" : `a ${BINDS[b.type]}`} list.`);
+      }
+    }
     const when = checkWhen(b.when, where, err);
     if (b.on !== undefined && typeof b.on !== "boolean") err(where, "\"on\" is true or false.");
     blocks.push({ id: b.id, type: b.type, at: pos, layer, style, content, when, on: b.on !== false, label: typeof b.label === "string" ? b.label.slice(0, 60) : "" });
@@ -186,7 +202,7 @@ export function checkLayout(input) {
     }
   }
   const doc = { format: FORMAT, orientation, grid, viewing, theme: { palette, fonts, ...(background ? { background } : {}) }, blocks };
-  if (!errors.length) guardrails(doc, warn);
+  if (!errors.length) guardrails(doc, warn, ctx);
   return { errors, warnings, doc };
 }
 
@@ -227,6 +243,7 @@ function checkValue(rule, v, where, label, err) {
     case "link":
       if (typeof v !== "string" || v.length > 300 || !LINK_RE.test(v)) { err(where, `${label} is a web address written in full, like "https://donutjoescoffee.com/pages/events" (at most 300 characters).`); return undefined; }
       return v;
+    case "listkey": return typeof v === "string" && /^[a-z0-9][a-z0-9-]{0,39}$/.test(v) ? v : (err(where, `${label} is a list's key on this layout's menu, like "donuts".`), undefined);
     case "image": return typeof v === "string" && IMAGE_RE.test(v) ? v : (err(where, `${label} is a picture's key, like "img:maple-bacon" (Layouts → Pictures shows each one's key).`), undefined);
     case "strings":
       if (!Array.isArray(v) || v.length > a || v.some((s) => typeof s !== "string" || s.length > b)) { err(where, `${label} is a list of up to ${a} short texts (${b} characters each).`); return undefined; }
@@ -302,8 +319,16 @@ export const mmPerPx = (inches) => (inches * 25.4 * 9 / Math.hypot(16, 9)) / 108
 export const minTextMm = (metres) => metres * 1000 / 300;
 /** The smallest text a block draws, as a share of its size (board.css draws these shares: small lines 0.62, tags 0.55,
  *  kickers and notes 0.5, and so on). It looks at what the block actually holds, so a line on its own is full size. */
-function smallestShare(b) {
+function smallestShare(b, list) {
   const c = b.content || {};
+  // A block on a list: what the list's entries may hold (a customer can add a tag or a description any day)
+  if (list) {
+    const f = list.fields || [];
+    if (b.type === "items") return f.includes("tags") ? 0.55 : f.includes("line") ? 0.62 : 1;
+    if (b.type === "photo" || b.type === "rotator") return f.includes("line") ? 0.55 : 1;
+    if (b.type === "text") return c.kicker || c.note ? 0.5 : f.includes("title") && f.includes("body") ? 0.62 : 1;
+    if (b.type === "hours") return 0.55;
+  }
   switch (b.type) {
     case "text": return c.kicker || c.note ? 0.5 : c.title && c.body ? 0.62 : 1;
     case "items": return (c.items || []).some((i) => (i.tags || []).length) ? 0.55 : (c.items || []).some((i) => i.line) ? 0.62 : 1;
@@ -336,7 +361,8 @@ function everTogether(a, b) {
   return false;
 }
 
-function guardrails(doc, warn) {
+function guardrails(doc, warn, ctx = {}) {
+  const lists = Object.fromEntries((Array.isArray(ctx.lists) ? ctx.lists : []).map((l) => [l.key, l]));
   const { inches, metres } = doc.viewing;
   const need = minTextMm(metres), perPx = mmPerPx(inches);
   for (const b of doc.blocks) {
@@ -345,7 +371,7 @@ function guardrails(doc, warn) {
     const size = SIZES[b.style.size || "m"];
     const c = contrast(ink, back), large = size >= SIZES.l;
     if (c < (large ? 3 : 4.5)) warn(where, `Its text is hard to read on its background (contrast ${c.toFixed(1)}:1; at least ${large ? 3 : 4.5}:1 is needed).`, "contrast");
-    const smallest = size * smallestShare(b) * perPx;
+    const smallest = size * smallestShare(b, lists[b.content?.list]) * perPx;
     if (smallest < need) warn(where, `Its smallest text is about ${smallest.toFixed(0)} mm tall on a ${inches}" screen; from ${metres} m away it should be at least ${need.toFixed(0)} mm. Use a larger size.`, "small");
   }
   // E1c: a QR code too small to read from where people stand

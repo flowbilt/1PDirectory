@@ -6,14 +6,18 @@
 //                which blocks overflow their box (a guardrail).
 //   ?menu=<code> "See the board" on the phone menu (E1c): the layout's published version from /api/menu, read-only, no
 //                check-in, never turned, pinch-zoom allowed.
+// E2a (DP-12): a block on a list draws that list of the layout's menu (the answer's "lists": spec and content), through
+// applyMenu (public/menu-format.mjs): only the entries shown, sold out today marked, and an items or chips list keeping
+// the room for its full length (invisible rows), so the text stays the size it was designed at however much is filled.
+import { applyMenu } from "/menu-format.mjs";
 import { checkLayout, canvas, blockBox, blockShows, zonedNow, hoursNow, nowNext, niceTime, niceDays, FONTS, SIZES, SURFACES, STYLE_PX, TAGS, QR_LINE, qrSide } from "/layout-format.mjs";
 
-const VERSION = "2.18.1";   // = netlify/lib/version.mjs and display.js (a test keeps them equal)
+const VERSION = "2.19.0";   // = netlify/lib/version.mjs and display.js (a test keeps them equal)
 const C = window.ScreenCore;
 const { PREVIEW, CHECKS_IN, MENU, cache, esc } = C;
 const $ = (id) => document.getElementById(id);
 const stage = $("stage"), boardEl = $("board"), blocksEl = $("blocks");
-let data = null, sig = "", doc = null, drawn = null;
+let data = null, sig = "", doc = null, drawn = null, drawnDate = "";
 const MIN_FIT = 0.55;   // text shrinks to fit its box down to this share of its size; past that the block overflows
 
 // ── Size and turn ──
@@ -58,19 +62,26 @@ const BODY = {
   items(b) {
     const c = b.content;
     const head = c.heading || c.price ? `<div class="items-head ${titleClass(b)}"><span>${esc(c.heading || "")}</span>${c.price ? `<span class="group-price">${esc(c.price)}</span>` : ""}</div>` : "";
+    // E2a: the rest of the list's room, kept as invisible rows (one line each), so adding an item never shrinks the others
+    const ghosts = Math.max(0, (c.room || 0) - (c.items || []).length);
     return `${head}<ul class="items-list" style="--cols:${c.columns || 1}">${(c.items || []).map((it) => {
       const sold = (it.tags || []).includes("sold-out");
       return `<li class="item${sold ? " sold" : ""}"><div class="item-row"><span class="item-name">${esc(it.name || "")}${tagsHtml(it.tags)}</span>`
         + `${it.price ? `<span class="${c.leaders ? "leader" : "spacer"}"></span><span class="item-price">${esc(it.price)}</span>` : ""}</div>`
         + `${it.line ? `<div class="item-line">${esc(it.line)}</div>` : ""}</li>`;
-    }).join("")}</ul>`;
+    }).join("")}${'<li class="item ghost" aria-hidden="true"><div class="item-row"><span class="item-name">&nbsp;</span></div></li>'.repeat(ghosts)}</ul>`;
   },
   chips(b) {
     const c = b.content;
-    return `${c.heading ? `<div class="chips-head ${titleClass(b)}">${esc(c.heading)}</div>` : ""}<div class="chips">${(c.items || []).map((it) => {
+    // E2a: a price over the whole list ("$4.99") beside the heading; the list's room kept as invisible chips of the
+    // average name's length
+    const items = c.items || [], ghosts = Math.max(0, (c.room || 0) - items.length);
+    const avg = Math.max(6, Math.round(items.reduce((n, it) => n + String(it.name || "").length, 0) / (items.length || 1)));
+    const head = c.heading || c.price ? `<div class="chips-head ${titleClass(b)}">${esc(c.heading || "")}${c.heading && c.price ? " · " : ""}${c.price ? `<span class="group-price">${esc(c.price)}</span>` : ""}</div>` : "";
+    return `${head}<div class="chips">${items.map((it) => {
       const t = it.tags || [], sold = t.includes("sold-out"), special = t.some((x) => x !== "sold-out");
       return `<span class="chip${sold ? " sold" : ""}${special && !sold ? " special" : ""}">${esc(it.name || "")}</span>`;
-    }).join("")}</div>`;
+    }).join("")}${`<span class="chip ghost" aria-hidden="true">${"n".repeat(avg)}</span>`.repeat(ghosts)}</div>`;
   },
   price(b) {
     const c = b.content;
@@ -157,7 +168,9 @@ function render() {
   const checked = checkLayout(raw);   // fills in defaults; published layouts were checked already
   if (!checked.doc) { note.textContent = "This layout can't be shown."; note.hidden = false; stage.classList.remove("is-loading"); return; }
   note.hidden = true;
-  doc = checked.doc;
+  // E2a: its lists, as they are today in the building (an item sold out today is marked; tomorrow it's back)
+  drawnDate = zonedNow(C.now(), data?.timezone || "America/Chicago").date;
+  doc = applyMenu(checked.doc, data.lists, drawnDate, { room: true });
   const p = doc.theme.palette, f = doc.theme.fonts;
   for (const [k, v] of Object.entries(p)) stage.style.setProperty(`--p-${k}`, v);
   for (const [k, v] of Object.entries(f)) stage.style.setProperty(`--f-${k}`, FONTS[v].css);
@@ -226,6 +239,8 @@ function live(force) {
   if (!doc) return;
   const tz = data?.timezone || "America/Chicago";
   const now = zonedNow(C.now(), tz);
+  // E2a: at the building's midnight, "sold out today" clears: draw the lists again for the new day
+  if (data?.lists && drawnDate && now.date !== drawnDate) { render(); return; }
   // Which blocks show now (their schedules, in the building's time zone)
   const shown = doc.blocks.map((b) => (blockShows(b, now) ? 1 : 0)).join("");
   if (force || shown !== lastShown) {
@@ -321,7 +336,10 @@ sizeStage();
 window.addEventListener("resize", () => { sizeStage(); });
 if (PREVIEW) {
   window.addEventListener("message", (e) => {
-    if (e.origin !== location.origin || e.data?.type !== "layout-draft" || !e.data.data) return;
+    if (e.origin !== location.origin) return;
+    // E2a: the menu editor and the Layouts tab can show the lists' empty room (dashed), to see what's left
+    if (e.data?.type === "layout-room") { stage.classList.toggle("show-room", !!e.data.on); return; }
+    if (e.data?.type !== "layout-draft" || !e.data.data) return;
     sig = ""; apply({ ...e.data.data, kind: "layout" });
   });
   if (window.parent !== window) window.parent.postMessage({ type: "layout-ready" }, location.origin);

@@ -291,3 +291,59 @@ td.thumb { width: 96px; padding: 6px 8px; }
 /* E1c: the layout's phone menu link, under the toolbar */
 .layout-menu { margin: -4px 0 12px; }
 .layout-menu code { font-size: 0.92em; }
+
+/* ── The menu editor (DP-12, round E2a): menu-edit.html ── */
+.menu-banner { margin: 16px 20px 0; padding: 12px 16px; border-radius: 8px; background: #fff4d6; border: 1px solid #e9cf86; font-weight: 700; }
+.menu-problems { margin: 16px 20px 0; padding: 12px 16px; border-radius: 8px; background: #fde8e6; border: 1px solid #f0b4ae; color: var(--danger); }
+.menu-problems ul { margin: 6px 0 0; padding-left: 20px; }
+.menu-problems button { margin-left: 8px; }
+.me-intro { margin: 0; }
+.me-count { font-size: 13px; font-weight: 700; color: var(--muted); background: var(--bg); border: 1px solid var(--line); border-radius: 999px; padding: 2px 9px; margin-left: 6px; vertical-align: 2px; }
+.me-count.full { color: #8a5a00; background: #fff4d6; border-color: #e9cf86; }
+.me-rows { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
+.me-row { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; gap: 8px 12px; align-items: center; padding: 8px 10px; border: 1px solid var(--line); border-radius: 8px; background: #fff; }
+.me-row.is-hidden { background: var(--bg); }
+.me-row.is-hidden .me-fields { opacity: 0.55; }
+.me-row.is-sold .me-name, .me-row.is-sold .me-price { text-decoration: line-through; }
+.me-fields { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; min-width: 0; }
+.me-fields input.me-name { flex: 1 1 200px; font-weight: 700; }
+.me-fields input.me-line, .me-fields input.me-link { flex: 2 1 260px; }
+.me-fields input.me-price { flex: 0 0 96px; }
+.me-text { display: grid; gap: 6px; }
+.me-text textarea, .me-row textarea { width: 100%; font: inherit; padding: 8px 10px; border: 1px solid var(--line); border-radius: 6px; resize: vertical; }
+.me-switches { display: grid; gap: 2px; }
+.me-move { display: flex; gap: 4px; }
+.icon-btn.danger { color: var(--danger); }
+.me-tags { display: flex; gap: 4px; flex-wrap: wrap; }
+.me-tag { display: inline-flex; align-items: center; gap: 4px; font-size: 13px; border: 1px solid var(--line); border-radius: 999px; padding: 3px 9px; cursor: pointer; }
+.me-tag input { width: auto; margin: 0; }
+.me-pic { display: flex; gap: 6px; align-items: center; flex: 1 1 220px; }
+.me-pic img, .me-nopic { width: 44px; height: 33px; object-fit: cover; border-radius: 4px; background: var(--bg); border: 1px solid var(--line); flex: none; }
+.me-hours { grid-template-columns: auto auto auto 1fr; }
+.me-hours .me-move { justify-self: end; }
+.me-days { display: flex; gap: 3px; }
+.me-day { position: relative; cursor: pointer; }
+.me-day input { position: absolute; opacity: 0; width: 1px; height: 1px; }
+.me-day span { display: inline-grid; place-items: center; width: 30px; height: 30px; border-radius: 50%; border: 1px solid var(--line); font-weight: 700; font-size: 13px; }
+.me-day input:checked + span { background: var(--navy); border-color: var(--navy); color: #fff; }
+.me-day input:focus-visible + span { outline: 2px solid var(--focus); outline-offset: 1px; }
+.me-time { display: flex; gap: 6px; align-items: center; font-size: 13px; color: var(--muted); }
+.me-time input { width: auto; }
+.me-add { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+.me-gp { max-width: 340px; }
+.menu-preview .preview-box iframe { pointer-events: none; }
+.menu-history { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; max-height: 520px; overflow: auto; }
+.menu-history > li { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; }
+.mh-head { display: flex; gap: 6px; align-items: baseline; flex-wrap: wrap; }
+.mh-head button { margin-left: auto; padding: 3px 10px; font-size: 13px; }
+.mh-lines { margin: 4px 0 0; padding-left: 18px; font-size: 13px; color: var(--muted); }
+@media (max-width: 1000px) { .me-row { grid-template-columns: 1fr; } .me-hours { grid-template-columns: 1fr; } }
+/* The console: Menus tab, and a layout's menu (1Point) */
+.layout-menu-box { margin: 8px 0 0; padding: 12px 14px; background: var(--panel); border: 1px solid var(--line); border-radius: 8px; display: grid; gap: 8px; }
+.layout-menu-box .row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.layout-menu-box select { width: auto; }
+.make-lists { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
+.make-lists li { display: grid; grid-template-columns: auto 1fr 110px; gap: 10px; align-items: center; }
+.make-lists li input[data-name] { width: 60%; min-width: 200px; margin-right: 6px; }
+.make-lists input[type=number] { width: 100%; }
+.spec-json { width: 100%; min-height: 360px; font: 13px/1.4 ui-monospace, Menlo, Consolas, monospace; padding: 10px; border: 1px solid var(--line); border-radius: 6px; }

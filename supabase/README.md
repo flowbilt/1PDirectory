@@ -57,6 +57,8 @@ Do these once. The current site keeps running as it is until the new build is de
 
 32. For Take this menu with you (DP-11, round E1c): **before uploading that code**, new query, paste all of `31-menu-to-go.sql`, and click **Run**. Then new query, paste all of `check-menu-to-go.sql`, and click **Run**; it should read **ALL 7 CHECKS PASSED** (red on purpose). It gives every layout its menu code (existing ones included), counts the phone menu's opens, and adds the code to a layout screen's answer.
 
+33. For menus, the customer's own lists (DP-12, round E2a): **before uploading that code**, new query, paste all of `32-menus.sql`, and click **Run**. Then new query, paste all of `check-menus.sql`, and click **Run**; it should read **ALL 10 CHECKS PASSED** (red on purpose). It adds the menus, their saved revisions, each layout's menu, the database's rules for what a customer saves (each list's room and boxes), and the lists in a layout screen's answer and the phone menu. It changes nothing on existing screens: a layout without a menu is answered exactly as before. (The new console asks for the menus and each layout's menu, so they must exist first; it still works if they don't.)
+
 If any of them shows an error (other than the expected red messages from the `check-…sql` files), copy the message (it includes a line number) and send it to Claude.
 
 ## 3. Lock down sign-ups

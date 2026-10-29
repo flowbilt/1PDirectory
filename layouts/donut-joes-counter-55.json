@@ -2,7 +2,7 @@
   "format": 1,
   "orientation": "landscape",
   "name": "Donut Joe's Pelham: counter board, 55\" landscape (internal spec, DP-11 E1b)",
-  "notes": "Menu, prices, hours and lines from donutjoescoffee.com (Scot's copies, 2026-10-28; layouts/donut-joes-menu-source.md). Pictures: the shop's own, uploaded under Layouts → Pictures with these keys. Internal spec only: not for a public ad without the owner's permission.",
+  "notes": "Menu, prices, hours and lines from donutjoescoffee.com (Scot's copies, 2026-10-28; layouts/donut-joes-menu-source.md). Pictures: the shop's own, uploaded under Layouts → Pictures with these keys. Internal spec only: not for a public ad without the owner's permission. E2a (DP-12): Make lists from this layout turns its lists into the shop's menu; rooms for this board: hero 7, hours 2, donuts 16, pastries 7, coffee 8, energy 5, fall 4, take-home 4.",
   "grid": { "cols": 24, "rows": 13, "gap": 16, "margin": 30 },
   "viewing": { "inches": 55, "metres": 4 },
   "theme": {
@@ -19,7 +19,7 @@
     { "id": "logo", "type": "logo", "at": { "col": 1, "row": 1, "w": 7, "h": 2 },
       "style": { "align": "left" }, "content": { "image": "img:donut-joes-logo", "text": "Donut Joe's" } },
 
-    { "id": "hero", "type": "rotator", "at": { "col": 1, "row": 3, "w": 7, "h": 7 },
+    { "id": "hero", "label": "Featured pictures", "type": "rotator", "at": { "col": 1, "row": 3, "w": 7, "h": 7 },
       "style": { "radius": "l", "size": "l", "shadow": true },
       "content": { "seconds": 7, "items": [
         { "image": "img:maple-bacon", "alt": "Maple Bacon donuts", "caption": "Maple Bacon", "line": "Sweet, salty & satisfyingly Southern", "price": "$1.89" },
@@ -54,7 +54,7 @@
         { "name": "Conecuh Smokey Joe", "price": "$3.59" },
         { "name": "Jalapeño Smokey Joe", "price": "$3.29" } ] } },
 
-    { "id": "party", "type": "text", "at": { "col": 8, "row": 11, "w": 9, "h": 2 },
+    { "id": "party", "label": "Announcement", "type": "text", "at": { "col": 8, "row": 11, "w": 9, "h": 2 },
       "style": { "surface": "highlight", "radius": "m", "size": "m", "pad": "m", "valign": "middle" },
       "content": { "title": "Giant Birthday Donut $40.99 · party boxes", "body": "Call ahead for larger orders: (205) 663-6006", "link": "https://donutjoescoffee.com" } },
 
@@ -70,7 +70,7 @@
 
     { "id": "energy", "type": "chips", "at": { "col": 17, "row": 7, "w": 5, "h": 3 },
       "style": { "size": "m" },
-      "content": { "heading": "Jammin' Joe's · $4.99", "items": [
+      "content": { "heading": "Jammin' Joe's", "price": "$4.99", "items": [
         { "name": "Blue Raspberry Bolt" }, { "name": "Lime Lightning" }, { "name": "Orange Blast" }, { "name": "Strawberry Spark" } ] } },
 
     { "id": "menu-qr", "type": "qr", "at": { "col": 22, "row": 7, "w": 3, "h": 3 },
@@ -103,7 +103,7 @@
       "when": { "dates": { "from": "2026-12-01", "to": "2027-09-14" } },
       "content": { "image": "img:gift-cards", "alt": "Donut Joe's gift cards" } },
 
-    { "id": "foot", "type": "text", "at": { "col": 1, "row": 13, "w": 18, "h": 1 },
+    { "id": "foot", "label": "Bottom line", "type": "text", "at": { "col": 1, "row": 13, "w": 18, "h": 1 },
       "style": { "size": "s", "valign": "middle", "ink": "muted" },
       "content": { "body": "Handmade daily. Hometown since 2009. · Visit us early, the best flavors go fast! · 3199 Lee St, Pelham" } },
 

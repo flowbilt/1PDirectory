@@ -6,10 +6,12 @@
 // out for a phone: the blocks on now by the building's clock, in reading order (each column of the board top to bottom), with no clock, weather or
 // QR code. Items, text, photos and a rotator's pictures with a link open it in a new tab. The page is self-contained
 // (styles inline); fonts, pictures and the board come from this site by full address, since the page is shown on
-// waytugo.com. One database call (menu_page, supabase/31-menu-to-go.sql).
+// waytugo.com. One database call (menu_page, supabase/31-menu-to-go.sql; from 32-menus.sql it carries the layout's menu,
+// whose lists fill the blocks that show them: E2a, DP-12).
 import { rpc } from "../lib/sb.mjs";
+import { applyMenu } from "../../public/menu-format.mjs";
 import { checkLayout, blockShows, zonedNow, hoursNow, nowNext, niceTime, niceDays, blockColours, readingOrder, FONTS, TAGS } from "../../public/layout-format.mjs";
-import { toLayoutPayload } from "./screen.mjs";
+import { toLayoutPayload, cleanLists } from "./screen.mjs";
 
 const CODE_RE = /^[A-HJKMNP-Z2-9]{6}$/i;
 const LINK_RE = /^https?:\/\/[^\s<>"']+\.[^\s<>"']+$/i;
@@ -103,10 +105,10 @@ footer .by{font-size:13px;opacity:.8}
 /** The phone page for a layout's published version (menu_page's answer), as the building's clock says now. */
 export function renderMenu(r, base, code, nowMs = Date.now()) {
   const checked = checkLayout(r?.layout?.doc);
-  const doc = checked.doc;
-  if (!doc) return null;
+  if (!checked.doc) return null;
   const tz = r.prop?.timezone || "America/Chicago";
   const now = zonedNow(nowMs, tz);
+  const doc = applyMenu(checked.doc, cleanLists(r.lists), now.date);   // E2a: the lists as they are today (no empty room on a phone)
   const p = doc.theme.palette, f = doc.theme.fonts;
   const images = r.images || {};
   const pic = (ref) => { const m = /^img:(.+)$/.exec(ref || ""); const i = m && images[m[1]]; return i && /^[0-9a-f-]{36}\/[a-z0-9-]+\.(webp|jpg|png)$/.test(i.path) ? `${base}/img/${i.path}` : ""; };
@@ -133,7 +135,7 @@ export function renderMenu(r, base, code, nowMs = Date.now()) {
     },
     chips(b) {
       const c = b.content;
-      return `${c.heading ? `<div class="head ${fontCls(b)}"><span>${esc(c.heading)}</span></div>` : ""}<div class="chips">${(c.items || []).filter((it) => it.name).map((it) => {
+      return `${c.heading || c.price ? `<div class="head ${fontCls(b)}"><span>${esc(c.heading || "")}</span>${c.price ? `<span class="gp">${esc(c.price)}</span>` : ""}</div>` : ""}<div class="chips">${(c.items || []).filter((it) => it.name).map((it) => {
         const t = it.tags || [], sold = t.includes("sold-out"), special = t.some((x) => x !== "sold-out");
         return `<span class="chip${sold ? " sold" : ""}${special && !sold ? " special" : ""}">${esc(it.name)}</span>`;
       }).join("")}</div>`;
@@ -228,7 +230,7 @@ export default async (req) => {
       const r = await rpc("menu_page", { p_code: code.toUpperCase(), p_count: false });
       if (!r || r.missing) return json({ error: "No such menu." }, 404);
       return json(toLayoutPayload({ key: "menu", name: r.layout.name, orientation: "auto", hide_powered_by: false, touch: false, screen_inches: null, touch_idle_s: 45 },
-        r.layout, r.prop, r.images), 200);
+        { ...r.layout, lists: r.lists }, r.prop, r.images), 200);
     } catch { return json({ error: "The menu is unavailable right now." }, 502); }
   }
   const code = decodeURIComponent(url.pathname.replace(/^\/m\//, "").replace(/\/+$/, ""));

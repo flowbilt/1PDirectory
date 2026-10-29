@@ -156,3 +156,9 @@ body { font-family: "Instrument Sans", "Segoe UI", Arial, sans-serif; -webkit-fo
    pinch-zoom, touches and selecting work */
 html.menu-view, html.menu-view body { touch-action: auto; overscroll-behavior: auto; -webkit-user-select: auto; user-select: auto; -webkit-touch-callout: default; cursor: auto; }
 html.menu-view, html.menu-view body { overflow: auto; }
+
+/* E2a (DP-12): a list's empty room, kept as invisible rows so the text stays the size it was designed at; the menu
+   editor and the Layouts tab can show it dashed ("Show the empty room") */
+.item.ghost, .chip.ghost { visibility: hidden; }
+.chips-head .group-price { font-family: var(--f-body); font-size: 0.8em; white-space: nowrap; }
+.show-room .item.ghost, .show-room .chip.ghost { visibility: visible; color: transparent; outline: 2px dashed var(--ink); outline-offset: -2px; opacity: 0.35; background: transparent; }

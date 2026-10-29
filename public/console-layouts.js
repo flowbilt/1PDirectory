@@ -66,7 +66,7 @@
     const frame = $("layout-frame");
     frame.className = `layout-frame ${l.orientation}`;
     $("layout-iframe").src = "about:blank"; L.frameReady = false;
-    meta(); await loadVersions(); await loadPictures(); await menuLine();
+    meta(); await loadVersions(); await loadPictures(); await menuLine(); menuBox();
     history.replaceState(null, "", `#layouts`);
   }
   function meta() {
@@ -196,7 +196,7 @@
     L.current.published_version = version;
     await window.ConsoleRefresh();
     const [l] = await Auth.db(`layouts?id=eq.${L.current.id}&select=*`); if (l) L.current = l;
-    meta(); await loadVersions(); await menuLine();
+    meta(); await loadVersions(); await menuLine(); menuBox();
   }
 
   // ── "Take this menu with you" (E1c): the layout's phone menu, its address and how often it's opened ──
@@ -276,8 +276,95 @@
     }
   });
 
+  // ── The layout's menu (DP-12, E2a; 1Point): the lists its blocks show, which the customer edits in menu-edit.html ──
+  const LISTABLE = { items: "items", chips: "items", rotator: "pictures", photo: "a picture", text: "text", hours: "hours" };
+  function menuBox() {
+    const l = L.current, box = $("layout-menu-box"); if (!l) return;
+    const m = l.menu_id ? look().menu(l.menu_id) : null;
+    if (!("menu_id" in l)) { box.innerHTML = `<p class="hint">Menus come with 32-menus.sql.</p>`; return; }
+    if (m) {
+      box.innerHTML = `<div class="row"><span>Its lists come from <strong>${esc(m.name)}</strong>${m.rev ? ` · save ${m.rev}, ${since(m.updated_at)}` : ""}.</span></div>
+        <div class="row"><a class="ghost" href="/menu-edit.html?m=${m.id}" target="_blank" rel="noopener">Edit the menu</a>
+          <button type="button" class="ghost" id="menu-spec">List settings</button>
+          <label class="check inline"><input type="checkbox" id="menu-cust"${m.customer_edit ? " checked" : ""}> The customer edits it too</label></div>
+        <p class="hint">A block shows a list with <code>"list": "&lt;key&gt;"</code>; its heading, size and place stay here. The customer can't change the layout, only the lists (and only up to each list's room).</p>`;
+      return;
+    }
+    const same = S().menus.filter((x) => x.org_id === l.org_id);
+    box.innerHTML = `<p class="hint">No menu yet: everything on this layout is written here, so only 1Point can change it.</p>
+      <div class="row"><button type="button" class="primary" id="menu-make">Make lists from this layout</button>
+      ${same.length ? `<span class="sub">or use</span><select id="menu-pick">${same.map((x) => `<option value="${x.id}">${esc(x.name)}</option>`).join("")}</select><button type="button" class="ghost" id="menu-use">Use this menu</button>` : ""}</div>`;
+  }
+  $("layout-menu-box").addEventListener("change", async (e) => {
+    if (e.target.id !== "menu-cust") return;
+    const m = look().menu(L.current.menu_id);
+    try { await Auth.db(`menus?id=eq.${m.id}`, { method: "PATCH", body: { customer_edit: e.target.checked }, prefer: "return=minimal" }); await window.ConsoleRefresh(); menuBox();
+      toast(e.target.checked ? "The customer can edit this menu." : "Only 1Point edits this menu now (a full maintenance plan)."); }
+    catch (ex) { toast(ex.message, true); e.target.checked = !e.target.checked; }
+  });
+  $("layout-menu-box").addEventListener("click", async (e) => {
+    const l = L.current, D = window.ConsoleDialog;
+    if (e.target.id === "menu-use") {
+      try { await Auth.db(`layouts?id=eq.${l.id}`, { method: "PATCH", body: { menu_id: $("menu-pick").value }, prefer: "return=minimal" }); l.menu_id = $("menu-pick").value; await window.ConsoleRefresh(); menuBox();
+        toast("Chosen. Give its blocks \"list\" keys, then check, preview and publish."); }
+      catch (ex) { toast(ex.message, true); }
+    }
+    if (e.target.id === "menu-make") {
+      const p = parse(); if (p.error) { showResults({ errors: [{ where: "layout", msg: p.error }] }); return; }
+      // Lists are made from the draft, so the JSON here is checked (and kept as the draft) first
+      try {
+        const r = await Auth.api("/api/layouts", { method: "POST", body: { action: "check", layout_id: l.id, doc: p.doc } });
+        if (r.errors.length) { showResults({ ...r }); return; }
+        l.draft = p.doc;
+      } catch (ex) { showResults({ errors: ex.data?.errors || [{ where: "layout", msg: ex.message }] }); return; }
+      const { extractMenu } = await import("/menu-format.mjs");
+      const ex = extractMenu(p.doc, (p.doc.blocks || []).filter((b) => LISTABLE[b.type] && !b.content?.list).map((b) => b.id));
+      const dflt = extractMenu(p.doc);
+      if (!ex.made.length) { toast("This layout has no items, pictures, text or hours to turn into lists.", true); return; }
+      D.open({
+        title: "Make lists from this layout",
+        body: `${D.field("mk-name", "Menu name", `<input id="mk-name" maxlength="80" value="${esc(`${look().org(l.org_id)?.name || l.name}: menu`)}">`, "The customer sees this in the console. One menu can feed several boards and the phone menu.")}
+          <p class="hint">Each ticked block becomes a list the customer edits, holding what it shows now, under the name given here (the board's heading doesn't change). Room: how many entries the list can hold (about a third more than now: past it is a menu expansion). Every box can be changed later under List settings.</p>
+          <ul class="make-lists">${ex.spec.lists.map((x) => { const b = p.doc.blocks.find((y) => y.id === x.key); const on = dflt.made.includes(x.key);
+            return `<li><input type="checkbox" data-mk="${esc(x.key)}"${on ? " checked" : ""} aria-label="Make a list from ${esc(x.key)}">
+              <span><input data-name="${esc(x.key)}" maxlength="60" value="${esc(x.name)}" aria-label="List name for ${esc(x.key)}"> <span class="sub">${esc(x.key)} · ${LISTABLE[b.type]} · ${(ex.content.lists[x.key]?.entries || []).length} now</span></span>
+              ${x.kind === "text" ? `<span class="sub">room 1</span>` : `<label class="sub">room <input type="number" min="1" max="${x.kind === "hours" ? 14 : 60}" value="${x.room}" data-room="${esc(x.key)}"></label>`}</li>`; }).join("")}</ul>`,
+        async save() {
+          const blocks = [...document.querySelectorAll("[data-mk]")].filter((x) => x.checked).map((x) => x.dataset.mk);
+          if (!blocks.length) throw new Error("Tick at least one block.");
+          const rooms = Object.fromEntries([...document.querySelectorAll("[data-room]")].map((x) => [x.dataset.room, Number(x.value)]));
+          const names = Object.fromEntries([...document.querySelectorAll("[data-name]")].map((x) => [x.dataset.name, x.value.trim()]));
+          const r = await Auth.api("/api/layouts", { method: "POST", body: { action: "make_menu", layout_id: l.id, blocks, rooms, names, name: $("mk-name").value.trim() } });
+          await window.ConsoleRefresh();
+          const [fresh] = await Auth.db(`layouts?id=eq.${l.id}&select=*`); if (fresh) L.current = fresh;
+          $("layout-json").value = JSON.stringify(L.current.draft, null, 2);
+          menuBox();
+          toast(`Made ${r.made.length} list${r.made.length === 1 ? "" : "s"}. Preview and publish to put the board on them.`);
+        },
+      });
+    }
+    if (e.target.id === "menu-spec") {
+      const m = look().menu(l.menu_id);
+      const [full] = await Auth.db(`menus?id=eq.${m.id}&select=id,name,spec`);
+      D.open({
+        title: `List settings: ${m.name}`,
+        body: `<p class="hint">Each list: <code>key</code> (blocks say it; never changes), <code>name</code> (what the customer sees), <code>kind</code> (items, text, hours), <code>room</code>, <code>fields</code> (the boxes the customer fills: name, line, price, image, tags, link; text: title, body, link), <code>caps</code> (most characters per box), <code>groupPrice</code>, <code>note</code>, <code>hint</code>. A list a published layout shows can't be taken off; room can't go below what's in it.</p>
+          <textarea id="spec-json" class="spec-json" spellcheck="false">${esc(JSON.stringify(full.spec, null, 2))}</textarea>
+          ${D.field("spec-name", "Menu name", `<input id="spec-name" maxlength="80" value="${esc(full.name)}">`)}`,
+        async save() {
+          let spec; try { spec = JSON.parse($("spec-json").value); } catch (ex) { throw new Error(`That isn't valid JSON: ${ex.message}`); }
+          const { checkMenuSpec } = await import("/menu-format.mjs");
+          const c = checkMenuSpec(spec); if (c.errors.length) throw new Error(c.errors.map((x) => `${x.where}: ${x.msg}`).join(" "));
+          await Auth.db(`menus?id=eq.${m.id}`, { method: "PATCH", body: { spec, name: $("spec-name").value.trim() || full.name }, prefer: "return=minimal" });
+          await window.ConsoleRefresh(); menuBox(); toast("List settings saved. Boards on this menu follow within a minute.");
+        },
+      });
+    }
+  });
+  $("layout-room").addEventListener("change", () => $("layout-iframe").contentWindow?.postMessage({ type: "layout-room", on: $("layout-room").checked }, location.origin));
+
   window.ConsoleLayouts = {
     show() { if (!L.current) renderList(); else fitFrame(); },
-    refreshed() { if (!$("panel-layouts").hidden) { if (L.current) meta(); else renderList(); } },
+    refreshed() { if (!$("panel-layouts").hidden) { if (L.current) { meta(); menuBox(); } else renderList(); } },
   };
 })();

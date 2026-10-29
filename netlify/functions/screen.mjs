@@ -152,6 +152,22 @@ export function toPayload(screen, dir, prop, tenants) {
   };
 }
 
+/** E2a (DP-12; supabase/32-menus.sql): a layout's menu as screens and phones get it: each list's kind, room and switches,
+ *  and its entries without the hidden ones (kept in the console; never sent out). null with no menu. */
+export function cleanLists(m) {
+  if (!m || typeof m !== "object" || !Array.isArray(m.spec?.lists)) return null;
+  const lists = m.spec.lists.filter((l) => l && /^[a-z0-9][a-z0-9-]{0,39}$/.test(l.key) && ["items", "text", "hours"].includes(l.kind))
+    .map((l) => ({ key: l.key, kind: l.kind, room: Math.min(60, Math.max(1, Number(l.room) || 1)), groupPrice: !!l.groupPrice, note: !!l.note }));
+  const content = { lists: {} };
+  for (const l of lists) {
+    const c = m.content?.lists?.[l.key];
+    if (!c || typeof c !== "object") continue;
+    content.lists[l.key] = { ...(typeof c.price === "string" ? { price: c.price.slice(0, 24) } : {}), ...(typeof c.note === "string" ? { note: c.note.slice(0, 80) } : {}),
+      entries: (Array.isArray(c.entries) ? c.entries : []).filter((e) => e && typeof e === "object" && !e.hidden).slice(0, 60) };
+  }
+  return { id: m.id || null, spec: { lists }, content };
+}
+
 /** A layout's pictures (E1b; supabase/30-layout-images.sql): key -> { url, w, h }, served from the site's own /img/. */
 export function cleanImages(images) {
   const out = {};
@@ -181,6 +197,8 @@ export function toLayoutPayload(screen, layout, prop, images) {
     images: cleanImages(images),
     // E1c: "Take this menu with you", for a QR block: MENU_BASE (default waytugo.com/m/, which forwards here) + the code
     menu: menuFor(layout?.menu_code),
+    // E2a: the lists its blocks show (one set of lists for every board on this menu, and the phone menu)
+    lists: cleanLists(layout?.lists),
     propertyName: prop?.name || "",
     address: prop?.address || "",
     timezone: prop?.timezone || "America/Chicago",
@@ -210,7 +228,7 @@ export default async (req) => {
     if (r?.missing) return send({ error: `No screen named "${key}".` }, 404);
     const etag = `"${TAG}-${r.etag}"`;
     if (r.not_modified) return new Response(null, { status: 304, headers: { ...HEADERS, ETag: etag } });
-    if (r.kind === "layout") return send(toLayoutPayload(r.screen, r.layout, r.prop, r.images), 200, etag);
+    if (r.kind === "layout") return send(toLayoutPayload(r.screen, { ...r.layout, lists: r.lists }, r.prop, r.images), 200, etag);
     return send(toPayload(r.screen, r.dir, r.prop, r.tenants), 200, etag);
   } catch (e) {
     return send({ error: e.message }, e.status && e.status < 500 ? e.status : 502);

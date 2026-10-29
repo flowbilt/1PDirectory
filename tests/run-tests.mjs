@@ -2277,7 +2277,7 @@ test("a layout's pictures: missing ones are problems, the screen gets each one's
   } finally { Object.assign(scr, keep); }
   // removing: refused in plain words while a draft or a kept version uses it; the file goes with the row otherwise
   r = await lcall({ action: "delete_image", id: pic.id }, admin);
-  assert.equal(r.status, 400); assert.match((await r.json()).error, /is used by .*Pictures test.*Roll back needs it/);
+  assert.equal(r.status, 400); assert.match((await r.json()).error, /is used by .*Pictures test.*Roll back and Restore need it/);
   const spare = fake.T.layout_images.find((i) => i.org_id === org.id && i.key === "maple-bacon-2");
   r = await lcall({ action: "delete_image", id: spare.id }, admin);
   assert.equal(r.status, 200);
@@ -2388,11 +2388,219 @@ test("the layout page's files: shared screen code, fonts with their licences, th
   }
   const sw = readFileSync(new URL("../public/sw.js", import.meta.url), "utf8");
   for (const f of ["/screen-core.js", "/board.html", "/board.js", "/board.css", "/layout-format.mjs"]) assert.ok(sw.includes(`"${f}"`), `offline cache: ${f}`);
-  assert.ok(sw.includes(`"directory-v6"`) && sw.includes(`startsWith("/fonts/")`) && sw.includes(`startsWith("/img/")`));
+  assert.ok(sw.includes(`"directory-v7"`) && sw.includes(`"/menu-format.mjs"`) && sw.includes(`startsWith("/fonts/")`) && sw.includes(`startsWith("/img/")`));
   const toml = readFileSync(new URL("../netlify.toml", import.meta.url), "utf8");
   assert.ok(/for = "\/\*\.mjs"[\s\S]*?Content-Type = "text\/javascript/.test(toml), "the module is served as JavaScript");
   assert.ok(/from = "\/img\/\*"\s+to = "https:\/\/[a-z0-9]+\.supabase\.co\/storage\/v1\/object\/public\/layout-images\/:splat"\s+status = 200\s+force = true/.test(toml), "pictures come through /img/ from the bucket");
   assert.ok(/for = "\/img\/\*"[\s\S]*?max-age=31536000, immutable/.test(toml), "and are cached a year");
+});
+
+// ── Menus (DP-12, round E2a; supabase/32-menus.sql, public/menu-format.mjs) ──
+const MF = await import("../public/menu-format.mjs");
+const SPEC = { lists: [
+  { key: "donuts", name: "Donuts", kind: "items", room: 3, fields: ["name", "price", "image", "tags"], caps: { name: 20 }, groupPrice: true },
+  { key: "feat", name: "Featured", kind: "items", room: 4, fields: ["name", "line", "price", "image"] },
+  { key: "hours", name: "Hours", kind: "hours", room: 2, note: true },
+  { key: "party", name: "Party box", kind: "text", fields: ["title", "body", "link"] }] };
+const asUser = async (token, fn, body) => fake.handle(new Request(`${SB}/rest/v1/rpc/${fn}`, { method: "POST", body: JSON.stringify(body), headers: { apikey: ANON_KEY, Authorization: `Bearer ${token}`, "Content-Type": "application/json" } }));
+const svc = (path, method = "GET", body) => fake.handle(new Request(`${SB}/rest/v1/${path}`, { method, body: body ? JSON.stringify(body) : undefined, headers: { apikey: SERVICE_KEY, "Content-Type": "application/json", Prefer: "return=representation" } }));
+
+test("menus: the lists 1Point sets up and what a customer saves are checked in plain words (the room is a menu expansion)", () => {
+  assert.deepEqual(MF.checkMenuSpec(SPEC).errors, []);
+  const bad = (spec) => MF.checkMenuSpec({ lists: [spec] }).errors.map((e) => e.msg).join(" ");
+  assert.match(bad({ key: "x", name: "X", kind: "items", room: 61, fields: ["name"] }), /room.*1 to 60/);
+  assert.match(bad({ key: "x", name: "X", kind: "items", room: 4, fields: ["price"] }), /always has "name"/);
+  assert.match(bad({ key: "x", name: "X", kind: "text", room: 2, fields: ["title"] }), /room for 1/);
+  assert.match(bad({ key: "x", name: "X", kind: "items", room: 4, fields: ["name"], caps: { name: 200 } }), /caps.name.*4 to 80/);
+  assert.match(bad({ key: "X!", name: "X", kind: "items", room: 4, fields: ["name"] }), /lowercase letters/);
+  const spec = MF.checkMenuSpec(SPEC).spec;
+  const ok = { lists: { donuts: { price: "$1.89 each", entries: [{ id: "aaaa01", name: "Maple Bacon", tags: ["favorite"], image: "img:maple-bacon" }] }, hours: { note: "Exit 242", entries: [{ id: "hhhh01", days: [2, 3], open: "06:00", close: "18:00" }] }, party: { entries: [{ id: "pppp01", title: "Party boxes", link: "https://example.com" }] } } };
+  assert.deepEqual(MF.checkMenuContent(spec, ok, { images: new Set(["maple-bacon"]) }).errors, []);
+  const why = (c, images) => MF.checkMenuContent(spec, c, { images }).errors.map((e) => `${e.where}: ${e.msg}`).join(" | ");
+  assert.match(why({ lists: { donuts: { entries: [1, 2, 3, 4].map((i) => ({ id: `ab${i}cd`, name: `D${i}` })) } } }), /"Donuts" has room for 3; this has 4\. More room is a menu expansion: ask 1Point\./);
+  assert.match(why({ lists: { donuts: { entries: [{ id: "aaaa01", name: "A name that is far too long" }] } } }), /"Donuts", item 1 \("A name that is far too long"\): Name is 27 characters; this list has room for 20\./);
+  assert.match(why({ lists: { donuts: { entries: [{ id: "aaaa01", name: "A", line: "x" }] } } }), /no description box \(1Point can add one\)/);
+  assert.match(why({ lists: { donuts: { entries: [{ id: "aaaa01", name: "A", image: "img:not-here" }] } } }, new Set()), /isn't in this account's pictures/);
+  assert.match(why({ lists: { donuts: { entries: [{ id: "aaaa01", name: " " }] } } }), /An item needs a name/);
+  assert.match(why({ lists: { donuts: { entries: [{ id: "aaaa01", name: "A", tags: ["sold-out"] }] } } }), /Tags are from/);
+  assert.match(why({ lists: { hours: { entries: [{ id: "hhhh01", days: [], open: "06:00", close: "18:00" }] } } }), /Choose at least one day/);
+  assert.match(why({ lists: { nope: { entries: [] } } }), /There's no list "nope"/);
+  assert.match(why({ lists: { party: { entries: [{ id: "pppp01", title: "A" }, { id: "pppp02", title: "B" }] } } }), /has room for 1/);
+  assert.match(why({ lists: { party: { entries: [{ id: "pppp01", title: "A", link: "javascript:alert(1)" }] } } }), /web link/);
+});
+
+test("menus: the database says the same rules (sizes, rooms, tags) as the menu format", () => {
+  const sql = readFileSync(new URL("../supabase/32-menus.sql", import.meta.url), "utf8");
+  for (const [f, n] of Object.entries(MF.FIELD_MAX)) assert.ok(sql.includes(`"${f}": ${n}`), `${f} ${n} in the SQL`);
+  assert.ok(sql.includes("when 'items' then 60 when 'text' then 1 else 14") && MF.KINDS.items.maxRoom === 60 && MF.KINDS.hours.maxRoom === 14);
+  for (const t of Object.keys(MF.ITEM_TAGS)) assert.ok(sql.includes(`'"${t}"'`), `tag ${t}`);
+  assert.ok(sql.includes("length(c ->> 'price') > 24") && MF.GROUP_PRICE_MAX === 24 && sql.includes("length(c ->> 'note') > 80") && MF.NOTE_MAX === 80);
+});
+
+test("menus: a board draws its lists: only what's shown, sold out today marked (tomorrow it's back), an empty list off, the room kept", () => {
+  const doc = LF.checkLayout({ format: 1, orientation: "landscape", grid: { cols: 12, rows: 12 }, blocks: [
+    { id: "d", type: "items", at: { col: 1, row: 1, w: 6, h: 6 }, content: { heading: "Donuts", list: "donuts" } },
+    { id: "f", type: "rotator", at: { col: 7, row: 1, w: 6, h: 6 }, content: { list: "feat" } },
+    { id: "h", type: "hours", at: { col: 1, row: 7, w: 6, h: 3 }, content: { heading: "Hours", list: "hours" } },
+    { id: "p", type: "text", at: { col: 7, row: 7, w: 6, h: 3 }, content: { kicker: "Parties", list: "party" } }] }, { lists: SPEC.lists });
+  assert.deepEqual(doc.errors, []);
+  const menu = { spec: SPEC, content: { lists: {
+    donuts: { price: "$1.89 each", entries: [{ id: "a1a1", name: "Maple", tags: ["new"] }, { id: "a2a2", name: "Glazed", soldOut: "2026-10-29" }, { id: "a3a3", name: "Secret", hidden: true }] },
+    feat: { entries: [{ id: "f1f1", name: "Fritter", image: "img:apple-fritter", price: "$4.49", soldOut: "2026-10-29" }, { id: "f2f2", name: "Rolls", line: "Soft", image: "img:rolls" }] },
+    hours: { note: "Exit 242", entries: [{ id: "h1h1", days: [2, 3], open: "06:00", close: "18:00" }] } } } };
+  const on = MF.applyMenu(doc.doc, menu, "2026-10-29", { room: true });
+  const b = (id) => on.blocks.find((x) => x.id === id);
+  assert.deepEqual(b("d").content.items.map((x) => [x.name, x.tags]), [["Maple", ["new"]], ["Glazed", ["sold-out"]]]);
+  assert.equal(b("d").content.price, "$1.89 each"); assert.equal(b("d").content.room, 3); assert.equal(b("d").content.heading, "Donuts");
+  assert.deepEqual(b("f").content.items.map((x) => x.caption), ["Rolls"], "a featured item sold out today steps out of the turns");
+  assert.deepEqual(b("h").content.hours, [{ days: [2, 3], open: "06:00", close: "18:00" }]); assert.equal(b("h").content.note, "Exit 242");
+  assert.equal(b("p").on, false, "an empty list's box is left out"); assert.equal(b("p").content.kicker, "Parties");
+  const next = MF.applyMenu(doc.doc, menu, "2026-10-30");
+  assert.deepEqual(next.blocks.find((x) => x.id === "d").content.items[1].tags, [], "the next day it's back");
+  assert.equal(next.blocks.find((x) => x.id === "d").content.room, undefined, "no room on the phone");
+  assert.equal(MF.applyMenu(doc.doc, null, "2026-10-29").blocks.every((x) => x.on === false), true, "no menu: blocks on lists show nothing");
+  // a layout and its menu: lists checked, and the content a list gives can't also be written in the layout
+  const why = (blocks, lists) => LF.checkLayout({ format: 1, orientation: "landscape", grid: { cols: 12, rows: 12 }, blocks }, { lists }).errors.map((e) => e.msg).join(" | ");
+  const blk = (content, type = "items") => [{ id: "d", type, at: { col: 1, row: 1, w: 6, h: 6 }, content }];
+  assert.match(why(blk({ list: "donuts" }), null), /this layout has no menu yet/);
+  assert.match(why(blk({ list: "nope" }), SPEC.lists), /There's no list "nope"/);
+  assert.match(why(blk({ list: "hours" }), SPEC.lists), /"hours" is a hours list; a items block shows an items list|is a hours list/);
+  assert.match(why(blk({ list: "donuts", items: [{ name: "x" }] }), SPEC.lists), /come from the menu; take it out of the layout/);
+  assert.deepEqual(LF.checkLayout({ format: 1, orientation: "landscape", grid: { cols: 12, rows: 12 }, blocks: blk({ list: "donuts" }) }).errors, [], "a screen drawing a published version doesn't need the menu to check it");
+  // the guardrail judges a list block by what its list may hold (a tag can be added any day)
+  const small = LF.checkLayout({ format: 1, orientation: "landscape", grid: { cols: 12, rows: 12 }, viewing: { inches: 32, metres: 4 }, blocks: [{ id: "d", type: "items", at: { col: 1, row: 1, w: 6, h: 6 }, style: { size: "l" }, content: { list: "donuts" } }] }, { lists: SPEC.lists });
+  assert.ok(small.warnings.some((w) => w.kind === "small"), JSON.stringify(small.warnings));
+});
+
+test("menus: Make lists from the Donut Joe's counter board: names, rooms, only the boxes it uses, a lone photo stays the layout's", () => {
+  const { spec, content, doc, made } = MF.extractMenu(COUNTER);
+  assert.deepEqual(MF.checkMenuSpec(spec).errors, []);
+  assert.deepEqual(MF.checkMenuContent(MF.checkMenuSpec(spec).spec, content).errors, []);
+  assert.deepEqual(made, ["hero", "hours", "donuts", "pastries", "party", "coffee", "energy", "fall", "take-home", "foot"]);
+  const L = Object.fromEntries(spec.lists.map((l) => [l.key, l]));
+  assert.deepEqual([L.hero.name, L.party.name, L.foot.name, L.donuts.name, L.energy.name], ["Featured pictures", "Announcement", "Bottom line", "Handmade every morning", "Jammin' Joe's"]);
+  assert.deepEqual([L.donuts.room, L.pastries.room, L.coffee.room, L.fall.room, L.hours.room], [16, 8, 8, 4, 2]);
+  assert.deepEqual(L.donuts.fields, ["name", "tags"]); assert.ok(L.donuts.groupPrice && L.energy.groupPrice);
+  assert.deepEqual(L.coffee.fields, ["name", "line", "price", "link"]); assert.equal(L.party.kind, "text"); assert.equal(L.hours.kind, "hours");
+  assert.equal(content.lists.donuts.price, "$1.89 each"); assert.equal(content.lists.energy.price, "$4.99"); assert.equal(content.lists.donuts.entries.length, 12);
+  assert.equal(content.lists.hero.entries[0].name, "Maple Bacon"); assert.equal(content.lists.hero.entries[0].image, "img:maple-bacon");
+  const d = (id) => doc.blocks.find((b) => b.id === id);
+  assert.deepEqual(d("donuts").content, { heading: "Handmade every morning", columns: 2, list: "donuts" });
+  assert.ok(!d("fall-pic").content.list && d("fall-pic").content.image, "the photo stays");
+  assert.deepEqual(LF.checkLayout(doc, { lists: spec.lists }).errors, []);
+  const drawn = MF.applyMenu(LF.checkLayout(doc).doc, { spec, content }, "2026-10-29");
+  assert.deepEqual(drawn.blocks.find((b) => b.id === "coffee").content.items, LF.checkLayout(COUNTER).doc.blocks.find((b) => b.id === "coffee").content.items.map((it) => ({ ...it, tags: [] })), "the same board as before");
+});
+
+test("menus: saving as the signed-in user: owner and editor go live and are named; a stranger, a stale save and past the room are refused; Restore", async () => {
+  const org = fake.T.organizations.find((o) => /Barber/.test(o.name));
+  const admin = await login("scot@1pointusa.com", "admin-pass"), owner = await login("leighann@barber.test", "owner-pass"), editor = await login("editor@barber.test", "editor-pass");
+  fake.addUser("stranger@other.test", "x-pass", "org_admin", fake.T.organizations.find((o) => o.name === "Other Owner LLC").id, "Stranger");
+  const stranger = await login("stranger@other.test", "x-pass");
+  // 1Point makes a menu (signed in); an owner can't
+  let r = await fake.handle(new Request(`${SB}/rest/v1/menus`, { method: "POST", body: JSON.stringify({ org_id: org.id, name: "Test menu", spec: SPEC }), headers: { apikey: ANON_KEY, Authorization: `Bearer ${owner}`, Prefer: "return=representation" } }));
+  assert.equal(r.status, 403);
+  r = await fake.handle(new Request(`${SB}/rest/v1/menus`, { method: "POST", body: JSON.stringify({ org_id: org.id, name: "Test menu", spec: SPEC, content: { lists: {} } }), headers: { apikey: ANON_KEY, Authorization: `Bearer ${admin}`, Prefer: "return=representation" } }));
+  assert.equal(r.status, 403, "not even 1Point writes the content directly");
+  r = await fake.handle(new Request(`${SB}/rest/v1/menus`, { method: "POST", body: JSON.stringify({ org_id: org.id, name: "Test menu", spec: SPEC }), headers: { apikey: ANON_KEY, Authorization: `Bearer ${admin}`, Prefer: "return=representation" } }));
+  const [m] = await r.json();
+  assert.equal(m.rev, 0); assert.equal(m.customer_edit, true);
+  const c1 = { lists: { donuts: { price: "$1.89 each", entries: [{ id: "aaaa01", name: "Maple" }] } } };
+  r = await asUser(owner, "menu_save", { p_menu: m.id, p_base_rev: 0, p_content: c1 });
+  assert.equal(r.status, 200); assert.equal((await r.json()).rev, 1);
+  r = await asUser(editor, "menu_save", { p_menu: m.id, p_base_rev: 1, p_content: { lists: { donuts: { price: "$1.99 each", entries: [{ id: "aaaa01", name: "Maple" }] } } } });
+  assert.equal((await r.json()).rev, 2);
+  const revs = fake.T.menu_revisions.filter((x) => x.menu_id === m.id);
+  assert.deepEqual(revs.map((x) => [x.rev, x.by_name, x.by_1point]), [[1, "Leigh Ann", false], [2, "Front Desk", false]]);
+  assert.deepEqual(MF.menuChanges(SPEC, revs[0].content, revs[1].content), ["Donuts: list price $1.89 each → $1.99 each"]);
+  r = await asUser(owner, "menu_save", { p_menu: m.id, p_base_rev: 1, p_content: c1 });
+  assert.equal(r.status, 409); assert.match((await r.json()).message, /Someone else saved this menu after you opened it \(Front Desk\)/);
+  r = await asUser(owner, "menu_save", { p_menu: m.id, p_base_rev: 2, p_content: { lists: { donuts: { entries: [1, 2, 3, 4].map((i) => ({ id: `ab${i}cd`, name: `D${i}` })) } } } });
+  assert.equal(r.status, 400); assert.match((await r.json()).message, /room for 3.*menu expansion: ask 1Point/);
+  r = await asUser(stranger, "menu_save", { p_menu: m.id, p_base_rev: 2, p_content: c1 });
+  assert.equal(r.status, 403);
+  r = await fake.handle(new Request(`${SB}/rest/v1/menus?id=eq.${m.id}&select=id`, { headers: { apikey: ANON_KEY, Authorization: `Bearer ${stranger}` } }));
+  assert.deepEqual(await r.json(), [], "a stranger doesn't see it");
+  r = await asUser(owner, "menu_restore", { p_menu: m.id, p_rev: 1, p_base_rev: 2 });
+  assert.equal((await r.json()).rev, 3);
+  assert.deepEqual(fake.T.menus.find((x) => x.id === m.id).content, c1);
+  assert.equal(fake.T.menu_revisions.find((x) => x.menu_id === m.id && x.rev === 3).restored_from, 1);
+  // a full maintenance plan: only 1Point
+  fake.T.menus.find((x) => x.id === m.id).customer_edit = false;
+  r = await asUser(owner, "menu_save", { p_menu: m.id, p_base_rev: 3, p_content: c1 });
+  assert.equal(r.status, 403); assert.match((await r.json()).message, /1Point keeps this menu up to date/);
+  r = await asUser(admin, "menu_save", { p_menu: m.id, p_base_rev: 3, p_content: c1 });
+  assert.equal((await r.json()).rev, 4); assert.equal(fake.T.menu_revisions.at(-1).by_1point, true);
+});
+
+test("menus: Make lists (1Point only), the board and phone menu get the lists (hidden ones never leave the site), a save reaches the screen", async () => {
+  const org = fake.T.organizations.find((o) => /Barber/.test(o.name));
+  const prop = fake.T.properties.find((p) => p.org_id === org.id);
+  const admin = await login("scot@1pointusa.com", "admin-pass"), owner = await login("leighann@barber.test", "owner-pass");
+  const [l] = await (await svc("layouts", "POST", { org_id: org.id, name: "Counter test", family: "menu", orientation: "landscape" })).json();
+  for (const k of ["donut-joes-logo", "maple-bacon", "apple-fritter", "cinnamon-rolls", "smokey-joes", "blue-raspberry-bolt", "pumpkin-spice-cake", "gift-cards"])
+    if (!fake.T.layout_images.some((i) => i.org_id === org.id && i.key === k)) await svc("layout_images", "POST", { org_id: org.id, key: k, name: k, path: `${org.id}/${k}-1a2b3c4d.webp`, mime: "image/webp", width: 800, height: 600, bytes: 5000 });
+  let r = await lcall({ action: "check", layout_id: l.id, doc: COUNTER }, admin);
+  assert.deepEqual((await r.json()).errors, []);
+  r = await lcall({ action: "make_menu", layout_id: l.id }, owner);
+  assert.equal(r.status, 403, "1Point only");
+  r = await lcall({ action: "make_menu", layout_id: l.id, rooms: { donuts: 16, pastries: 7, coffee: 2 }, names: { foot: "Bottom line (shop)" } }, admin);
+  assert.equal(r.status, 400, "a room below what's in a list"); assert.match((await r.json()).error, /has 6 entries now/);
+  r = await lcall({ action: "make_menu", layout_id: l.id, rooms: { donuts: 16, pastries: 7 }, names: { foot: "Bottom line (shop)" } }, admin);
+  const made = await r.json();
+  assert.equal(r.status, 200, JSON.stringify(made));
+  const lay = fake.T.layouts.find((x) => x.id === l.id), menu = fake.T.menus.find((x) => x.id === made.menu_id);
+  assert.equal(lay.menu_id, menu.id); assert.equal(menu.spec.lists.find((x) => x.key === "pastries").room, 7);
+  assert.equal(menu.spec.lists.find((x) => x.key === "foot").name, "Bottom line (shop)");
+  assert.equal((await lcall({ action: "make_menu", layout_id: l.id }, admin)).status, 409, "only once");
+  // publish the bound draft; the check knows the menu's lists
+  const bad = JSON.parse(JSON.stringify(lay.draft)); bad.blocks.find((b) => b.id === "donuts").content.list = "nope";
+  assert.match(JSON.stringify((await (await lcall({ action: "check", layout_id: l.id, doc: bad }, admin)).json()).errors), /no list \\"nope\\"/);
+  r = await lcall({ action: "publish", layout_id: l.id, doc: lay.draft, override: true }, admin);
+  assert.equal(r.status, 200, JSON.stringify(await r.clone().json()));
+  const pv = await (await lcall({ action: "preview", layout_id: l.id, doc: lay.draft, property_id: prop.id }, admin)).json();
+  assert.equal(pv.payload.lists.content.lists.donuts.entries.length, 12, "the preview carries the menu");
+  const scr = fake.T.screens.find((x) => x.orientation === "landscape" && x.directory_id);
+  const keep = { directory_id: scr.directory_id, layout_id: scr.layout_id ?? null, property_id: scr.property_id ?? null };
+  try {
+    Object.assign(scr, { directory_id: null, layout_id: l.id, property_id: prop.id });
+    const first = await screen(req(`/api/screen?key=${scr.key}`));
+    const d = await first.json();
+    assert.equal(d.lists.spec.lists.find((x) => x.key === "donuts").room, 16);
+    assert.deepEqual(Object.keys(d.lists.spec.lists[0]).sort(), ["groupPrice", "key", "kind", "note", "room"], "screens get only what they draw with");
+    const content = JSON.parse(JSON.stringify(menu.content));
+    content.lists.donuts.entries.push({ id: "zzz001", name: "Secret donut", hidden: true }, { id: "zzz002", name: "Lemon Curd", image: "img:gift-cards" });
+    r = await asUser(owner, "menu_save", { p_menu: menu.id, p_base_rev: menu.rev, p_content: content });
+    assert.equal(r.status, 400, "a picture on a list without a picture box"); 
+    content.lists.donuts.entries.pop(); content.lists.donuts.entries.push({ id: "zzz002", name: "Lemon Curd" });
+    r = await asUser(owner, "menu_save", { p_menu: menu.id, p_base_rev: menu.rev, p_content: content });
+    assert.equal(r.status, 200);
+    const again = await screen(req(`/api/screen?key=${scr.key}`, { headers: { "If-None-Match": first.headers.get("etag") } }));
+    assert.equal(again.status, 200, "a save reaches the screen");
+    const d2 = await again.json();
+    assert.ok(d2.lists.content.lists.donuts.entries.some((e) => e.name === "Lemon Curd") && !JSON.stringify(d2).includes("Secret donut"), "hidden never leaves the site");
+    assert.ok(d2.images["maple-bacon"], "the pictures the lists use");
+    const html = await (await menuFn(req(`/m/${lay.menu_code}`))).text();
+    assert.ok(html.includes("Lemon Curd") && html.includes("$1.89 each") && !html.includes("Secret donut") && html.includes("Jammin&#39;"), "the phone menu");
+    const see = await (await menuFn(req(`/api/menu?code=${lay.menu_code}`))).json();
+    assert.ok(see.lists.content.lists.donuts.entries.length === 13, "See the board gets the lists");
+    // a list a published board shows can't be taken off; a picture a menu uses can't be removed
+    r = await fake.handle(new Request(`${SB}/rest/v1/menus?id=eq.${menu.id}`, { method: "PATCH", body: JSON.stringify({ spec: { lists: menu.spec.lists.filter((x) => x.key !== "donuts") } }), headers: { apikey: ANON_KEY, Authorization: `Bearer ${admin}` } }));
+    assert.equal(r.status, 409); assert.match((await r.json()).message, /"donuts" is shown by the layout "Counter test"/);
+    const pic = fake.T.layout_images.find((i) => i.org_id === org.id && i.key === "smokey-joes");
+    r = await lcall({ action: "delete_image", id: pic.id }, admin);
+    assert.equal(r.status, 400); assert.match((await r.json()).error, /Counter test.*Roll back and Restore need it/);
+  } finally { Object.assign(scr, keep); }
+});
+
+test("menus: the editor, the console's Menus tab and the board's room are in place (files)", () => {
+  const html = readFileSync(new URL("../public/menu-edit.html", import.meta.url), "utf8"), js = readFileSync(new URL("../public/menu-edit.js", import.meta.url), "utf8");
+  assert.ok(html.includes('type="module" src="/menu-edit.js"') && html.includes("1Point keeps this menu up to date for you"));
+  for (const w of ['Auth.db("rpc/menu_save"', 'Auth.db("rpc/menu_restore"', "checkMenuContent(", "menuChanges(", "More room is a menu expansion: ask 1Point.", "Sold out today", "Hide"]) assert.ok(js.includes(w), w);
+  const con = readFileSync(new URL("../public/console.html", import.meta.url), "utf8"), cjs = readFileSync(new URL("../public/console.js", import.meta.url), "utf8");
+  assert.ok(con.includes('id="tab-menus"') && con.includes('id="panel-menus"') && cjs.includes("menu-edit.html?m="));
+  const board = readFileSync(new URL("../public/board.js", import.meta.url), "utf8");
+  assert.ok(board.includes("applyMenu(checked.doc, data.lists, drawnDate, { room: true })") && board.includes('class="item ghost"'));
 });
 
 let passed = 0;

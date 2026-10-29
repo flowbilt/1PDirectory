@@ -13,7 +13,15 @@
 //        shrunk by the console; its key comes from the name and is fixed: "Maple Bacon" -> img:maple-bacon)
 //   POST { action: "delete_image", id }                      -> { ok } (refused while any draft or kept version uses it)
 // Check, preview and publish also check that every picture a layout says exists in its account.
+// Menus (E2a, DP-12; supabase/32-menus.sql): a layout's blocks may show lists of its menu ({"list": "donuts"}); check,
+// preview and publish check each one against the menu, and the preview carries the menu as it is now.
+//   POST { action: "make_menu", layout_id, blocks?, rooms?, names?, name? } -> { menu_id, made } "Make lists from this layout": the
+//        layout's own items, chips, pictures, text and hours become a new menu's lists (room for about a third more),
+//        the blocks point at them, and the draft is kept (publish it to put the board on the lists)
+// Setting a menu's lists up (rooms, boxes, caps), who edits, and choosing a layout's menu are done by the console
+// straight to the database (1Point only; the database checks every rule); the customer's saves go to menu_save.
 import { checkLayout } from "../../public/layout-format.mjs";
+import { extractMenu } from "../../public/menu-format.mjs";
 import { db, rpc, caller, enc, storagePut, storageRemove } from "../lib/sb.mjs";
 import { readPicture, pictureKey, pictureKeys } from "../lib/images.mjs";
 import { randomUUID } from "node:crypto";
@@ -48,13 +56,26 @@ async function picturesFor(orgId, doc) {
   const images = Object.fromEntries(rows.map((r) => [r.key, { path: r.path, w: r.width, h: r.height }]));
   return { images, missing: keys.filter((k) => !images[k]) };
 }
+/** E2a: the pictures a menu's lists use (the preview draws them) */
+async function menuPictures(layout, menu) {
+  const keys = [...new Set(JSON.stringify(menu?.content || {}).match(/"img:[a-z0-9][a-z0-9-]{0,59}"/g)?.map((x) => x.slice(5, -1)) || [])];
+  if (!keys.length || !layout) return {};
+  const rows = await db(`layout_images?org_id=eq.${enc(layout.org_id)}&key=in.(${keys.map(enc).join(",")})&select=key,path,width,height`);
+  return Object.fromEntries(rows.map((r) => [r.key, { path: r.path, w: r.width, h: r.height }]));
+}
 const missingErrors = (missing) => missing.map((k) => ({ where: `picture "img:${k}"`, msg: `There's no picture "${k}" in this account. Upload it under Pictures, or fix the name.` }));
 
 async function loadLayout(id) {
   if (!/^[0-9a-f-]{36}$/.test(String(id || ""))) throw fail(400, "Choose a layout.");
-  const [l] = await db(`layouts?id=eq.${enc(id)}&select=id,org_id,name,orientation,published_version,menu_code`);
+  const [l] = await db(`layouts?id=eq.${enc(id)}&select=id,org_id,name,orientation,published_version,menu_code,menu_id`);
   if (!l) throw fail(404, "No such layout.");
   return l;
+}
+/** E2a: the layout's menu as screens get it (null: the layout has no menu) */
+async function menuOf(layout) {
+  if (!layout?.menu_id) return null;
+  const [m] = await db(`menus?id=eq.${enc(layout.menu_id)}&select=id,name,spec,content,rev`);
+  return m || null;
 }
 
 export default async (req) => {
@@ -66,8 +87,10 @@ export default async (req) => {
 
     if (body.action === "check" || body.action === "preview" || body.action === "publish") {
       const doc = parseDoc(body.doc);
-      const { errors, warnings, doc: clean } = checkLayout(doc);
       const layout = body.layout_id ? await loadLayout(body.layout_id) : null;
+      const menu = await menuOf(layout);
+      // E2a: with a layout, its blocks' lists are checked against its menu (no menu: a block on a list is a problem)
+      const { errors, warnings, doc: clean } = checkLayout(doc, layout ? { lists: menu ? menu.spec?.lists || [] : null } : {});
       if (layout && clean && clean.orientation && clean.orientation !== layout.orientation)
         errors.push({ where: "orientation", msg: `This layout is ${layout.orientation}, so "orientation" must be "${layout.orientation}".` });
       const pics = layout && clean ? await picturesFor(layout.org_id, doc) : { images: {}, missing: [] };
@@ -86,7 +109,8 @@ export default async (req) => {
         }
         const payload = errors.length ? null : toLayoutPayload(
           { key: "preview", name: "Preview", orientation: clean.orientation, hide_powered_by: false, touch: false, screen_inches: clean.viewing.inches, touch_idle_s: 45 },
-          { id: layout?.id || null, name: layout?.name || "Preview", version: null, doc, menu_code: layout?.menu_code }, prop, pics.images);
+          { id: layout?.id || null, name: layout?.name || "Preview", version: null, doc, menu_code: layout?.menu_code,
+            lists: menu ? { id: menu.id, spec: menu.spec, content: menu.content } : null }, prop, { ...pics.images, ...(await menuPictures(layout, menu)) });
         return json({ errors, warnings, payload });
       }
 
@@ -98,6 +122,27 @@ export default async (req) => {
       const version = await rpc("layout_publish", { p_layout: layout.id, p_doc: doc, p_checks: { errors: [], warnings: all },
         p_overridden: all.length > 0, p_note: String(body.note || "").slice(0, 200), p_by: user.id });
       return json({ version, warnings: all });
+    }
+
+    if (body.action === "make_menu") {
+      const layout = await loadLayout(body.layout_id);
+      if (layout.menu_id) throw fail(409, "This layout already takes its lists from a menu. Change its lists under Menu on this page.");
+      const [{ draft } = {}] = await db(`layouts?id=eq.${enc(layout.id)}&select=draft`);
+      if (!draft || !Array.isArray(draft.blocks) || !draft.blocks.length) throw fail(400, "This layout has no blocks yet. Check its JSON first (Check keeps it as the draft).");
+      const ids = Array.isArray(body.blocks) ? body.blocks.filter((x) => typeof x === "string") : undefined;
+      const { spec, content, doc, made } = extractMenu(draft, ids);
+      if (!made.length) throw fail(400, "None of the chosen blocks has anything to turn into a list.");
+      // the room the console's dialog chose for each list (the database refuses a room below what's in it)
+      for (const l of spec.lists) {
+        const n = Number(body.rooms?.[l.key]);
+        if (l.kind !== "text" && Number.isInteger(n) && n >= 1) l.room = Math.min(l.kind === "hours" ? 14 : 60, n);
+        const nm = String(body.names?.[l.key] || "").trim();
+        if (nm) l.name = nm.slice(0, 60);
+        if ((content.lists[l.key]?.entries || []).length > l.room) throw fail(400, `"${l.name}" has ${content.lists[l.key].entries.length} entries now, so its room can't be less than that.`);
+      }
+      const name = String(body.name || `${layout.name}: menu`).trim().slice(0, 80);
+      const menu_id = await rpc("menu_create", { p_org: layout.org_id, p_name: name, p_spec: spec, p_content: content, p_by: user.id, p_layout: layout.id, p_draft: doc });
+      return json({ menu_id, made, spec });
     }
 
     if (body.action === "rollback") {

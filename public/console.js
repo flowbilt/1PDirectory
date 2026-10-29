@@ -10,7 +10,7 @@
   // Signed-in users may read only these screen columns (supabase/06-trust.sql); hardware comes from /api/devices.
   const SCREEN_COLS = "id,directory_id,key,name,location_note,orientation,last_seen,last_report,identify_until,created_at,no_cec,hide_powered_by,touch,screen_inches,touch_idle_s,layout_id,property_id";
 
-  const S = { me: null, admin: false, orgs: [], props: [], dirs: [], screens: [], layouts: [], tenantCount: {}, tenantText: {}, people: [], page: 0 };
+  const S = { me: null, admin: false, orgs: [], props: [], dirs: [], screens: [], layouts: [], menus: [], tenantCount: {}, tenantText: {}, people: [], page: 0 };
   window.ConsoleState = S;
   const Dev = window.ConsoleDevices;
 
@@ -24,8 +24,11 @@
       Auth.db("tenants?select=directory_id,name"),
     ]);
     // Layouts (DP-11, 29-layout-engine.sql); before 29 is run there are none
-    const layouts = await Auth.db("layouts?select=id,org_id,name,family,orientation,published_version,published_at,updated_at&order=name.asc").catch(() => []);
-    Object.assign(S, { orgs, props, dirs, screens, layouts, tenantCount: {}, tenantText: {} });
+    const LCOLS = "id,org_id,name,family,orientation,published_version,published_at,updated_at";
+    // Menus (DP-12 E2a, 32-menus.sql): each layout's menu, and the menus themselves; before 32 is run there are none
+    const layouts = await Auth.db(`layouts?select=${LCOLS},menu_id&order=name.asc`).catch(() => Auth.db(`layouts?select=${LCOLS}&order=name.asc`)).catch(() => []);
+    const menus = await Auth.db("menus?select=id,org_id,name,customer_edit,rev,updated_at&order=name.asc").catch(() => []);
+    Object.assign(S, { orgs, props, dirs, screens, layouts, menus, tenantCount: {}, tenantText: {} });
     for (const t of tenants) {
       S.tenantCount[t.directory_id] = (S.tenantCount[t.directory_id] || 0) + 1;
       S.tenantText[t.directory_id] = (S.tenantText[t.directory_id] || "") + " " + t.name.toLowerCase();
@@ -35,9 +38,10 @@
   const dir = (id) => S.dirs.find((d) => d.id === id);
   const org = (id) => S.orgs.find((o) => o.id === id);
   const layout = (id) => S.layouts.find((l) => l.id === id);
+  const menu = (id) => S.menus.find((m) => m.id === id);
   /** A screen's building: its directory's, or (a layout screen) its own */
   const screenProp = (s) => { const d = dir(s.directory_id); return d ? prop(d.property_id) : s.property_id ? prop(s.property_id) : null; };
-  window.ConsoleLookup = { prop, dir, org, layout, screenProp };
+  window.ConsoleLookup = { prop, dir, org, layout, menu, screenProp };
   const status = (s) => (!s.last_seen ? "never" : (Date.now() - Date.parse(s.last_seen)) / 60000 <= ONLINE_MIN ? "online" : "offline");
 
   // ── Tabs ──
@@ -56,6 +60,7 @@
     if (name === "health") Dev.loadHealth();
     if (name === "setup") window.ConsoleSetup?.load();
     if (name === "layouts") window.ConsoleLayouts?.show();
+    if (name === "menus") renderMenus();
   }
 
   // ── Screens ──
@@ -91,6 +96,7 @@
         <td>${since(s.last_seen)}</td>
         <td class="actions">
           ${d ? `<a class="ghost" href="/edit.html?d=${d.id}&s=${s.id}">Edit tenants</a>` : ""}
+          ${l && menu(l.menu_id) ? `<a class="ghost" href="/menu-edit.html?m=${l.menu_id}">Edit menu</a>` : ""}
           <a class="ghost" href="/?screen=${encodeURIComponent(s.key)}&view=1" target="_blank" rel="noopener">View</a>
           ${Dev.actionButton(s)}
           ${S.admin ? `<button type="button" class="ghost" data-screen="${s.id}">Settings</button>` : ""}
@@ -319,6 +325,20 @@
   });
 
   // ── Accounts (1Point only) ──
+  // ── Menus (DP-12, round E2a): the customer's lists, one set for every board on it and the phone menu ──
+  function renderMenus() {
+    const n = S.menus.length;
+    $("menu-summary").textContent = `${n} menu${n === 1 ? "" : "s"}`;
+    $("menu-rows").innerHTML = n ? S.menus.map((m) => {
+      const boards = S.layouts.filter((l) => l.menu_id === m.id);
+      return `<tr><td><strong>${esc(m.name)}</strong>${S.admin ? `<div class="sub">${esc(org(m.org_id)?.name || "")}</div>` : ""}</td>
+        <td>${boards.length ? boards.map((l) => esc(l.name)).join("<br>") : `<span class="sub">none yet</span>`}</td>
+        <td>${m.rev ? `Save ${m.rev}<div class="sub">${since(m.updated_at)}</div>` : `<span class="sub">not saved yet</span>`}</td>
+        <td>${m.customer_edit ? "You and 1Point" : "1Point keeps it up to date"}</td>
+        <td class="actions"><a class="ghost" href="/menu-edit.html?m=${m.id}">${m.customer_edit || S.admin ? "Edit menu" : "See menu"}</a></td></tr>`;
+    }).join("") : `<tr><td colspan="5" class="empty-rows">No menus yet. 1Point builds each menu board from your own layout; its lists show here to edit.</td></tr>`;
+  }
+
   function renderAccounts() {
     if (!S.admin) return;
     $("account-summary").textContent = `${S.orgs.length} account${S.orgs.length === 1 ? "" : "s"}`;
@@ -383,6 +403,8 @@
     await Dev.load(S.admin);
     Dev.renderNew(S.screens);
     renderScreens(); renderBuildings(); renderAccounts();
+    $("tab-menus").hidden = !S.admin && !S.menus.length;   // E2a: owners and editors see it once a menu is theirs
+    if (!$("panel-menus").hidden) renderMenus();
     window.ConsoleLayouts?.refreshed();
   }
   window.ConsoleRefresh = refresh;
@@ -405,7 +427,7 @@
       $("who").textContent = `${S.me.full_name || S.me.email} · ${S.admin ? "1Point" : org(S.me.org_id)?.name || ""} · ${roleName(S.me.role)}`;
       if (S.admin) { $("screen-owner").hidden = false; $("screen-owner").innerHTML = `<option value="">All accounts</option>` + orgOptions(); }
       const tab = location.hash.slice(1);
-      showTab(["screens", "buildings", "people", "health", "setup", "layouts", "accounts"].includes(tab) && !document.querySelector(`[data-tab=${tab}]`).hidden ? tab : "screens");
+      showTab(["screens", "buildings", "people", "health", "setup", "layouts", "menus", "accounts"].includes(tab) && !document.querySelector(`[data-tab=${tab}]`).hidden ? tab : "screens");
       // Once a minute, but only while this tab is on screen (a console left open in a background tab costs nothing),
       // and at once when it comes back. An open Pi panel refreshes itself instead (console-devices.js).
       const minuteRefresh = async () => {

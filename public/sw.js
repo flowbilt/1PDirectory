@@ -2,9 +2,10 @@
 // including after a reboot. Only same-origin GET requests are handled.
 // v5 (DP-11, round E1a): the shared screen code and the layout page; a layout's own fonts are kept as they're first used.
 // v6 (E1b): a layout's pictures (/img/), kept once fetched.
-const CACHE = "directory-v6";
+// v7 (DP-12, E2a): the menu format (public/menu-format.mjs), which the layout format loads.
+const CACHE = "directory-v7";
 const SHELL = ["/", "/index.html", "/display.css", "/display.js", "/screen-core.js", "/vendor/qrcode.js",
-  "/board.html", "/board.css", "/board.js", "/layout-format.mjs",
+  "/board.html", "/board.css", "/board.js", "/layout-format.mjs", "/menu-format.mjs",
   "/fonts/InstrumentSans-Regular.ttf", "/fonts/InstrumentSans-Bold.ttf", "/fonts/Lora-Bold.ttf"];
 
 self.addEventListener("install", (e) => {

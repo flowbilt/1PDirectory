@@ -2,6 +2,7 @@
 // uses, with row-level security that mirrors supabase/01-schema.sql. Not a database; good enough to test the app.
 import { createHash, randomUUID } from "node:crypto";
 import { readFileSync } from "node:fs";
+import { checkMenuSpec, checkMenuContent } from "../public/menu-format.mjs";
 
 // Per-screen size ranges, % of standard: 18-sizes.sql (title, logo, brand, welcome) and 22-widget-sizes.sql (news,
 // clock, weather, contacts). A test checks the SQL, the display and the editor all say the same.
@@ -16,7 +17,7 @@ const CODE_ALPHA = "ABCDEFGHJKMNPQRSTUVWXYZ23456789";
 const newCode = () => Array.from({ length: 6 }, () => CODE_ALPHA[Math.floor(Math.random() * CODE_ALPHA.length)]).join("");
 
 export function createFake() {
-  const T = { organizations: [], profiles: [], properties: [], directories: [], tenants: [], screens: [], audit_log: [], devices: [], device_commands: [], device_daily: [], wifi_networks: [], prepare_codes: [], alert_recipients: [], mail_settings: [], togo_scans: [], companies: [], people: [], layouts: [], layout_versions: [], layout_images: [], menu_scans: [] };
+  const T = { organizations: [], profiles: [], properties: [], directories: [], tenants: [], screens: [], audit_log: [], devices: [], device_commands: [], device_daily: [], wifi_networks: [], prepare_codes: [], alert_recipients: [], mail_settings: [], togo_scans: [], companies: [], people: [], layouts: [], layout_versions: [], layout_images: [], menu_scans: [], menus: [], menu_revisions: [] };
   const storage = new Map();   // bucket/path -> { bytes, mime, cacheControl } (E1b)
   const SERVICE_ONLY = new Set(["togo_scans", "devices", "device_commands", "device_daily", "wifi_networks", "prepare_codes", "alert_recipients", "mail_settings", "menu_scans"]); // row-level security on, no policies: server key only
   // Columns of screens signed-in users may read (supabase/06-trust.sql, plus sizes from 18 and no_cec from 21). hardware is server-only.
@@ -100,6 +101,8 @@ export function createFake() {
       case "layouts": return row.org_id === me.org_id;                   // 29-layout-engine.sql
       case "layout_versions": return layoutOrg(row.layout_id) === me.org_id;
       case "layout_images": return row.org_id === me.org_id;            // 30-layout-images.sql
+      case "menus": return row.org_id === me.org_id;                     // 32-menus.sql
+      case "menu_revisions": return T.menus.find((m) => m.id === row.menu_id)?.org_id === me.org_id;
       case "companies": return companyOrg(row.id) === me.org_id;
       case "people": return companyOrg(row.company_id) === me.org_id;
       default: return false;
@@ -110,6 +113,7 @@ export function createFake() {
     if (SERVICE_ONLY.has(table)) return false;
     const me = who.profile; if (!me) return false;
     if (me.role === "platform_admin") return table !== "profiles" && table !== "audit_log" && table !== "layout_versions"   // versions: the site only
+      && table !== "menu_revisions"                                       // 32: revisions only through menu_save
       && !(table === "layout_images" && op !== "update");                // pictures: added and removed by the site only (30)
     if (table === "tenants") return dirOrg(row.directory_id) === me.org_id;
     if (table === "people") return companyOrg(row.company_id) === me.org_id;            // 26-people.sql
@@ -179,7 +183,8 @@ export function createFake() {
     companies: () => ({ id: randomUUID(), show_people: false, show_title: true, show_phone: false, show_email: false, created_at: now(), updated_at: now() }),
     people: () => ({ id: randomUUID(), sort: 0, first_name: "", last_name: "", title: "", phone: "", email: "", suite: "", show: true, created_at: now(), updated_at: now() }),
     layout_images: () => ({ id: randomUUID(), name: "", created_at: now(), created_by: null }),
-    layouts: () => ({ id: randomUUID(), menu_code: newCode(), family: "menu", draft: {}, published_version: null, published_at: null, created_at: now(), updated_at: now(), updated_by: null }),
+    menus: () => ({ id: randomUUID(), customer_edit: true, spec: { lists: [] }, content: { lists: {} }, rev: 0, created_at: now(), updated_at: now(), updated_by: null }),
+    layouts: () => ({ id: randomUUID(), menu_id: null, menu_code: newCode(), family: "menu", draft: {}, published_version: null, published_at: null, created_at: now(), updated_at: now(), updated_by: null }),
     screens: () => ({ id: randomUUID(), directory_id: null, layout_id: null, property_id: null, location_note: "", orientation: "auto", hardware: {}, last_seen: null, last_report: {}, sizes: {}, no_cec: false, traffic_at: null, hide_powered_by: false, touch: false, screen_inches: null, touch_idle_s: 45, created_at: now() }),
     profiles: () => ({ full_name: "", created_at: now() }),
     audit_log: () => ({ id: T.audit_log.length + 1, at: now(), detail: {} }),
@@ -226,7 +231,27 @@ export function createFake() {
     }
     return null;
   }
+  /** guard_menu (32-menus.sql): the lists, a list a published layout shows, then the content, in plain words */
+  function menuRule(row, before) {
+    const sp = checkMenuSpec(row.spec);
+    if (sp.errors.length) return sp.errors[0].msg;
+    if (before && before.org_id !== row.org_id) return "A menu stays with its account.";
+    if (before) {
+      const keys = new Set((row.spec.lists || []).map((l) => l.key));
+      for (const old of before.spec?.lists || []) {
+        if (keys.has(old.key)) continue;
+        const l = T.layouts.find((x) => x.menu_id === row.id && x.published_version != null
+          && (T.layout_versions.find((v) => v.layout_id === x.id && v.version === x.published_version)?.doc?.blocks || []).some((b) => b.content?.list === old.key));
+        if (l) return `The list "${old.key}" is shown by the layout "${l.name}". Take it off that layout (and publish) first.`;
+      }
+    }
+    const pics = new Set(T.layout_images.filter((i) => i.org_id === row.org_id).map((i) => i.key));
+    const c = checkMenuContent(sp.spec, row.content, { images: pics });
+    return c.errors.length ? `${c.errors[0].where}: ${c.errors[0].msg}` : null;
+  }
   function checkRow(table, row, before) {
+    if (table === "menus") { const bad = menuRule(row, before); if (bad) return bad; }
+    if (table === "layouts" && row.menu_id && T.menus.find((m) => m.id === row.menu_id)?.org_id !== row.org_id) return `That menu belongs to a different account from the layout "${row.name}".`;
     if (table === "screens") { const bad = layoutRule(row, before); if (bad) return bad; }
     if (table === "layout_images" && !before && T.layout_images.some((x) => x.org_id === row.org_id && x.key === row.key)) return "duplicate key value violates unique constraint \"layout_images_org_id_key_key\"";
     if (table === "layout_images" && !/^[a-z0-9][a-z0-9-]{0,59}$/.test(String(row.key || ""))) return "new row violates check constraint \"layout_images_key_check\"";
@@ -286,6 +311,7 @@ export function createFake() {
           result.push({ ...existing });
         } else {
           if (table === "layouts" && !who.service && ["draft", "published_version", "published_at", "menu_code"].some((k) => k in item)) return err(403, "permission denied for table layouts");
+          if (table === "menus" && !who.service && ["content", "rev", "updated_by"].some((k) => k in item)) return err(403, "permission denied for table menus");
           const row = { ...(defaults[table]?.() || {}), ...item };
           if (!canWrite(table, "insert", row, who)) return err(403, `new row violates row-level security policy for table "${table}"`);
           const bad = checkRow(table, row); if (bad) return err(409, bad);
@@ -311,13 +337,14 @@ export function createFake() {
         // 29: signed-in users may not write a layout's draft or its published fields (the site does, after its checks)
         if (table === "layouts" && !who.service && ["draft", "published_version", "published_at", "menu_code"].some((k) => k in body)) return err(403, "permission denied for table layouts");
         if (table === "layout_images" && !who.service && Object.keys(body).some((k) => k !== "name")) return err(403, "permission denied for table layout_images");
+        if (table === "menus" && !who.service && ["content", "rev", "updated_by", "org_id"].some((k) => k in body)) return err(403, "permission denied for table menus");
         if (table === "layout_images" && ["key", "path", "org_id", "mime", "width", "height", "bytes"].some((k) => k in body && body[k] !== r[k])) return err(409, "A picture can't be changed once it's uploaded (only its name). Upload the new picture instead.");
       }
       rows.forEach((r) => {
         const before = { ...r };
         const { company_id, ...rest } = body;                     // a tenant's company comes from its name, never from the editor
         Object.assign(r, table === "tenants" ? rest : body);
-        if (table === "properties" || table === "directories") { r.updated_at = now(); r.updated_by = who.uid || null; }
+        if (table === "properties" || table === "directories" || table === "menus") { r.updated_at = now(); if (table !== "menus") r.updated_by = who.uid || null; }
         if (table === "tenants") { linkTenant(r, before); touchDir(r.directory_id, who.uid); }
         if (table === "people") touchCompany(r.company_id, who.uid);
         if (table === "companies" && ["show_people", "show_title", "show_phone", "show_email", "name"].some((k) => before[k] !== r[k])) touchCompany(r.id, who.uid);
@@ -329,6 +356,8 @@ export function createFake() {
       for (const r of rows) if (!canWrite(table, "delete", r, who)) return err(403, `permission denied for table ${table}`);
       if (table === "layouts") for (const r of rows) { const n = T.screens.filter((x) => x.layout_id === r.id).length; if (n) return err(409, `The layout "${r.name}" is shown on ${n} screen(s). Choose something else for those screens first.`); }
       if (table === "layouts") { const ids = new Set(rows.map((r) => r.id)); T.layout_versions = T.layout_versions.filter((v) => !ids.has(v.layout_id)); }
+      if (table === "menus") for (const r of rows) { const n = T.layouts.filter((x) => x.menu_id === r.id).length; if (n) return err(409, `The menu "${r.name}" feeds ${n} layout(s). Choose no menu for them first.`); }
+      if (table === "menus") { const ids = new Set(rows.map((r) => r.id)); T.menu_revisions = T.menu_revisions.filter((v) => !ids.has(v.menu_id)); }
       T[table] = T[table].filter((r) => !rows.includes(r));
       if (table === "tenants") new Set(rows.map((r) => r.directory_id)).forEach((d) => touchDir(d, who.uid));
       if (table === "people") new Set(rows.map((r) => r.company_id)).forEach((c) => touchCompany(c, who.uid));
@@ -353,7 +382,7 @@ export function createFake() {
   const MAX_ROWS = 1000;
   const addDays = (day, n) => new Date(Date.parse(day + "T12:00:00Z") + n * 86400_000).toISOString().slice(0, 10);
   // Functions signed-in users may call (they check access themselves); the rest are server-only
-  const USER_FUNCS = new Set(["set_screen_sizes", "togo_scan_count", "togo_replace_code", "menu_scan_count"]);
+  const USER_FUNCS = new Set(["set_screen_sizes", "togo_scan_count", "togo_replace_code", "menu_scan_count", "menu_save", "menu_restore"]);
   const FUNCS = {
     // Mirror of 18-sizes.sql and 22-widget-sizes.sql (SIZE_RANGES, exported below)
     set_screen_sizes({ p_screen, p_sizes = {} }, who) {
@@ -530,8 +559,10 @@ export function createFake() {
         const row = T.menu_scans.find((x) => x.layout_id === l.id && x.day === day);
         if (row) row.scans++; else T.menu_scans.push({ layout_id: l.id, day, scans: 1 });
       }
+      const m = l.menu_id ? T.menus.find((x) => x.id === l.menu_id) : null;   // 32-menus.sql
       return { layout: { id: l.id, name: l.name, orientation: l.orientation, version: lv.version, doc: lv.doc, menu_code: l.menu_code },
-        images: Object.fromEntries(T.layout_images.filter((i) => i.org_id === l.org_id && JSON.stringify(lv.doc).includes(`"img:${i.key}"`)).map((i) => [i.key, { path: i.path, w: i.width, h: i.height }])),
+        lists: m ? { id: m.id, spec: m.spec, content: m.content } : null,
+        images: Object.fromEntries(T.layout_images.filter((i) => i.org_id === l.org_id && (JSON.stringify(lv.doc) + JSON.stringify(m?.content || {})).includes(`"img:${i.key}"`)).map((i) => [i.key, { path: i.path, w: i.width, h: i.height }])),
         prop: p ? { id: p.id, name: p.name, address: p.address, timezone: p.timezone, lat: p.lat, lon: p.lon, updated_at: p.updated_at } : null };
     },
     menu_scan_count({ p_layout }, who) {
@@ -546,10 +577,31 @@ export function createFake() {
       const i = T.layout_images.find((x) => x.id === p_id);
       if (!i) throw Object.assign(new Error("No such picture."), { status: 404 });
       const says = (doc) => JSON.stringify(doc || {}).includes(`"img:${i.key}"`);
-      const users = T.layouts.filter((l) => l.org_id === i.org_id && (says(l.draft) || T.layout_versions.some((v) => v.layout_id === l.id && says(v.doc))));
-      if (users.length) throw Object.assign(new Error(`The picture "${i.name || i.key}" is used by ${users.map((l) => l.name).join(", ")}, in its draft or a kept version, so it can't be removed (Roll back needs it).`), { status: 400 });
+      const users = [...T.layouts.filter((l) => l.org_id === i.org_id && (says(l.draft) || T.layout_versions.some((v) => v.layout_id === l.id && says(v.doc)))),
+        ...T.menus.filter((m) => m.org_id === i.org_id && (says(m.content) || T.menu_revisions.some((r) => r.menu_id === m.id && says(r.content))))];   // 32
+      if (users.length) throw Object.assign(new Error(`The picture "${i.name || i.key}" is used by ${users.map((l) => l.name).join(", ")}, now or in a kept version, so it can't be removed (Roll back and Restore need it).`), { status: 400 });
       T.layout_images = T.layout_images.filter((x) => x !== i);
       return i.path;
+    },
+    // 32-menus.sql: saving a menu as the signed-in user (menu_write's rules), restoring, and "Make lists" (the site only)
+    menu_save({ p_menu, p_base_rev, p_content }, who) { return menuWrite(p_menu, p_base_rev, p_content, null, who); },
+    menu_restore({ p_menu, p_rev, p_base_rev }, who) {
+      const m = T.menus.find((x) => x.id === p_menu), me = who.profile;
+      if (!m || !(who.service || me?.role === "platform_admin" || me?.org_id === m.org_id)) throw Object.assign(new Error("That menu doesn't exist, or you don't have access to it."), { status: 403 });
+      const old = T.menu_revisions.find((x) => x.menu_id === p_menu && x.rev === p_rev);
+      if (!old) throw Object.assign(new Error(`This menu has no revision ${p_rev}.`), { status: 404 });
+      return menuWrite(p_menu, p_base_rev, old.content, p_rev, who);
+    },
+    menu_create({ p_org, p_name, p_spec, p_content, p_by, p_layout, p_draft }) {
+      const row = { ...defaults.menus(), org_id: p_org, name: p_name, spec: p_spec, content: p_content, rev: 1, updated_by: p_by || null };
+      const bad = menuRule(row, null); if (bad) throw Object.assign(new Error(bad), { status: 400 });
+      const l = p_layout ? T.layouts.find((x) => x.id === p_layout && x.org_id === p_org) : null;
+      if (p_layout && !l) throw Object.assign(new Error("No such layout in that account."), { status: 404 });
+      T.menus.push(row);
+      const pr = T.profiles.find((x) => x.user_id === p_by);
+      T.menu_revisions.push({ menu_id: row.id, rev: 1, content: p_content, saved_at: now(), saved_by: p_by || null, by_name: pr?.full_name || pr?.email || "", by_1point: true, restored_from: null });
+      if (l) Object.assign(l, { menu_id: row.id, draft: p_draft || l.draft, updated_at: now(), updated_by: p_by || null });
+      return row.id;
     },
     // 29-layout-engine.sql: publish and roll back, the site only (not in USER_FUNCS)
     layout_publish({ p_layout, p_doc, p_checks, p_overridden, p_note, p_by }) {
@@ -587,12 +639,14 @@ export function createFake() {
         const l = T.layouts.find((x) => x.id === s.layout_id);
         const lv = l?.published_version != null ? T.layout_versions.find((x) => x.layout_id === l.id && x.version === l.published_version) : null;
         const lp = s.property_id ? T.properties.find((x) => x.id === s.property_id) : null;
-        const etag = createHash("md5").update(["layout", "menu", l.menu_code, s.key, s.name, s.orientation, l.id, l.published_version ?? "-", l.name, s.identify_until || "-", lp?.updated_at || "-", String(!!s.hide_powered_by), String(!!s.touch), s.screen_inches ?? "-", String(s.touch_idle_s ?? 45)].join("|")).digest("hex");
+        const m = l.menu_id ? T.menus.find((x) => x.id === l.menu_id) : null;   // 32-menus.sql
+        const etag = createHash("md5").update([m?.id || "-", m?.rev ?? "-", m?.updated_at || "-", "layout", "menu", l.menu_code, s.key, s.name, s.orientation, l.id, l.published_version ?? "-", l.name, s.identify_until || "-", lp?.updated_at || "-", String(!!s.hide_powered_by), String(!!s.touch), s.screen_inches ?? "-", String(s.touch_idle_s ?? 45)].join("|")).digest("hex");
         if (etag === p_etag) return { etag, not_modified: true };
         return { etag, kind: "layout",
           screen: { key: s.key, name: s.name, orientation: s.orientation, identify_until: s.identify_until ?? null, hide_powered_by: !!s.hide_powered_by, touch: !!s.touch, screen_inches: s.screen_inches ?? null, touch_idle_s: s.touch_idle_s ?? 45 },
           layout: { id: l.id, name: l.name, orientation: l.orientation, version: lv?.version ?? null, doc: lv ? lv.doc : null, menu_code: l.menu_code },
-          images: lv ? Object.fromEntries(T.layout_images.filter((i) => i.org_id === l.org_id && JSON.stringify(lv.doc).includes(`"img:${i.key}"`)).map((i) => [i.key, { path: i.path, w: i.width, h: i.height }])) : {},
+          lists: m ? { id: m.id, spec: m.spec, content: m.content } : null,
+          images: lv ? Object.fromEntries(T.layout_images.filter((i) => i.org_id === l.org_id && (JSON.stringify(lv.doc) + JSON.stringify(m?.content || {})).includes(`"img:${i.key}"`)).map((i) => [i.key, { path: i.path, w: i.width, h: i.height }])) : {},
           prop: lp ? { id: lp.id, name: lp.name, address: lp.address, timezone: lp.timezone, lat: lp.lat, lon: lp.lon, updated_at: lp.updated_at } : null };
       }
       const d = s.directory_id ? T.directories.find((x) => x.id === s.directory_id) : null;
@@ -611,6 +665,22 @@ export function createFake() {
       return { etag, screen: { key: s.key, name: s.name, orientation: s.orientation, identify_until: s.identify_until ?? null, sizes: s.sizes || {}, hide_powered_by: !!s.hide_powered_by, touch: !!s.touch, screen_inches: s.screen_inches ?? null, touch_idle_s: s.touch_idle_s ?? 45 }, dir: d ? { ...d } : null, prop: p ? { ...p } : null, tenants };
     },
   };
+  function menuWrite(id, base, content, from, who) {
+    const m = T.menus.find((x) => x.id === id), me = who.profile;
+    const admin = !!who.service || me?.role === "platform_admin";
+    if (!m || !(admin || (me?.org_id === m.org_id && ["org_admin", "org_editor"].includes(me?.role)))) throw Object.assign(new Error("That menu doesn't exist, or you don't have access to it."), { status: 403 });
+    if (!admin && !m.customer_edit) throw Object.assign(new Error("1Point keeps this menu up to date for you. Contact 1Point for changes."), { status: 403 });
+    if (base !== m.rev) {
+      const last = T.menu_revisions.find((x) => x.menu_id === m.id && x.rev === m.rev);
+      throw Object.assign(new Error(`Someone else saved this menu after you opened it (${last?.by_name || "another user"}). Reload to see their changes, then make yours again.`), { status: 409 });
+    }
+    const next = { ...m, content: content || { lists: {} } };
+    const bad = menuRule(next, m); if (bad) throw Object.assign(new Error(bad), { status: 400 });
+    Object.assign(m, { content: next.content, rev: m.rev + 1, updated_at: now(), updated_by: who.uid || null });
+    const at = now();
+    T.menu_revisions.push({ menu_id: m.id, rev: m.rev, content: m.content, saved_at: at, saved_by: who.uid || null, by_name: me?.full_name || me?.email || "", by_1point: admin, restored_from: from });
+    return { rev: m.rev, saved_at: at };
+  }
   async function rpc(req, name) {
     const who = whoFrom(req);
     if (!who) return err(401, "Invalid API key");

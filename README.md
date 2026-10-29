@@ -7,7 +7,8 @@ Tenant directories for lobby screens, replacing Yodeck and Wix. Hosted on Netlif
 | Address | Who | What |
 |---|---|---|
 | `/login.html` | everyone | Sign in, forgotten password, and setting a password from an invitation or reset email |
-| `/console.html` | signed in | Screens (status, search, orientation, what each shows), Buildings, People, and (1Point only) Health, Pi setup, **Layouts** (DP-11) and Accounts |
+| `/console.html` | signed in | Screens (status, search, orientation, what each shows), Buildings, People, **Menus** (DP-12: 1Point, and an account once a menu is theirs), and (1Point only) Health, Pi setup, **Layouts** (DP-11) and Accounts |
+| `/menu-edit.html?m=…` | signed in | **The menu editor** (DP-12, round E2a): the customer's lists on their boards (see Menus). 1Point always; the account's admins and editors while customer editing is on |
 | `/tech.html` | 1Point | The technician page, sized for a phone: Identify, Reload screen, Reboot Pi, Orientation (called Layout before DP-11), and Wi-Fi search and join. Add it to the phone's home screen |
 | `/edit.html?d=…` | signed in | Edit one directory's tenants, plus its building's shared settings (address, logo, an owner or manager logo, background photo, contacts), with a live preview. **Sizes** (per screen; `&s=` picks the screen, as the console's Edit tenants link does): title, top logo, bottom logo and Bottom line, each 50–250% of standard within limits (`supabase/18-sizes.sql`); and since DP-08 round 10 the clock and date, weather, news and contacts, each 70–150% (`supabase/22-widget-sizes.sql`; a larger news panel grows with its text and still steps aside when the tenants need the room). Only the sliders for parts the screen shows appear. **Since DP-08 round 11:** per directory, **Show traffic map**, **Show drive times** and **Show nearby places** (all off until ticked), and per building the drive time destinations (up to 3) and nearby places (up to 20: name, distance or walking time, a short line); see The information panel. Standard is unchanged; anyone who can see the screen can change them; the screen picks them up within a minute of publishing |
 | `/d/<code>` (and `waytugo.com/d/<code>`) | anyone | **Directory to Go** (DP-08 round 12): the phone page a screen's QR code opens. Read-only: the building, address (with Open in Maps), tenants and suites (a search box for longer directories), contacts (tap to call) and the place lists when the directory shows them; the WayTuGo mark at the bottom. Only for directories with Directory to Go switched on; every open is counted per directory per day (no personal data). waytugo.com forwards `/d/*` here (see The information panel and Directory to Go) |
@@ -247,6 +248,8 @@ address under the layout's name, with how often it's been opened in the last 30 
   On a 55" landscape board on the 24-column grid, 3 × 3 cells is enough.
 - **Links** (E1c): `link` on items, `text`, `photo` and a rotator's pictures: a web address written in full
   (`https://…`, at most 300 characters); only the phone menu uses it.
+- **Lists** (E2a): `list` on `items`, `chips`, `rotator`, `photo`, `text` and `hours` blocks shows a list of the layout's
+  menu (see Menus); `chips` can carry a list `price` beside its heading.
 - **Background picture** (E1b): `theme.background` `{ "image": "img:…", "dim": 0–90 }` (dimmed by the `bg` colour,
   60% unless said). **Guardrail:** text standing straight on a photo or rotator, or on a background dimmed below 60%,
   is a warning; give the block a `surface` (a band behind the text). Blocks in the same place whose `dates` never meet
@@ -263,6 +266,56 @@ address under the layout's name, with how often it's been opened in the last 30 
   `layouts/donut-joes-counter-55.json`; its menu source is `layouts/donut-joes-menu-source.md`. Internal spec only. Since E1c it carries the QR code ("Scan for
   the menu", where the drinks photo was; the drinks joined the hero) and links on the party box and the Joe to Go
   Carafe (to the shop's home page until it has the exact pages).
+
+## Menus (DP-12, round E2a)
+
+WayTuGo builds each board from the company's own layout; the customer edits only what's on its lists: items,
+descriptions, prices, pictures (from the account's pictures; uploading their own comes in E2b), Sold out today, Hide,
+the order, a price over a whole list, the hours, the announcement and the bottom line. Scot's decisions (2026-10-28):
+what they enter fills the board automatically and stays lined up; **changes go live at once, with no approval step**;
+lists are **overbuilt** (room for about 40 when the menu has 30; only filled entries show; past the room is a paid
+**menu expansion**); 1Point can always edit, the customer is the secondary editor; **one set of lists** feeds the
+counter board, the 32" chalkboard and outdoor stand, and the phone menu. List headings stay with 1Point (the customer
+asks the company to change one). Desktop first; the phone version of the editor is a round of its own.
+
+- **A menu** (`supabase/32-menus.sql`, `public/menu-format.mjs`) belongs to an account and feeds every layout that names
+  it. 1Point sets its lists up (the *spec*): each list's `key`, `name` (what the customer sees), `kind` (`items`, `text`
+  with room for 1, or `hours`), `room`, `fields` (the boxes the customer fills: `name line price image tags link`, or
+  `title body link`), `caps` (the most characters per box, so a name can't outgrow its line), `groupPrice` (one price
+  over the list, like "$1.89 each"), `note` (a line under the hours), `hint`. The customer's entries are the *content*.
+- **A layout's block shows a list** with `"list": "<key>"` on an `items`, `chips`, `rotator`, `photo`, `text` or `hours`
+  block (chips can carry a list price too). Its heading, size, colours and place stay in the layout; the content the
+  list gives (items, the list price, a photo's picture and caption, a text's title and body, the hours) can't also be
+  written in the layout. Check and Publish check every list against the layout's menu.
+- **Stays lined up:** an items or chips block keeps its list's full room on the board (invisible rows), so the text is
+  the size the board was designed at, however much is filled in, and adding an item never shrinks the others. The
+  guardrail judges a list block by what its list may hold (a tag can be added any day). The phone menu shows only
+  what's there. **Show the empty room** (in the Layouts preview and the menu editor) draws the room dashed.
+- **Only what's shown:** hidden entries stay in the editor and never leave the site; an item sold out today is struck
+  through with "Sold out" on the boards and the phone, and clears itself at the building's midnight; a featured
+  picture that's sold out steps out of the turns; a list with nothing showing leaves its box out.
+- **Saving** (`menu_save`, called as the signed-in user, so the database decides who may): 1Point always; the account's
+  admins and editors while the menu's **customer editing** is on (off for a full maintenance plan: the editor is then
+  read-only, "1Point keeps this menu up to date for you"). The database refuses past the room ("has room for 16; this
+  has 17. More room is a menu expansion: ask 1Point."), over a box's cap, a box the list doesn't have, a picture from
+  another account, and a save over someone else's newer one ("Someone else saved this menu after you opened it
+  (Front Desk, …). Reload…"). Before saving, the editor draws **every board on the menu** with the changes and refuses a
+  save that would make a list run out of its box, saying which (1Point may **Save anyway**). Saved changes reach the
+  screens within a minute (the screen's answer carries the menu's revision).
+- **History:** every save is kept, whole, with who made it and whether it was 1Point (the terms' errors-and-omissions
+  line); the editor lists what changed in plain lines ("Coffee bar · Cold Brew: price $4.29 → $4.49") and **Restore**
+  puts an earlier save back as a new one. A picture a menu uses, now or in a kept save, can't be removed.
+- **Making a menu (1Point):** on a layout's page in the Layouts tab, **Make lists from this layout** checks the JSON,
+  then offers each items, chips, pictures, text and hours block as a list, with a name and a room (about a third more
+  than it holds now) to change; it makes the menu from what the blocks say, points the blocks at the lists and keeps
+  the draft; Preview and Publish put the board on them. A lone photo stays the layout's unless ticked. Or **use** a
+  menu the account already has (the chalkboard on the counter board's lists). **List settings** edits the spec as JSON
+  (a list a published layout shows can't be taken off; a room can't go below what's in it); **The customer edits it
+  too** switches customer editing.
+- **The Donut Joe's counter board's rooms** (`layouts/donut-joes-counter-55.json`, measured on the board): featured
+  pictures 7, hours 2, donuts 16, pastries 7, coffee 8, Jammin' Joe's 5, fall 4, take some home 4 (40 items of room for
+  the 34 there now). The room costs some text size on this board: donuts 66% → 60%, pastries 73% → 64%, the fall box
+  63% → 59% of their set sizes (worth seeing on a real 55").
 
 ## Screens and cards (Raspberry Pi)
 
@@ -564,7 +617,7 @@ bash tests/kiosk-rotation-test.sh    # the kiosk: address from the serial, rotat
 python3 tests/agent-test.py          # the Pi's agent: schedule, results, reboot, updates, keys, Update Pi, Wi-Fi search and join, the status light, remote support (about 2 minutes)
 python3 tests/button-test.py         # the case button and status light, with key presses through a pipe (about 20 seconds)
 bash tests/setup-test.sh             # setup's options, Wi-Fi import, naming, TV keeper, pointer, HDMI, quiet start, start-up picture and animation, field Wi-Fi setup (seconds)
-node tests/browser-checks.mjs        # in Chromium (Playwright): the layout page, the console's Layouts tab and Pictures, the QR block and the phone menu, Orientation, the directory still working (about a minute)
+node tests/browser-checks.mjs        # in Chromium (Playwright): the layout page, the console's Layouts tab and Pictures, the QR block and the phone menu, menus and the menu editor (as the owner, the editor and 1Point), Orientation, the directory still working (about three minutes; SHOTS=<folder> also saves screenshots of the menu editor)
 node tests/browser-checks.mjs --compare <older public/>   # also: directory screens drawn exactly as by an older copy of public/
 bash tests/sql-test.sh               # every supabase/ file from scratch on a local PostgreSQL 16, each check after its file and again at the end (PGHOST/PGPORT/PGUSER)
 ```
@@ -577,10 +630,10 @@ Local sample logins: `scot@1pointusa.com / admin-pass`, `leighann@barber.test / 
 ## Files
 
 ```
-public/             screen (index.html, display.*; board.* for a layout; screen-core.js, what every screen does, shared by both; layout-format.mjs, the layout format), sign-in, console (+ console-devices.js, console-setup.js, console-layouts.js), editor, technician page (tech.*), shared auth.js
-netlify/functions/  screen, users, config, weather, news, traffic, togo (the Directory to Go page), menu (Take this menu with you: /m/<code> and /api/menu), agent, devices, networks, alert-settings, alerts, layouts (check, preview, publish, roll back; upload and remove pictures)
+public/             screen (index.html, display.*; board.* for a layout; screen-core.js, what every screen does, shared by both; layout-format.mjs, the layout format; menu-format.mjs, the menu format), sign-in, console (+ console-devices.js, console-setup.js, console-layouts.js), editor, menu editor (menu-edit.*), technician page (tech.*), shared auth.js
+netlify/functions/  screen, users, config, weather, news, traffic, togo (the Directory to Go page), menu (Take this menu with you: /m/<code> and /api/menu), agent, devices, networks, alert-settings, alerts, layouts (check, preview, publish, roll back; upload and remove pictures; make lists from a layout)
 netlify/lib/        Supabase client (and Storage), RSS reader, pictures (images.mjs: what a file really is), shared helpers
-supabase/           database schema (01 to 31, run in order), starting data, check queries, setup guide
+supabase/           database schema (01 to 32, run in order), starting data, check queries, setup guide
 migration/          the Yodeck/Wix transcription the starting data was built from
 public/pi/          setup-kiosk.sh, agent.py, startup.png (the start-up picture) and startup/ (the start-up animation), served by the site so Pis can download them
 layouts/            layouts written as data (Donut Joe's Pelham; Donut Joe's counter board, 55" landscape) and the menu source; not deployed, pasted into the console

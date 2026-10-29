@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>Edit menu</title>
+<link rel="stylesheet" href="/admin.css">
+</head>
+<body>
+<!-- The menu editor (DP-12, round E2a): the customer's lists (items, prices, descriptions, specials, pictures, hours,
+     the announcement and the bottom line), for every board on this menu and the phone menu. Saving goes live at once.
+     1Point always; the account's admins and editors while the menu's customer editing is on. -->
+<header class="topbar">
+  <div class="topbar-left">
+    <a href="/console.html#menus" class="ghost" id="back">← Console</a>
+    <strong id="heading" class="brand">Menu</strong>
+  </div>
+  <div class="topbar-right">
+    <span id="saved-line" class="checkin"></span>
+    <button type="button" id="undo" class="ghost" disabled>Undo changes</button>
+    <button type="button" id="save" class="primary" disabled>Save: goes live</button>
+  </div>
+</header>
+<p id="load-error" class="error page-error" hidden></p>
+<p id="readonly" class="menu-banner" hidden>1Point keeps this menu up to date for you. Contact 1Point for changes.</p>
+<div id="save-problems" class="menu-problems" role="alert" hidden></div>
+<div class="workspace wide-preview" id="workspace" hidden>
+  <div class="editor" id="lists"></div>
+  <aside class="preview menu-preview">
+    <div class="preview-head">
+      <label class="field-label" for="board-pick">Preview</label>
+      <select id="board-pick" aria-label="Which board to preview"></select>
+    </div>
+    <div class="preview-box landscape" id="pv-box"><iframe id="pv" title="Board preview" src="about:blank"></iframe></div>
+    <label class="check inline"><input type="checkbox" id="show-room"> Show the empty room</label>
+    <p class="hint" id="pv-note">As the board will show it, with your changes, before you save.</p>
+    <p class="hint" id="phone-line"></p>
+    <h3 class="section-title">History</h3>
+    <p class="hint">Every save is kept. Restore puts an earlier one back on the boards (as a new save).</p>
+    <ol class="menu-history" id="history"></ol>
+  </aside>
+</div>
+<script src="/auth.js"></script>
+<script type="module" src="/menu-edit.js"></script>
+</body>
+</html>
