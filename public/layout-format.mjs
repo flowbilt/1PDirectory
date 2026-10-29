@@ -30,7 +30,25 @@ export const FONTS = {
   "Playfair Display": { css: '"Playfair Display", Georgia, serif', files: [["PlayfairDisplay-Variable.ttf", "400 900"]] },
   "Pacifico":         { css: '"Pacifico", cursive', files: [["Pacifico-Regular.ttf", 400]] },
   "Crimson Pro":      { css: '"Crimson Pro", Georgia, serif', files: [["CrimsonPro-SemiBold.ttf", 600]] },
+  // E2d (DP-13): the chalkboard's hand-drawn lettering (Scot chose it from six, 2026-10-29)
+  "Caveat Brush":     { css: '"Caveat Brush", "Comic Sans MS", cursive', files: [["CaveatBrush-Regular.ttf", 400]] },
 };
+
+// ── Looks (E2d, DP-13): one layout drawn two ways ──
+// "house": the layout's own palette and fonts. "chalkboard": a slate drawn by the screen (no picture to load), chalk
+// colours picked from six for the titles, the prices and the accents (chips, lines, boxes' edges), plain text always
+// white chalk, a chalk grain on the lettering, and an optional wooden frame. The layout says which looks it offers
+// (theme.looks) and its defaults (theme.look, theme.chalk); the customer's choice is kept with the menu
+// (menu-format.mjs, content.boards) and drawn by applyLook below.
+export const LOOKS = { house: "House", chalkboard: "Chalkboard" };
+export const SLATE = "#2a3230";
+export const CHALK = { white: "#f3f1e8", yellow: "#f6dd6b", pink: "#f4a7c1", blue: "#9fd3f0", green: "#a9df9c", orange: "#f6b46a" };
+export const CHALK_NAMES = { white: "White", yellow: "Yellow", pink: "Pink", blue: "Blue", green: "Green", orange: "Orange" };
+export const CHALK_ROLES = { titles: "Titles", prices: "Prices", accents: "Accents" };
+export const LETTERING = { sign: "Sign-writer", hand: "Chalk hand" };
+const LETTER_FONTS = { sign: { display: "Pacifico", item: "Bebas Neue" }, hand: { display: "Caveat Brush", item: "Caveat Brush" } };
+export const CHALK_DEFAULT = { titles: "yellow", prices: "pink", accents: "blue", lettering: "sign", frame: false };
+const OPTION_KEY_RE = /^[a-z0-9][a-z0-9-]{0,39}$/;
 
 /** The palette's names. Each surface has the colour of the text that goes on it ("onAccent" on "accent"). */
 export const PALETTE_KEYS = ["bg", "ink", "muted", "accent", "onAccent", "panel", "onPanel", "highlight", "onHighlight", "line"];
@@ -59,7 +77,7 @@ export const TYPES = {
   chips:     { heading: ["text", 60], price: ["text", 24], items: ["list", 60, { name: ["text", 80], tags: ["tags"] }], list: ["listkey"] },
   price:     { label: ["text", 20], price: ["text", 16], note: ["text", 30] },
   photo:     { image: ["image"], alt: ["text", 120], caption: ["text", 80], line: ["text", 120], price: ["text", 16], fit: ["enum", ["cover", "contain"]], focus: ["enum", FOCUS], link: ["link"], list: ["listkey"] },
-  logo:      { image: ["image"], text: ["text", 60] },
+  logo:      { image: ["image"], text: ["text", 60], chalkImage: ["image"] },   // E2d: a light logo for the chalkboard (else the name in chalk)
   // E1b: several pictures taking turns, each with its own caption, line and price
   rotator:   { seconds: ["int", 4, 60], fit: ["enum", ["cover", "contain"]], focus: ["enum", FOCUS],
                items: ["list", 12, { image: ["image"], alt: ["text", 120], caption: ["text", 80], line: ["text", 120], price: ["text", 16], link: ["link"] }], list: ["listkey"] },
@@ -106,7 +124,7 @@ export function checkLayout(input, ctx = {}) {
   const warn = (where, msg, kind) => warnings.push({ where, msg, kind });
   if (!isObj(input)) { err("layout", "A layout is a JSON object: { \"format\": 1, \"orientation\": …, \"grid\": …, \"theme\": …, \"blocks\": [ … ] }."); return { errors, warnings, doc: null }; }
   const known = (obj, keys, where) => { for (const k of Object.keys(obj)) if (!keys.includes(k)) err(where, `"${k}" isn't something a layout can say here (allowed: ${keys.join(", ")}).`); };
-  known(input, ["format", "orientation", "grid", "viewing", "theme", "blocks", "name", "notes"], "layout");
+  known(input, ["format", "orientation", "grid", "viewing", "theme", "blocks", "name", "notes", "options"], "layout");
   if (input.format !== FORMAT) err("format", `"format" must be ${FORMAT}.`);
   const orientation = input.orientation;
   if (!["portrait", "landscape"].includes(orientation)) err("orientation", "\"orientation\" must be \"portrait\" or \"landscape\".");
@@ -131,7 +149,7 @@ export function checkLayout(input, ctx = {}) {
   // Theme
   const th = isObj(input.theme) ? input.theme : {};
   if (input.theme !== undefined && !isObj(input.theme)) err("theme", "\"theme\" is { \"palette\": { … }, \"fonts\": { … } }.");
-  else if (isObj(input.theme)) known(th, ["palette", "fonts", "background"], "theme");
+  else if (isObj(input.theme)) known(th, ["palette", "fonts", "background", "looks", "look", "chalk"], "theme");
   const palette = { ...DEFAULT_PALETTE };
   if (th.palette !== undefined) {
     if (!isObj(th.palette)) err("theme.palette", "The palette is { \"bg\": \"#ffffff\", \"ink\": \"#1b1f24\", … }.");
@@ -151,6 +169,43 @@ export function checkLayout(input, ctx = {}) {
     }
   }
   if (th.fonts && fonts.accent === "Instrument Sans" && !th.fonts.accent) fonts.accent = fonts.display;
+
+  // E2d: the looks the layout offers, and its defaults (1Point's); the customer picks among them in the menu editor
+  let looks = ["house"], look = "house";
+  if (th.looks !== undefined) {
+    if (!Array.isArray(th.looks) || !th.looks.length || th.looks.some((x) => !LOOKS[x])) err("theme.looks", `"looks" is the looks this board offers, from: ${Object.keys(LOOKS).join(", ")}.`);
+    else looks = [...new Set(th.looks)];
+  }
+  if (th.look !== undefined) {
+    if (!LOOKS[th.look]) err("theme.look", `"look" is one of: ${Object.keys(LOOKS).join(", ")}.`);
+    else if (!looks.includes(th.look)) err("theme.look", `"look" is "${th.look}", which isn't among its "looks".`);
+    else look = th.look;
+  } else if (!looks.includes(look)) look = looks[0];
+  const chalk = { ...CHALK_DEFAULT };
+  if (th.chalk !== undefined) {
+    if (!isObj(th.chalk)) err("theme.chalk", "\"chalk\" is { \"titles\": \"yellow\", \"prices\": \"pink\", \"accents\": \"blue\", \"lettering\": \"sign\", \"frame\": false }.");
+    else for (const [k, v] of Object.entries(th.chalk)) {
+      if (CHALK_ROLES[k]) { if (!CHALK[v]) err(`theme.chalk.${k}`, `${k} is a chalk colour: ${Object.keys(CHALK).join(", ")}.`); else chalk[k] = v; }
+      else if (k === "lettering") { if (!LETTERING[v]) err("theme.chalk.lettering", `lettering is ${Object.keys(LETTERING).map((x) => `"${x}"`).join(" or ")}.`); else chalk.lettering = v; }
+      else if (k === "frame") { if (typeof v !== "boolean") err("theme.chalk.frame", "frame is true or false."); else chalk.frame = v; }
+      else err(`theme.chalk.${k}`, `"${k}" isn't part of chalk (titles, prices, accents, lettering, frame).`);
+    }
+  }
+  // E2d: the board's options (Scot: a tick box such as "Show the coffee bar"); a block says which way it shows with
+  // "showWhen": { "option": "coffee-bar", "is": "on" | "off" }, so 1Point can lay out both arrangements
+  const options = [];
+  if (input.options !== undefined) {
+    if (!Array.isArray(input.options) || input.options.length > 6) err("options", "\"options\" is a list of up to 6: [ { \"key\": \"coffee-bar\", \"label\": \"Show the coffee bar\", \"default\": false } ].");
+    else input.options.forEach((o, i) => {
+      const at = `option ${i + 1}`;
+      if (!isObj(o) || Object.keys(o).some((k) => !["key", "label", "default"].includes(k))) { err(at, "An option is { \"key\", \"label\", \"default\" }."); return; }
+      if (typeof o.key !== "string" || !OPTION_KEY_RE.test(o.key)) { err(at, "Its \"key\" is lowercase letters, numbers and dashes, up to 40."); return; }
+      if (options.some((x) => x.key === o.key)) { err(at, `Two options share the key "${o.key}".`); return; }
+      if (typeof o.label !== "string" || !o.label.trim() || o.label.length > 60) { err(at, "Its \"label\" is what the customer sees by the tick box (up to 60 characters)."); return; }
+      if (o.default !== undefined && typeof o.default !== "boolean") { err(at, "\"default\" is true or false."); return; }
+      options.push({ key: o.key, label: o.label.trim(), default: o.default === true });
+    });
+  }
 
   // Blocks
   const blocks = [];
@@ -188,8 +243,14 @@ export function checkLayout(input, ctx = {}) {
     const when = checkWhen(b.when, where, err);
     if (b.on !== undefined && typeof b.on !== "boolean") err(where, "\"on\" is true or false.");
     // E2b: shows only while one of the menu's lists has nothing on ("empty") or something on ("showing")
+    // E2d: or while one of the board's options is on or off
     let showWhen = null;
-    if (b.showWhen !== undefined) {
+    if (b.showWhen !== undefined && isObj(b.showWhen) && "option" in b.showWhen) {
+      const sw = b.showWhen;
+      if (Object.keys(sw).some((k) => !["option", "is"].includes(k)) || !["on", "off"].includes(sw.is)) err(where, "\"showWhen\" for an option is { \"option\": \"coffee-bar\", \"is\": \"on\" } or \"off\".");
+      else if (!options.some((o) => o.key === sw.option)) err(where, `Its showWhen names the option "${sw.option}", which isn't among the layout's "options".`);
+      else showWhen = { option: sw.option, is: sw.is };
+    } else if (b.showWhen !== undefined) {
       const sw = b.showWhen;
       if (!isObj(sw) || Object.keys(sw).some((k) => !["list", "is"].includes(k)) || typeof sw.list !== "string" || !/^[a-z0-9][a-z0-9-]{0,39}$/.test(sw.list) || !["empty", "showing"].includes(sw.is))
         err(where, "\"showWhen\" is { \"list\": \"fall\", \"is\": \"empty\" } or { \"list\": \"fall\", \"is\": \"showing\" }.");
@@ -213,9 +274,49 @@ export function checkLayout(input, ctx = {}) {
       if (image) background = { image, dim: dim ?? 60 };
     }
   }
-  const doc = { format: FORMAT, orientation, grid, viewing, theme: { palette, fonts, ...(background ? { background } : {}) }, blocks };
-  if (!errors.length) guardrails(doc, warn, ctx);
+  const doc = { format: FORMAT, orientation, grid, viewing, theme: { palette, fonts, ...(background ? { background } : {}), looks, look, chalk }, options, blocks };
+  if (!errors.length) {
+    guardrails(doc, warn, ctx);
+    // E2d: the chalkboard drawn with its default colours is checked too (every chalk colour passes on slate, so this
+    // only speaks when a layout's own palette is used on it somewhere)
+    if (looks.includes("chalkboard") && look !== "chalkboard") guardrails(applyLook(doc, { look: "chalkboard" }), (w, m, k) => warn(w, `On the chalkboard: ${m}`, k), ctx);
+  }
   return { errors, warnings, doc };
+}
+
+/** E2d: the board's look and options as drawn: the layout's defaults, with the customer's choice (menu content.boards
+ *  [layout id]) where it's one the layout offers. Returns { look, chalk: { titles, prices, accents, lettering, frame },
+ *  options: { key: true|false } }. */
+export function boardChoice(doc, choice) {
+  const th = doc?.theme || {}, looks = th.looks || ["house"], c = isObj(choice) ? choice : {};
+  const look = LOOKS[c.look] && looks.includes(c.look) ? c.look : th.look || looks[0];
+  const chalk = { ...CHALK_DEFAULT, ...(th.chalk || {}) };
+  const cc = isObj(c.chalk) ? c.chalk : {};
+  for (const k of Object.keys(CHALK_ROLES)) if (CHALK[cc[k]]) chalk[k] = cc[k];
+  if (LETTERING[c.lettering]) chalk.lettering = c.lettering;
+  if (typeof c.frame === "boolean") chalk.frame = c.frame;
+  const options = {};
+  for (const o of doc?.options || []) options[o.key] = typeof c.options?.[o.key] === "boolean" ? c.options[o.key] : o.default;
+  return { look, chalk, options };
+}
+
+/** E2d: whether a layout offers the customer anything to choose (a second look, or an option). */
+export const offersChoice = (doc) => (doc?.theme?.looks || []).length > 1 || (doc?.options || []).length > 0;
+
+/** E2d: the layout as drawn with a look and options chosen: on the chalkboard its palette and fonts become the chalk
+ *  ones; blocks shown for an option the other way are switched off. doc.look says what was drawn (board.js styles the
+ *  slate, grain and frame from it). */
+export function applyLook(doc, choice) {
+  if (!doc) return doc;
+  const ch = boardChoice(doc, choice);
+  const blocks = doc.blocks.map((b) => (b.showWhen?.option ? { ...b, on: b.on !== false && (ch.options[b.showWhen.option] === true) === (b.showWhen.is === "on") } : b));
+  if (ch.look !== "chalkboard") return { ...doc, blocks, look: { ...ch, item: null } };
+  const t = CHALK[ch.chalk.titles], pr = CHALK[ch.chalk.prices], ac = CHALK[ch.chalk.accents], lf = LETTER_FONTS[ch.chalk.lettering];
+  const palette = { bg: SLATE, ink: CHALK.white, muted: "#c9cbc2", accent: "#343e3b", onAccent: CHALK.white, panel: "#343e3b", onPanel: CHALK.white,
+    highlight: "#343e3b", onHighlight: CHALK.white, line: ac };   // a band (surface) on the slate is outlined in the accent chalk (board.css)
+  // On the slate every block's text is chalk: a block's own ink ("muted" and the like) maps to the chalk palette above
+  return { ...doc, blocks, theme: { ...doc.theme, palette, fonts: { display: lf.display, body: "Instrument Sans", accent: lf.display }, background: undefined },
+    look: { ...ch, item: lf.item, colours: { titles: t, prices: pr, accents: ac } } };
 }
 
 function checkStyle(s, where, err) {
@@ -360,8 +461,10 @@ function smallestShare(b, list) {
 /** Whether two blocks ever show at the same moment (each day of the week, every 15 minutes; date ranges left aside). */
 function everTogether(a, b) {
   // E2b: a block shown only while a list is empty is never on with one that shows that list, or that needs it showing
-  const needs = (x) => [x.content?.list ? [x.content.list, "showing"] : null, x.showWhen ? [x.showWhen.list, x.showWhen.is] : null].filter(Boolean);
+  const needs = (x) => [x.content?.list ? [x.content.list, "showing"] : null, x.showWhen?.list ? [x.showWhen.list, x.showWhen.is] : null].filter(Boolean);
   for (const [k1, is1] of needs(a)) for (const [k2, is2] of needs(b)) if (k1 === k2 && is1 !== is2) return false;
+  // E2d: a block shown with an option on is never on with one shown with it off
+  if (a.showWhen?.option && a.showWhen.option === b.showWhen?.option && a.showWhen.is !== b.showWhen.is) return false;
   if (!a.when?.length || !b.when?.length) return true;
   // E1b: two entries whose date ranges never meet are never on together (a fall box and the box that follows it)
   const apart = (x, y) => x.dates && y.dates && ((x.dates.to && y.dates.from && x.dates.to < y.dates.from) || (y.dates.to && x.dates.from && y.dates.to < x.dates.from));

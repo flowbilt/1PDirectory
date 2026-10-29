@@ -378,6 +378,40 @@ asks the company to change one). Desktop first; the phone version of the editor 
   change whether a list fits. Display 2.21.0. **2.21.1** (Scot: the first mark was muddy): a small, solid red *Sold out*
   with a thin white edge, the price under it hidden.
 
+### E2d (DP-13): the chalkboard, looks and options
+
+- **One layout, two looks** (`theme.looks: ["house", "chalkboard"]`, the default `theme.look`, and `theme.chalk`
+  `{ titles, prices, accents, lettering, frame }`): **House** is the layout's own palette and fonts (the chalkboard
+  copies the counter board's); **Chalkboard** is a slate drawn by the screen (no picture), plain text in white chalk,
+  chalk colours from six (white, yellow, pink, blue, green, orange; each passes the contrast check on slate) for the
+  **titles**, the **prices** and the **accents** (chips, lines, the edges of boxes), **Sign-writer** lettering (Pacifico
+  titles, Bebas Neue items) or **Chalk hand** (Caveat Brush, OFL, from google/fonts), a chalk grain over the lettering,
+  and an optional **wooden frame**. On the slate a logo shows its `chalkImage` (a light version) if the layout has one,
+  else the name in chalk. `layout-format.mjs`: `applyLook`, `boardChoice`, `offersChoice`.
+- **Options by tick box** (`"options": [{ "key": "coffee-bar", "label": "Show the coffee bar", "default": false }]`): a
+  block says which way it shows, `"showWhen": { "option": "coffee-bar", "is": "on" | "off" }`, so 1Point lays out both
+  arrangements (on the chalkboard, Today's specials takes the full width with the coffee bar off, and shares it with
+  the coffee bar when on). Blocks for the two states are never counted as overlapping.
+- **Who picks:** the customer (while customer editing is on) and WayTuGo, in the menu editor's **Board look** panel, one
+  per board whose layout offers choices; the preview follows at once, the fit is checked as for any change, and **Back
+  to WayTuGo's design** clears the choice. Saved with the menu as `content.boards[<layout id>]`
+  (`supabase/35-board-looks.sql`; only the presets are accepted, in plain words), in History ("Board look (Donut Joe's
+  chalkboard): titles chalk (as designed) → green"), kept by Restore and by Add lists from this layout. Screens get it
+  as `look` beside `lists`; the phone menu draws in it too. The outdoor stand shows the same layout on its own screen, so
+  it always matches.
+- **The chalk grain and its speed:** a small speckled tile made once on a canvas and laid over the lettering as a mask
+  (chosen over a live SVG filter). Each layout screen measures how long it took to draw and the frame rate over 20
+  seconds while its pictures turn, and sends it with the check-in (`X-Board`); the Pi panel shows a **Board** line:
+  "Drawn in 1.4 s · pictures change at 60 fps · Chalkboard with the chalk grain · nothing overflowing" (also any block
+  whose text doesn't fit: E1's open item, the overflow report). Below 25 frames a second the grain is dropped on that
+  screen, and the line says so.
+- **Sold out on a name that wraps** (Scot, DP-13): the mark is anchored to the name's last line. Display **2.22.0**.
+- **The Donut Joe's chalkboard** (`layouts/donut-joes-chalkboard-32.json`, then `donut-joes-chalkboard-32-lists.json`):
+  32" portrait, 12 × 24, on the counter board's menu: featured pictures, **Today's specials** (its own list, room 6),
+  the **chalk note** (its own, one line), Fall flavors or Take some home, Jammin' Joe's, the announcement, hours and the
+  phone-menu QR; the coffee bar by tick box. Step 1 is pasted to Add lists from this layout; step 2 is the board on
+  its lists.
+
 ## Screens and cards (Raspberry Pi)
 
 Every Pi runs from a **prepared card**, and every card is the same. A card carries no identity until it's in a Pi:
@@ -694,9 +728,9 @@ Local sample logins: `scot@1pointusa.com / admin-pass`, `leighann@barber.test / 
 public/             screen (index.html, display.*; board.* for a layout; screen-core.js, what every screen does, shared by both; layout-format.mjs, the layout format; menu-format.mjs, the menu format), sign-in, console (+ console-devices.js, console-setup.js, console-layouts.js), editor, menu editor (menu-edit.*), technician page (tech.*), shared auth.js
 netlify/functions/  screen, users, config, weather, news, traffic, togo (the Directory to Go page), menu (Take this menu with you: /m/<code> and /api/menu), agent, devices, networks, alert-settings, alerts, layouts (check, preview, publish, roll back; upload and remove pictures; make lists from a layout)
 netlify/lib/        Supabase client (and Storage), RSS reader, pictures (images.mjs: what a file really is), shared helpers
-supabase/           database schema (01 to 33, run in order), starting data, check queries, setup guide
+supabase/           database schema (01 to 35, run in order), starting data, check queries, setup guide
 migration/          the Yodeck/Wix transcription the starting data was built from
 public/pi/          setup-kiosk.sh, agent.py, startup.png (the start-up picture) and startup/ (the start-up animation), served by the site so Pis can download them
-layouts/            layouts written as data (Donut Joe's Pelham; Donut Joe's counter board, 55" landscape, and the same board on its lists, E2b) and the menu source; not deployed, pasted into the console
+layouts/            layouts written as data (Donut Joe's Pelham; Donut Joe's counter board, 55" landscape, and the same board on its lists, E2b; the 32" portrait chalkboard, E2d, steps 1 and 2) and the menu source; not deployed, pasted into the console
 tests/              function tests, fake Supabase, local test server, browser checks, the SQL runner and its Supabase stand-in
 ```

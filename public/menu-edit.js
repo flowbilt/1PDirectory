@@ -13,9 +13,13 @@
 // E2c: Your pictures: the account's own pictures (upload, rename, remove one that isn't on the boards; the room per
 // account, "12 of 100"); an item's picture is chosen in a picker with thumbnails, where a new one can be uploaded too
 // (/api/pictures). Restoring a save whose picture has since been removed brings the item back without it, and says so.
+// E2d (DP-13): Board look: for each board whose layout offers choices (the chalkboard: House or Chalkboard, chalk colours
+// from six for titles, prices and accents, Sign-writer or Chalk hand lettering, the wooden frame, and options such as
+// "Show the coffee bar"), the customer (and WayTuGo) picks them here; they're saved with the menu (content.boards),
+// shown in the preview at once, checked for fit like any change, and kept in History.
 import { checkMenuContent, menuChanges, newEntryId, capOf, shownEntries, describeWhen, entryStatus, menuPictureKeys, ITEM_TAGS, FIELD_LABEL } from "/menu-format.mjs";
 import { shrink, asDataUrl, niceName } from "/picture-shrink.mjs";
-import { zonedNow } from "/layout-format.mjs";
+import { zonedNow, checkLayout, boardChoice, offersChoice, LOOKS, CHALK, CHALK_NAMES, CHALK_ROLES, LETTERING } from "/layout-format.mjs";
 const nowHere = () => zonedNow(Date.now(), E.tz);
 
 const { esc, toast, since } = window.UI;
@@ -53,7 +57,8 @@ async function load() {
   E.boards = live.map((l) => {
     const sc = screens.find((s) => s.layout_id === l.id && s.property_id);
     const prop = props.find((p) => p.id === sc?.property_id) || props[0] || null;
-    return { ...l, doc: versions.find((v) => v.layout_id === l.id && v.version === l.published_version)?.doc || null, prop };
+    const doc = versions.find((v) => v.layout_id === l.id && v.version === l.published_version)?.doc || null;
+    return { ...l, doc, checked: doc ? checkLayout(doc).doc : null, prop };   // E2d: checked, for its looks and options
   }).filter((b) => b.doc);
   E.tz = E.boards[0]?.prop?.timezone || props[0]?.timezone || "America/Chicago";
   await loadHistory();
@@ -66,6 +71,7 @@ function normalise(content) {
   const out = { lists: {} };
   for (const L of E.spec.lists || []) out.lists[L.key] = clone(content?.lists?.[L.key] || { entries: [] });
   for (const L of E.spec.lists || []) out.lists[L.key].entries ||= [];
+  out.boards = clone(content?.boards || {});   // E2d
   return out;
 }
 
@@ -155,8 +161,28 @@ function listHtml(L) {
     <p class="me-nofit" role="status"${nofit ? "" : " hidden"}>${nofit ? esc(nofitText(nofit)) : ""}</p>
     ${L.hint ? `<p class="hint">${esc(L.hint)}</p>` : ""}${top}${body}</section>`;
 }
+// ── Board look (E2d): a board's look and options, from the presets its layout offers ──
+function lookHtml(b) {
+  const doc = b.checked, ch = boardChoice(doc, E.draft.boards?.[b.id]), mine = E.draft.boards?.[b.id] && Object.keys(E.draft.boards[b.id]).length;
+  const looks = doc.theme.looks || ["house"], chalk = ch.look === "chalkboard";
+  const radio = (name, val, label, on) => `<label class="me-choice${on ? " is-on" : ""}"><input type="radio" name="${esc(name)}" data-look-f="${esc(name.split(":")[0])}" value="${esc(val)}"${on ? " checked" : ""}> ${esc(label)}</label>`;
+  const swatches = (role) => `<div class="me-swatches" role="radiogroup" aria-label="${esc(CHALK_ROLES[role])} chalk">${Object.entries(CHALK).map(([k, hex]) =>
+    `<label class="me-swatch${ch.chalk[role] === k ? " is-on" : ""}" title="${esc(CHALK_NAMES[k])}"><input type="radio" name="chalk-${role}:${b.id}" data-look-f="chalk" data-role="${role}" value="${k}"${ch.chalk[role] === k ? " checked" : ""}>`
+    + `<span style="background:${hex}"></span><em>${esc(CHALK_NAMES[k])}</em></label>`).join("")}</div>`;
+  return `<section class="panel me-look" data-board="${esc(b.id)}">
+    <div class="panel-head"><h2>Board look <span class="sub">· ${esc(b.name)}</span></h2></div>
+    <p class="hint">Choose how this board looks. Every choice here is made to read well on the board; the preview shows it before you save.</p>
+    ${looks.length > 1 ? `<div class="me-look-row"><span class="me-look-label">Look</span>${looks.map((l) => radio(`look:${b.id}`, l, LOOKS[l], ch.look === l)).join("")}</div>` : ""}
+    ${chalk ? Object.keys(CHALK_ROLES).map((r) => `<div class="me-look-row"><span class="me-look-label">${esc(CHALK_ROLES[r])}</span>${swatches(r)}</div>`).join("")
+      + `<div class="me-look-row"><span class="me-look-label">Lettering</span>${Object.entries(LETTERING).map(([k, lbl]) => radio(`lettering:${b.id}`, k, lbl, ch.chalk.lettering === k)).join("")}</div>`
+      + `<div class="me-look-row"><span class="me-look-label">Frame</span><label class="check inline"><input type="checkbox" data-look-f="frame"${ch.chalk.frame ? " checked" : ""}> Wooden frame around the board</label></div>` : ""}
+    ${(doc.options || []).length ? `<div class="me-look-row"><span class="me-look-label">Show</span>${doc.options.map((o) => `<label class="check inline"><input type="checkbox" data-look-f="option" data-opt="${esc(o.key)}"${ch.options[o.key] ? " checked" : ""}> ${esc(o.label)}</label>`).join("")}</div>` : ""}
+    ${mine ? `<button type="button" class="ghost" data-look-reset>Back to WayTuGo's design</button>` : ""}
+  </section>`;
+}
 function drawLists() {
   $("lists").innerHTML = `<p class="hint me-intro">Change what's on your boards here. The layout, headings, colours and sizes are set by WayTuGo; ask WayTuGo to change them, or for more room on a list.</p>`
+    + E.boards.filter((b) => b.checked && offersChoice(b.checked)).map(lookHtml).join("")
     + (E.spec.lists || []).map(listHtml).join("");
   if (!canEdit()) $("lists").querySelectorAll("input, select, textarea, button").forEach((x) => (x.disabled = true));
   dirty();
@@ -252,6 +278,28 @@ $("lists").addEventListener("click", (ev) => {
   schedulePreview();
 });
 
+// E2d: a board's look and options
+$("lists").addEventListener("change", (ev) => {
+  const t = ev.target, sec = t.closest(".me-look"); if (!sec || !t.dataset.lookF) return;
+  const id = sec.dataset.board, b = E.boards.find((x) => x.id === id); if (!b) return;
+  E.draft.boards ||= {};
+  const c = E.draft.boards[id] = { ...(E.draft.boards[id] || {}) };
+  const f = t.dataset.lookF;
+  if (f === "look") c.look = t.value;
+  else if (f === "chalk") c.chalk = { ...(c.chalk || {}), [t.dataset.role]: t.value };
+  else if (f === "lettering") c.lettering = t.value;
+  else if (f === "frame") c.frame = t.checked;
+  else if (f === "option") c.options = { ...(c.options || {}), [t.dataset.opt]: t.checked };
+  showBoard(id); drawLists(); schedulePreview();
+});
+$("lists").addEventListener("click", (ev) => {
+  const btn = ev.target.closest("[data-look-reset]"); if (!btn) return;
+  const id = btn.closest(".me-look").dataset.board;
+  delete E.draft.boards[id]; showBoard(id); drawLists(); schedulePreview();
+});
+/** The preview turns to the board being changed */
+function showBoard(id) { if ($("board-pick").value !== id && E.boards.some((b) => b.id === id)) { $("board-pick").value = id; $("phone-line").innerHTML = phoneLine(E.boards.find((b) => b.id === id)); } }
+
 /** What a save sends: blank new rows left out, a sold-out mark from another day dropped, empty values left out */
 function tidy(content) {
   const out = { lists: {} };
@@ -272,6 +320,18 @@ function tidy(content) {
     if (C.note?.trim()) o.note = C.note.trim();
     if (entries.length || o.price || o.note) out.lists[L.key] = o;
   }
+  // E2d: the boards' looks, each only with what was chosen (nothing chosen: the layout's own design)
+  const boards = {};
+  for (const [id, b] of Object.entries(content.boards || {})) {
+    const x = {};
+    if (b?.look) x.look = b.look;
+    if (b?.chalk && Object.keys(b.chalk).length) x.chalk = { ...b.chalk };
+    if (b?.lettering) x.lettering = b.lettering;
+    if (typeof b?.frame === "boolean") x.frame = b.frame;
+    if (b?.options && Object.keys(b.options).length) x.options = { ...b.options };
+    if (Object.keys(x).length) boards[id] = x;
+  }
+  if (Object.keys(boards).length) out.boards = boards;
   return out;
 }
 const same = () => JSON.stringify(tidy(E.draft)) === JSON.stringify(tidy(E.saved));
@@ -307,7 +367,7 @@ window.addEventListener("message", (ev) => {
 function payload(board, content) {
   const images = Object.fromEntries(E.pics.map((p) => [p.key, { url: `/img/${p.path}`, w: 0, h: 0 }]));
   return { kind: "layout", key: "preview", orientation: board.orientation, layout: { id: board.id, name: board.name, version: board.published_version, doc: board.doc },
-    images, menu: { url: E.menuBase + board.menu_code }, lists: { id: E.menu.id, spec: E.spec, content },
+    images, menu: { url: E.menuBase + board.menu_code }, lists: { id: E.menu.id, spec: E.spec, content }, look: content.boards?.[board.id] || null,
     propertyName: board.prop?.name || "", timezone: board.prop?.timezone || E.tz, weather: { enabled: false }, poweredBy: true };
 }
 function fitFrame() {
@@ -440,7 +500,7 @@ function drawHistory() {
   const revs = E.revs;
   $("history").innerHTML = revs.length ? revs.map((r, i) => {
     const prev = revs[i + 1];
-    const lines = prev ? menuChanges(E.spec, prev.content, r.content, 8) : ["The menu's first lists"];
+    const lines = prev ? menuChanges(E.spec, prev.content, r.content, 8, Object.fromEntries(E.boards.map((b) => [b.id, b.name]))) : ["The menu's first lists"];
     const restoredNote = r.restored_from ? ` · restored save ${r.restored_from}` : "";
     return `<li><div class="mh-head"><strong>Save ${r.rev}</strong> <span class="sub">${esc(since(r.saved_at))}${r.by_name ? ` · ${esc(r.by_name)}` : ""}${r.by_1point ? " (WayTuGo)" : ""}${restoredNote}</span>
         ${i === 0 ? `<span class="sub">· on the boards now</span>` : canEdit() ? `<button type="button" class="ghost" data-restore="${r.rev}">Restore</button>` : ""}</div>

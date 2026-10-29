@@ -10,9 +10,9 @@
 // applyMenu (public/menu-format.mjs): only the entries shown, sold out today marked, and an items or chips list keeping
 // the room for its full length (invisible rows), so the text stays the size it was designed at however much is filled.
 import { applyMenu, menuMoment } from "/menu-format.mjs";
-import { checkLayout, canvas, blockBox, blockShows, zonedNow, hoursNow, nowNext, niceTime, niceDays, FONTS, SIZES, SURFACES, STYLE_PX, TAGS, QR_LINE, qrSide } from "/layout-format.mjs";
+import { checkLayout, applyLook, canvas, blockBox, blockShows, zonedNow, hoursNow, nowNext, niceTime, niceDays, FONTS, SIZES, SURFACES, STYLE_PX, TAGS, QR_LINE, qrSide } from "/layout-format.mjs";
 
-const VERSION = "2.21.1";   // = netlify/lib/version.mjs and display.js (a test keeps them equal)
+const VERSION = "2.22.0";   // = netlify/lib/version.mjs and display.js (a test keeps them equal)
 const C = window.ScreenCore;
 const { PREVIEW, CHECKS_IN, MENU, cache, esc } = C;
 const $ = (id) => document.getElementById(id);
@@ -111,7 +111,10 @@ const BODY = {
     }).join("");
   },
   logo(b) {
-    const src = picture(b.content.image), text = b.content.text || data?.propertyName || "";
+    // E2d: on the chalkboard a dark logo would vanish on the slate: its light version if the layout has one, else the
+    // name written in chalk
+    const chalk = doc.look?.look === "chalkboard";
+    const src = chalk ? picture(b.content.chalkImage) : picture(b.content.image), text = b.content.text || data?.propertyName || "";
     return src ? `<img class="logo-img" src="${esc(src)}" alt="${esc(text)}">` : `<div class="b-logo ${titleClass(b)}">${esc(text)}</div>`;
   },
   clock(b) { return `<div class="b-clock" data-live="clock" data-show="${b.content.show || "both"}"></div>`; },
@@ -157,7 +160,8 @@ function blockHtml(b) {
     `--valign:${{ top: "flex-start", middle: "center", bottom: "flex-end" }[b.style.valign || "top"]}`, `--fs:${SIZES[b.style.size || "m"]}px`];
   if (b.style.border) styles.push(`--border:${p[b.style.border]}`);
   if (b.style.tilt) styles.push(`transform:rotate(${b.style.tilt}deg)`);
-  const cls = ["b", b.type, b.type === "logo" && picture(b.content.image) ? "has-img" : "", b.style.border ? "bordered" : "", b.style.shadow ? "shadow" : "", b.style.case === "upper" ? "upper" : ""].filter(Boolean).join(" ");
+  const logoImg = b.type === "logo" && picture(doc.look?.look === "chalkboard" ? b.content.chalkImage : b.content.image);
+  const cls = ["b", b.type, logoImg ? "has-img" : "", surf !== "none" ? "surfaced" : "", b.style.border ? "bordered" : "", b.style.shadow ? "shadow" : "", b.style.case === "upper" ? "upper" : ""].filter(Boolean).join(" ");
   return `<div class="${cls}" data-id="${esc(b.id)}" style="${styles.join(";")}"><div class="b-in">${BODY[b.type](b)}</div></div>`;
 }
 
@@ -177,10 +181,13 @@ function render() {
   // E2b: and its specials by their dates, days and times
   const nowHere = zonedNow(C.now(), data?.timezone || "America/Chicago");
   drawnDate = nowHere.date; drawnMoment = menuMoment(data.lists, nowHere);
-  doc = applyMenu(checked.doc, data.lists, nowHere, { room: true });
+  // E2d: in the look and with the options chosen for this board in the menu editor (else the layout's own)
+  doc = applyMenu(applyLook(checked.doc, data.look), data.lists, nowHere, { room: true });
+  drawStart = performance.now();
   const p = doc.theme.palette, f = doc.theme.fonts;
   for (const [k, v] of Object.entries(p)) stage.style.setProperty(`--p-${k}`, v);
   for (const [k, v] of Object.entries(f)) stage.style.setProperty(`--f-${k}`, FONTS[v].css);
+  styleLook(doc.look);
   sizeStage();
   // E1b: the background picture, dimmed by the palette's bg colour
   const bg = doc.theme.background, bgSrc = bg && picture(bg.image);
@@ -191,11 +198,66 @@ function render() {
   drawn = sig;
   $("powered").hidden = data.poweredBy === false;           // "Powered by WayTuGo"; 1Point can hide it per screen
   live(true);
-  addFonts([...new Set(Object.values(f))]).then(() => document.fonts.ready).then(() => {
+  addFonts([...new Set([...Object.values(f), ...(doc.look?.item ? [doc.look.item] : [])])]).then(() => document.fonts.ready).then(() => {
     if (drawn !== sig) return;
     fitAll();
     stage.classList.remove("is-loading");
+    measure();
   });
+}
+
+// ── Looks (E2d): the chalkboard's slate, chalk colours, lettering, grain and frame ──
+let grainUrl = "";
+/** The chalk grain: a small speckled tile made once on a canvas and laid over the lettering as a mask (no picture to
+ *  load, nothing redrawn after the board is drawn; Scot chose it over a live SVG filter, DP-13). */
+function grain() {
+  if (grainUrl) return grainUrl;
+  try {
+    const n = 200, cv = document.createElement("canvas"); cv.width = cv.height = n;
+    const x = cv.getContext("2d"), d = x.createImageData(n, n);
+    let seed = 7; const rnd = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);   // the same grain every time
+    for (let i = 0; i < d.data.length; i += 4) d.data[i + 3] = rnd() < 0.22 ? Math.floor(rnd() * 120) : 255;
+    x.putImageData(d, 0, 0);
+    grainUrl = `url(${cv.toDataURL()})`;
+  } catch { grainUrl = ""; }
+  return grainUrl;
+}
+function styleLook(look) {
+  const chalk = look?.look === "chalkboard";
+  stage.classList.toggle("look-chalk", chalk);
+  stage.classList.toggle("lettering-hand", chalk && look.chalk.lettering === "hand");
+  stage.classList.toggle("framed", chalk && !!look.chalk.frame);
+  stage.classList.toggle("no-grain", chalk && grainDropped);
+  if (!chalk) return;
+  for (const [k, v] of Object.entries(look.colours)) stage.style.setProperty(`--chalk-${k}`, v);
+  stage.style.setProperty("--f-item", FONTS[look.item].css);
+  const g = grain();
+  if (g) stage.style.setProperty("--grain", g); else stage.classList.add("no-grain");
+}
+
+// ── How fast the board draws (E2d): measured on a real screen after each draw and sent with the next check-in, so the
+// Pi panel can say how the chalk texture runs on that Pi; if the pictures' turns run slow, the grain is dropped ──
+let drawStart = 0, lastReport = null, grainDropped = false, measuring = false;
+function measure() {
+  const ms = Math.round(performance.now() - drawStart);
+  const fit = fitAll.last || { overflow: [], shrunk: [] };
+  lastReport = { ms, fps: null, slow: 0, look: doc.look?.look || "house", grain: doc.look?.look === "chalkboard" ? (grainDropped ? "dropped" : "on") : "none",
+    overflow: fit.overflow.slice(0, 10), shrunk: fit.shrunk.length };
+  if (PREVIEW || MENU || measuring) return;
+  // Frame gaps over 20 seconds, which takes in a picture's turn or two
+  measuring = true;
+  const gaps = []; let last = performance.now(); const end = last + 20000;
+  const step = (t) => {
+    gaps.push(t - last); last = t;
+    if (t < end) { requestAnimationFrame(step); return; }
+    measuring = false;
+    gaps.shift(); gaps.sort((a, b) => a - b);
+    const med = gaps[gaps.length >> 1] || 16.7;
+    lastReport = { ...lastReport, fps: Math.round(1000 / med), slow: gaps.filter((g) => g > 50).length };
+    // Slow on this Pi (fewer than 25 frames a second): the grain comes off and the board says so in the Pi panel
+    if (lastReport.grain === "on" && lastReport.fps < 25) { grainDropped = true; stage.classList.add("no-grain"); lastReport.grain = "dropped"; }
+  };
+  requestAnimationFrame(step);
 }
 
 // ── Rotating photos (E1b): each rotator turns on its own clock; every slide's picture is fetched when the board is drawn, so each is ready when its turn comes ──
@@ -237,6 +299,8 @@ function fitAll() {
     if (r === 0) report.overflow.push(el.dataset.id); else if (r < 1) report.shrunk.push({ id: el.dataset.id, scale: Math.round(r * 100) / 100 });
   }
   if (PREVIEW && HOST) HOST.postMessage({ type: "layout-report", ...report }, location.origin);
+  fitAll.last = report;
+  if (lastReport) lastReport = { ...lastReport, overflow: report.overflow.slice(0, 10), shrunk: report.shrunk.length };
   return report;
 }
 
@@ -325,7 +389,8 @@ async function loadScreen() {
     return;
   }
   try {
-    const got = await C.fetchScreen(VERSION);    // the check-in, the site's clock, the kept copy, a newer display
+    // E2d: how the board drew (time, frame rate, look, grain, anything overflowing) goes with the check-in
+    const got = await C.fetchScreen(VERSION, lastReport ? { "X-Board": JSON.stringify(lastReport) } : {});    // the check-in, the site's clock, the kept copy, a newer display
     if (!got) return;
     $("offline").hidden = !got.fromCache;
     apply(got.d);
@@ -365,4 +430,4 @@ if (PREVIEW) {
   C.registerOfflineCache();
 }
 setInterval(() => { C.showIdentify($("identify"), data); live(false); }, 1000);
-window.LayoutBoard = { fitAll, get doc() { return doc; }, get images() { return data?.images || {}; } };   // for the browser checks
+window.LayoutBoard = { fitAll, get doc() { return doc; }, get images() { return data?.images || {}; }, get report() { return lastReport; } };   // for the browser checks

@@ -2600,7 +2600,7 @@ test("menus: the editor, the console's Menus tab and the board's room are in pla
   const con = readFileSync(new URL("../public/console.html", import.meta.url), "utf8"), cjs = readFileSync(new URL("../public/console.js", import.meta.url), "utf8");
   assert.ok(con.includes('id="tab-menus"') && con.includes('id="panel-menus"') && cjs.includes("menu-edit.html?m="));
   const board = readFileSync(new URL("../public/board.js", import.meta.url), "utf8");
-  assert.ok(board.includes("applyMenu(checked.doc, data.lists, nowHere, { room: true })") && board.includes('class="item ghost"'));
+  assert.ok(board.includes("applyMenu(applyLook(checked.doc, data.look), data.lists, nowHere, { room: true })") && board.includes('class="item ghost"'));
 });
 
 // ── Specials with dates and times, showWhen, more lists, WayTuGo (DP-12, round E2b; supabase/33-menu-specials.sql) ──
@@ -2799,6 +2799,136 @@ test("customers' pictures: admins and editors upload, rename and remove their ow
   fake.storage.set(`layout-images/${lost.path}`, lostFile); fake.storage.delete(`layout-images/${org.id}/just-now-1a2b3c4d.webp`);
   menu.customer_edit = editWas;
   assert.ok(fake.T.layout_images.filter((i) => i.org_id === org.id).length >= before);
+});
+
+// ── The chalkboard (DP-13, round E2d; supabase/35-board-looks.sql): looks, chalk colours, options ──
+const CHALK1 = JSON.parse(readFileSync(new URL("../layouts/donut-joes-chalkboard-32.json", import.meta.url), "utf8"));
+const CHALK2 = JSON.parse(readFileSync(new URL("../layouts/donut-joes-chalkboard-32-lists.json", import.meta.url), "utf8"));
+test("chalkboard: looks in the layout format: House and Chalkboard, chalk colours from six (each readable on slate), lettering, frame, options by tick box", () => {
+  const c1 = LF.checkLayout(CHALK1);
+  assert.deepEqual(c1.errors, []); assert.deepEqual(c1.warnings, [], "step 1 clean, on the chalkboard too");
+  const d = c1.doc;
+  assert.deepEqual(d.theme.looks, ["house", "chalkboard"]); assert.equal(d.theme.look, "chalkboard");
+  assert.deepEqual(d.options, [{ key: "coffee-bar", label: "Show the coffee bar", default: false }]);
+  for (const [k, hex] of Object.entries(LF.CHALK)) assert.ok(LF.contrast(hex, LF.SLATE) >= 4.5, `${k} on slate`);
+  // the layout's defaults, then the customer's choice where the layout offers it
+  let L = LF.applyLook(d, null);
+  assert.equal(L.look.look, "chalkboard"); assert.equal(L.theme.palette.bg, LF.SLATE); assert.equal(L.theme.fonts.display, "Pacifico"); assert.equal(L.look.item, "Bebas Neue");
+  assert.equal(L.look.colours.titles, LF.CHALK.yellow);
+  L = LF.applyLook(d, { look: "chalkboard", chalk: { titles: "green", prices: "nope" }, lettering: "hand", frame: true });
+  assert.equal(L.look.colours.titles, LF.CHALK.green); assert.equal(L.look.colours.prices, LF.CHALK.pink, "an unknown colour keeps the default");
+  assert.equal(L.theme.fonts.display, "Caveat Brush"); assert.equal(L.look.chalk.frame, true);
+  L = LF.applyLook(d, { look: "house" });
+  assert.equal(L.theme.palette.bg, d.theme.palette.bg); assert.equal(L.theme.fonts.display, "Oswald", "House: the counter board's colours and fonts");
+  assert.equal(LF.applyLook(d, { look: "neon" }).look.look, "chalkboard");
+  // a layout that offers only House can't be made a chalkboard by a choice
+  const plain = LF.checkLayout(COUNTER).doc;
+  assert.equal(LF.applyLook(plain, { look: "chalkboard" }).look.look, "house"); assert.equal(LF.offersChoice(plain), false); assert.equal(LF.offersChoice(d), true);
+  // the coffee bar: two arrangements that never show together
+  const c2 = LF.checkLayout(CHALK2, { lists: [{ key: "specials", kind: "items" }, { key: "note", kind: "text" }, ...["hero", "fall", "take-home", "energy", "coffee"].map((k) => ({ key: k, kind: "items" })), { key: "party", kind: "text" }, { key: "hours", kind: "hours" }] });
+  assert.deepEqual(c2.errors, []); assert.deepEqual(c2.warnings.filter((w) => w.kind === "overlap"), [], "the two arrangements aren't an overlap");
+  const on = (doc, id) => doc.blocks.find((b) => b.id === id).on;
+  const off = LF.applyLook(c2.doc, {}), with_ = LF.applyLook(c2.doc, { options: { "coffee-bar": true } });
+  assert.ok(on(off, "specials") && !on(off, "specials-coffee") && !on(off, "coffee"));
+  assert.ok(!on(with_, "specials") && on(with_, "specials-coffee") && on(with_, "coffee"));
+  // the lists don't switch option blocks off (E2b's showWhen is for lists)
+  const fake1 = { spec: { lists: [{ key: "specials", kind: "items", room: 6, fields: ["name"] }] }, content: { lists: { specials: { entries: [{ id: "aaaa1", name: "X" }] } } } };
+  assert.ok(MF.applyMenu(off, fake1, "2026-10-29").blocks.find((b) => b.id === "specials").on);
+  // the format's refusals, in plain words
+  const bad = JSON.parse(JSON.stringify(CHALK2));
+  bad.theme.look = "neon"; bad.theme.chalk.titles = "#ff0000"; bad.options.push({ key: "coffee-bar", label: "Again" });
+  bad.blocks.find((b) => b.id === "coffee").showWhen = { option: "tea", is: "on" };
+  const msgs = LF.checkLayout(bad).errors.map((e) => e.msg).join(" | ");
+  for (const w of ['"look" is one of', "titles is a chalk colour", 'Two options share the key "coffee-bar"', 'the option "tea"']) assert.ok(msgs.includes(w), `${w}: ${msgs}`);
+});
+
+test("chalkboard: a board's look kept with the menu: only the presets, in History's words; the database says the same", () => {
+  const spec = { lists: [{ key: "specials", name: "Today's specials", kind: "items", room: 6, fields: ["name", "price"] }] };
+  const id = "11111111-2222-3333-4444-555555555555";
+  const ok = MF.checkMenuContent(spec, { lists: {}, boards: { [id]: { look: "chalkboard", chalk: { titles: "green" }, lettering: "hand", frame: false, options: { "coffee-bar": true } } } });
+  assert.deepEqual(ok.errors, []); assert.equal(ok.content.boards[id].look, "chalkboard");
+  for (const [b, w] of [[{ chalk: { titles: "#f00" } }, /white, yellow, pink, blue, green or orange/], [{ look: "neon" }, /House or Chalkboard/], [{ lettering: "comic" }, /Sign-writer or Chalk hand/],
+    [{ frame: "yes" }, /on or off/], [{ background: "x" }, /isn't part of a board's look/], [{ options: { "Coffee Bar": true } }, /ticked or not/]])
+    assert.match(MF.checkMenuContent(spec, { lists: {}, boards: { [id]: b } }).errors.map((e) => e.msg).join(), w);
+  assert.match(MF.checkMenuContent(spec, { lists: {}, boards: { chalkboard: {} } }).errors.map((e) => e.msg).join(), /named by its layout's id/);
+  assert.match(MF.checkMenuContent(spec, { lists: {}, theme: {} }).errors.map((e) => e.msg).join(), /"theme" isn't part of a menu/);
+  const lines = MF.menuChanges(spec, { lists: {} }, { lists: {}, boards: { [id]: { look: "chalkboard", chalk: { titles: "green" }, frame: true, options: { "coffee-bar": true } } } }, 40, { [id]: "Chalkboard" });
+  for (const w of ["Board look (Chalkboard): (as designed) → Chalkboard", "Board look (Chalkboard): titles chalk (as designed) → green", "Board look (Chalkboard): wooden frame (as designed) → on", "Board look (Chalkboard): coffee bar (as designed) → on"]) assert.ok(lines.includes(w), `${w}: ${lines}`);
+  // 35-board-looks.sql has the same presets
+  const sql = readFileSync(new URL("../supabase/35-board-looks.sql", import.meta.url), "utf8");
+  assert.ok(sql.includes(`not in (${MF.BOARD_CHALK.map((c) => `'${c}'`).join(", ")})`) && sql.includes("not in ('house', 'chalkboard')") && sql.includes("not in ('sign', 'hand')"));
+  assert.deepEqual(MF.BOARD_CHALK, Object.keys(LF.CHALK)); assert.deepEqual(MF.BOARD_LOOKS, Object.keys(LF.LOOKS)); assert.deepEqual(MF.BOARD_LETTERING, Object.keys(LF.LETTERING));
+});
+
+test("chalkboard: on the counter board's menu: Add lists (specials, chalk note), publish, the customer's look reaches the screen and the phone menu; the board's report for the Pi panel", async () => {
+  const org = fake.T.organizations.find((o) => /Barber/.test(o.name));
+  const prop = fake.T.properties.find((p) => p.org_id === org.id);
+  const admin = await login("scot@1pointusa.com", "admin-pass"), owner = await login("leighann@barber.test", "owner-pass");
+  const menu = fake.T.menus.find((m) => m.org_id === org.id && m.spec.lists.some((l) => l.key === "hero"));
+  assert.ok(menu, "the counter board's menu from the earlier test");
+  const [l] = await (await svc("layouts", "POST", { org_id: org.id, name: "Chalkboard 32", family: "menu", orientation: "portrait", menu_id: menu.id })).json();
+  let r = await lcall({ action: "check", layout_id: l.id, doc: CHALK1 }, admin);
+  assert.deepEqual((await r.json()).errors, []);
+  r = await lcall({ action: "make_menu", layout_id: l.id, blocks: ["specials", "note"], rooms: { specials: 6 } }, admin);
+  const out = await r.json();
+  assert.equal(r.status, 200, JSON.stringify(out)); assert.deepEqual(out.made, ["specials", "note"]);
+  assert.equal(menu.spec.lists.find((x) => x.key === "specials").room, 6); assert.equal(menu.spec.lists.find((x) => x.key === "note").kind, "text");
+  r = await lcall({ action: "check", layout_id: l.id, doc: CHALK2 }, admin);
+  assert.deepEqual((await r.json()).errors, [], "step 2 checks against the menu");
+  r = await lcall({ action: "publish", layout_id: l.id, doc: CHALK2, override: true }, admin);
+  assert.equal(r.status, 200, JSON.stringify(await r.clone().json()));
+  const scr = fake.T.screens.find((x) => x.orientation === "portrait" && x.directory_id);
+  const keep = { directory_id: scr.directory_id, layout_id: scr.layout_id ?? null, property_id: scr.property_id ?? null, last_report: scr.last_report };
+  try {
+    Object.assign(scr, { directory_id: null, layout_id: l.id, property_id: prop.id });
+    const first = await screen(req(`/api/screen?key=${scr.key}`));
+    const d = await first.json();
+    assert.equal(d.look, null, "nothing chosen yet: the layout's own"); assert.equal(d.layout.id, l.id);
+    // the customer picks the look (signed in), with the lists as they are
+    const content = JSON.parse(JSON.stringify(menu.content));
+    content.boards = { [l.id]: { look: "chalkboard", chalk: { titles: "orange", prices: "green", accents: "pink" }, lettering: "hand", frame: true, options: { "coffee-bar": true } } };
+    r = await asUser(owner, "menu_save", { p_menu: menu.id, p_base_rev: menu.rev, p_content: content });
+    assert.equal(r.status, 200, await r.clone().text());
+    const again = await screen(req(`/api/screen?key=${scr.key}`, { headers: { "If-None-Match": first.headers.get("etag") } }));
+    assert.equal(again.status, 200, "a new look reaches the screen");
+    const d2 = await again.json();
+    assert.deepEqual(d2.look, content.boards[l.id]);
+    const drawn = LF.applyLook(LF.checkLayout(d2.layout.doc).doc, d2.look);
+    assert.ok(drawn.blocks.find((b) => b.id === "coffee").on && drawn.look.chalk.frame);
+    // a colour that isn't a preset is refused (the fake and the database say the same)
+    const bad = JSON.parse(JSON.stringify(content)); bad.boards[l.id].chalk.titles = "#ff00ff";
+    r = await asUser(owner, "menu_save", { p_menu: menu.id, p_base_rev: menu.rev, p_content: bad });
+    assert.equal(r.status, 400); assert.match(await r.text(), /white, yellow, pink, blue, green or orange/);
+    // the phone menu in the chosen look (slate, the hand lettering)
+    const lay = fake.T.layouts.find((x) => x.id === l.id);
+    const html = await (await menuFn(req(`/m/${lay.menu_code}`))).text();
+    assert.ok(html.includes(LF.SLATE) && html.includes("Caveat Brush") && html.includes("Coffee bar"), "the phone menu draws the chosen look and options");
+    // Add lists keeps the look
+    const [l3] = await (await svc("layouts", "POST", { org_id: org.id, name: "Stand extra", family: "menu", orientation: "portrait", menu_id: menu.id })).json();
+    const extra = { format: 1, orientation: "portrait", grid: { cols: 12, rows: 24 }, blocks: [{ id: "stand-extra", type: "items", at: { col: 1, row: 1, w: 12, h: 6 }, content: { heading: "Outside today", items: [{ name: "Iced coffee" }] } }] };
+    assert.deepEqual((await (await lcall({ action: "check", layout_id: l3.id, doc: extra }, admin)).json()).errors, []);
+    r = await lcall({ action: "make_menu", layout_id: l3.id }, admin);
+    assert.equal(r.status, 200, await r.clone().text()); assert.ok(menu.spec.lists.some((x) => x.key === "stand-extra"));
+    assert.equal(menu.content.boards?.[l.id]?.lettering, "hand", "the look survives more lists being added");
+    // the board's report with the check-in, kept to known values for the Pi panel
+    const rep = { ms: 412, fps: 58, slow: 2, look: "chalkboard", grain: "on", overflow: ["fall", "<script>"], shrunk: 3, extra: "x".repeat(50) };
+    await screen(req(`/api/screen?key=${scr.key}`, { headers: { "X-Screen-Size": "1080x1920", "X-Display-Version": DISPLAY_VERSION, "X-Board": JSON.stringify(rep) } }));
+    const b = fake.T.screens.find((x) => x.id === scr.id).last_report?.board;
+    assert.deepEqual(b, { ms: 412, fps: 58, slow: 2, look: "chalkboard", grain: "on", overflow: ["fall"], shrunk: 3 });
+    const cd = readFileSync(new URL("../public/console-devices.js", import.meta.url), "utf8");
+    assert.ok(cd.includes('row("Board", boardLine(s))') && cd.includes("the chalk grain was dropped"));
+  } finally { Object.assign(scr, keep); }
+});
+
+test("chalkboard: the screen's files: the look drawn by the board page, the grain and its speed check, the frame, the Caveat Brush font and licence, the editor's Board look", () => {
+  const board = readFileSync(new URL("../public/board.js", import.meta.url), "utf8"), css = readFileSync(new URL("../public/board.css", import.meta.url), "utf8");
+  for (const w of ["applyLook(checked.doc, data.look)", "function grain()", "function measure()", '"X-Board"', "lastReport.fps < 25", "chalkImage"]) assert.ok(board.includes(w), w);
+  for (const w of ["#stage.look-chalk .board", "mask-image: var(--grain)", ".look-chalk.framed .board::after", "--chalk-titles", "--chalk-prices", "--chalk-accents", "bottom: var(--sold-bottom, 0.19em)"]) assert.ok(css.includes(w), w);
+  assert.ok(!/sold-mark \{[^}]*top: 50%/.test(css), "the sold-out mark no longer centred across a wrapped name");
+  assert.ok(readFileSync(new URL("../public/fonts/CaveatBrush-Regular.ttf", import.meta.url)).length > 10000);
+  assert.match(readFileSync(new URL("../public/fonts/CaveatBrush-OFL.txt", import.meta.url), "utf8"), /SIL Open Font License/);
+  const ed = readFileSync(new URL("../public/menu-edit.js", import.meta.url), "utf8");
+  for (const w of ["function lookHtml(", "Back to WayTuGo's design", "data-look-f", "look: content.boards?.[board.id]"]) assert.ok(ed.includes(w), w);
 });
 
 let passed = 0;

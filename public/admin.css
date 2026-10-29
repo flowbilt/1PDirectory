@@ -403,3 +403,17 @@ dialog.wide #dlg-body { max-height: 72vh; overflow: auto; padding-right: 4px; }
 .pic-choice span { font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .pic-choice:hover { border-color: var(--navy); }
 .pic-choice.is-on { border: 2px solid var(--navy); }
+
+/* ── E2d (DP-13): Board look in the menu editor ── */
+.me-look .me-look-row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; margin: 10px 0; }
+.me-look .me-look-label { width: 84px; font-weight: 600; font-size: 14px; }
+.me-choice { display: inline-flex; align-items: center; gap: 6px; border: 1px solid var(--line); border-radius: 999px; padding: 5px 12px; cursor: pointer; font-size: 14px; }
+.me-choice input { width: auto; margin: 0; }
+.me-choice.is-on { border-color: var(--accent, #0d3b66); box-shadow: inset 0 0 0 1px var(--accent, #0d3b66); }
+.me-swatches { display: flex; flex-wrap: wrap; gap: 6px; padding: 6px 8px; border-radius: 10px; background: #2a3230; }
+.me-swatch { position: relative; display: inline-flex; flex-direction: column; align-items: center; gap: 2px; cursor: pointer; padding: 3px; border-radius: 8px; }
+.me-swatch input { position: absolute; opacity: 0; inset: 0; margin: 0; cursor: pointer; }
+.me-swatch span { width: 30px; height: 30px; border-radius: 50%; display: block; border: 2px solid transparent; }
+.me-swatch em { font-style: normal; font-size: 11px; color: #e6e6df; }
+.me-swatch.is-on span { border-color: #fff; box-shadow: 0 0 0 2px #2a3230, 0 0 0 4px #fff; }
+.me-swatch input:focus-visible + span { outline: 3px solid #9fd3f0; outline-offset: 2px; }

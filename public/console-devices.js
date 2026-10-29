@@ -25,6 +25,18 @@ window.ConsoleDevices = (() => {
       "switched off": "Off for this directory (editor: Show drive times)", "no destinations": "No destinations set for the building (editor)",
       "no building location": "The building has no weather location or address (editor)", "not set up": "The site has no Google key (Netlify: GOOGLE_ROUTES_KEY)" }[t.why] || "Off") + `${when}.`;
   }
+  /** E2d (DP-13): how a layout screen drew its board: the draw time, the pictures' frame rate (where the chalk texture's
+   *  speed shows), the look and its grain, and anything overflowing its box */
+  function boardLine(s) {
+    const b = s?.last_report?.board;
+    if (!b) return "";
+    const when = s.last_seen ? ` (reported ${since(s.last_seen)})` : "";
+    const parts = [`Drawn in ${b.ms != null ? (b.ms / 1000).toFixed(1) : "?"} s`];
+    parts.push(b.fps != null ? `pictures change at ${b.fps} fps${b.slow ? ` (${b.slow} slow frame${b.slow === 1 ? "" : "s"} in 20 s)` : ""}` : "frame rate measured 20 s after each draw");
+    if (b.look === "chalkboard") parts.push(b.grain === "dropped" ? "Chalkboard: the chalk grain was dropped, the pictures ran slow with it" : b.grain === "on" ? "Chalkboard with the chalk grain" : "Chalkboard");
+    parts.push(b.overflow.length ? `doesn't fit: ${b.overflow.join(", ")}` : "nothing overflowing");
+    return parts.join(" · ") + when;
+  }
   const clock = (iso) => new Date(iso).toLocaleString("en-US", { weekday: "short", hour: "numeric", minute: "2-digit" });
   /** One line on a Pi's enrollment: enrolled Pis say nothing. */
   const enrollNote = (d) => (d.enrolled ? "" : windowOpen(d) ? `Enrollment open until ${clock(d.enroll_until)}` : "Not enrolled · enrollment closed");
@@ -235,6 +247,7 @@ window.ConsoleDevices = (() => {
             ${row("Power", h.firmware === "not-responding" ? "Unknown while the firmware isn't responding" : h.under_voltage_now ? "Under-voltage now: replace the power supply" : h.under_voltage_seen ? "Dipped since last boot" : h.throttled !== undefined ? "Normal" : "")}
             ${row("Browser", h.browser_running === false ? "Not running" : h.browser_running ? "Running" : "")}
             ${row("Drive times", trafficLine(s))}
+            ${row("Board", boardLine(s))}
             ${row("Field Wi-Fi setup", wifiSetupLine(h))}
             ${row("TV", s?.no_cec ? "Not checked: this display has no HDMI-CEC (Screen settings)" : { on: "On", standby: "Off (standby): the Pi is turning it on", "not-answering": "Not answering over HDMI (TV unplugged, or its CEC setting is off)", "no-cec": "Not controlled (no HDMI-CEC)" }[h.tv] || "")}
             ${row("Up for", up)}

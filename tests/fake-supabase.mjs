@@ -624,7 +624,7 @@ export function createFake() {
       const m = T.menus.find((x) => x.id === p_menu);
       if (!m) throw Object.assign(new Error("No such menu."), { status: 404 });
       for (const l of p_lists) if (m.spec.lists.some((x) => x.key === l.key)) throw Object.assign(new Error(`The menu "${m.name}" already has a list "${l.key}".`), { status: 409 });
-      const next = { ...m, spec: { lists: [...m.spec.lists, ...p_lists] }, content: { lists: { ...(m.content.lists || {}), ...(p_content || {}) } } };
+      const next = { ...m, spec: { lists: [...m.spec.lists, ...p_lists] }, content: { ...m.content, lists: { ...(m.content.lists || {}), ...(p_content || {}) } } };   // 35: boards kept
       const bad = menuRule(next, m); if (bad) throw Object.assign(new Error(bad), { status: 400 });
       const l = p_layout ? T.layouts.find((x) => x.id === p_layout && x.org_id === m.org_id) : null;
       if (p_layout && !l) throw Object.assign(new Error("No such layout in that menu's account."), { status: 404 });

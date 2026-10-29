@@ -19,6 +19,10 @@
 // building's clock. A layout's block can also say "showWhen": { "list": "fall", "is": "empty" | "showing" }: it shows
 // only while that list has nothing on (or something on), e.g. "Take some home" once the fall specials are over.
 // Customers see the product as WayTuGo (Scot, 2026-10-29): every customer-facing line says WayTuGo, not 1Point.
+// E2d (DP-13): "boards": { "<layout id>": { "look": "chalkboard", "chalk": { "titles": "yellow", "prices": "pink",
+// "accents": "blue" }, "lettering": "sign" | "hand", "frame": false, "options": { "coffee-bar": true } } }: each board's
+// look and options as the customer (or WayTuGo) chose them in the menu editor, saved, kept and restored with the lists.
+// Each value is from the presets only (layout-format.mjs); a board draws what its layout offers and ignores the rest.
 
 /** What each kind of list holds, and the most each box may say (1Point may set a list's caps lower, never higher). */
 export const KINDS = {
@@ -36,6 +40,30 @@ export const BINDS = { items: "items", chips: "items", rotator: "items", photo: 
 export const PROVIDES = { items: ["items", "price"], chips: ["items", "price"], rotator: ["items"], photo: ["image", "caption", "line", "price", "link", "alt"],
   text: ["title", "body", "link"], hours: ["hours", "note"] };
 export const MAX_LISTS = 20, GROUP_PRICE_MAX = 24, NOTE_MAX = 80, MAX_BYTES = 256 * 1024;
+/** E2d: a board's look choices (the same names as layout-format.mjs's LOOKS, CHALK and LETTERING) */
+export const BOARD_LOOKS = ["house", "chalkboard"], BOARD_CHALK = ["white", "yellow", "pink", "blue", "green", "orange"], BOARD_LETTERING = ["sign", "hand"];
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
+
+/** E2d: checks one board's choice. Returns an error in plain words, or "". */
+export function boardProblem(b) {
+  if (!isObj(b)) return "Each board's look is { \"look\", \"chalk\", \"lettering\", \"frame\", \"options\" }.";
+  for (const k of Object.keys(b)) if (!["look", "chalk", "lettering", "frame", "options"].includes(k)) return `"${k}" isn't part of a board's look.`;
+  if (b.look !== undefined && !BOARD_LOOKS.includes(b.look)) return "The look is House or Chalkboard.";
+  if (b.chalk !== undefined) {
+    if (!isObj(b.chalk)) return "The chalk colours are for titles, prices and accents.";
+    for (const [k, v] of Object.entries(b.chalk)) {
+      if (!["titles", "prices", "accents"].includes(k)) return "The chalk colours are for titles, prices and accents.";
+      if (!BOARD_CHALK.includes(v)) return "Each chalk colour is white, yellow, pink, blue, green or orange.";
+    }
+  }
+  if (b.lettering !== undefined && !BOARD_LETTERING.includes(b.lettering)) return "The lettering is Sign-writer or Chalk hand.";
+  if (b.frame !== undefined && typeof b.frame !== "boolean") return "The frame is on or off.";
+  if (b.options !== undefined) {
+    if (!isObj(b.options) || Object.keys(b.options).length > 6) return "A board has up to 6 options.";
+    for (const [k, v] of Object.entries(b.options)) if (!KEY_RE.test(k) || typeof v !== "boolean") return "Each option is ticked or not.";
+  }
+  return "";
+}
 
 const KEY_RE = /^[a-z0-9][a-z0-9-]{0,39}$/;
 const ID_RE = /^[a-z0-9]{4,12}$/;
@@ -118,6 +146,19 @@ export function checkMenuContent(spec, input, { images } = {}) {
   if (!isObj(input) || (input.lists !== undefined && !isObj(input.lists))) { err("menu", "The menu is { \"lists\": { \"<list key>\": { \"entries\": [ … ] } } }."); return { errors, content: null }; }
   if (JSON.stringify(input).length > MAX_BYTES) err("menu", "This menu is too large (at most 256 KB).");
   const out = { lists: {} };
+  for (const k of Object.keys(input)) if (!["lists", "boards"].includes(k)) err("menu", `"${k}" isn't part of a menu (lists, boards).`);
+  // E2d: each board's look and options
+  if (input.boards !== undefined) {
+    if (!isObj(input.boards) || Object.keys(input.boards).length > 20) err("menu", "\"boards\" is { \"<layout id>\": { … } }, up to 20.");
+    else {
+      for (const [id, b] of Object.entries(input.boards)) {
+        if (!UUID_RE.test(id)) { err("Board look", "Each board is named by its layout's id."); continue; }
+        const p = boardProblem(b);
+        if (p) err("Board look", p);
+      }
+      if (Object.keys(input.boards).length) out.boards = input.boards;
+    }
+  }
   for (const [key, c] of Object.entries(input.lists || {})) {
     const L = byKey[key];
     if (!L) { err(`list "${key}"`, `There's no list "${key}" on this menu.`); continue; }
@@ -245,16 +286,17 @@ export function shownEntries(L, c, now) {
  * The phone menu draws without room.
  */
 export function applyMenu(doc, menu, nowOrDate, { room = false } = {}) {
-  if (!doc || !doc.blocks.some((b) => b.content?.list || b.showWhen)) return doc;
+  if (!doc || !doc.blocks.some((b) => b.content?.list || b.showWhen?.list)) return doc;
   const now = asNow(nowOrDate), date = now.date;
   const spec = menu?.spec?.lists || [], content = menu?.content?.lists || {};
   const byKey = Object.fromEntries(spec.map((l) => [l.key, l]));
   // How many entries each list has on now (E2b: for "showWhen")
   const count = (key) => (byKey[key] ? shownEntries(byKey[key], content[key] || {}, now).length : 0);
-  const rule = (b) => !b.showWhen || (b.showWhen.is === "empty" ? count(b.showWhen.list) === 0 : count(b.showWhen.list) > 0);
+  // E2d: a showWhen on one of the board's options is the look's (layout-format.mjs applyLook), not a list's
+  const rule = (b) => !b.showWhen?.list || (b.showWhen.is === "empty" ? count(b.showWhen.list) === 0 : count(b.showWhen.list) > 0);
   const blocks = doc.blocks.map((b) => {
     const key = b.content?.list;
-    if (!key) return b.showWhen ? { ...b, on: b.on !== false && rule(b) } : b;
+    if (!key) return b.showWhen?.list ? { ...b, on: b.on !== false && rule(b) } : b;
     const L = byKey[key];
     if (!L || BINDS[b.type] !== L.kind) return { ...b, on: false };
     const C = content[key] || {};
@@ -308,7 +350,7 @@ export function menuMoment(menu, now) {
 export const menuPictureKeys = (content) => [...new Set(JSON.stringify(content || {}).match(/"img:[a-z0-9][a-z0-9-]{0,59}"/g)?.map((s) => s.slice(5, -1)) || [])];
 
 /** What changed between two saves of a menu, in plain lines, for the history. */
-export function menuChanges(spec, before, after, max = 40) {
+export function menuChanges(spec, before, after, max = 40, boardNames = null) {
   const lines = [];
   const lists = spec?.lists || [];
   const b = before?.lists || {}, a = after?.lists || {};
@@ -334,6 +376,18 @@ export function menuChanges(spec, before, after, max = 40) {
     }
     const order = (list, other) => list.filter((e) => other[e.id]).map((e) => e.id).join(",");
     if (order(be, ai) !== order(ae, bi)) lines.push(`${L.name}: reordered`);
+  }
+  // E2d: the boards' looks and options
+  const bb = before?.boards || {}, ab = after?.boards || {};
+  const LB = { house: "House", chalkboard: "Chalkboard", sign: "Sign-writer", hand: "Chalk hand" };
+  for (const id of new Set([...Object.keys(bb), ...Object.keys(ab)])) {
+    const o = bb[id] || {}, n = ab[id] || {}, name = boardNames?.[id] || "a board";
+    const word = (v) => (v === undefined ? "(as designed)" : typeof v === "boolean" ? (v ? "on" : "off") : LB[v] || v);
+    if (o.look !== n.look) lines.push(`Board look (${name}): ${word(o.look)} → ${word(n.look)}`);
+    for (const r of ["titles", "prices", "accents"]) if (o.chalk?.[r] !== n.chalk?.[r]) lines.push(`Board look (${name}): ${r} chalk ${word(o.chalk?.[r])} → ${word(n.chalk?.[r])}`);
+    if (o.lettering !== n.lettering) lines.push(`Board look (${name}): lettering ${word(o.lettering)} → ${word(n.lettering)}`);
+    if (o.frame !== n.frame) lines.push(`Board look (${name}): wooden frame ${word(o.frame)} → ${word(n.frame)}`);
+    for (const k of new Set([...Object.keys(o.options || {}), ...Object.keys(n.options || {})])) if (o.options?.[k] !== n.options?.[k]) lines.push(`Board look (${name}): ${k.replace(/-/g, " ")} ${word(o.options?.[k])} → ${word(n.options?.[k])}`);
   }
   return lines.length > max ? [...lines.slice(0, max), `…and ${lines.length - max} more`] : lines;
 }

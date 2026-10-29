@@ -17,6 +17,8 @@ const HERE = fileURLToPath(new URL(".", import.meta.url));
 const PORT = 8931, OLD_PORT = 8932, B = `http://localhost:${PORT}`;
 const compareDir = process.argv.includes("--compare") ? process.argv[process.argv.indexOf("--compare") + 1] : null;
 const DOC = JSON.parse(readFileSync(new URL("../layouts/donut-joes-pelham.json", import.meta.url), "utf8"));
+const CHALK1 = JSON.parse(readFileSync(new URL("../layouts/donut-joes-chalkboard-32.json", import.meta.url), "utf8"));
+const CHALK2 = JSON.parse(readFileSync(new URL("../layouts/donut-joes-chalkboard-32-lists.json", import.meta.url), "utf8"));
 
 let pass = 0, total = 0;
 // SHOTS=<folder>: also save screenshots of the menu editor and the board (for looking at, not checked)
@@ -942,6 +944,148 @@ try {
     const [l] = (await sb(`layouts?id=eq.${chalk.id}&select=menu_id,draft`)).data;
     assert(l.menu_id === menuId && l.draft.blocks[0].content.list === "donuts-2", JSON.stringify(l.draft.blocks[0].content));
   });
+  // ── E2d (DP-13): the Donut Joe's 32" portrait chalkboard on the counter board's menu ──
+  const [chalkLay] = (await sb("layouts", { method: "POST", body: JSON.stringify({ org_id: home.org_id, name: "Donut Joe's chalkboard", family: "menu", orientation: "portrait" }) })).data;
+  const rgb = (hex) => `rgb(${parseInt(hex.slice(1, 3), 16)}, ${parseInt(hex.slice(3, 5), 16)}, ${parseInt(hex.slice(5, 7), 16)})`;
+  const CH = { white: "#f3f1e8", yellow: "#f6dd6b", pink: "#f4a7c1", blue: "#9fd3f0", green: "#a9df9c", orange: "#f6b46a" };
+  const boardPage = async (extra = "&view=1") => { const p = await browser.newPage({ viewport: { width: 540, height: 960 } }); await p.goto(`${B}/board.html?screen=${portrait.key}${extra}`); await p.waitForTimeout(3000); return p; };
+
+  await check("E2d: the chalkboard in the console: Use this menu, Add lists (Today's specials room 6, the chalk note), step 2 checks clean on the menu, published", async () => {
+    await boss.goto(`${B}/console.html?fresh=${Date.now()}#layouts`); await boss.waitForTimeout(1500);
+    await boss.click(`[data-open-layout="${chalkLay.id}"]`); await boss.waitForTimeout(900);
+    await boss.selectOption("#menu-pick", menuId); await boss.click("#menu-use"); await boss.waitForTimeout(1200);
+    await boss.fill("#layout-json", JSON.stringify(CHALK1, null, 2));
+    await boss.click("#menu-make"); await boss.waitForTimeout(1200);
+    const offered = await boss.$$eval("[data-mk]", (xs) => xs.map((x) => x.dataset.mk));
+    assert(offered.join() === "specials,note", `offered ${offered}`);
+    await boss.fill('[data-room="specials"]', "6");
+    await boss.click("#dlg-ok"); await boss.waitForTimeout(1500);
+    const m = await theMenu();
+    assert(m.spec.lists.find((x) => x.key === "specials")?.room === 6 && m.content.lists.note.entries[0].title === "Made fresh every morning since 2009", m.spec.lists.map((x) => x.key).join());
+    await boss.fill("#layout-json", JSON.stringify(CHALK2, null, 2));
+    await boss.click("#layout-check"); await boss.waitForTimeout(800);
+    const res = await boss.textContent("#layout-results");
+    assert(/No problems/.test(res), res);
+    await boss.click("#layout-publish"); await boss.waitForTimeout(1500);
+    if (await boss.isVisible("#layout-anyway")) { await boss.click("#layout-anyway"); await boss.waitForTimeout(1500); }
+    const [l] = (await sb(`layouts?id=eq.${chalkLay.id}&select=published_version`)).data;
+    assert(l.published_version === 1, JSON.stringify(l));
+    await sb(`screens?id=eq.${portrait.id}`, { method: "PATCH", body: JSON.stringify({ directory_id: null, layout_id: chalkLay.id, property_id: home.id }) });
+  });
+
+  await check("E2d: the screen draws the Chalkboard look: slate, chalk colours for titles and prices, Pacifico and Bebas Neue, the grain on the lettering, no frame, nothing overflowing", async () => {
+    const p = await boardPage();
+    const r = await p.evaluate(() => {
+      const g = (sel) => document.querySelector(sel), cs = (sel) => getComputedStyle(g(sel));
+      return { chalk: g("#stage").classList.contains("look-chalk"), framed: g("#stage").classList.contains("framed"), bg: cs(".board").backgroundImage + cs(".board").backgroundColor,
+        head: cs('[data-id="specials"] .items-head').color, price: cs('[data-id="specials"] .item-price').color, mask: cs('[data-id="specials"] .b-in').maskImage || cs('[data-id="specials"] .b-in').webkitMaskImage,
+        photoMask: cs('[data-id="hero"] .b-in').maskImage || "none", pac: document.fonts.check('40px "Pacifico"'), bebas: document.fonts.check('40px "Bebas Neue"'),
+        item: cs('[data-id="specials"] .item-name').fontFamily, coffee: g('[data-id="coffee"]').hidden, specials: g('[data-id="specials"]').hidden, over: window.LayoutBoard.fitAll().overflow };
+    });
+    assert(r.chalk && !r.framed && r.bg.includes("rgb(42, 50, 48)"), JSON.stringify(r));
+    assert(r.head === rgb(CH.yellow) && r.price === rgb(CH.pink), `${r.head} ${r.price}`);
+    assert(/^url\(/.test(r.mask) && r.photoMask === "none", `grain ${String(r.mask).slice(0, 30)} / ${r.photoMask}`);
+    assert(r.pac && r.bebas && /Bebas Neue/.test(r.item), JSON.stringify(r));
+    assert(r.coffee && !r.specials, "the coffee bar off by default");
+    assert(r.over.length === 0, `overflow ${r.over}`);
+    await shot(p, "chalkboard"); await p.close();
+  });
+
+  await check("E2d: the owner's Board look in the menu editor: House, Chalkboard, chalk colours, lettering, frame, the coffee bar; the preview follows; Save goes live, in History", async () => {
+    await owner.goto(`${B}/menu-edit.html?m=${menuId}`); await owner.waitForTimeout(3500);
+    const look = owner.locator(`.me-look[data-board="${chalkLay.id}"]`);
+    assert(await look.isVisible(), "a Board look panel for the chalkboard");
+    assert(await owner.locator(".me-look").count() === 1, "only for a board that offers choices (not the counter board)");
+    const pvStage = async () => owner.frameLocator("#pv").locator("#stage").getAttribute("class");
+    await look.locator('input[data-look-f="look"][value="house"]').check(); await owner.waitForTimeout(1800);
+    assert(await owner.inputValue("#board-pick") === chalkLay.id, "the preview turns to the board being changed");
+    assert(!/look-chalk/.test(await pvStage()), "House in the preview");
+    assert(await look.locator('[data-look-f="chalk"]').count() === 0, "no chalk colours on House");
+    await look.locator('input[data-look-f="look"][value="chalkboard"]').check(); await owner.waitForTimeout(500);
+    await owner.locator(`input[name="chalk-titles:${chalkLay.id}"][value="green"]`).check({ force: true }); await owner.waitForTimeout(300);
+    await owner.locator(`input[name="chalk-prices:${chalkLay.id}"][value="orange"]`).check({ force: true }); await owner.waitForTimeout(300);
+    await owner.locator(`.me-look input[data-look-f="lettering"][value="hand"]`).check(); await owner.waitForTimeout(300);
+    await owner.locator('.me-look input[data-look-f="frame"]').check(); await owner.waitForTimeout(300);
+    await owner.locator('.me-look input[data-opt="coffee-bar"]').check(); await owner.waitForTimeout(2000);
+    const st = await pvStage();
+    assert(/look-chalk/.test(st) && /framed/.test(st) && /lettering-hand/.test(st), st);
+    const coffee = await owner.frameLocator("#pv").locator('[data-id="coffee"]').isVisible();
+    const head = await owner.frameLocator("#pv").locator('[data-id="specials-coffee"] .items-head').evaluate((e) => getComputedStyle(e).color);
+    assert(coffee && head === rgb(CH.green), `coffee ${coffee}, titles ${head}`);
+    await shot(owner, "board-look");
+    await owner.click("#save"); await owner.waitForTimeout(3500);
+    const m = await theMenu();
+    assert(JSON.stringify(m.content.boards?.[chalkLay.id]) === JSON.stringify({ look: "chalkboard", chalk: { titles: "green", prices: "orange" }, lettering: "hand", frame: true, options: { "coffee-bar": true } }), JSON.stringify(m.content.boards));
+    const hist = await owner.textContent("#history");
+    assert(hist.includes("Board look (Donut Joe's chalkboard): titles chalk (as designed) → green") && hist.includes("coffee bar (as designed) → on"), hist.slice(0, 400));
+    const p = await boardPage();
+    const r = await p.evaluate(() => ({ framed: document.querySelector("#stage").classList.contains("framed"), coffee: !document.querySelector('[data-id="coffee"]').hidden,
+      caveat: document.fonts.check('40px "Caveat Brush"'), price: getComputedStyle(document.querySelector('[data-id="specials-coffee"] .item-price')).color, over: window.LayoutBoard.fitAll().overflow }));
+    assert(r.framed && r.coffee && r.caveat && r.price === rgb(CH.orange) && !r.over.length, JSON.stringify(r));
+    await shot(p, "chalkboard-chosen"); await p.close();
+    // Back to WayTuGo's design: the layout's own again (unsaved until Save)
+    await owner.click("[data-look-reset]"); await owner.waitForTimeout(1500);
+    assert(!/framed/.test(await pvStage()) && !(await owner.isDisabled("#save")), "back to the design, waiting for Save");
+    await owner.click("#undo"); await owner.waitForTimeout(800);
+  });
+
+  await check("E2d (Scot): SOLD OUT on a name that wraps sits beside its last line, not across both", async () => {
+    const m = await theMenu(), today = new Intl.DateTimeFormat("en-CA", { timeZone: "America/Chicago" }).format(new Date());
+    const capWas = m.spec.lists.find((x) => x.key === "specials").caps?.name;
+    m.spec.lists.find((x) => x.key === "specials").caps = { ...(m.spec.lists.find((x) => x.key === "specials").caps || {}), name: 60 };   // room for a long name
+    await sb(`menus?id=eq.${menuId}`, { method: "PATCH", body: JSON.stringify({ spec: m.spec }) });
+    const e = m.content.lists.specials.entries[1];
+    const was = { name: e.name, soldOut: e.soldOut };
+    Object.assign(e, { name: "Pumpkin Spice Cake with Cream Cheese Icing", soldOut: today });
+    await sb(`menus?id=eq.${menuId}`, { method: "PATCH", body: JSON.stringify({ content: m.content }) });
+    try {
+      for (const look of ["chalkboard", "house"]) {
+        const mm = await theMenu(); mm.content.boards[chalkLay.id].look = look;
+        await sb(`menus?id=eq.${menuId}`, { method: "PATCH", body: JSON.stringify({ content: mm.content }) });
+        const p = await boardPage();
+        const r = await p.evaluate(() => {
+          const row = document.querySelector('[data-id="specials-coffee"] .item.sold .item-row');
+          const range = document.createRange(); range.selectNodeContents(row.querySelector(".item-name"));
+          const lines = [...range.getClientRects()].filter((x) => x.width > 2);
+          const mark = row.querySelector(".sold-mark").getBoundingClientRect();
+          const first = lines[0], last = lines[lines.length - 1];
+          return { n: new Set(lines.map((x) => Math.round(x.top))).size, markMid: mark.top + mark.height / 2, lastMid: last.top + last.height / 2, firstBottom: first.bottom, lh: last.height };
+        });
+        assert(r.n >= 2, `${look}: the name should wrap (${r.n} line)`);
+        assert(Math.abs(r.markMid - r.lastMid) < r.lh * 0.35 && r.markMid > r.firstBottom, `${look}: ${JSON.stringify(r)}`);
+        await p.close();
+      }
+    } finally {
+      const mm = await theMenu(); Object.assign(mm.content.lists.specials.entries[1], was); if (!was.soldOut) delete mm.content.lists.specials.entries[1].soldOut;
+      mm.content.boards[chalkLay.id].look = "chalkboard";
+      await sb(`menus?id=eq.${menuId}`, { method: "PATCH", body: JSON.stringify({ content: mm.content }) });
+      const ms = await theMenu(); ms.spec.lists.find((x) => x.key === "specials").caps.name = capWas;
+      await sb(`menus?id=eq.${menuId}`, { method: "PATCH", body: JSON.stringify({ spec: ms.spec }) });
+    }
+  });
+
+  await check("E2d: the chalk texture's speed: a real screen measures its draw and frame rate (CPU slowed 6x): the grain stays on; on a Pi whose frames run slow, it's dropped and the screen says so", async () => {
+    const run = async (rate, slowFrames) => {
+      const ctx = await browser.newContext({ viewport: { width: 540, height: 960 } });
+      // a slow Pi: every frame about 60 ms apart (16 a second)
+      if (slowFrames) await ctx.addInitScript(() => { const raf = window.requestAnimationFrame.bind(window); window.requestAnimationFrame = (f) => raf((t) => setTimeout(() => f(performance.now()), 60)); });
+      const p = await ctx.newPage();
+      const cdp = await ctx.newCDPSession(p);
+      await cdp.send("Emulation.setCPUThrottlingRate", { rate });
+      await p.goto(`${B}/board.html?screen=${portrait.key}`);
+      await p.waitForFunction(() => window.LayoutBoard?.report?.fps != null, null, { timeout: 90000 });
+      const r = await p.evaluate(() => ({ ...window.LayoutBoard.report, cls: document.querySelector("#stage").className }));
+      await ctx.close(); return r;
+    };
+    const ok = await run(6, false);
+    assert(ok.look === "chalkboard" && ok.grain === "on" && ok.fps >= 25 && ok.ms > 0 && !/no-grain/.test(ok.cls) && Array.isArray(ok.overflow), JSON.stringify(ok));
+    const slow = await run(1, true);
+    assert(slow.fps < 25 && slow.grain === "dropped" && /no-grain/.test(slow.cls), JSON.stringify(slow));
+    console.log(`       measured: CPU 6x slower: drawn in ${ok.ms} ms, ${ok.fps} fps, grain on; slow frames: ${slow.fps} fps, grain dropped`);
+  });
+
+  await sb(`screens?id=eq.${portrait.id}`, { method: "PATCH", body: JSON.stringify({ layout_id: lay.id, property_id: home.id }) });
+
   await owner.close(); await boss.close();
   await sb(`screens?id=eq.${landscape.id}`, { method: "PATCH", body: JSON.stringify({ layout_id: null, property_id: null, directory_id: landscape.directory_id }) });
   void otherOrg;

@@ -10,6 +10,7 @@ import { createHash } from "node:crypto";
 import { SITE_RE } from "../lib/common.mjs";
 import { rpc } from "../lib/sb.mjs";
 import { DISPLAY_VERSION } from "../lib/version.mjs";
+import { boardProblem } from "../../public/menu-format.mjs";
 
 // Bump when toPayload's output changes shape, so every screen re-downloads once after the deploy. The live display
 // version is part of the tag too (TAG), so a display deploy also gives every screen a fresh answer.
@@ -51,16 +52,31 @@ export function trafficStatus(raw) {
   return null;
 }
 
+/** E2d (DP-13): how a layout screen drew its board, as it reports with its check-in: how long the draw took, the frame
+ *  rate while its pictures turned, the look, whether the chalk grain is on (or was dropped for speed), and any blocks
+ *  whose text didn't fit. Kept to known values for the Pi panel. */
+export function boardStatus(raw) {
+  let b; try { b = JSON.parse(String(raw || "").slice(0, 1200)); } catch { return null; }
+  if (!b || typeof b !== "object") return null;
+  const n = (v, hi) => (Number.isFinite(Number(v)) && v !== null ? Math.min(hi, Math.max(0, Math.round(Number(v)))) : null);
+  return { ms: n(b.ms, 600000), fps: n(b.fps, 240), slow: n(b.slow, 100000) ?? 0, look: ["house", "chalkboard"].includes(b.look) ? b.look : "house",
+    grain: ["on", "dropped", "none"].includes(b.grain) ? b.grain : "none",
+    overflow: (Array.isArray(b.overflow) ? b.overflow : []).filter((x) => typeof x === "string" && /^[a-z0-9][a-z0-9-]{0,39}$/.test(x)).slice(0, 10),
+    shrunk: n(b.shrunk, 60) ?? 0 };
+}
+
 /** The screen's check-in details, if the display sent them. */
 function report(req) {
   const size = (req.headers.get("x-screen-size") || "").match(/^(\d{1,5})x(\d{1,5})$/);
   if (!size) return null;
   const traffic = trafficStatus(req.headers.get("x-traffic"));
+  const board = boardStatus(req.headers.get("x-board"));
   return {
     w: Math.min(20000, Number(size[1])), h: Math.min(20000, Number(size[2])),
     version: (req.headers.get("x-display-version") || "").slice(0, 20),
     agent: (req.headers.get("user-agent") || "").slice(0, 160),
     ...(traffic ? { traffic } : {}),
+    ...(board ? { board } : {}),
   };
 }
 
@@ -168,6 +184,14 @@ export function cleanLists(m) {
   return { id: m.id || null, spec: { lists }, content };
 }
 
+/** E2d (DP-13): a board's look and options as saved with its menu (content.boards[layout id]), kept to the presets
+ *  (menu-format.mjs boardProblem); anything else is dropped, so the board draws its layout's own defaults. */
+export function cleanBoard(m, layoutId) {
+  const b = m?.content?.boards?.[layoutId];
+  if (!layoutId || !b || typeof b !== "object" || boardProblem(b)) return null;
+  return b;
+}
+
 /** A layout's pictures (E1b; supabase/30-layout-images.sql): key -> { url, w, h }, served from the site's own /img/. */
 export function cleanImages(images) {
   const out = {};
@@ -199,6 +223,8 @@ export function toLayoutPayload(screen, layout, prop, images) {
     menu: menuFor(layout?.menu_code),
     // E2a: the lists its blocks show (one set of lists for every board on this menu, and the phone menu)
     lists: cleanLists(layout?.lists),
+    // E2d: the look and options chosen for this board in the menu editor (null: the layout's own)
+    look: cleanBoard(layout?.lists, layout?.id),
     propertyName: prop?.name || "",
     address: prop?.address || "",
     timezone: prop?.timezone || "America/Chicago",

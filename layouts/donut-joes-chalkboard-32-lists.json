@@ -1,0 +1,306 @@
+{
+ "format": 1,
+ "orientation": "portrait",
+ "name": "Donut Joe's Pelham: chalkboard, 32\" portrait, on its lists (DP-13 E2d), step 2",
+ "notes": "Step 2 of 2: the chalkboard on its lists (after step 1's Add lists from this layout). With \"Show the coffee bar\" off (the customer's tick box in the menu editor's Board look), Today's specials takes the full width; with it on, Today's specials and the coffee bar sit side by side. Looks: House (the counter board's colours and fonts) or Chalkboard (the customer picks the chalk colours, lettering and frame). Internal spec only: not for a public ad without the owner's permission.",
+ "grid": {
+  "cols": 12,
+  "rows": 24,
+  "gap": 14,
+  "margin": 48
+ },
+ "viewing": {
+  "inches": 32,
+  "metres": 2
+ },
+ "theme": {
+  "palette": {
+   "bg": "#fff6ea",
+   "ink": "#3a2416",
+   "muted": "#6f5140",
+   "accent": "#b84a14",
+   "onAccent": "#ffffff",
+   "panel": "#3a2416",
+   "onPanel": "#fff6ea",
+   "highlight": "#166b3a",
+   "onHighlight": "#ffffff",
+   "line": "#e6d3bd"
+  },
+  "fonts": {
+   "display": "Oswald",
+   "body": "Instrument Sans"
+  },
+  "looks": [
+   "house",
+   "chalkboard"
+  ],
+  "look": "chalkboard",
+  "chalk": {
+   "titles": "yellow",
+   "prices": "pink",
+   "accents": "blue",
+   "lettering": "sign",
+   "frame": false
+  }
+ },
+ "options": [
+  {
+   "key": "coffee-bar",
+   "label": "Show the coffee bar",
+   "default": false
+  }
+ ],
+ "blocks": [
+  {
+   "id": "logo",
+   "type": "logo",
+   "at": {
+    "col": 1,
+    "row": 1,
+    "w": 12,
+    "h": 2
+   },
+   "style": {
+    "align": "center",
+    "size": "xxl"
+   },
+   "content": {
+    "image": "img:donut-joes-logo",
+    "text": "Donut Joe's"
+   }
+  },
+  {
+   "id": "hero",
+   "type": "rotator",
+   "at": {
+    "col": 1,
+    "row": 3,
+    "w": 12,
+    "h": 4
+   },
+   "style": {
+    "radius": "l",
+    "size": "l",
+    "shadow": true
+   },
+   "content": {
+    "seconds": 7,
+    "list": "hero"
+   },
+   "label": "Featured pictures"
+  },
+  {
+   "id": "specials",
+   "type": "items",
+   "at": {
+    "col": 1,
+    "row": 7,
+    "w": 12,
+    "h": 8
+   },
+   "style": {
+    "size": "l"
+   },
+   "content": {
+    "heading": "Today's specials",
+    "leaders": true,
+    "list": "specials"
+   },
+   "label": "Today's specials",
+   "showWhen": {
+    "option": "coffee-bar",
+    "is": "off"
+   }
+  },
+  {
+   "id": "specials-coffee",
+   "type": "items",
+   "at": {
+    "col": 1,
+    "row": 7,
+    "w": 7,
+    "h": 8
+   },
+   "style": {
+    "size": "l"
+   },
+   "content": {
+    "heading": "Today's specials",
+    "leaders": true,
+    "list": "specials"
+   },
+   "label": "Today's specials (beside the coffee bar)",
+   "showWhen": {
+    "option": "coffee-bar",
+    "is": "on"
+   }
+  },
+  {
+   "id": "coffee",
+   "type": "items",
+   "at": {
+    "col": 8,
+    "row": 7,
+    "w": 5,
+    "h": 8
+   },
+   "style": {
+    "size": "m"
+   },
+   "content": {
+    "heading": "Coffee bar",
+    "leaders": true,
+    "list": "coffee"
+   },
+   "showWhen": {
+    "option": "coffee-bar",
+    "is": "on"
+   }
+  },
+  {
+   "id": "note",
+   "type": "text",
+   "at": {
+    "col": 1,
+    "row": 15,
+    "w": 12,
+    "h": 1
+   },
+   "style": {
+    "size": "l",
+    "align": "center",
+    "valign": "middle",
+    "font": "accent"
+   },
+   "content": {
+    "list": "note"
+   },
+   "label": "Chalk note"
+  },
+  {
+   "id": "fall",
+   "type": "items",
+   "at": {
+    "col": 1,
+    "row": 16,
+    "w": 8,
+    "h": 4
+   },
+   "style": {
+    "surface": "accent",
+    "radius": "m",
+    "size": "m",
+    "pad": "m"
+   },
+   "content": {
+    "heading": "Fall flavors",
+    "leaders": true,
+    "list": "fall"
+   }
+  },
+  {
+   "id": "take-home",
+   "type": "items",
+   "at": {
+    "col": 1,
+    "row": 16,
+    "w": 8,
+    "h": 4
+   },
+   "style": {
+    "surface": "panel",
+    "radius": "m",
+    "size": "m",
+    "pad": "m"
+   },
+   "content": {
+    "heading": "Take some home",
+    "leaders": true,
+    "list": "take-home"
+   },
+   "showWhen": {
+    "list": "fall",
+    "is": "empty"
+   }
+  },
+  {
+   "id": "energy",
+   "type": "chips",
+   "at": {
+    "col": 9,
+    "row": 16,
+    "w": 4,
+    "h": 4
+   },
+   "style": {
+    "size": "m"
+   },
+   "content": {
+    "heading": "Jammin' Joe's",
+    "list": "energy"
+   }
+  },
+  {
+   "id": "party",
+   "type": "text",
+   "at": {
+    "col": 1,
+    "row": 20,
+    "w": 8,
+    "h": 2
+   },
+   "style": {
+    "surface": "highlight",
+    "radius": "m",
+    "size": "m",
+    "pad": "m",
+    "valign": "middle"
+   },
+   "content": {
+    "list": "party"
+   },
+   "label": "Announcement"
+  },
+  {
+   "id": "hours",
+   "type": "hours",
+   "at": {
+    "col": 1,
+    "row": 22,
+    "w": 8,
+    "h": 3
+   },
+   "style": {
+    "surface": "panel",
+    "radius": "m",
+    "size": "m",
+    "pad": "m",
+    "valign": "middle"
+   },
+   "content": {
+    "heading": "Hours",
+    "list": "hours"
+   }
+  },
+  {
+   "id": "menu-qr",
+   "type": "qr",
+   "at": {
+    "col": 9,
+    "row": 20,
+    "w": 4,
+    "h": 5
+   },
+   "style": {
+    "surface": "panel",
+    "radius": "m",
+    "size": "m",
+    "pad": "s",
+    "align": "center"
+   },
+   "content": {
+    "line": "Scan for the menu"
+   }
+  }
+ ]
+}

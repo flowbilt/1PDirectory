@@ -55,8 +55,9 @@ body { font-family: "Instrument Sans", "Segoe UI", Arial, sans-serif; -webkit-fo
    marking an item sold out can't make a list run out of its box */
 .item-row { position: relative; }
 /* 2.21.1 (Scot): small, solid red with a thin white edge, the price hidden under it (the selector outranks .tag.sold-out) */
-.item-row .tag.sold-out.sold-mark { position: absolute; right: 0; top: 50%; transform: translateY(-50%); margin: 0; opacity: 1;
-  background: #c8102e; color: #fff; border: 0.1em solid #fff; vertical-align: baseline; }
+/* 2.22.0 (Scot, DP-13): anchored to the name's last line, so on a name that wraps it sits beside line 2, not across both */
+.item-row .tag.sold-out.sold-mark { position: absolute; right: 0; bottom: var(--sold-bottom, 0.19em); margin: 0; opacity: 1;
+  background: #c8102e; color: #fff; border: 0.1em solid #fff; vertical-align: baseline; line-height: 1.15; }
 .item.sold .item-price { visibility: hidden; }
 
 /* chips */
@@ -126,7 +127,7 @@ body { font-family: "Instrument Sans", "Segoe UI", Arial, sans-serif; -webkit-fo
 .board:has(#offline:not([hidden])) .powered { visibility: hidden; }
 
 /* Identify: big, unmistakable, temporary (as on the directory) */
-.identify { position: absolute; inset: 0; z-index: 5; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2vmin;
+.identify { position: absolute; inset: 0; z-index: 40; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2vmin;
   background: rgba(8, 19, 34, 0.9); border: 1.2vmin solid #f2c14e; text-align: center; padding: 6vmin; color: #fff; }
 .identify-name { font-size: 9vmin; font-weight: 700; line-height: 1.05; }
 .identify-key { font-size: 3.4vmin; color: #f2c14e; font-variant-numeric: tabular-nums; }
@@ -169,3 +170,43 @@ html.menu-view, html.menu-view body { overflow: auto; }
 .item.ghost, .chip.ghost { visibility: hidden; }
 .chips-head .group-price { font-family: var(--f-body); font-size: 0.8em; white-space: nowrap; }
 .show-room .item.ghost, .show-room .chip.ghost { visibility: visible; color: transparent; outline: 2px dashed var(--ink); outline-offset: -2px; opacity: 0.35; background: transparent; }
+
+/* ── E2d (DP-13): the chalkboard look. A slate drawn here (no picture to load), chalk colours chosen from six for the
+   titles (--chalk-titles), prices (--chalk-prices) and accents (--chalk-accents: chips, lines, boxes' edges), plain
+   text white chalk (the palette's ink), the lettering from the look (Sign-writer: Pacifico titles, Bebas Neue items;
+   Chalk hand: Caveat Brush), a chalk grain laid over the lettering as a mask (board.js makes the tile once), and an
+   optional wooden frame. ── */
+#stage.look-chalk .board { background:
+  radial-gradient(ellipse 60% 40% at 30% 25%, rgba(255, 255, 255, 0.07), transparent 70%),
+  radial-gradient(ellipse 50% 35% at 75% 70%, rgba(255, 255, 255, 0.05), transparent 70%),
+  radial-gradient(ellipse 80% 20% at 50% 96%, rgba(255, 255, 255, 0.045), transparent 70%),
+  repeating-linear-gradient(100deg, rgba(255, 255, 255, 0.012) 0 3px, transparent 3px 11px),
+  var(--p-bg); }
+.look-chalk .b-title, .look-chalk .items-head, .look-chalk .chips-head, .look-chalk .hours-head, .look-chalk .hours-now,
+.look-chalk .tt-head, .look-chalk .b-logo, .look-chalk .nn .lbl { color: var(--chalk-titles); }
+.look-chalk .items-head, .look-chalk .chips-head { font-weight: 400; }
+.look-chalk .items-head { border-bottom: 5px solid var(--chalk-accents); padding-bottom: 0.08em; margin-bottom: 0.3em; }
+.look-chalk .item-price, .look-chalk .group-price, .look-chalk .b-price .amount { color: var(--chalk-prices); }
+.look-chalk .item-name, .look-chalk .item-price, .look-chalk .chip { font-family: var(--f-item); font-weight: 400; letter-spacing: 0.02em; }
+.look-chalk:not(.lettering-hand) .item-row, .look-chalk:not(.lettering-hand) .chip { font-size: 1.08em; }   /* Bebas Neue reads small */
+.look-chalk .item-row .leader { border-bottom-color: var(--chalk-accents); opacity: 0.7; }
+.look-chalk .chip { background: transparent; color: var(--chalk-accents); box-shadow: inset 0 0 0 0.1em var(--chalk-accents); }
+.look-chalk .chip.special { background: var(--chalk-accents); color: var(--p-bg); }
+.look-chalk .chip.ghost { box-shadow: none; }
+.look-chalk .tag { background: var(--chalk-accents); color: var(--p-bg); }
+.look-chalk .b.surfaced:not(.qr):not(.price) { background: rgba(255, 255, 255, 0.035); box-shadow: inset 0 0 0 5px var(--chalk-accents); }
+.look-chalk .b.shadow { box-shadow: 0 10px 28px rgba(0, 0, 0, 0.45); }
+.look-chalk .photo-cap { background: rgba(28, 34, 32, 0.88); }
+.look-chalk .photo-cap .b-title { color: var(--chalk-titles); }
+.look-chalk .photo-price { background: var(--chalk-prices); color: var(--p-bg); }
+.look-chalk .hours-now.closed { color: var(--p-ink); }
+/* The grain: every block whose lettering is chalk (not pictures, the QR code or a picture logo) */
+.look-chalk:not(.no-grain) .b:not(.photo):not(.rotator):not(.qr):not(.has-img) .b-in {
+  -webkit-mask-image: var(--grain); mask-image: var(--grain); -webkit-mask-size: 200px 200px; mask-size: 200px 200px; }
+/* The wooden frame (an option; 1Point may build a real one, so it's often off) */
+.look-chalk.framed .board::after { content: ""; position: absolute; inset: 0; z-index: 20; pointer-events: none;
+  border: 30px solid #7a5230;
+  border-image: repeating-linear-gradient(115deg, #8a5d36 0 14px, #74492a 14px 22px, #93663c 22px 40px, #6b4426 40px 46px, #86592f 46px 64px) 30;
+  box-shadow: inset 0 0 0 4px #4a2f1c, inset 0 0 36px rgba(0, 0, 0, 0.55); }
+.look-chalk.framed .powered { z-index: 21; color: #f6e9d6; opacity: 0.85; height: 30px; line-height: 30px; font-size: 16px; }
+.look-chalk .powered { color: #c9cbc2; }
