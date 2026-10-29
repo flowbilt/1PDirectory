@@ -81,7 +81,7 @@ export async function caller(req) {
     throw Object.assign(new Error("Your sign-in has expired. Please sign in again."), { status: 401 });
   }
   const [profile] = await db(`profiles?user_id=eq.${encodeURIComponent(user.id)}&select=*`);
-  if (!profile) throw Object.assign(new Error("This login isn't linked to an account yet. Contact 1Point."), { status: 403 });
+  if (!profile) throw Object.assign(new Error("This login isn't linked to an account yet. Contact WayTuGo."), { status: 403 });
   return { user, profile };
 }
 

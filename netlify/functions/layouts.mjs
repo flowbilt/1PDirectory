@@ -17,7 +17,8 @@
 // preview and publish check each one against the menu, and the preview carries the menu as it is now.
 //   POST { action: "make_menu", layout_id, blocks?, rooms?, names?, name? } -> { menu_id, made } "Make lists from this layout": the
 //        layout's own items, chips, pictures, text and hours become a new menu's lists (room for about a third more),
-//        the blocks point at them, and the draft is kept (publish it to put the board on the lists)
+//        the blocks point at them, and the draft is kept (publish it to put the board on the lists). E2b: on a layout
+//        that already has a menu, the chosen blocks become more lists on that menu ("Add lists from this layout")
 // Setting a menu's lists up (rooms, boxes, caps), who edits, and choosing a layout's menu are done by the console
 // straight to the database (1Point only; the database checks every rule); the customer's saves go to menu_save.
 import { checkLayout } from "../../public/layout-format.mjs";
@@ -82,7 +83,7 @@ export default async (req) => {
   try {
     if (req.method !== "POST") return json({ error: "POST only." }, 405);
     const { user, profile } = await caller(req);
-    if (profile.role !== "platform_admin") throw fail(403, "Only 1Point can change layouts for now.");
+    if (profile.role !== "platform_admin") throw fail(403, "Only WayTuGo can change layouts.");
     const body = await req.json().catch(() => ({}));
 
     if (body.action === "check" || body.action === "preview" || body.action === "publish") {
@@ -126,7 +127,6 @@ export default async (req) => {
 
     if (body.action === "make_menu") {
       const layout = await loadLayout(body.layout_id);
-      if (layout.menu_id) throw fail(409, "This layout already takes its lists from a menu. Change its lists under Menu on this page.");
       const [{ draft } = {}] = await db(`layouts?id=eq.${enc(layout.id)}&select=draft`);
       if (!draft || !Array.isArray(draft.blocks) || !draft.blocks.length) throw fail(400, "This layout has no blocks yet. Check its JSON first (Check keeps it as the draft).");
       const ids = Array.isArray(body.blocks) ? body.blocks.filter((x) => typeof x === "string") : undefined;
@@ -139,6 +139,21 @@ export default async (req) => {
         const nm = String(body.names?.[l.key] || "").trim();
         if (nm) l.name = nm.slice(0, 60);
         if ((content.lists[l.key]?.entries || []).length > l.room) throw fail(400, `"${l.name}" has ${content.lists[l.key].entries.length} entries now, so its room can't be less than that.`);
+      }
+      // E2b: a layout that already has a menu gets more lists on it (a key the menu already has gets "-2", "-3"…)
+      const menu = await menuOf(layout);
+      if (menu) {
+        const taken = new Set((menu.spec?.lists || []).map((l) => l.key));
+        for (const l of spec.lists) {
+          if (!taken.has(l.key)) { taken.add(l.key); continue; }
+          let n = 2; while (taken.has(`${l.key.slice(0, 36)}-${n}`)) n++;
+          const key = `${l.key.slice(0, 36)}-${n}`;
+          content.lists[key] = content.lists[l.key]; delete content.lists[l.key];
+          for (const b of doc.blocks) if (b.content?.list === l.key && made.includes(b.id)) b.content.list = key;
+          l.key = key; taken.add(key);
+        }
+        const rev = await rpc("menu_add_lists", { p_menu: menu.id, p_lists: spec.lists, p_content: content.lists, p_by: user.id, p_layout: layout.id, p_draft: doc });
+        return json({ menu_id: menu.id, made, spec, rev });
       }
       const name = String(body.name || `${layout.name}: menu`).trim().slice(0, 80);
       const menu_id = await rpc("menu_create", { p_org: layout.org_id, p_name: name, p_spec: spec, p_content: content, p_by: user.id, p_layout: layout.id, p_draft: doc });

@@ -317,6 +317,30 @@ asks the company to change one). Desktop first; the phone version of the editor 
   the 34 there now). The room costs some text size on this board: donuts 66% → 60%, pastries 73% → 64%, the fall box
   63% → 59% of their set sizes (worth seeing on a real 55").
 
+### E2b (DP-12): specials with dates and times, showWhen, the WayTuGo name
+
+- **Customers see WayTuGo** (Scot, 2026-10-29): every line a customer can see says WayTuGo, made by 1PointUSA
+  ("WayTuGo keeps this menu up to date for you. Contact WayTuGo for changes.", "More room is a menu expansion: ask
+  WayTuGo.", saves by 1Point's staff marked "(WayTuGo)" in History). 1Point's own screens (Layouts, List settings, Save
+  anyway) keep "1Point". The database's customer-facing messages follow (`supabase/33-menu-specials.sql`).
+- **Specials with dates and times:** a list set up with `"schedule": true` (items or text; in List settings) gives each
+  entry a **When** in the menu editor: first and last day, days, from and to times (all optional; no days is every day,
+  no times all day; past midnight works). The editor says *On now*, *Starts Nov 1*, *Ended Oct 31* or *Not on right
+  now*. Boards and the phone menu show an entry only while its When says so, switching by the building's clock with no
+  save. An entry waiting for its dates uses up room like any other.
+- **A box that follows a list:** a block's `"showWhen": { "list": "fall", "is": "empty" }` (or `"showing"`) shows it only
+  while that list has nothing on (or something on). The overlap guardrail knows such boxes take turns. The Donut Joe's
+  counter board on its lists is `layouts/donut-joes-counter-55-lists.json`: the fall box and its picture while the fall
+  list has a special on, Take some home and its picture whenever it doesn't.
+- **Preview full size:** opens the board with the unsaved changes in its own window (full screen if wanted), following
+  the changes as they're typed. Nothing reaches a screen.
+- **Fit while typing:** every board on the menu is drawn out of sight and checked after each change; a list that would
+  run out of its box is outlined in red with "Doesn't fit on Counter board: shorten what's written here, or hide an
+  item." Save still refuses it (1Point may save anyway).
+- **Add lists from this layout (1Point):** on a layout that already shows a menu, the blocks not yet on lists become
+  more lists on that menu (kept as a new save by 1Point); a key the menu already has gets `-2`. So a second board (the
+  chalkboard) can **Use this menu**, then add its own lists beside the shared ones.
+
 ## Screens and cards (Raspberry Pi)
 
 Every Pi runs from a **prepared card**, and every card is the same. A card carries no identity until it's in a Pi:
@@ -633,9 +657,9 @@ Local sample logins: `scot@1pointusa.com / admin-pass`, `leighann@barber.test / 
 public/             screen (index.html, display.*; board.* for a layout; screen-core.js, what every screen does, shared by both; layout-format.mjs, the layout format; menu-format.mjs, the menu format), sign-in, console (+ console-devices.js, console-setup.js, console-layouts.js), editor, menu editor (menu-edit.*), technician page (tech.*), shared auth.js
 netlify/functions/  screen, users, config, weather, news, traffic, togo (the Directory to Go page), menu (Take this menu with you: /m/<code> and /api/menu), agent, devices, networks, alert-settings, alerts, layouts (check, preview, publish, roll back; upload and remove pictures; make lists from a layout)
 netlify/lib/        Supabase client (and Storage), RSS reader, pictures (images.mjs: what a file really is), shared helpers
-supabase/           database schema (01 to 32, run in order), starting data, check queries, setup guide
+supabase/           database schema (01 to 33, run in order), starting data, check queries, setup guide
 migration/          the Yodeck/Wix transcription the starting data was built from
 public/pi/          setup-kiosk.sh, agent.py, startup.png (the start-up picture) and startup/ (the start-up animation), served by the site so Pis can download them
-layouts/            layouts written as data (Donut Joe's Pelham; Donut Joe's counter board, 55" landscape) and the menu source; not deployed, pasted into the console
+layouts/            layouts written as data (Donut Joe's Pelham; Donut Joe's counter board, 55" landscape, and the same board on its lists, E2b) and the menu source; not deployed, pasted into the console
 tests/              function tests, fake Supabase, local test server, browser checks, the SQL runner and its Supabase stand-in
 ```

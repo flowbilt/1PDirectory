@@ -9,15 +9,18 @@
 // E2a (DP-12): a block on a list draws that list of the layout's menu (the answer's "lists": spec and content), through
 // applyMenu (public/menu-format.mjs): only the entries shown, sold out today marked, and an items or chips list keeping
 // the room for its full length (invisible rows), so the text stays the size it was designed at however much is filled.
-import { applyMenu } from "/menu-format.mjs";
+import { applyMenu, menuMoment } from "/menu-format.mjs";
 import { checkLayout, canvas, blockBox, blockShows, zonedNow, hoursNow, nowNext, niceTime, niceDays, FONTS, SIZES, SURFACES, STYLE_PX, TAGS, QR_LINE, qrSide } from "/layout-format.mjs";
 
-const VERSION = "2.19.0";   // = netlify/lib/version.mjs and display.js (a test keeps them equal)
+const VERSION = "2.20.0";   // = netlify/lib/version.mjs and display.js (a test keeps them equal)
 const C = window.ScreenCore;
 const { PREVIEW, CHECKS_IN, MENU, cache, esc } = C;
 const $ = (id) => document.getElementById(id);
 const stage = $("stage"), boardEl = $("board"), blocksEl = $("blocks");
-let data = null, sig = "", doc = null, drawn = null, drawnDate = "";
+let data = null, sig = "", doc = null, drawn = null, drawnDate = "", drawnMoment = "";
+// The page that's previewing this one: the console or menu editor around it, or (E2b, "Preview full size") the menu
+// editor that opened it in its own window
+const HOST = window.parent !== window ? window.parent : window.opener || null;
 const MIN_FIT = 0.55;   // text shrinks to fit its box down to this share of its size; past that the block overflows
 
 // ── Size and turn ──
@@ -169,8 +172,10 @@ function render() {
   if (!checked.doc) { note.textContent = "This layout can't be shown."; note.hidden = false; stage.classList.remove("is-loading"); return; }
   note.hidden = true;
   // E2a: its lists, as they are today in the building (an item sold out today is marked; tomorrow it's back)
-  drawnDate = zonedNow(C.now(), data?.timezone || "America/Chicago").date;
-  doc = applyMenu(checked.doc, data.lists, drawnDate, { room: true });
+  // E2b: and its specials by their dates, days and times
+  const nowHere = zonedNow(C.now(), data?.timezone || "America/Chicago");
+  drawnDate = nowHere.date; drawnMoment = menuMoment(data.lists, nowHere);
+  doc = applyMenu(checked.doc, data.lists, nowHere, { room: true });
   const p = doc.theme.palette, f = doc.theme.fonts;
   for (const [k, v] of Object.entries(p)) stage.style.setProperty(`--p-${k}`, v);
   for (const [k, v] of Object.entries(f)) stage.style.setProperty(`--f-${k}`, FONTS[v].css);
@@ -229,7 +234,7 @@ function fitAll() {
     el.classList.toggle("overflow-mark", PREVIEW && r === 0);
     if (r === 0) report.overflow.push(el.dataset.id); else if (r < 1) report.shrunk.push({ id: el.dataset.id, scale: Math.round(r * 100) / 100 });
   }
-  if (PREVIEW && window.parent !== window) window.parent.postMessage({ type: "layout-report", ...report }, location.origin);
+  if (PREVIEW && HOST) HOST.postMessage({ type: "layout-report", ...report }, location.origin);
   return report;
 }
 
@@ -240,7 +245,8 @@ function live(force) {
   const tz = data?.timezone || "America/Chicago";
   const now = zonedNow(C.now(), tz);
   // E2a: at the building's midnight, "sold out today" clears: draw the lists again for the new day
-  if (data?.lists && drawnDate && now.date !== drawnDate) { render(); return; }
+  // E2b: and when a special's time comes or goes, by the building's clock (no save needed)
+  if (data?.lists && drawnDate && (now.date !== drawnDate || menuMoment(data.lists, now) !== drawnMoment)) { render(); return; }
   // Which blocks show now (their schedules, in the building's time zone)
   const shown = doc.blocks.map((b) => (blockShows(b, now) ? 1 : 0)).join("");
   if (force || shown !== lastShown) {
@@ -342,7 +348,7 @@ if (PREVIEW) {
     if (e.data?.type !== "layout-draft" || !e.data.data) return;
     sig = ""; apply({ ...e.data.data, kind: "layout" });
   });
-  if (window.parent !== window) window.parent.postMessage({ type: "layout-ready" }, location.origin);
+  if (HOST) HOST.postMessage({ type: "layout-ready" }, location.origin);
 } else if (MENU) {
   document.documentElement.classList.add("menu-view");   // a phone, not a lobby screen: touches and pinch-zoom work
   loadScreen();

@@ -334,9 +334,9 @@
       return `<tr><td><strong>${esc(m.name)}</strong>${S.admin ? `<div class="sub">${esc(org(m.org_id)?.name || "")}</div>` : ""}</td>
         <td>${boards.length ? boards.map((l) => esc(l.name)).join("<br>") : `<span class="sub">none yet</span>`}</td>
         <td>${m.rev ? `Save ${m.rev}<div class="sub">${since(m.updated_at)}</div>` : `<span class="sub">not saved yet</span>`}</td>
-        <td>${m.customer_edit ? "You and 1Point" : "1Point keeps it up to date"}</td>
+        <td>${m.customer_edit ? "You and WayTuGo" : "WayTuGo keeps it up to date"}</td>
         <td class="actions"><a class="ghost" href="/menu-edit.html?m=${m.id}">${m.customer_edit || S.admin ? "Edit menu" : "See menu"}</a></td></tr>`;
-    }).join("") : `<tr><td colspan="5" class="empty-rows">No menus yet. 1Point builds each menu board from your own layout; its lists show here to edit.</td></tr>`;
+    }).join("") : `<tr><td colspan="5" class="empty-rows">No menus yet. WayTuGo builds each menu board from your own layout; its lists show here to edit.</td></tr>`;
   }
 
   function renderAccounts() {

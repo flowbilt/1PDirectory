@@ -23,7 +23,7 @@
   </div>
 </header>
 <p id="load-error" class="error page-error" hidden></p>
-<p id="readonly" class="menu-banner" hidden>1Point keeps this menu up to date for you. Contact 1Point for changes.</p>
+<p id="readonly" class="menu-banner" hidden>WayTuGo keeps this menu up to date for you. Contact WayTuGo for changes.</p>
 <div id="save-problems" class="menu-problems" role="alert" hidden></div>
 <div class="workspace wide-preview" id="workspace" hidden>
   <div class="editor" id="lists"></div>
@@ -33,6 +33,7 @@
       <select id="board-pick" aria-label="Which board to preview"></select>
     </div>
     <div class="preview-box landscape" id="pv-box"><iframe id="pv" title="Board preview" src="about:blank"></iframe></div>
+    <button type="button" class="ghost" id="full">Preview full size</button>
     <label class="check inline"><input type="checkbox" id="show-room"> Show the empty room</label>
     <p class="hint" id="pv-note">As the board will show it, with your changes, before you save.</p>
     <p class="hint" id="phone-line"></p>
@@ -41,6 +42,8 @@
     <ol class="menu-history" id="history"></ol>
   </aside>
 </div>
+<!-- E2b: each board on the menu, drawn out of sight, to check every change fits as it's typed -->
+<div id="checkers" class="me-checkers" aria-hidden="true"></div>
 <script src="/auth.js"></script>
 <script type="module" src="/menu-edit.js"></script>
 </body>

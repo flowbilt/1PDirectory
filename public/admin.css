@@ -347,3 +347,17 @@ td.thumb { width: 96px; padding: 6px 8px; }
 .make-lists li input[data-name] { width: 60%; min-width: 200px; margin-right: 6px; }
 .make-lists input[type=number] { width: 100%; }
 .spec-json { width: 100%; min-height: 360px; font: 13px/1.4 ui-monospace, Menlo, Consolas, monospace; padding: 10px; border: 1px solid var(--line); border-radius: 6px; }
+/* E2b: an entry's When; a list that doesn't fit; the hidden fit-check frames */
+.me-when { flex: 1 1 100%; display: flex; flex-wrap: wrap; gap: 6px 10px; align-items: center; font-size: 14px; }
+.me-when-btn { padding: 3px 10px; font-size: 13px; }
+.me-status { font-size: 12px; font-weight: 700; border-radius: 999px; padding: 1px 8px; }
+.me-status.on { background: #e3f4ea; color: var(--ok); }
+.me-status.off { background: var(--bg); color: var(--muted); border: 1px solid var(--line); }
+.me-when-panel { flex: 1 1 100%; display: flex; flex-wrap: wrap; gap: 8px 12px; align-items: center; padding: 8px 10px; background: var(--bg); border: 1px solid var(--line); border-radius: 8px; }
+.me-when-panel .hint { flex: 1 1 100%; margin: 0; }
+.me-when-panel input[type=date] { width: auto; }
+.me-list.nofit { border-color: var(--danger); box-shadow: 0 0 0 2px rgba(179, 38, 30, 0.15); }
+.me-nofit { margin: 0; color: var(--danger); font-weight: 700; }
+.me-checkers { position: absolute; left: -10000px; top: 0; width: 480px; height: 270px; overflow: hidden; }
+.me-checkers iframe { width: 480px; height: 270px; border: 0; }
+#full { justify-self: start; }

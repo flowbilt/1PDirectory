@@ -143,7 +143,7 @@ begin
   begin
     perform public.menu_save(v_menu, 2, c1);
     fails := fails || '6 the owner saved with customer editing off'::text;
-  exception when insufficient_privilege then if sqlerrm not like '1Point keeps this menu%' then fails := fails || format('6 message: %s', sqlerrm); end if;
+  exception when insufficient_privilege then if sqlerrm not like '%keeps this menu up to date%' then fails := fails || format('6 message: %s', sqlerrm); end if;
   end;
   perform set_config('request.jwt.claims', json_build_object('sub', u_admin, 'role', 'authenticated')::text, true);
   r := public.menu_save(v_menu, 2, c2);

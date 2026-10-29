@@ -2417,9 +2417,9 @@ test("menus: the lists 1Point sets up and what a customer saves are checked in p
   const ok = { lists: { donuts: { price: "$1.89 each", entries: [{ id: "aaaa01", name: "Maple Bacon", tags: ["favorite"], image: "img:maple-bacon" }] }, hours: { note: "Exit 242", entries: [{ id: "hhhh01", days: [2, 3], open: "06:00", close: "18:00" }] }, party: { entries: [{ id: "pppp01", title: "Party boxes", link: "https://example.com" }] } } };
   assert.deepEqual(MF.checkMenuContent(spec, ok, { images: new Set(["maple-bacon"]) }).errors, []);
   const why = (c, images) => MF.checkMenuContent(spec, c, { images }).errors.map((e) => `${e.where}: ${e.msg}`).join(" | ");
-  assert.match(why({ lists: { donuts: { entries: [1, 2, 3, 4].map((i) => ({ id: `ab${i}cd`, name: `D${i}` })) } } }), /"Donuts" has room for 3; this has 4\. More room is a menu expansion: ask 1Point\./);
+  assert.match(why({ lists: { donuts: { entries: [1, 2, 3, 4].map((i) => ({ id: `ab${i}cd`, name: `D${i}` })) } } }), /"Donuts" has room for 3; this has 4\. More room is a menu expansion: ask WayTuGo\./);
   assert.match(why({ lists: { donuts: { entries: [{ id: "aaaa01", name: "A name that is far too long" }] } } }), /"Donuts", item 1 \("A name that is far too long"\): Name is 27 characters; this list has room for 20\./);
-  assert.match(why({ lists: { donuts: { entries: [{ id: "aaaa01", name: "A", line: "x" }] } } }), /no description box \(1Point can add one\)/);
+  assert.match(why({ lists: { donuts: { entries: [{ id: "aaaa01", name: "A", line: "x" }] } } }), /no description box \(WayTuGo can add one\)/);
   assert.match(why({ lists: { donuts: { entries: [{ id: "aaaa01", name: "A", image: "img:not-here" }] } } }, new Set()), /isn't in this account's pictures/);
   assert.match(why({ lists: { donuts: { entries: [{ id: "aaaa01", name: " " }] } } }), /An item needs a name/);
   assert.match(why({ lists: { donuts: { entries: [{ id: "aaaa01", name: "A", tags: ["sold-out"] }] } } }), /Tags are from/);
@@ -2516,7 +2516,7 @@ test("menus: saving as the signed-in user: owner and editor go live and are name
   r = await asUser(owner, "menu_save", { p_menu: m.id, p_base_rev: 1, p_content: c1 });
   assert.equal(r.status, 409); assert.match((await r.json()).message, /Someone else saved this menu after you opened it \(Front Desk\)/);
   r = await asUser(owner, "menu_save", { p_menu: m.id, p_base_rev: 2, p_content: { lists: { donuts: { entries: [1, 2, 3, 4].map((i) => ({ id: `ab${i}cd`, name: `D${i}` })) } } } });
-  assert.equal(r.status, 400); assert.match((await r.json()).message, /room for 3.*menu expansion: ask 1Point/);
+  assert.equal(r.status, 400); assert.match((await r.json()).message, /room for 3.*menu expansion: ask WayTuGo/);
   r = await asUser(stranger, "menu_save", { p_menu: m.id, p_base_rev: 2, p_content: c1 });
   assert.equal(r.status, 403);
   r = await fake.handle(new Request(`${SB}/rest/v1/menus?id=eq.${m.id}&select=id`, { headers: { apikey: ANON_KEY, Authorization: `Bearer ${stranger}` } }));
@@ -2528,7 +2528,7 @@ test("menus: saving as the signed-in user: owner and editor go live and are name
   // a full maintenance plan: only 1Point
   fake.T.menus.find((x) => x.id === m.id).customer_edit = false;
   r = await asUser(owner, "menu_save", { p_menu: m.id, p_base_rev: 3, p_content: c1 });
-  assert.equal(r.status, 403); assert.match((await r.json()).message, /1Point keeps this menu up to date/);
+  assert.equal(r.status, 403); assert.match((await r.json()).message, /WayTuGo keeps this menu up to date/);
   r = await asUser(admin, "menu_save", { p_menu: m.id, p_base_rev: 3, p_content: c1 });
   assert.equal((await r.json()).rev, 4); assert.equal(fake.T.menu_revisions.at(-1).by_1point, true);
 });
@@ -2552,7 +2552,7 @@ test("menus: Make lists (1Point only), the board and phone menu get the lists (h
   const lay = fake.T.layouts.find((x) => x.id === l.id), menu = fake.T.menus.find((x) => x.id === made.menu_id);
   assert.equal(lay.menu_id, menu.id); assert.equal(menu.spec.lists.find((x) => x.key === "pastries").room, 7);
   assert.equal(menu.spec.lists.find((x) => x.key === "foot").name, "Bottom line (shop)");
-  assert.equal((await lcall({ action: "make_menu", layout_id: l.id }, admin)).status, 409, "only once");
+  assert.equal((await lcall({ action: "make_menu", layout_id: l.id }, admin)).status, 400, "nothing left to turn into lists");
   // publish the bound draft; the check knows the menu's lists
   const bad = JSON.parse(JSON.stringify(lay.draft)); bad.blocks.find((b) => b.id === "donuts").content.list = "nope";
   assert.match(JSON.stringify((await (await lcall({ action: "check", layout_id: l.id, doc: bad }, admin)).json()).errors), /no list \\"nope\\"/);
@@ -2567,7 +2567,7 @@ test("menus: Make lists (1Point only), the board and phone menu get the lists (h
     const first = await screen(req(`/api/screen?key=${scr.key}`));
     const d = await first.json();
     assert.equal(d.lists.spec.lists.find((x) => x.key === "donuts").room, 16);
-    assert.deepEqual(Object.keys(d.lists.spec.lists[0]).sort(), ["groupPrice", "key", "kind", "note", "room"], "screens get only what they draw with");
+    assert.deepEqual(Object.keys(d.lists.spec.lists[0]).sort(), ["groupPrice", "key", "kind", "note", "room", "schedule"], "screens get only what they draw with");
     const content = JSON.parse(JSON.stringify(menu.content));
     content.lists.donuts.entries.push({ id: "zzz001", name: "Secret donut", hidden: true }, { id: "zzz002", name: "Lemon Curd", image: "img:gift-cards" });
     r = await asUser(owner, "menu_save", { p_menu: menu.id, p_base_rev: menu.rev, p_content: content });
@@ -2595,12 +2595,110 @@ test("menus: Make lists (1Point only), the board and phone menu get the lists (h
 
 test("menus: the editor, the console's Menus tab and the board's room are in place (files)", () => {
   const html = readFileSync(new URL("../public/menu-edit.html", import.meta.url), "utf8"), js = readFileSync(new URL("../public/menu-edit.js", import.meta.url), "utf8");
-  assert.ok(html.includes('type="module" src="/menu-edit.js"') && html.includes("1Point keeps this menu up to date for you"));
-  for (const w of ['Auth.db("rpc/menu_save"', 'Auth.db("rpc/menu_restore"', "checkMenuContent(", "menuChanges(", "More room is a menu expansion: ask 1Point.", "Sold out today", "Hide"]) assert.ok(js.includes(w), w);
+  assert.ok(html.includes('type="module" src="/menu-edit.js"') && html.includes("WayTuGo keeps this menu up to date for you"));
+  for (const w of ['Auth.db("rpc/menu_save"', 'Auth.db("rpc/menu_restore"', "checkMenuContent(", "menuChanges(", "More room is a menu expansion: ask WayTuGo.", "Sold out today", "Hide"]) assert.ok(js.includes(w), w);
   const con = readFileSync(new URL("../public/console.html", import.meta.url), "utf8"), cjs = readFileSync(new URL("../public/console.js", import.meta.url), "utf8");
   assert.ok(con.includes('id="tab-menus"') && con.includes('id="panel-menus"') && cjs.includes("menu-edit.html?m="));
   const board = readFileSync(new URL("../public/board.js", import.meta.url), "utf8");
-  assert.ok(board.includes("applyMenu(checked.doc, data.lists, drawnDate, { room: true })") && board.includes('class="item ghost"'));
+  assert.ok(board.includes("applyMenu(checked.doc, data.lists, nowHere, { room: true })") && board.includes('class="item ghost"'));
+});
+
+// ── Specials with dates and times, showWhen, more lists, WayTuGo (DP-12, round E2b; supabase/33-menu-specials.sql) ──
+const LISTS_BOARD = JSON.parse(readFileSync(new URL("../layouts/donut-joes-counter-55-lists.json", import.meta.url), "utf8"));
+
+test("specials: an entry's when (dates, days, times, past midnight), in words, and what the editor says about it", () => {
+  const w = MF.checkWhen({ dates: { from: "2026-09-15", to: "2026-11-30" }, days: [5, 1, 2, 3, 4], from: "11:00", to: "14:00" });
+  assert.deepEqual(w.when, { dates: { from: "2026-09-15", to: "2026-11-30" }, days: [1, 2, 3, 4, 5], from: "11:00", to: "14:00" });
+  assert.equal(MF.describeWhen(w.when), "Sep 15 – Nov 30 · Mon–Fri · 11 AM – 2 PM");
+  assert.equal(MF.describeWhen(null), "Always"); assert.equal(MF.describeWhen({ dates: { from: "2026-12-01" } }), "From Dec 1");
+  assert.equal(MF.checkWhen({ days: [1, 2, 3, 4, 5, 6, 7] }).when, null, "every day is the same as no days");
+  for (const [bad, re] of [[{ dates: { from: "2026-12-01", to: "2026-11-01" } }, /before the first/], [{ from: "11:00" }, /both times/], [{ from: "11:00", to: "11:00" }, /same/], [{ days: [] }, /at least one day/], [{ weeks: 1 }, /isn't part of when/]])
+    assert.match(MF.checkWhen(bad).error, re);
+  const at = (date, dow, hm) => ({ date, dow, hm });
+  const lunch = { when: { days: [1, 2, 3, 4, 5], from: "11:00", to: "14:00" } }, fall = { when: { dates: { from: "2026-09-15", to: "2026-11-30" } } }, late = { when: { from: "22:00", to: "02:00" } };
+  assert.ok(MF.entryOn(lunch, at("2026-10-29", 4, "11:00")) && !MF.entryOn(lunch, at("2026-10-29", 4, "14:00")) && !MF.entryOn(lunch, at("2026-10-31", 6, "12:00")));
+  assert.ok(MF.entryOn(fall, at("2026-11-30", 1, "23:59")) && !MF.entryOn(fall, at("2026-12-01", 2, "00:00")));
+  assert.ok(MF.entryOn(late, at("2026-10-29", 4, "23:30")) && MF.entryOn(late, at("2026-10-29", 4, "01:30")) && !MF.entryOn(late, at("2026-10-29", 4, "12:00")), "past midnight");
+  assert.deepEqual([MF.entryStatus(fall, at("2026-09-01", 2, "09:00")), MF.entryStatus(fall, at("2026-10-29", 4, "09:00")), MF.entryStatus(fall, at("2026-12-02", 3, "09:00")), MF.entryStatus(lunch, at("2026-10-29", 4, "16:00")), MF.entryStatus({}, at("2026-10-29", 4, "16:00"))],
+    ["Starts Sep 15", "On now", "Ended Nov 30", "Not on right now", ""]);
+});
+
+test("specials: lists with dates (items or text only), the rules in WayTuGo's words, the database saying the same", () => {
+  const spec = { lists: [{ key: "sp", name: "Specials", kind: "items", room: 2, fields: ["name", "price"], schedule: true }, { key: "dr", name: "Drinks", kind: "items", room: 3, fields: ["name"] }] };
+  assert.deepEqual(MF.checkMenuSpec(spec).errors, []);
+  assert.match(MF.checkMenuSpec({ lists: [{ key: "h", name: "H", kind: "hours", room: 2, schedule: true }] }).errors[0].msg, /items or text list/);
+  const S = MF.checkMenuSpec(spec).spec;
+  const why = (c) => MF.checkMenuContent(S, c).errors.map((e) => `${e.where}: ${e.msg}`).join(" | ");
+  assert.equal(why({ lists: { sp: { entries: [{ id: "sp0001", name: "Lunch", when: { days: [1], from: "11:00", to: "14:00" } }] } } }), "");
+  assert.match(why({ lists: { dr: { entries: [{ id: "dr0001", name: "Latte", when: { days: [1] } }] } } }), /no dates or times \(WayTuGo can switch them on\)/);
+  assert.match(why({ lists: { sp: { entries: [{ id: "sp0001", name: "A", when: { from: "11:00" } }] } } }), /both times/);
+  assert.match(why({ lists: { sp: { entries: [{ id: "a1a1", name: "A" }, { id: "a2a2", name: "B", when: { dates: { from: "2099-01-01" } } }, { id: "a3a3", name: "C" }] } } }), /room for 2; this has 3\. More room is a menu expansion: ask WayTuGo\./, "a special waiting for its dates uses up room");
+  const sql = readFileSync(new URL("../supabase/33-menu-specials.sql", import.meta.url), "utf8");
+  for (const w of ["'WayTuGo keeps this menu up to date for you. Contact WayTuGo for changes.'", "More room is a menu expansion: ask WayTuGo.'", "(WayTuGo can switch them on)", "on an items or text list", "x not in ('dates', 'days', 'from', 'to')"]) assert.ok(sql.includes(w), w);
+  assert.ok(!/raise exception '[^']*1Point/.test(sql), "no customer-facing 1Point in 33's messages");
+  assert.deepEqual(MF.menuChanges(S, { lists: { sp: { entries: [{ id: "sp0001", name: "Lunch" }] } } }, { lists: { sp: { entries: [{ id: "sp0001", name: "Lunch", when: { days: [1, 2, 3, 4, 5], from: "11:00", to: "14:00" } }] } } }),
+    ["Specials · Lunch: when Always → Mon–Fri · 11 AM – 2 PM"]);
+});
+
+test("specials on the board: a special shows only while on, the box with nothing on leaves, Take some home shows when the fall list is empty", () => {
+  const { spec, content } = MF.extractMenu(COUNTER);
+  spec.lists.find((l) => l.key === "fall").schedule = true;
+  for (const e of content.lists.fall.entries) e.when = { dates: { from: "2026-09-15", to: "2026-11-30" } };
+  content.lists.fall.entries.push({ id: "lnch01", name: "Lunch combo", price: "$8.99", when: { days: [1, 2, 3, 4, 5], from: "11:00", to: "14:00" } });
+  const check = LF.checkLayout(LISTS_BOARD, { lists: spec.lists });
+  assert.deepEqual(check.errors, []); assert.deepEqual(check.warnings.filter((w) => w.kind === "overlap"), [], "boxes that take turns by a list aren't an overlap");
+  const menu = { spec, content };
+  const at = (date, dow, hm) => MF.applyMenu(check.doc, menu, { date, dow, hm }, { room: true });
+  const on = (d, id) => d.blocks.find((b) => b.id === id).on;
+  const thu = at("2026-10-29", 4, "12:00");
+  assert.ok(on(thu, "fall") && on(thu, "fall-pic") && !on(thu, "take-home") && !on(thu, "take-home-pic"));
+  assert.ok(thu.blocks.find((b) => b.id === "fall").content.items.some((i) => i.name === "Lunch combo"), "the lunch special at noon on a Thursday");
+  assert.ok(!at("2026-10-29", 4, "15:00").blocks.find((b) => b.id === "fall").content.items.some((i) => i.name === "Lunch combo"), "gone at 3");
+  const dec = at("2026-12-05", 6, "09:00");
+  assert.ok(!on(dec, "fall") && !on(dec, "fall-pic") && on(dec, "take-home") && on(dec, "take-home-pic"), "December: the fall list is empty, Take some home shows");
+  assert.equal(at("2026-12-07", 1, "12:00").blocks.find((b) => b.id === "fall").on, true, "a Monday lunch in December brings the box back");
+  assert.notEqual(MF.menuMoment(menu, { date: "2026-10-29", dow: 4, hm: "10:59" }), MF.menuMoment(menu, { date: "2026-10-29", dow: 4, hm: "11:00" }), "the board redraws when the special's time comes");
+  // showWhen in the format: checked against the menu
+  const bad = JSON.parse(JSON.stringify(LISTS_BOARD)); bad.blocks.find((b) => b.id === "take-home").showWhen = { list: "nope", is: "empty" };
+  assert.match(LF.checkLayout(bad, { lists: spec.lists }).errors.map((e) => e.msg).join(), /isn't on this layout's menu/);
+  bad.blocks.find((b) => b.id === "take-home").showWhen = { list: "fall", is: "gone" };
+  assert.match(LF.checkLayout(bad).errors.map((e) => e.msg).join(), /"showWhen" is/);
+  // the phone menu: only what's on
+  assert.ok(!MF.applyMenu(check.doc, menu, { date: "2026-12-05", dow: 6, hm: "09:00" }).blocks.find((b) => b.id === "fall").on);
+});
+
+test("more lists on a layout's menu (1Point): Add lists from this layout, a key already there gets -2, a revision by 1Point; customers see WayTuGo", async () => {
+  const org = fake.T.organizations.find((o) => /Barber/.test(o.name));
+  const admin = await login("scot@1pointusa.com", "admin-pass");
+  const menu = fake.T.menus.find((m) => m.org_id === org.id && m.spec.lists.some((l) => l.key === "donuts"));
+  const [l2] = await (await svc("layouts", "POST", { org_id: org.id, name: "Chalkboard test", family: "menu", orientation: "portrait", menu_id: menu.id })).json();
+  const chalk = { format: 1, orientation: "portrait", grid: { cols: 12, rows: 24 }, blocks: [
+    { id: "donuts", type: "items", at: { col: 1, row: 1, w: 12, h: 8 }, content: { heading: "Today's donuts", items: [{ name: "Glazed" }, { name: "Maple" }] } },
+    { id: "special", type: "text", label: "Board special", at: { col: 1, row: 10, w: 12, h: 4 }, content: { title: "Two dozen, $24" } }] };
+  assert.deepEqual((await (await lcall({ action: "check", layout_id: l2.id, doc: chalk }, admin)).json()).errors, []);
+  const rev0 = menu.rev;
+  const r = await lcall({ action: "make_menu", layout_id: l2.id }, admin);
+  const out = await r.json();
+  assert.equal(r.status, 200, JSON.stringify(out));
+  assert.equal(out.menu_id, menu.id); assert.deepEqual(out.made, ["donuts", "special"]);
+  const keys = menu.spec.lists.map((x) => x.key);
+  assert.ok(keys.includes("donuts-2") && keys.includes("special"), keys.join());
+  assert.equal(menu.content.lists["donuts-2"].entries.length, 2);
+  assert.equal(menu.rev, rev0 + 1); assert.equal(fake.T.menu_revisions.at(-1).by_1point, true);
+  const lay = fake.T.layouts.find((x) => x.id === l2.id);
+  assert.equal(lay.draft.blocks.find((b) => b.id === "donuts").content.list, "donuts-2", "the block points at its renamed list");
+  assert.deepEqual(LF.checkLayout(lay.draft, { lists: menu.spec.lists }).errors, []);
+  // the wording customers see
+  const ed = readFileSync(new URL("../public/menu-edit.js", import.meta.url), "utf8") + readFileSync(new URL("../public/menu-edit.html", import.meta.url), "utf8")
+    + readFileSync(new URL("../public/console.js", import.meta.url), "utf8").match(/function renderMenus[\s\S]*?\n  }\n/)[0];
+  for (const w of ["WayTuGo keeps this menu up to date for you. Contact WayTuGo for changes.", "ask WayTuGo.", "set by WayTuGo", '" (WayTuGo)"', "You and WayTuGo", "WayTuGo keeps it up to date"]) assert.ok(ed.includes(w), w);
+  assert.ok(!/ask 1Point|\(1Point\)"|You and 1Point|1Point keeps/.test(ed), "no 1Point left where customers look");
+  assert.ok(readFileSync(new URL("../public/auth.js", import.meta.url), "utf8").includes("Contact WayTuGo."));
+  // the editor's new parts
+  const js = readFileSync(new URL("../public/menu-edit.js", import.meta.url), "utf8");
+  for (const w of ['window.open("/board.html?preview=1"', "function checkAll(", "Doesn't fit on", "function whenHtml(", "data-when-toggle"]) assert.ok(js.includes(w), w);
+  const board = readFileSync(new URL("../public/board.js", import.meta.url), "utf8");
+  assert.ok(board.includes("window.opener") && board.includes("menuMoment(data.lists, now) !== drawnMoment"));
 });
 
 let passed = 0;

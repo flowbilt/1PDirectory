@@ -113,7 +113,7 @@ window.Auth = (() => {
     if (profile) return profile;
     const s = await requireSession();
     const rows = await db(`profiles?user_id=eq.${s.user.id}&select=*`);
-    if (!rows?.length) throw new Error("This login isn't linked to an account yet. Contact 1Point.");
+    if (!rows?.length) throw new Error("This login isn't linked to an account yet. Contact WayTuGo.");
     return (profile = rows[0]);
   }
 

@@ -286,6 +286,7 @@
       box.innerHTML = `<div class="row"><span>Its lists come from <strong>${esc(m.name)}</strong>${m.rev ? ` · save ${m.rev}, ${since(m.updated_at)}` : ""}.</span></div>
         <div class="row"><a class="ghost" href="/menu-edit.html?m=${m.id}" target="_blank" rel="noopener">Edit the menu</a>
           <button type="button" class="ghost" id="menu-spec">List settings</button>
+          <button type="button" class="ghost" id="menu-make">Add lists from this layout</button>
           <label class="check inline"><input type="checkbox" id="menu-cust"${m.customer_edit ? " checked" : ""}> The customer edits it too</label></div>
         <p class="hint">A block shows a list with <code>"list": "&lt;key&gt;"</code>; its heading, size and place stay here. The customer can't change the layout, only the lists (and only up to each list's room).</p>`;
       return;
@@ -318,12 +319,14 @@
         l.draft = p.doc;
       } catch (ex) { showResults({ errors: ex.data?.errors || [{ where: "layout", msg: ex.message }] }); return; }
       const { extractMenu } = await import("/menu-format.mjs");
+      const adding = !!l.menu_id, theMenu = adding ? look().menu(l.menu_id) : null;   // E2b: more lists on its menu
       const ex = extractMenu(p.doc, (p.doc.blocks || []).filter((b) => LISTABLE[b.type] && !b.content?.list).map((b) => b.id));
       const dflt = extractMenu(p.doc);
-      if (!ex.made.length) { toast("This layout has no items, pictures, text or hours to turn into lists.", true); return; }
+      if (!ex.made.length) { toast(adding ? "Every block that can show a list already does." : "This layout has no items, pictures, text or hours to turn into lists.", true); return; }
       D.open({
-        title: "Make lists from this layout",
-        body: `${D.field("mk-name", "Menu name", `<input id="mk-name" maxlength="80" value="${esc(`${look().org(l.org_id)?.name || l.name}: menu`)}">`, "The customer sees this in the console. One menu can feed several boards and the phone menu.")}
+        title: adding ? `Add lists to ${theMenu?.name || "its menu"}` : "Make lists from this layout",
+        body: `${adding ? `<p class="hint">The ticked blocks become more lists on <strong>${esc(theMenu?.name || "")}</strong>, the menu this layout already shows (kept as a new save, made by 1Point). A key the menu already has gets "-2".</p>`
+          : D.field("mk-name", "Menu name", `<input id="mk-name" maxlength="80" value="${esc(`${look().org(l.org_id)?.name || l.name}: menu`)}">`, "The customer sees this in the console. One menu can feed several boards and the phone menu.")}
           <p class="hint">Each ticked block becomes a list the customer edits, holding what it shows now, under the name given here (the board's heading doesn't change). Room: how many entries the list can hold (about a third more than now: past it is a menu expansion). Every box can be changed later under List settings.</p>
           <ul class="make-lists">${ex.spec.lists.map((x) => { const b = p.doc.blocks.find((y) => y.id === x.key); const on = dflt.made.includes(x.key);
             return `<li><input type="checkbox" data-mk="${esc(x.key)}"${on ? " checked" : ""} aria-label="Make a list from ${esc(x.key)}">
@@ -334,12 +337,12 @@
           if (!blocks.length) throw new Error("Tick at least one block.");
           const rooms = Object.fromEntries([...document.querySelectorAll("[data-room]")].map((x) => [x.dataset.room, Number(x.value)]));
           const names = Object.fromEntries([...document.querySelectorAll("[data-name]")].map((x) => [x.dataset.name, x.value.trim()]));
-          const r = await Auth.api("/api/layouts", { method: "POST", body: { action: "make_menu", layout_id: l.id, blocks, rooms, names, name: $("mk-name").value.trim() } });
+          const r = await Auth.api("/api/layouts", { method: "POST", body: { action: "make_menu", layout_id: l.id, blocks, rooms, names, name: $("mk-name")?.value.trim() || "" } });
           await window.ConsoleRefresh();
           const [fresh] = await Auth.db(`layouts?id=eq.${l.id}&select=*`); if (fresh) L.current = fresh;
           $("layout-json").value = JSON.stringify(L.current.draft, null, 2);
           menuBox();
-          toast(`Made ${r.made.length} list${r.made.length === 1 ? "" : "s"}. Preview and publish to put the board on them.`);
+          toast(`${adding ? "Added" : "Made"} ${r.made.length} list${r.made.length === 1 ? "" : "s"}. Preview and publish to put the board on them.`);
         },
       });
     }
@@ -348,7 +351,7 @@
       const [full] = await Auth.db(`menus?id=eq.${m.id}&select=id,name,spec`);
       D.open({
         title: `List settings: ${m.name}`,
-        body: `<p class="hint">Each list: <code>key</code> (blocks say it; never changes), <code>name</code> (what the customer sees), <code>kind</code> (items, text, hours), <code>room</code>, <code>fields</code> (the boxes the customer fills: name, line, price, image, tags, link; text: title, body, link), <code>caps</code> (most characters per box), <code>groupPrice</code>, <code>note</code>, <code>hint</code>. A list a published layout shows can't be taken off; room can't go below what's in it.</p>
+        body: `<p class="hint">Each list: <code>key</code> (blocks say it; never changes), <code>name</code> (what the customer sees), <code>kind</code> (items, text, hours), <code>room</code>, <code>fields</code> (the boxes the customer fills: name, line, price, image, tags, link; text: title, body, link), <code>caps</code> (most characters per box), <code>groupPrice</code>, <code>note</code>, <code>hint</code>, <code>schedule</code> (E2b: each entry may have dates, days and times; items or text lists). A list a published layout shows can't be taken off; room can't go below what's in it.</p>
           <textarea id="spec-json" class="spec-json" spellcheck="false">${esc(JSON.stringify(full.spec, null, 2))}</textarea>
           ${D.field("spec-name", "Menu name", `<input id="spec-name" maxlength="80" value="${esc(full.name)}">`)}`,
         async save() {

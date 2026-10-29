@@ -160,7 +160,7 @@ export function checkLayout(input, ctx = {}) {
   (Array.isArray(input.blocks) ? input.blocks.slice(0, 60) : []).forEach((b, i) => {
     const where = `block ${i + 1}${isObj(b) && typeof b.id === "string" ? ` ("${b.id}")` : ""}`;
     if (!isObj(b)) { err(where, "Each block is an object."); return; }
-    known(b, ["id", "type", "at", "layer", "style", "content", "when", "on", "label"], where);
+    known(b, ["id", "type", "at", "layer", "style", "content", "when", "on", "label", "showWhen"], where);
     if (typeof b.id !== "string" || !ID_RE.test(b.id)) err(where, "Each block needs an \"id\": lowercase letters, numbers and dashes, up to 40 (it stays the same for the life of the layout).");
     else if (ids.has(b.id)) err(where, `Two blocks share the id "${b.id}".`);
     else ids.add(b.id);
@@ -187,7 +187,19 @@ export function checkLayout(input, ctx = {}) {
     }
     const when = checkWhen(b.when, where, err);
     if (b.on !== undefined && typeof b.on !== "boolean") err(where, "\"on\" is true or false.");
-    blocks.push({ id: b.id, type: b.type, at: pos, layer, style, content, when, on: b.on !== false, label: typeof b.label === "string" ? b.label.slice(0, 60) : "" });
+    // E2b: shows only while one of the menu's lists has nothing on ("empty") or something on ("showing")
+    let showWhen = null;
+    if (b.showWhen !== undefined) {
+      const sw = b.showWhen;
+      if (!isObj(sw) || Object.keys(sw).some((k) => !["list", "is"].includes(k)) || typeof sw.list !== "string" || !/^[a-z0-9][a-z0-9-]{0,39}$/.test(sw.list) || !["empty", "showing"].includes(sw.is))
+        err(where, "\"showWhen\" is { \"list\": \"fall\", \"is\": \"empty\" } or { \"list\": \"fall\", \"is\": \"showing\" }.");
+      else {
+        showWhen = { list: sw.list, is: sw.is };
+        if (ctx.lists === null) err(where, `Its showWhen names the list "${sw.list}", but this layout has no menu yet.`);
+        else if (Array.isArray(ctx.lists) && !ctx.lists.some((x) => x.key === sw.list)) err(where, `Its showWhen names the list "${sw.list}", which isn't on this layout's menu.`);
+      }
+    }
+    blocks.push({ id: b.id, type: b.type, at: pos, layer, style, content, when, on: b.on !== false, label: typeof b.label === "string" ? b.label.slice(0, 60) : "", ...(showWhen ? { showWhen } : {}) });
   });
 
   // E1b: a background picture behind the whole layout, dimmed by the palette's bg colour (0 to 90%)
@@ -347,6 +359,9 @@ function smallestShare(b, list) {
 }
 /** Whether two blocks ever show at the same moment (each day of the week, every 15 minutes; date ranges left aside). */
 function everTogether(a, b) {
+  // E2b: a block shown only while a list is empty is never on with one that shows that list, or that needs it showing
+  const needs = (x) => [x.content?.list ? [x.content.list, "showing"] : null, x.showWhen ? [x.showWhen.list, x.showWhen.is] : null].filter(Boolean);
+  for (const [k1, is1] of needs(a)) for (const [k2, is2] of needs(b)) if (k1 === k2 && is1 !== is2) return false;
   if (!a.when?.length || !b.when?.length) return true;
   // E1b: two entries whose date ranges never meet are never on together (a fall box and the box that follows it)
   const apart = (x, y) => x.dates && y.dates && ((x.dates.to && y.dates.from && x.dates.to < y.dates.from) || (y.dates.to && x.dates.from && y.dates.to < x.dates.from));

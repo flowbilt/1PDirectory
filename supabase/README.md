@@ -59,6 +59,8 @@ Do these once. The current site keeps running as it is until the new build is de
 
 33. For menus, the customer's own lists (DP-12, round E2a): **before uploading that code**, new query, paste all of `32-menus.sql`, and click **Run**. Then new query, paste all of `check-menus.sql`, and click **Run**; it should read **ALL 10 CHECKS PASSED** (red on purpose). It adds the menus, their saved revisions, each layout's menu, the database's rules for what a customer saves (each list's room and boxes), and the lists in a layout screen's answer and the phone menu. It changes nothing on existing screens: a layout without a menu is answered exactly as before. (The new console asks for the menus and each layout's menu, so they must exist first; it still works if they don't.)
 
+34. For specials with dates and times, and the WayTuGo name (DP-12, round E2b): **before uploading that code**, new query, paste all of `33-menu-specials.sql`, and click **Run**. Then new query, paste all of `check-menu-specials.sql`, and click **Run**; it should read **ALL 7 CHECKS PASSED** (red on purpose). It lets a list WayTuGo sets up with `"schedule": true` carry dates, days and times on each entry, adds more lists to an existing menu (the site only), and words the database's customer-facing messages as WayTuGo. (`check-menus.sql` still reads ALL 10 CHECKS PASSED after it.)
+
 If any of them shows an error (other than the expected red messages from the `check-…sql` files), copy the message (it includes a line number) and send it to Claude.
 
 ## 3. Lock down sign-ups

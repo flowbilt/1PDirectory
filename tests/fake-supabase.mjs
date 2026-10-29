@@ -603,6 +603,21 @@ export function createFake() {
       if (l) Object.assign(l, { menu_id: row.id, draft: p_draft || l.draft, updated_at: now(), updated_by: p_by || null });
       return row.id;
     },
+    // 33-menu-specials.sql: more lists on a menu (the site only)
+    menu_add_lists({ p_menu, p_lists, p_content, p_by, p_layout, p_draft }) {
+      const m = T.menus.find((x) => x.id === p_menu);
+      if (!m) throw Object.assign(new Error("No such menu."), { status: 404 });
+      for (const l of p_lists) if (m.spec.lists.some((x) => x.key === l.key)) throw Object.assign(new Error(`The menu "${m.name}" already has a list "${l.key}".`), { status: 409 });
+      const next = { ...m, spec: { lists: [...m.spec.lists, ...p_lists] }, content: { lists: { ...(m.content.lists || {}), ...(p_content || {}) } } };
+      const bad = menuRule(next, m); if (bad) throw Object.assign(new Error(bad), { status: 400 });
+      const l = p_layout ? T.layouts.find((x) => x.id === p_layout && x.org_id === m.org_id) : null;
+      if (p_layout && !l) throw Object.assign(new Error("No such layout in that menu's account."), { status: 404 });
+      Object.assign(m, { spec: next.spec, content: next.content, rev: m.rev + 1, updated_at: now(), updated_by: p_by || null });
+      const pr = T.profiles.find((x) => x.user_id === p_by);
+      T.menu_revisions.push({ menu_id: m.id, rev: m.rev, content: m.content, saved_at: now(), saved_by: p_by || null, by_name: pr?.full_name || pr?.email || "", by_1point: true, restored_from: null });
+      if (l) Object.assign(l, { menu_id: m.id, draft: p_draft || l.draft, updated_at: now(), updated_by: p_by || null });
+      return m.rev;
+    },
     // 29-layout-engine.sql: publish and roll back, the site only (not in USER_FUNCS)
     layout_publish({ p_layout, p_doc, p_checks, p_overridden, p_note, p_by }) {
       const l = T.layouts.find((x) => x.id === p_layout);
@@ -669,7 +684,7 @@ export function createFake() {
     const m = T.menus.find((x) => x.id === id), me = who.profile;
     const admin = !!who.service || me?.role === "platform_admin";
     if (!m || !(admin || (me?.org_id === m.org_id && ["org_admin", "org_editor"].includes(me?.role)))) throw Object.assign(new Error("That menu doesn't exist, or you don't have access to it."), { status: 403 });
-    if (!admin && !m.customer_edit) throw Object.assign(new Error("1Point keeps this menu up to date for you. Contact 1Point for changes."), { status: 403 });
+    if (!admin && !m.customer_edit) throw Object.assign(new Error("WayTuGo keeps this menu up to date for you. Contact WayTuGo for changes."), { status: 403 });
     if (base !== m.rev) {
       const last = T.menu_revisions.find((x) => x.menu_id === m.id && x.rev === m.rev);
       throw Object.assign(new Error(`Someone else saved this menu after you opened it (${last?.by_name || "another user"}). Reload to see their changes, then make yours again.`), { status: 409 });

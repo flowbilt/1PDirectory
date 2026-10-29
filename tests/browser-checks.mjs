@@ -555,7 +555,7 @@ try {
     const counts = await owner.$$eval(".me-list", (xs) => xs.map((x) => [x.dataset.key, x.querySelector(".me-count")?.textContent || ""]));
     assert(counts.find(([k]) => k === "donuts")[1] === "15 of 16" && counts.find(([k]) => k === "energy")[1] === "4 of 5", JSON.stringify(counts));
     assert(await owner.isHidden("#readonly") && await owner.isDisabled("#save"), "editable, nothing to save yet");
-    assert((await owner.textContent("#lists")).includes("set by 1Point"), "says the layout is 1Point's");
+    assert((await owner.textContent("#lists")).includes("set by WayTuGo"), "says the layout is 1Point's");
     const pv = await owner.frameLocator("#pv").locator('[data-id="coffee"]').textContent();
     assert(pv.includes("Cold Brew"), "the preview draws the board");
     await shot(owner, "menu-editor");
@@ -595,7 +595,7 @@ try {
     await energy.locator("[data-add]").click();
     await energy.locator('.me-row[data-i="4"] input[data-f="name"]').fill("Grape Gust");
     assert(await energy.locator("[data-add]").isDisabled(), "Add greyed at 5 of 5");
-    assert((await energy.textContent()).includes("This list is full (5 of 5). More room is a menu expansion: ask 1Point."), "the line");
+    assert((await energy.textContent()).includes("This list is full (5 of 5). More room is a menu expansion: ask WayTuGo."), "the line");
     assert(await energy.locator('input[data-f="name"]').first().getAttribute("maxlength") === "25", "the box's cap");
     await owner.click("#save"); await owner.waitForTimeout(3000);
     assert((await listOf("energy")).entries.length === 5, "saved at the room");
@@ -604,7 +604,7 @@ try {
       const es = Array.from({ length: 6 }, (_, i) => ({ id: `over${i}`, name: `Drink ${i}` }));
       try { await Auth.db("rpc/menu_save", { method: "POST", body: { p_menu: id, p_base_rev: rev, p_content: { lists: { energy: { entries: es } } } } }); return "saved"; } catch (e) { return e.message; }
     }, { id: menuId, rev: m.rev });
-    assert(/room for 5.*menu expansion: ask 1Point/.test(err), err);
+    assert(/room for 5.*menu expansion: ask WayTuGo/.test(err), err);
   });
 
   await check("menu editor: a list that wouldn't fit the board isn't saved; the owner is told what to shorten; 1Point can save anyway", async () => {
@@ -665,7 +665,7 @@ try {
     assert(await owner.isVisible("#readonly") && await owner.isDisabled('.me-list[data-key="coffee"] input[data-f="name"] >> nth=0'), "read-only");
     const m = await theMenu();
     const err = await owner.evaluate(async ({ id, rev, content }) => { try { await Auth.db("rpc/menu_save", { method: "POST", body: { p_menu: id, p_base_rev: rev, p_content: content } }); return "saved"; } catch (e) { return e.message; } }, { id: menuId, rev: m.rev, content: m.content });
-    assert(/1Point keeps this menu up to date/.test(err), err);
+    assert(/WayTuGo keeps this menu up to date/.test(err), err);
     await sb(`menus?id=eq.${menuId}`, { method: "PATCH", body: JSON.stringify({ customer_edit: true }) });
   });
 
@@ -684,6 +684,103 @@ try {
     assert((await theMenu()).spec.lists.find((x) => x.key === "coffee").room === 10, "saved");
     const other = await fetch(`${B}/sb/rest/v1/menus?select=id`, { headers: { apikey: "test-anon-key" } });
     assert((await other.json()).length === 0, "signed out: nothing");
+  });
+  // ── E2b (DP-12): WayTuGo to customers, specials with dates and times, showWhen, Preview full size, fit while typing, more lists ──
+  const LISTS = JSON.parse(readFileSync(new URL("../layouts/donut-joes-counter-55-lists.json", import.meta.url), "utf8"));
+
+  await check("E2b: customers see WayTuGo: the read-only banner, and 1Point's saves marked (WayTuGo) in History", async () => {
+    await sb(`menus?id=eq.${menuId}`, { method: "PATCH", body: JSON.stringify({ customer_edit: false }) });
+    await owner.reload(); await owner.waitForTimeout(2500);
+    assert((await owner.textContent("#readonly")).trim() === "WayTuGo keeps this menu up to date for you. Contact WayTuGo for changes.", await owner.textContent("#readonly"));
+    const hist = await owner.textContent("#history");
+    assert(hist.includes("(WayTuGo)") && !hist.includes("(1Point)"), hist.slice(0, 300));
+    await sb(`menus?id=eq.${menuId}`, { method: "PATCH", body: JSON.stringify({ customer_edit: true }) });
+    await owner.goto(`${B}/console.html#menus`); await owner.waitForTimeout(1500);
+    assert((await owner.textContent("#menu-rows")).includes("You and WayTuGo"), "the Menus tab");
+  });
+
+  await check("E2b: a list with dates: When in the editor (Ended …), saved; the board's fall box gives way to Take some home", async () => {
+    const m = await theMenu();
+    m.spec.lists.find((x) => x.key === "fall").schedule = true;
+    assert((await sb(`menus?id=eq.${menuId}`, { method: "PATCH", body: JSON.stringify({ spec: m.spec }) })).status < 300, "spec");
+    await sb("rpc/layout_publish", { method: "POST", body: JSON.stringify({ p_layout: counter.id, p_doc: LISTS, p_checks: {}, p_overridden: false, p_note: "E2b lists board", p_by: null }) });
+    await owner.goto(`${B}/menu-edit.html?m=${menuId}`); await owner.waitForTimeout(3000);
+    const fall = owner.locator('.me-list[data-key="fall"]');
+    const n = await fall.locator(".me-row").count();
+    for (let i = 0; i < n; i++) {
+      await fall.locator(`.me-row[data-i="${i}"] [data-when-toggle]`).click(); await owner.waitForTimeout(150);
+      await fall.locator(`.me-row[data-i="${i}"] [data-wf="dfrom"]`).fill("2026-09-15");
+      await fall.locator(`.me-row[data-i="${i}"] [data-wf="dto"]`).fill("2026-10-01");
+    }
+    const sum = await fall.locator('.me-row[data-i="0"] .me-when-sum').textContent();
+    assert(/Sep 15 – Oct 1/.test(sum) && /Ended Oct 1/.test(sum), sum);
+    await shot(owner, "menu-editor-when");
+    await owner.click("#save"); await owner.waitForTimeout(5000);
+    assert(await owner.isHidden("#save-problems"), await owner.textContent("#save-problems"));
+    assert((await listOf("fall")).entries.every((e) => e.when?.dates?.to === "2026-10-01"), JSON.stringify((await listOf("fall")).entries));
+    const p = await browser.newPage({ viewport: { width: 960, height: 540 } });
+    await p.goto(`${B}/board.html?screen=${landscape.key}&view=1`); await p.waitForTimeout(3000);
+    const vis = await p.evaluate(() => Object.fromEntries(["fall", "fall-pic", "take-home", "take-home-pic"].map((id) => [id, !document.querySelector(`[data-id="${id}"]`).hidden])));
+    assert(!vis.fall && !vis["fall-pic"] && vis["take-home"] && vis["take-home-pic"], JSON.stringify(vis));
+    await p.close();
+  });
+
+  await check("E2b: a special switches on by itself when its time comes (11:00), with no save", async () => {
+    const m = await theMenu();
+    m.content.lists.fall.entries.push({ id: "lunch1", name: "Lunch combo", price: "$8.99", when: { from: "11:00", to: "14:00" } });
+    const p = await browser.newPage({ viewport: { width: 960, height: 540 } });
+    await p.clock.install({ time: new Date("2026-12-03T10:58:30-06:00") });
+    await p.goto(`${B}/board.html?preview=1`); await p.waitForTimeout(500);
+    await p.evaluate((d) => window.postMessage({ type: "layout-draft", data: d }, location.origin),
+      { kind: "layout", key: "preview", orientation: "landscape", layout: { id: null, name: "x", version: null, doc: LISTS }, images: {}, menu: { url: "" }, lists: { spec: m.spec, content: m.content }, timezone: "America/Chicago", weather: { enabled: false }, poweredBy: true });
+    await p.waitForTimeout(1500);
+    const shown = () => p.evaluate(() => !document.querySelector('[data-id="fall"]').hidden && document.querySelector('[data-id="fall"]').textContent.includes("Lunch combo"));
+    assert(!(await shown()), "not before 11");
+    await p.clock.fastForward("02:00"); await p.waitForTimeout(1500);
+    assert(await shown(), "on at 11");
+    assert(await p.evaluate(() => document.querySelector('[data-id="take-home"]').hidden), "and Take some home steps aside");
+    await p.close();
+  });
+
+  await check("E2b: Preview full size opens the board in its own window and follows the changes as they're typed", async () => {
+    await owner.reload(); await owner.waitForTimeout(3000);
+    const [pop] = await Promise.all([owner.context().waitForEvent("page"), owner.click("#full")]);
+    await pop.waitForLoadState(); await pop.waitForTimeout(2500);
+    assert((await pop.textContent('[data-id="coffee"]')).includes("Iced Chai"), "the board");
+    await owner.locator('.me-list[data-key="coffee"] .me-row[data-i="6"] input[data-f="name"]').fill("Iced Chai Latte");
+    await pop.waitForTimeout(2000);
+    assert((await pop.textContent('[data-id="coffee"]')).includes("Iced Chai Latte"), "follows the typing");
+    await shot(pop, "preview-full-size");
+    await pop.close();
+    await owner.click("#undo"); await owner.waitForTimeout(500);
+  });
+
+  await check("E2b: fit while typing: a list that won't fit on a board is marked at once, before Save, and clears when fixed", async () => {
+    const rows = owner.locator('.me-list[data-key="pastries"] .me-row');
+    for (let i = 0; i < 6; i++) await rows.nth(i).locator('input[data-f="name"]').fill(`An extremely long pastry name ${i} that goes on and on for the whole box`);
+    await owner.waitForTimeout(4000);
+    const sec = owner.locator('.me-list[data-key="pastries"]');
+    assert(await sec.evaluate((x) => x.classList.contains("nofit")), "marked");
+    assert((await sec.locator(".me-nofit").textContent()).includes("Doesn't fit on Counter board"), await sec.locator(".me-nofit").textContent());
+    await shot(owner, "menu-editor-nofit");
+    await owner.click("#undo"); await owner.waitForTimeout(4000);
+    assert(!(await sec.evaluate((x) => x.classList.contains("nofit"))), "cleared");
+  });
+
+  await check("E2b: Add lists from this layout (1Point): a second board on the same menu; a key already there gets -2", async () => {
+    const [chalk] = (await sb("layouts", { method: "POST", body: JSON.stringify({ org_id: home.org_id, name: "Chalkboard check", family: "menu", orientation: "portrait" }) })).data;
+    await boss.goto(`${B}/console.html?fresh=${Date.now()}#layouts`); await boss.waitForTimeout(1500);   // a new address, so the page reloads
+    await boss.click(`[data-open-layout="${chalk.id}"]`); await boss.waitForTimeout(900);
+    await boss.selectOption("#menu-pick", menuId); await boss.click("#menu-use"); await boss.waitForTimeout(1200);
+    await boss.fill("#layout-json", JSON.stringify({ format: 1, orientation: "portrait", grid: { cols: 12, rows: 24 }, blocks: [
+      { id: "donuts", type: "items", at: { col: 1, row: 1, w: 12, h: 8 }, content: { heading: "Today", items: [{ name: "Glazed" }, { name: "Maple" }] } }] }));
+    await boss.click("#menu-make"); await boss.waitForTimeout(1200);
+    assert((await boss.textContent("#dlg-title")).startsWith("Add lists to"), await boss.textContent("#dlg-title"));
+    await boss.click("#dlg-ok"); await boss.waitForTimeout(1500);
+    const m = await theMenu();
+    assert(m.spec.lists.some((x) => x.key === "donuts-2") && m.content.lists["donuts-2"].entries.length === 2, m.spec.lists.map((x) => x.key).join());
+    const [l] = (await sb(`layouts?id=eq.${chalk.id}&select=menu_id,draft`)).data;
+    assert(l.menu_id === menuId && l.draft.blocks[0].content.list === "donuts-2", JSON.stringify(l.draft.blocks[0].content));
   });
   await owner.close(); await boss.close();
   await sb(`screens?id=eq.${landscape.id}`, { method: "PATCH", body: JSON.stringify({ layout_id: null, property_id: null, directory_id: landscape.directory_id }) });

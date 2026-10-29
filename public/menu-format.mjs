@@ -13,6 +13,12 @@
 //                       "hours":  { "note": "I-65 Exit 242", "entries": [ { "id": "h1a2b3", "days": [2,3,4,5,6], "open": "06:00", "close": "18:00" } ] } } }
 // Every entry may be "hidden": true (kept, not shown); an item may be "soldOut": "2026-10-29" (sold out that day only:
 // it clears itself at the building's midnight).
+// E2b (DP-12): a list set up with "schedule": true (items or text) lets each entry carry a "when": { "dates": { "from":
+// "2026-09-15", "to": "2026-11-30" }, "days": [1,2,3,4,5], "from": "11:00", "to": "14:00" } (any part may be left out;
+// an entry without one is always on). Boards and the phone menu show an entry only while its when says so, by the
+// building's clock. A layout's block can also say "showWhen": { "list": "fall", "is": "empty" | "showing" }: it shows
+// only while that list has nothing on (or something on), e.g. "Take some home" once the fall specials are over.
+// Customers see the product as WayTuGo (Scot, 2026-10-29): every customer-facing line says WayTuGo, not 1Point.
 
 /** What each kind of list holds, and the most each box may say (1Point may set a list's caps lower, never higher). */
 export const KINDS = {
@@ -60,7 +66,7 @@ export function checkMenuSpec(input) {
   input.lists.slice(0, MAX_LISTS).forEach((l, i) => {
     const where = `list ${i + 1}${isObj(l) && str(l.key) ? ` ("${l.key}")` : ""}`;
     if (!isObj(l)) { err(where, "Each list is an object."); return; }
-    for (const k of Object.keys(l)) if (!["key", "name", "kind", "room", "fields", "caps", "groupPrice", "note", "hint"].includes(k)) err(where, `"${k}" isn't something a list can say (key, name, kind, room, fields, caps, groupPrice, note, hint).`);
+    for (const k of Object.keys(l)) if (!["key", "name", "kind", "room", "fields", "caps", "groupPrice", "note", "hint", "schedule"].includes(k)) err(where, `"${k}" isn't something a list can say (key, name, kind, room, fields, caps, groupPrice, note, hint, schedule).`);
     if (!str(l.key) || !KEY_RE.test(l.key)) err(where, "Each list needs a \"key\": lowercase letters, numbers and dashes, up to 40 (a block says it, and it never changes).");
     else if (seen.has(l.key)) err(where, `Two lists share the key "${l.key}".`);
     else seen.add(l.key);
@@ -85,9 +91,10 @@ export function checkMenuSpec(input) {
     }
     if (l.groupPrice !== undefined && (typeof l.groupPrice !== "boolean" || (l.groupPrice && l.kind !== "items"))) err(where, "\"groupPrice\" (one price over the whole list, like \"$1.89 each\") is true or false, on an items list.");
     if (l.note !== undefined && (typeof l.note !== "boolean" || (l.note && l.kind !== "hours"))) err(where, "\"note\" (a line under the hours) is true or false, on an hours list.");
+    if (l.schedule !== undefined && (typeof l.schedule !== "boolean" || (l.schedule && l.kind === "hours"))) err(where, "\"schedule\" (each entry may have dates, days and times) is true or false, on an items or text list.");
     if (l.hint !== undefined && (!str(l.hint) || l.hint.length > 200)) err(where, "\"hint\" is a short line for the customer, up to 200 characters.");
     lists.push({ key: l.key, name: str(l.name) ? l.name.trim() : "", kind: l.kind, room, fields, caps,
-      groupPrice: l.groupPrice === true, note: l.note === true, hint: str(l.hint) ? l.hint : "" });
+      groupPrice: l.groupPrice === true, note: l.note === true, hint: str(l.hint) ? l.hint : "", schedule: l.schedule === true });
   });
   return { errors, spec: errors.length ? null : { lists } };
 }
@@ -130,17 +137,18 @@ export function checkMenuContent(spec, input, { images } = {}) {
     }
     const entries = c.entries === undefined ? [] : c.entries;
     if (!Array.isArray(entries)) { err(where, "\"entries\" is a list."); continue; }
-    if (entries.length > L.room) err(where, `${where} has room for ${L.room}; this has ${entries.length}. More room is a menu expansion: ask 1Point.`);
+    if (entries.length > L.room) err(where, `${where} has room for ${L.room}; this has ${entries.length}. More room is a menu expansion: ask WayTuGo.`);
     const ids = new Set();
     entries.slice(0, L.room).forEach((e, i) => {
       const at = `${where}, ${entryWhere(L, e, i)}`;
       if (!isObj(e)) { err(at, "Each entry is an object."); return; }
-      const allowed = ["id", "hidden", ...(L.kind === "items" ? ["soldOut"] : []), ...(L.kind === "hours" ? ["days", "open", "close"] : L.fields)];
+      const allowed = ["id", "hidden", ...(L.kind === "items" ? ["soldOut"] : []), ...(L.schedule ? ["when"] : []), ...(L.kind === "hours" ? ["days", "open", "close"] : L.fields)];
       const x = {};
       for (const [k, v] of Object.entries(e)) {
-        if (!allowed.includes(k)) { err(at, L.kind !== "hours" && KINDS[L.kind].fields.includes(k) ? `This list has no ${FIELD_LABEL[k].toLowerCase()} box (1Point can add one).` : `"${k}" isn't part of an entry here.`); continue; }
+        if (!allowed.includes(k)) { err(at, k === "when" ? "This list has no dates or times (WayTuGo can switch them on)." : L.kind !== "hours" && KINDS[L.kind].fields.includes(k) ? `This list has no ${FIELD_LABEL[k].toLowerCase()} box (WayTuGo can add one).` : `"${k}" isn't part of an entry here.`); continue; }
         if (k === "id") { if (!str(v) || !ID_RE.test(v)) err(at, "Its id is 4 to 12 lowercase letters and digits."); else if (ids.has(v)) err(at, "Two entries share an id."); else { ids.add(v); x.id = v; } continue; }
         if (k === "hidden") { if (typeof v !== "boolean") err(at, "\"hidden\" is true or false."); else if (v) x.hidden = true; continue; }
+        if (k === "when") { const w = checkWhen(v); if (w.error) err(at, w.error); else if (w.when) x.when = w.when; continue; }
         if (k === "soldOut") { if (!str(v) || !DATE_RE.test(v)) err(at, "\"soldOut\" is the day it's sold out, like \"2026-10-29\"."); else x.soldOut = v; continue; }
         if (k === "days") { if (!Array.isArray(v) || !v.length || v.some((d) => !Number.isInteger(d) || d < 1 || d > 7)) err(at, "Choose at least one day."); else x.days = [...new Set(v)].sort(); continue; }
         if (k === "open" || k === "close") { if (!str(v) || !TIME_RE.test(v) || v > "24:00") err(at, `The ${k === "open" ? "opening" : "closing"} time is a time like 06:00 or 18:30.`); else x[k] = v; continue; }
@@ -164,9 +172,66 @@ export function checkMenuContent(spec, input, { images } = {}) {
   return { errors, content: errors.length ? null : out };
 }
 
-/** The entries of a list that show: not hidden, and complete. */
-export function shownEntries(L, c) {
-  const list = (c?.entries || []).filter((e) => !e.hidden);
+// ── When an entry is on (E2b) ──
+/** Checks an entry's "when". Returns { when } (tidied; null when it says nothing, i.e. always) or { error }. */
+export function checkWhen(v) {
+  if (!isObj(v)) return { error: "\"when\" is { \"dates\": { \"from\": …, \"to\": … }, \"days\": [1,2,3], \"from\": \"11:00\", \"to\": \"14:00\" }." };
+  const w = {};
+  for (const k of Object.keys(v)) if (!["dates", "days", "from", "to"].includes(k)) return { error: `"${k}" isn't part of when (dates, days, from, to).` };
+  if (v.dates !== undefined) {
+    if (!isObj(v.dates) || Object.keys(v.dates).some((k) => !["from", "to"].includes(k))
+        || Object.values(v.dates).some((d) => !str(d) || !DATE_RE.test(d) || Number.isNaN(Date.parse(d)))) return { error: "The dates are a first and last day, like 2026-09-15 and 2026-11-30 (either may be left out)." };
+    if (v.dates.from && v.dates.to && v.dates.to < v.dates.from) return { error: "The last day is before the first." };
+    if (v.dates.from || v.dates.to) w.dates = { ...(v.dates.from ? { from: v.dates.from } : {}), ...(v.dates.to ? { to: v.dates.to } : {}) };
+  }
+  if (v.days !== undefined) {
+    if (!Array.isArray(v.days) || !v.days.length || v.days.some((d) => !Number.isInteger(d) || d < 1 || d > 7)) return { error: "Choose at least one day, or leave the days out." };
+    if (v.days.length < 7) w.days = [...new Set(v.days)].sort();
+  }
+  if (v.from !== undefined || v.to !== undefined) {
+    if (!str(v.from) || !str(v.to) || !TIME_RE.test(v.from) || !TIME_RE.test(v.to) || v.from > "24:00" || v.to > "24:00") return { error: "Give both times, from and to, like 11:00 and 14:00." };
+    if (v.from === v.to) return { error: "The two times are the same." };
+    w.from = v.from; w.to = v.to;
+  }
+  return { when: Object.keys(w).length ? w : null };
+}
+/** Now in the building, as { date, dow, hm }; a bare "YYYY-MM-DD" (no day or time known) is taken as that day. */
+const asNow = (now) => (typeof now === "string" ? { date: now, dow: null, hm: null } : now || { date: "", dow: null, hm: null });
+/** Whether an entry is on now by its when (always, with none). */
+export function entryOn(e, now) {
+  const w = e?.when, n = asNow(now);
+  if (!w) return true;
+  if (w.dates && n.date && ((w.dates.from && n.date < w.dates.from) || (w.dates.to && n.date > w.dates.to))) return false;
+  if (w.days && n.dow && !w.days.includes(n.dow)) return false;
+  if (w.from && n.hm) { const inside = w.from <= w.to ? n.hm >= w.from && n.hm < w.to : n.hm >= w.from || n.hm < w.to; if (!inside) return false; }
+  return true;
+}
+const MON = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+const DAYS3 = ["", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+const niceDate = (d) => `${MON[Number(d.slice(5, 7)) - 1]} ${Number(d.slice(8, 10))}`;
+const niceHm = (t) => { const [h, m] = t.split(":").map(Number); if (h % 24 === 12 && !m) return "Noon"; const h12 = h % 12 || 12; return `${h12}${m ? `:${String(m).padStart(2, "0")}` : ""} ${h % 24 < 12 ? "AM" : "PM"}`; };
+const niceDayList = (days) => { const runs = []; for (const x of days) { const r = runs.at(-1); if (r && x === r[1] + 1) r[1] = x; else runs.push([x, x]); } return runs.map(([a, b]) => (a === b ? DAYS3[a] : `${DAYS3[a]}–${DAYS3[b]}`)).join(", "); };
+/** An entry's when in words: "Sep 15 – Nov 30 · Mon–Fri · 11 AM – 2 PM", or "Always". */
+export function describeWhen(w) {
+  if (!w) return "Always";
+  const parts = [];
+  if (w.dates) parts.push(w.dates.from && w.dates.to ? `${niceDate(w.dates.from)} – ${niceDate(w.dates.to)}` : w.dates.from ? `From ${niceDate(w.dates.from)}` : `Until ${niceDate(w.dates.to)}`);
+  if (w.days) parts.push(niceDayList(w.days));
+  if (w.from) parts.push(`${niceHm(w.from)} – ${niceHm(w.to)}`);
+  return parts.join(" · ");
+}
+/** For the editor: "On now", "Starts Nov 1", "Ended Oct 31", or "Not on right now" (outside its days or times). */
+export function entryStatus(e, now) {
+  const w = e?.when, n = asNow(now);
+  if (!w) return "";
+  if (w.dates?.from && n.date < w.dates.from) return `Starts ${niceDate(w.dates.from)}`;
+  if (w.dates?.to && n.date > w.dates.to) return `Ended ${niceDate(w.dates.to)}`;
+  return entryOn(e, n) ? "On now" : "Not on right now";
+}
+
+/** The entries of a list that show: not hidden, complete, and (E2b, with now) on by their when. */
+export function shownEntries(L, c, now) {
+  const list = (c?.entries || []).filter((e) => !e.hidden && (!now || !L.schedule || entryOn(e, now)));
   if (L.kind === "items") return list.filter((e) => String(e.name || "").trim());
   if (L.kind === "hours") return list.filter((e) => e.days && e.open && e.close);
   return list.filter((e) => e.title || e.body);
@@ -179,17 +244,21 @@ export function shownEntries(L, c) {
  * the space for a full list and the text stays the size it was designed at whatever's filled in (Scot, 2026-10-28).
  * The phone menu draws without room.
  */
-export function applyMenu(doc, menu, date, { room = false } = {}) {
-  if (!doc || !doc.blocks.some((b) => b.content?.list)) return doc;
+export function applyMenu(doc, menu, nowOrDate, { room = false } = {}) {
+  if (!doc || !doc.blocks.some((b) => b.content?.list || b.showWhen)) return doc;
+  const now = asNow(nowOrDate), date = now.date;
   const spec = menu?.spec?.lists || [], content = menu?.content?.lists || {};
   const byKey = Object.fromEntries(spec.map((l) => [l.key, l]));
+  // How many entries each list has on now (E2b: for "showWhen")
+  const count = (key) => (byKey[key] ? shownEntries(byKey[key], content[key] || {}, now).length : 0);
+  const rule = (b) => !b.showWhen || (b.showWhen.is === "empty" ? count(b.showWhen.list) === 0 : count(b.showWhen.list) > 0);
   const blocks = doc.blocks.map((b) => {
     const key = b.content?.list;
-    if (!key) return b;
+    if (!key) return b.showWhen ? { ...b, on: b.on !== false && rule(b) } : b;
     const L = byKey[key];
     if (!L || BINDS[b.type] !== L.kind) return { ...b, on: false };
     const C = content[key] || {};
-    const shown = shownEntries(L, C);
+    const shown = shownEntries(L, C, now);
     const c = { ...b.content };
     const sold = (e) => !!e.soldOut && e.soldOut === date;
     const item = (e) => ({ name: e.name, ...(e.line ? { line: e.line } : {}), ...(e.price ? { price: e.price } : {}), ...(e.link ? { link: e.link } : {}),
@@ -223,9 +292,16 @@ export function applyMenu(doc, menu, date, { room = false } = {}) {
         if (L.note && C.note) c.note = C.note;
         break;
     }
-    return { ...b, content: c, on: b.on !== false && on };
+    return { ...b, content: c, on: b.on !== false && on && rule(b) };
   });
   return { ...doc, blocks };
+}
+
+/** What the lists show at this moment, as a short signature: a board draws its lists again when it changes (a
+ *  special's time comes or goes), without waiting for a save. */
+export function menuMoment(menu, now) {
+  const spec = menu?.spec?.lists || [];
+  return spec.filter((l) => l.schedule).map((l) => `${l.key}:${shownEntries(l, menu.content?.lists?.[l.key] || {}, now).map((e) => e.id).join(",")}`).join("|");
 }
 
 /** The pictures a menu's content uses ("img:…" keys, without "img:"). */
@@ -253,6 +329,7 @@ export function menuChanges(spec, before, after, max = 40) {
           lines.push(`${L.name} · ${say(e)}: ${(FIELD_LABEL[k] || k).toLowerCase()} ${show(o[k])} → ${show(e[k])}`);
       }
       if (!!o.hidden !== !!e.hidden) lines.push(`${L.name}: ${e.hidden ? "hid" : "showed"} ${say(e)}`);
+      if (JSON.stringify(o.when || null) !== JSON.stringify(e.when || null)) lines.push(`${L.name} · ${say(e)}: when ${describeWhen(o.when)} → ${describeWhen(e.when)}`);
       if ((o.soldOut || "") !== (e.soldOut || "")) lines.push(`${L.name}: ${e.soldOut ? `${say(e)} sold out (${e.soldOut})` : `${say(e)} back on`}`);
     }
     const order = (list, other) => list.filter((e) => other[e.id]).map((e) => e.id).join(",");

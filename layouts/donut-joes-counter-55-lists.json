@@ -1,0 +1,348 @@
+{
+  "format": 1,
+  "orientation": "landscape",
+  "name": "Donut Joe's Pelham: counter board on its lists, 55\" landscape (DP-12 E2b)",
+  "notes": "The counter board as it stands after Make lists (E2a), for pasting over the live layout: every list block says its list. E2b: the fall box shows while the fall list has a special on (its entries carry their dates in the menu editor); Take some home and its picture show whenever the fall list has nothing on; the fall picture only while it does. Needs the layout's menu (Make lists was run on it). Internal spec only: not for a public ad without the owner's permission.",
+  "grid": {
+    "cols": 24,
+    "rows": 13,
+    "gap": 16,
+    "margin": 30
+  },
+  "viewing": {
+    "inches": 55,
+    "metres": 4
+  },
+  "theme": {
+    "palette": {
+      "bg": "#fff6ea",
+      "ink": "#3a2416",
+      "muted": "#6f5140",
+      "accent": "#b84a14",
+      "onAccent": "#ffffff",
+      "panel": "#3a2416",
+      "onPanel": "#fff6ea",
+      "highlight": "#166b3a",
+      "onHighlight": "#ffffff",
+      "line": "#e6d3bd"
+    },
+    "fonts": {
+      "display": "Oswald",
+      "body": "Instrument Sans"
+    }
+  },
+  "blocks": [
+    {
+      "id": "logo",
+      "type": "logo",
+      "at": {
+        "col": 1,
+        "row": 1,
+        "w": 7,
+        "h": 2
+      },
+      "style": {
+        "align": "left"
+      },
+      "content": {
+        "image": "img:donut-joes-logo",
+        "text": "Donut Joe's"
+      }
+    },
+    {
+      "id": "hero",
+      "label": "Featured pictures",
+      "type": "rotator",
+      "at": {
+        "col": 1,
+        "row": 3,
+        "w": 7,
+        "h": 7
+      },
+      "style": {
+        "radius": "l",
+        "size": "l",
+        "shadow": true
+      },
+      "content": {
+        "seconds": 7,
+        "list": "hero"
+      }
+    },
+    {
+      "id": "hours",
+      "type": "hours",
+      "at": {
+        "col": 1,
+        "row": 10,
+        "w": 7,
+        "h": 3
+      },
+      "style": {
+        "surface": "panel",
+        "radius": "m",
+        "size": "l",
+        "pad": "m",
+        "valign": "middle"
+      },
+      "content": {
+        "heading": "Hours",
+        "list": "hours"
+      }
+    },
+    {
+      "id": "donuts",
+      "type": "items",
+      "at": {
+        "col": 8,
+        "row": 1,
+        "w": 9,
+        "h": 6
+      },
+      "style": {
+        "size": "l"
+      },
+      "content": {
+        "heading": "Handmade every morning",
+        "columns": 2,
+        "list": "donuts"
+      }
+    },
+    {
+      "id": "pastries",
+      "type": "items",
+      "at": {
+        "col": 8,
+        "row": 7,
+        "w": 9,
+        "h": 4
+      },
+      "style": {
+        "size": "m"
+      },
+      "content": {
+        "heading": "Pastries & Smokey Joes",
+        "leaders": true,
+        "list": "pastries"
+      }
+    },
+    {
+      "id": "party",
+      "label": "Announcement",
+      "type": "text",
+      "at": {
+        "col": 8,
+        "row": 11,
+        "w": 9,
+        "h": 2
+      },
+      "style": {
+        "surface": "highlight",
+        "radius": "m",
+        "size": "m",
+        "pad": "m",
+        "valign": "middle"
+      },
+      "content": {
+        "list": "party"
+      }
+    },
+    {
+      "id": "coffee",
+      "type": "items",
+      "at": {
+        "col": 17,
+        "row": 1,
+        "w": 8,
+        "h": 6
+      },
+      "style": {
+        "size": "m"
+      },
+      "content": {
+        "heading": "Coffee bar",
+        "leaders": true,
+        "list": "coffee"
+      }
+    },
+    {
+      "id": "energy",
+      "type": "chips",
+      "at": {
+        "col": 17,
+        "row": 7,
+        "w": 5,
+        "h": 3
+      },
+      "style": {
+        "size": "m"
+      },
+      "content": {
+        "heading": "Jammin' Joe's",
+        "list": "energy"
+      }
+    },
+    {
+      "id": "menu-qr",
+      "type": "qr",
+      "at": {
+        "col": 22,
+        "row": 7,
+        "w": 3,
+        "h": 3
+      },
+      "style": {
+        "surface": "panel",
+        "radius": "m",
+        "size": "m",
+        "pad": "s",
+        "align": "center"
+      },
+      "content": {
+        "line": "Scan for the menu"
+      }
+    },
+    {
+      "id": "fall",
+      "type": "items",
+      "at": {
+        "col": 17,
+        "row": 10,
+        "w": 5,
+        "h": 3
+      },
+      "style": {
+        "surface": "accent",
+        "radius": "m",
+        "size": "m",
+        "pad": "m"
+      },
+      "content": {
+        "heading": "Fall flavors",
+        "leaders": true,
+        "list": "fall"
+      }
+    },
+    {
+      "id": "fall-pic",
+      "type": "photo",
+      "at": {
+        "col": 22,
+        "row": 10,
+        "w": 3,
+        "h": 3
+      },
+      "style": {
+        "radius": "m"
+      },
+      "content": {
+        "image": "img:pumpkin-spice-cake",
+        "alt": "Pumpkin spice cake donuts",
+        "focus": "bottom"
+      },
+      "showWhen": {
+        "list": "fall",
+        "is": "showing"
+      }
+    },
+    {
+      "id": "take-home",
+      "type": "items",
+      "at": {
+        "col": 17,
+        "row": 10,
+        "w": 5,
+        "h": 3
+      },
+      "style": {
+        "surface": "panel",
+        "radius": "m",
+        "size": "m",
+        "pad": "m"
+      },
+      "content": {
+        "heading": "Take some home",
+        "leaders": true,
+        "list": "take-home"
+      },
+      "showWhen": {
+        "list": "fall",
+        "is": "empty"
+      }
+    },
+    {
+      "id": "take-home-pic",
+      "type": "photo",
+      "at": {
+        "col": 22,
+        "row": 10,
+        "w": 3,
+        "h": 3
+      },
+      "style": {
+        "radius": "m"
+      },
+      "content": {
+        "image": "img:gift-cards",
+        "alt": "Donut Joe's gift cards"
+      },
+      "showWhen": {
+        "list": "fall",
+        "is": "empty"
+      }
+    },
+    {
+      "id": "foot",
+      "label": "Bottom line",
+      "type": "text",
+      "at": {
+        "col": 1,
+        "row": 13,
+        "w": 18,
+        "h": 1
+      },
+      "style": {
+        "size": "s",
+        "valign": "middle",
+        "ink": "muted"
+      },
+      "content": {
+        "list": "foot"
+      }
+    },
+    {
+      "id": "now",
+      "type": "clock",
+      "at": {
+        "col": 19,
+        "row": 13,
+        "w": 3,
+        "h": 1
+      },
+      "style": {
+        "size": "l",
+        "align": "right",
+        "valign": "middle"
+      },
+      "content": {
+        "show": "time"
+      }
+    },
+    {
+      "id": "weather",
+      "type": "weather",
+      "at": {
+        "col": 22,
+        "row": 13,
+        "w": 3,
+        "h": 1
+      },
+      "style": {
+        "size": "l",
+        "align": "right",
+        "valign": "middle"
+      },
+      "content": {}
+    }
+  ]
+}

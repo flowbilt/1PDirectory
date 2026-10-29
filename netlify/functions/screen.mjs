@@ -157,7 +157,7 @@ export function toPayload(screen, dir, prop, tenants) {
 export function cleanLists(m) {
   if (!m || typeof m !== "object" || !Array.isArray(m.spec?.lists)) return null;
   const lists = m.spec.lists.filter((l) => l && /^[a-z0-9][a-z0-9-]{0,39}$/.test(l.key) && ["items", "text", "hours"].includes(l.kind))
-    .map((l) => ({ key: l.key, kind: l.kind, room: Math.min(60, Math.max(1, Number(l.room) || 1)), groupPrice: !!l.groupPrice, note: !!l.note }));
+    .map((l) => ({ key: l.key, kind: l.kind, room: Math.min(60, Math.max(1, Number(l.room) || 1)), groupPrice: !!l.groupPrice, note: !!l.note, schedule: !!l.schedule }));
   const content = { lists: {} };
   for (const l of lists) {
     const c = m.content?.lists?.[l.key];
