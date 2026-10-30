@@ -435,7 +435,9 @@ dialog.wide #dlg-body { max-height: 72vh; overflow: auto; padding-right: 4px; }
 .menu-preview .me-side-tabs { display: flex; gap: 2px; border-bottom: 1px solid var(--line); margin: 10px 0 0; flex: none; }
 .menu-preview .me-side-tabs button { background: none; border: 0; border-bottom: 3px solid transparent; border-radius: 0; padding: 6px 12px; font-weight: 700; color: #5b6470; }
 .menu-preview .me-side-tabs button[aria-selected="true"] { color: var(--navy); border-bottom-color: var(--navy); }
-.menu-preview .me-side-pane { overflow-y: auto; min-height: 0; flex: 1 1 auto; padding-top: 6px; }
+/* E2f: one scrollbar for the whole column (the tabs' own scroll stuck at the top under it, Scot) */
+.menu-preview .me-side-pane { flex: none; padding-top: 6px; }
+.menu-preview .menu-history, .menu-preview .my-pics { max-height: none; overflow: visible; }   /* E2f: one scroll bar, the column's */
 @media (max-width: 1000px) { .workspace.wide-preview > .menu-preview { position: static; max-height: none; } }
 .me-pv-row { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 14px; margin-top: 8px; }
 .menu-preview #pv-note, .menu-preview #phone-line { margin: 6px 0 0; font-size: 13px; }

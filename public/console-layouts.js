@@ -101,32 +101,34 @@
     if (!offer?.length || !m) { box.hidden = true; box.innerHTML = ""; return; }
     box.hidden = false;
     box.innerHTML = `<p><strong>${offer.length === 1 ? "One block writes" : `${offer.length} blocks write`} ${offer.length === 1 ? "its" : "their"} own content.</strong> Make ${offer.length === 1 ? "it a list" : "them lists"} on <strong>${esc(m.name)}</strong>, so the customer edits ${offer.length === 1 ? "it" : "them"} in the menu editor:</p>
-      <ul class="make-lists">${offer.map((o) => `<li><input type="checkbox" data-of="${esc(o.block)}" checked aria-label="Make a list from ${esc(o.block)}">
-        <span><strong>${esc(o.name)}</strong> <span class="sub">${esc(o.key)} · ${esc(o.kind)} · ${o.entries} now</span></span>
-        ${o.kind === "text" ? `<span class="sub">room 1</span>` : `<label class="sub">room <input type="number" min="${Math.max(1, o.entries)}" max="${o.kind === "hours" ? 14 : 60}" value="${o.room}" data-of-room="${esc(o.block)}"></label>`}</li>`).join("")}</ul>
+      <ul class="make-lists">${offer.map((o) => `<li><input type="checkbox" data-of="${esc(o.block)}"${o.existing ? ` data-of-use="1"` : ""} checked aria-label="${o.existing ? "Use the list" : "Make a list from"} ${esc(o.block)}">
+        <span><strong>${esc(o.name)}</strong> <span class="sub">${esc(o.key)} · ${esc(o.kind)} · ${o.existing ? "already on the menu: the board shows what's there (this file's sample entries are left out)" : `${o.entries} now`}</span></span>
+        ${o.existing ? `<span class="sub">use it</span>` : o.kind === "text" ? `<span class="sub">room 1</span>` : `<label class="sub">room <input type="number" min="${Math.max(1, o.entries)}" max="${o.kind === "hours" ? 14 : 60}" value="${o.room}" data-of-room="${esc(o.block)}"></label>`}</li>`).join("")}</ul>
       <div class="row"><button type="button" class="primary" id="offer-make">Make these lists</button>
       <span class="hint">Then Preview and Publish. Untick a block to keep its content in the layout (only WayTuGo can change it there).</span></div>`;
   }
   $("layout-offer").addEventListener("click", async (e) => {
     if (e.target.id !== "offer-make") return;
-    const blocks = [...document.querySelectorAll("[data-of]")].filter((x) => x.checked).map((x) => x.dataset.of);
-    if (!blocks.length) { toast("Tick at least one block.", true); return; }
+    const ticked = [...document.querySelectorAll("[data-of]")].filter((x) => x.checked);
+    if (!ticked.length) { toast("Tick at least one block.", true); return; }
+    const blocks = ticked.map((x) => x.dataset.of), use = ticked.filter((x) => x.dataset.ofUse).map((x) => x.dataset.of);
     const rooms = Object.fromEntries([...document.querySelectorAll("[data-of-room]")].map((x) => [x.dataset.ofRoom, Number(x.value)]));
     e.target.disabled = true;
-    try { await makeLists({ blocks, rooms }); $("layout-check").click(); }
+    try { await makeLists({ blocks, rooms, use }); $("layout-check").click(); }
     catch (ex) { toast(ex.message, true); }
     finally { e.target.disabled = false; }
   });
   /** Make lists (a new menu) or add them to the layout's menu, from the saved draft; the JSON box then shows the draft
    *  pointing at them. Shared by the Menu tab's dialog and Design's "Make these lists". */
-  async function makeLists({ blocks, rooms = {}, names = {}, name = "" }) {
+  async function makeLists({ blocks, rooms = {}, names = {}, name = "", use = [] }) {
     const l = L.current, adding = !!l.menu_id;
-    const r = await Auth.api("/api/layouts", { method: "POST", body: { action: "make_menu", layout_id: l.id, blocks, rooms, names, name } });
+    const r = await Auth.api("/api/layouts", { method: "POST", body: { action: "make_menu", layout_id: l.id, blocks, rooms, names, name, use } });
     await window.ConsoleRefresh();
     const [fresh] = await Auth.db(`layouts?id=eq.${l.id}&select=*`); if (fresh) L.current = fresh;
     $("layout-json").value = JSON.stringify(L.current.draft, null, 2);
     menuBox(); $("layout-offer").hidden = true;
-    toast(`${adding ? "Added" : "Made"} ${r.made.length} list${r.made.length === 1 ? "" : "s"}. Preview and publish to put the board on them.`);
+    const u = (r.used || []).length;
+    toast(`${r.made.length ? `${adding ? "Added" : "Made"} ${r.made.length} list${r.made.length === 1 ? "" : "s"}` : ""}${r.made.length && u ? "; " : ""}${u ? `${u} block${u === 1 ? " shows a list" : "s show lists"} already on the menu` : ""}. Preview and publish to put the board on them.`);
     return r;
   }
   function meta() {

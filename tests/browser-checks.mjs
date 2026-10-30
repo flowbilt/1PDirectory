@@ -987,7 +987,37 @@ try {
     if (await boss.isVisible("#layout-anyway")) { await boss.click("#layout-anyway"); await boss.waitForTimeout(1500); }
     const [l] = (await sb(`layouts?id=eq.${chalkLay.id}&select=published_version`)).data;
     assert(l.published_version === 1, JSON.stringify(l));
+    // E2f: the same file pasted again: Check offers the lists already on the menu ("use it"), not "-2" copies
+    const keys0 = (await theMenu()).spec.lists.map((x) => x.key).join();
+    await design(boss); await boss.fill("#layout-json", JSON.stringify(CHALK1, null, 2));
+    await boss.click("#layout-check"); await boss.waitForTimeout(1200);
+    assert(await boss.locator("#layout-offer").isVisible() && (await boss.textContent("#layout-offer")).includes("already on the menu"), await boss.textContent("#layout-offer"));
+    assert(await boss.locator("[data-of-use]").count() === 2, "both offered as lists already there");
+    await boss.click("#offer-make"); await boss.waitForTimeout(2500);
+    assert((await theMenu()).spec.lists.map((x) => x.key).join() === keys0, "no new lists");
+    assert((await boss.inputValue("#layout-json")).includes('"list": "specials"') && /No problems/.test(await boss.textContent("#layout-results")), "the board shows the lists already there");
     await sb(`screens?id=eq.${portrait.id}`, { method: "PATCH", body: JSON.stringify({ directory_id: null, layout_id: chalkLay.id, property_id: home.id }) });
+  });
+
+  await check("E2f: Building details: the weather location and time zone, for a building whose screens show only layouts", async () => {
+    await boss.goto(`${B}/console.html?fresh=${Date.now()}#buildings`); await boss.waitForTimeout(1500);
+    await boss.click('[data-tab="buildings"]'); await boss.waitForTimeout(300);
+    await boss.click("#add-building"); await boss.waitForTimeout(400);
+    await boss.selectOption("#b-org", home.org_id);
+    await boss.fill("#b-name", "Donut Joe's Pelham test"); await boss.fill("#b-addr", "3199 Lee St, Pelham, AL 35124");
+    await boss.fill("#b-loc", "33.31, north");
+    await boss.click("#dlg-ok"); await boss.waitForTimeout(600);
+    assert((await boss.textContent("#dlg-error")).includes("latitude and longitude"), await boss.textContent("#dlg-error"));
+    await boss.fill("#b-loc", "33.3449, -86.8236"); await boss.selectOption("#b-tz", "America/New_York");
+    await boss.click("#dlg-ok"); await boss.waitForTimeout(1500);
+    const [p] = (await sb("properties?name=eq.Donut Joe's Pelham test&select=lat,lon,timezone,address")).data;
+    assert(p && p.lat === 33.3449 && p.lon === -86.8236 && p.timezone === "America/New_York" && p.address.startsWith("3199 Lee St"), JSON.stringify(p));
+    const id = (await sb("properties?name=eq.Donut Joe's Pelham test&select=id")).data[0].id;
+    await boss.click(`[data-edit-prop="${id}"]`); await boss.waitForTimeout(400);
+    assert(await boss.inputValue("#b-loc") === "33.3449, -86.8236" && await boss.inputValue("#b-tz") === "America/New_York", "shown again when reopened");
+    await boss.click('#dlg button[value="cancel"]'); await boss.waitForTimeout(300);
+    await boss.goto(`${B}/console.html?fresh=${Date.now()}#layouts`); await boss.waitForTimeout(1500);
+    await boss.click(`[data-open-layout="${chalkLay.id}"]`); await boss.waitForTimeout(900);   // back on the chalkboard
   });
 
   await check("E2e: List settings refuses a layout pasted under Advanced, pointing to Design → Layout (JSON)", async () => {
@@ -1072,6 +1102,13 @@ try {
     assert(await p.locator("#pics").isVisible() && !(await p.locator("#history").isVisible()), "Your pictures first");
     await p.click('[data-side="history"]'); await p.waitForTimeout(300);
     assert(await p.locator("#history").isVisible() && !(await p.locator("#pics").isVisible()), "History tab");
+    // E2f (Scot): the column scrolls as one, down to the end of History and Your pictures
+    const end = async (sel) => p.evaluate((sel) => { const a = document.querySelector(".menu-preview"); a.scrollTop = a.scrollHeight; const last = [...document.querySelectorAll(sel)].pop(); const r = last.getBoundingClientRect(); const cs = getComputedStyle(a); return { bottom: r.bottom, vh: innerHeight, col: { pos: cs.position, maxH: cs.maxHeight, ov: cs.overflowY, ch: a.clientHeight, sh: a.scrollHeight, st: a.scrollTop, top: a.getBoundingClientRect().top, iw: innerWidth }, panes: [...document.querySelectorAll(".me-side-pane, #history, #pics")].map((x) => getComputedStyle(x).overflowY) }; }, sel);
+    let e1 = await end("#history > li"); await p.waitForTimeout(200); e1 = await end("#history > li");
+    assert(e1.bottom <= e1.vh + 1 && e1.panes.every((o) => o === "visible"), `History's last save reachable ${JSON.stringify(e1)}`);
+    await p.click('[data-side="pics"]'); await p.waitForTimeout(300);
+    let e2 = await end("#pics > li"); await p.waitForTimeout(200); e2 = await end("#pics > li");
+    assert(e2.bottom <= e2.vh + 1, `the last picture reachable ${JSON.stringify(e2)}`);
     await shot(p, "menu-editor-laptop");
     // a landscape board still fills the column's width
     const counterId = (await sb("layouts?name=eq.Counter board&select=id")).data[0]?.id;

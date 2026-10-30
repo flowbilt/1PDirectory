@@ -432,6 +432,18 @@ asks the company to change one). Desktop first; the phone version of the editor 
   the customer's (menu editor → Coffee bar).
 - Display **2.22.1** (the layout format's new `room` and `schedule`, so every screen has the same format as the site).
 
+### E2f (DP-13): pasting a board again, the preview column, a building's location
+
+- **Pasting a board's file again** (Scot: the coffee bar came back as a "-2" copy): when a block's list is already on
+  the menu, with the same key and kind, Check offers it as **already on the menu: the board shows what's there**, with
+  **use it** ticked; Make these lists then points the board at it and adds nothing (the file's sample entries are left
+  out, so the customer's own items stay). A list of another kind under that key still gets `-2`.
+- **The menu editor's preview column scrolls as one** (Scot: the inner scroll bar was stuck): Your pictures and History
+  no longer scroll on their own, so the end of either is reached with the column's one scroll bar.
+- **Buildings → Building details** has the **weather location** ("lat, lon") and the **time zone** (Central, Eastern,
+  Mountain, Arizona, Pacific), so a building whose screens show only layouts (a restaurant's boards) has them without a
+  directory. The board's clock and dates use the building's time zone.
+
 ## Screens and cards (Raspberry Pi)
 
 Every Pi runs from a **prepared card**, and every card is the same. A card carries no identity until it's in a Pi:

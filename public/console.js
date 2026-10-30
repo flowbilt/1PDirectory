@@ -18,7 +18,7 @@
   async function load() {
     const [orgs, props, dirs, screens, tenants] = await Promise.all([
       Auth.db("organizations?select=*&order=name.asc"),
-      Auth.db("properties?select=id,org_id,name,address&order=name.asc"),
+      Auth.db("properties?select=id,org_id,name,address,lat,lon,timezone&order=name.asc"),
       Auth.db("directories?select=id,property_id,slug,title,subtitle,updated_at&order=title.asc"),
       Auth.db(`screens?select=${SCREEN_COLS}&order=name.asc`),
       Auth.db("tenants?select=directory_id,name"),
@@ -220,17 +220,28 @@
 
   const orgOptions = (selected) => S.orgs.map((o) => `<option value="${o.id}"${o.id === selected ? " selected" : ""}>${esc(o.name)}</option>`).join("");
 
+  const TZS = [["America/Chicago", "Central"], ["America/New_York", "Eastern"], ["America/Denver", "Mountain"], ["America/Phoenix", "Arizona"], ["America/Los_Angeles", "Pacific"]];
   function buildingDialog(p) {
     const isNew = !p;
     openDialog({
       title: isNew ? "Add building" : `Building: ${p.name}`,
       body: `${field("b-org", "Account", `<select id="b-org">${orgOptions(p?.org_id)}</select>`)}
         ${field("b-name", "Building name", `<input id="b-name" required maxlength="80" value="${esc(p?.name || "")}">`)}
-        ${field("b-addr", "Address", `<input id="b-addr" maxlength="120" value="${esc(p?.address || "")}">`, "Also shows under the name on screens that have no subtitle.")}
-        ${isNew ? "" : `<p class="hint">Logo, photo, contacts and weather location are edited in any of this building's directories.</p>`}`,
+        ${field("b-addr", "Address", `<input id="b-addr" maxlength="120" value="${esc(p?.address || "")}">`, "Also shows under the name on screens that have no subtitle, and on a menu's phone page.")}
+        ${field("b-loc", "Weather location", `<input id="b-loc" inputmode="decimal" placeholder="e.g. 33.3449, -86.8236" value="${p?.lat != null && p?.lon != null ? `${p.lat}, ${p.lon}` : ""}">`, "Latitude, longitude. In Google Maps, right-click the building and click the numbers at the top of the menu to copy them. It also centres the traffic map.")}
+        ${field("b-tz", "Time zone", `<select id="b-tz">${TZS.map(([v, n]) => `<option value="${v}"${(p?.timezone || "America/Chicago") === v ? " selected" : ""}>${n}</option>`).join("")}${p?.timezone && !TZS.some(([v]) => v === p.timezone) ? `<option value="${esc(p.timezone)}" selected>${esc(p.timezone)}</option>` : ""}</select>`, "For the clock, opening hours and specials' times on this building's screens.")}
+        ${isNew ? "" : `<p class="hint">A building's logo, photo, contacts, places and drive times are edited in any of its directories (E2f: the location and time zone are here too, so a building whose screens show only layouts is complete).</p>`}`,
       async save() {
-        const body = { org_id: $("b-org").value, name: $("b-name").value.trim(), address: $("b-addr").value.trim() };
+        const body = { org_id: $("b-org").value, name: $("b-name").value.trim(), address: $("b-addr").value.trim(), timezone: $("b-tz").value };
         if (!body.name) throw new Error("Enter the building name.");
+        // E2f (DP-13): the weather location and time zone, here as in the directory editor (a layout-only building has no directory)
+        const loc = $("b-loc").value.trim();
+        if (loc) {
+          const m = /^\s*(-?\d{1,2}(?:\.\d+)?)\s*[, ]\s*(-?\d{1,3}(?:\.\d+)?)\s*$/.exec(loc);
+          const lat = m ? Number(m[1]) : NaN, lon = m ? Number(m[2]) : NaN;
+          if (!(lat >= -90 && lat <= 90 && lon >= -180 && lon <= 180)) throw new Error("The weather location is a latitude and longitude, like 33.3449, -86.8236.");
+          Object.assign(body, { lat, lon });
+        } else Object.assign(body, { lat: null, lon: null });
         if (isNew) await Auth.db("properties", { method: "POST", body, prefer: "return=minimal" });
         else await Auth.db(`properties?id=eq.${p.id}`, { method: "PATCH", body, prefer: "return=minimal" });
         toast(isNew ? "Building added. Now add its directories." : "Saved.");

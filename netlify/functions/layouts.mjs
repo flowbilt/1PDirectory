@@ -87,10 +87,27 @@ export function offerLists(doc, menu) {
   let ex;
   try { ex = extractMenu(checkLayout(doc).doc || { blocks: [] }); } catch { return null; }
   if (!ex?.made?.length) return { spec: { lists: [] }, content: { lists: {} }, doc, offer: [] };
-  const taken = new Set((menu.spec?.lists || []).map((l) => l.key));
-  const lists = ex.spec.lists.filter((l) => !taken.has(l.key));
+  const have = Object.fromEntries((menu.spec?.lists || []).map((l) => [l.key, l]));
+  const lists = ex.spec.lists.filter((l) => !have[l.key]);
+  // E2f (DP-13): a block whose list is already on the menu, of the same kind (the board's file pasted again), is
+  // offered that list ("use": it shows what the customer has there; the file's sample entries are dropped)
+  const use = (l) => have[l.key] && have[l.key].kind === l.kind;
   return { spec: { lists }, content: { lists: Object.fromEntries(lists.map((l) => [l.key, ex.content.lists[l.key]])) }, doc: ex.doc,
-    offer: ex.spec.lists.map((l) => ({ block: l.key, key: taken.has(l.key) ? `${l.key}-2` : l.key, name: l.name, kind: l.kind, room: l.room, entries: (ex.content.lists[l.key]?.entries || []).length })) };
+    offer: ex.spec.lists.map((l) => ({ block: l.key, key: use(l) ? l.key : have[l.key] ? `${l.key}-2` : l.key, name: use(l) ? have[l.key].name : l.name, kind: l.kind,
+      room: use(l) ? have[l.key].room : l.room, entries: (ex.content.lists[l.key]?.entries || []).length, ...(use(l) ? { existing: true } : {}) })) };
+}
+
+/** E2f: points blocks at the lists of the same key already on the menu, taking their own content off (as Make lists
+ *  would). Returns the doc. */
+export function useExisting(doc, ids, menu) {
+  const have = Object.fromEntries((menu?.spec?.lists || []).map((l) => [l.key, l]));
+  const ex = extractMenu(doc, ids);
+  return { ...doc, blocks: doc.blocks.map((b) => {
+    if (!ids.includes(b.id) || !ex.made.includes(b.id)) return b;
+    const L = ex.spec.lists.find((x) => x.key === b.id);
+    if (!have[b.id] || have[b.id].kind !== L?.kind) return b;
+    return ex.doc.blocks.find((x) => x.id === b.id);
+  }) };
 }
 
 export default async (req) => {
@@ -150,8 +167,21 @@ export default async (req) => {
       const layout = await loadLayout(body.layout_id);
       const [{ draft } = {}] = await db(`layouts?id=eq.${enc(layout.id)}&select=draft`);
       if (!draft || !Array.isArray(draft.blocks) || !draft.blocks.length) throw fail(400, "This layout has no blocks yet. Check its JSON first (Check keeps it as the draft).");
-      const ids = Array.isArray(body.blocks) ? body.blocks.filter((x) => typeof x === "string") : undefined;
-      const { spec, content, doc, made } = extractMenu(draft, ids);
+      let ids = Array.isArray(body.blocks) ? body.blocks.filter((x) => typeof x === "string") : undefined;
+      // E2f: blocks to point at lists already on the layout's menu (same key and kind), rather than make "-2" copies
+      const useIds = Array.isArray(body.use) ? body.use.filter((x) => typeof x === "string") : [];
+      let base = draft;
+      if (useIds.length) {
+        const m0 = await menuOf(layout);
+        if (!m0) throw fail(400, "This layout has no menu yet, so there are no lists to use.");
+        base = useExisting(draft, useIds, m0);
+        ids = (ids || []).filter((x) => !useIds.includes(x));
+        if (!ids.length) {
+          await db(`layouts?id=eq.${enc(layout.id)}`, { method: "PATCH", prefer: "return=minimal", body: { draft: base, updated_by: user.id } });
+          return json({ menu_id: m0.id, made: [], used: useIds });
+        }
+      }
+      const { spec, content, doc, made } = extractMenu(base, ids);
       if (!made.length) throw fail(400, "None of the chosen blocks has anything to turn into a list.");
       // the room the console's dialog chose for each list (the database refuses a room below what's in it)
       for (const l of spec.lists) {
@@ -174,7 +204,7 @@ export default async (req) => {
           l.key = key; taken.add(key);
         }
         const rev = await rpc("menu_add_lists", { p_menu: menu.id, p_lists: spec.lists, p_content: content.lists, p_by: user.id, p_layout: layout.id, p_draft: doc });
-        return json({ menu_id: menu.id, made, spec, rev });
+        return json({ menu_id: menu.id, made, spec, rev, used: useIds });
       }
       const name = String(body.name || `${layout.name}: menu`).trim().slice(0, 80);
       const menu_id = await rpc("menu_create", { p_org: layout.org_id, p_name: name, p_spec: spec, p_content: content, p_by: user.id, p_layout: layout.id, p_draft: doc });
