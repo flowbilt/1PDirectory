@@ -309,6 +309,42 @@ export const offersChoice = (doc) => (doc?.theme?.looks || []).length > 1 || (do
 /** E2d: the layout as drawn with a look and options chosen: on the chalkboard its palette and fonts become the chalk
  *  ones; blocks shown for an option the other way are switched off. doc.look says what was drawn (board.js styles the
  *  slate, grain and frame from it). */
+// ── T1b (DP-13): the shop's brand (menu-format.mjs brandProblem; kept with the menu), drawn before the look: the shop's
+// name and logo picture on every logo block (a name without a logo picture takes the template's picture away, so the
+// name shows), its five colours (the colours on them, a quieter text and the lines worked out to suit), its two fonts.
+// The Chalkboard look then draws its slate and chalk lettering over the colours and fonts, and keeps the name and logo. ──
+const mixHex = (a, b, t) => `#${hexRgb(a).map((v, i) => Math.round(v * (1 - t) + hexRgb(b)[i] * t).toString(16).padStart(2, "0")).join("")}`;
+/** White or the darkest of two inks, whichever reads better on a colour */
+const onColour = (c, dark) => (contrast("#ffffff", c) >= contrast(dark, c) ? "#ffffff" : dark);
+export function applyBrand(doc, brand) {
+  if (!doc || !brand || typeof brand !== "object") return doc;
+  const c = brand.colours && typeof brand.colours === "object" ? brand.colours : {};
+  const hex = (v) => typeof v === "string" && /^#[0-9a-fA-F]{6}$/.test(v);
+  const p0 = doc.theme.palette, p = { ...p0 };
+  for (const k of ["bg", "ink", "accent", "panel", "highlight"]) if (hex(c[k])) p[k] = c[k];
+  if (Object.keys(c).some((k) => hex(c[k]))) {
+    const dark = contrast(p.ink, "#ffffff") > contrast(p.bg, "#ffffff") ? p.ink : p.bg;
+    if (hex(c.accent)) p.onAccent = onColour(p.accent, dark);
+    // text on the dark panel: the background colour when it reads well there (cream on espresso), else white or dark
+    if (hex(c.panel)) p.onPanel = onColour(p.panel, dark) === "#ffffff" && contrast(p.bg, p.panel) >= 4.5 ? p.bg : onColour(p.panel, dark);
+    if (hex(c.highlight)) p.onHighlight = onColour(p.highlight, dark);
+    if (hex(c.ink) || hex(c.bg)) { p.muted = mixHex(p.ink, p.bg, 0.35); p.line = mixHex(p.ink, p.bg, 0.82); }
+  }
+  const f = brand.fonts && typeof brand.fonts === "object" ? brand.fonts : {};
+  const fonts = { ...doc.theme.fonts };
+  for (const k of ["display", "body"]) if (FONTS[f[k]]) fonts[k] = f[k];
+  const name = typeof brand.name === "string" && brand.name.trim() ? brand.name.trim().slice(0, 60) : null;
+  const logo = typeof brand.logo === "string" && /^img:[a-z0-9][a-z0-9-]{0,59}$/.test(brand.logo) ? brand.logo : null;
+  const blocks = (name || logo) ? doc.blocks.map((b) => {
+    if (b.type !== "logo") return b;
+    const content = { ...b.content };
+    if (name) content.text = name;
+    if (logo) content.image = logo; else if (name) delete content.image;
+    return { ...b, content };
+  }) : doc.blocks;
+  return { ...doc, blocks, theme: { ...doc.theme, palette: p, fonts } };
+}
+
 export function applyLook(doc, choice) {
   if (!doc) return doc;
   const ch = boardChoice(doc, choice);

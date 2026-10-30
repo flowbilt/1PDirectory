@@ -31,7 +31,7 @@
         { "image": "img:latte-art", "alt": "A latte with a rosetta poured on top", "caption": "House Latte", "line": "Our espresso, steamed milk, poured with care", "price": "$4.95" },
         { "image": "img:cold-brew", "alt": "Cold brew over ice", "caption": "Slow-Steeped Cold Brew", "line": "Smooth, bold & brewed for 18 hours", "price": "$4.50" },
         { "image": "img:butter-croissant", "alt": "Butter croissants", "caption": "Butter Croissant", "line": "Flaky, golden & baked every morning", "price": "$3.75" },
-        { "image": "img:sausage-biscuit", "alt": "A sausage and cheddar biscuit", "caption": "Sausage & Cheddar Biscuit", "line": "A Southern morning in one bite", "price": "$5.95" },
+        { "image": "img:sausage-biscuit", "alt": "A chicken and cheese biscuit", "caption": "Chicken & Cheese Biscuit", "line": "A Southern morning in one bite", "price": "$5.95" },
         { "image": "img:cinnamon-roll", "alt": "A glazed cinnamon roll", "caption": "Cinnamon Roll", "line": "Soft, swirled & glazed warm", "price": "$4.25" }
       ] } },
 
@@ -74,7 +74,7 @@
         { "name": "Butter Croissant", "price": "$3.75" },
         { "name": "Blueberry Muffin", "price": "$3.50" },
         { "name": "Cinnamon Roll", "price": "$4.25" },
-        { "name": "Sausage & Cheddar Biscuit", "price": "$5.95" },
+        { "name": "Chicken & Cheese Biscuit", "price": "$5.95" },
         { "name": "Breakfast Burrito", "price": "$7.95" },
         { "name": "Avocado Toast", "line": "Everything seasoning, chili flake", "price": "$8.50" },
         { "name": "Yogurt Parfait", "price": "$5.50" } ] } },

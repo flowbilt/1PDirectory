@@ -2600,7 +2600,7 @@ test("menus: the editor, the console's Menus tab and the board's room are in pla
   const con = readFileSync(new URL("../public/console.html", import.meta.url), "utf8"), cjs = readFileSync(new URL("../public/console.js", import.meta.url), "utf8");
   assert.ok(con.includes('id="tab-menus"') && con.includes('id="panel-menus"') && cjs.includes("menu-edit.html?m="));
   const board = readFileSync(new URL("../public/board.js", import.meta.url), "utf8");
-  assert.ok(board.includes("applyMenu(applyLook(checked.doc, data.look), data.lists, nowHere, { room: true })") && board.includes('class="item ghost"'));
+  assert.ok(board.includes("applyMenu(applyLook(applyBrand(checked.doc, data.brand), data.look), data.lists, nowHere, { room: true })") && board.includes('class="item ghost"'));
 });
 
 // ── Specials with dates and times, showWhen, more lists, WayTuGo (DP-12, round E2b; supabase/33-menu-specials.sql) ──
@@ -2947,7 +2947,7 @@ test("chalkboard: on the counter board's menu: Add lists (specials, chalk note),
 
 test("chalkboard: the screen's files: the look drawn by the board page, the grain and its speed check, the frame, the Caveat Brush font and licence, the editor's Board look", () => {
   const board = readFileSync(new URL("../public/board.js", import.meta.url), "utf8"), css = readFileSync(new URL("../public/board.css", import.meta.url), "utf8");
-  for (const w of ["applyLook(checked.doc, data.look)", "function grain()", "function measure()", '"X-Board"', "lastReport.fps < 25", "chalkImage"]) assert.ok(board.includes(w), w);
+  for (const w of ["applyLook(applyBrand(checked.doc, data.brand), data.look)", "function grain()", "function measure()", '"X-Board"', "lastReport.fps < 25", "chalkImage"]) assert.ok(board.includes(w), w);
   for (const w of ["#stage.look-chalk .board", "mask-image: var(--grain)", ".look-chalk.framed .board::after", "--chalk-titles", "--chalk-prices", "--chalk-accents", "bottom: var(--sold-bottom, 0.19em)"]) assert.ok(css.includes(w), w);
   assert.ok(!/sold-mark \{[^}]*top: 50%/.test(css), "the sold-out mark no longer centred across a wrapped name");
   assert.ok(readFileSync(new URL("../public/fonts/CaveatBrush-Regular.ttf", import.meta.url)).length > 10000);
@@ -3014,7 +3014,7 @@ test("T0: copying a shop (1Point only): the menu, its boards published with new 
   let r = await scall({ action: "copy", menu_id: menu.id, org_id: samples.id, name: "Salvatore's", building: { name: "Salvatore's Pizza", lat: "north" } }, admin);
   assert.equal(r.status, 400); assert.match((await r.json()).error, /latitude and a longitude/);
   const files0 = fake.storage.size;
-  r = await scall({ action: "copy", menu_id: menu.id, org_id: samples.id, name: "Salvatore's Pizza", boards: { [l32.id]: "Salvatore's counter" },
+  r = await scall({ action: "copy", menu_id: menu.id, org_id: samples.id, name: "Salvatore's Pizza", board_name: "Salvatore's", boards: { [l32.id]: "Salvatore's counter" },
     building: { name: "Salvatore's Pizza", address: "1 Main St", lat: 33.6, lon: -86.8, timezone: "America/Chicago" } }, admin);
   let d = await r.json();
   assert.equal(r.status, 200, JSON.stringify(d));
@@ -3028,6 +3028,8 @@ test("T0: copying a shop (1Point only): the menu, its boards published with new 
   assert.ok(n55.published_version === 1 && n32.published_version == null && n55.menu_code !== l55.menu_code && n55.org_id === samples.id);
   assert.equal(n55.name, "Salvatore's Pizza: Coffee 55"); assert.equal(n32.name, "Salvatore's counter");
   assert.deepEqual(Object.keys(m2.content.boards), [n55.id], "the look follows the board");
+  assert.equal(m2.content.brand?.name, "Salvatore's", "T1b: the name on the boards");
+  assert.equal(menu.content.brand, undefined, "the template keeps its own name");
   const v1 = T.layout_versions.find((v) => v.layout_id === n55.id && v.version === 1);
   assert.equal(v1.doc.blocks[0].content.image, "img:hero");
   const imgs = T.layout_images.filter((i) => i.org_id === samples.id).map((i) => i.key).sort();
@@ -3142,6 +3144,61 @@ test("T1: the coffee-shop template: both boards clean (the counter board's lists
   assert.deepEqual(off.offer.map((o) => [o.key, o.room]), [["specials", 6], ["note", 1]]);
   assert.deepEqual(LF.checkLayout(d32, { lists: [...ex.spec.lists, ...off.spec.lists] }).errors, []);
   for (const d of [d55, d32]) assert.ok(!/Donut Joe|O'Henry|Salvatore|Filling Station|Our Place|Dowdle|Mi Barrio/i.test(JSON.stringify(d.blocks)), "an invented shop");
+});
+
+test("T1b: the shop's brand: its rules; drawn on every board (name, logo, colours, fonts) and the phone menu; only 1Point changes it; a copy takes the name on the boards", async () => {
+  // the fonts are the same list in both files
+  assert.deepEqual(MF.BRAND_FONTS, Object.keys(LF.FONTS));
+  // the rules
+  assert.equal(MF.brandProblem({ name: "O'Henry's", colours: { bg: "#f3eee3" }, fonts: { display: "Playfair Display" } }), null);
+  assert.match(MF.brandProblem({ colours: { bg: "cream" } }), /like #3b2620/);
+  assert.match(MF.brandProblem({ fonts: { display: "Comic Sans MS" } }), /isn't one of WayTuGo's fonts/);
+  assert.match(MF.brandProblem({ logo: "img:nope" }, { images: new Set(["latte"]) }), /no picture "nope"/);
+  assert.match(MF.brandProblem({ slogan: "x" }), /isn't part of the brand/);
+  assert.match(MF.brandProblem({ name: "x".repeat(61) }), /1 to 60/);
+  // drawn: the template's name and picture give way; colours with readable text on them; fonts
+  const d55 = LF.checkLayout(JSON.parse(readFileSync(new URL("../layouts/template-coffee-55.json", import.meta.url), "utf8"))).doc;
+  const withPic = { ...d55, blocks: d55.blocks.map((b) => (b.type === "logo" ? { ...b, content: { ...b.content, image: "img:daybreak-logo" } } : b)) };
+  const brand = { name: "O'Henry's Coffees", colours: { bg: "#f3eee3", ink: "#3b2620", accent: "#b98454", panel: "#3b2620", highlight: "#5a3d2e" }, fonts: { display: "Playfair Display" } };
+  const b1 = LF.applyBrand(withPic, brand);
+  const logo = b1.blocks.find((b) => b.type === "logo");
+  assert.equal(logo.content.text, "O'Henry's Coffees"); assert.ok(!logo.content.image, "the template's picture gives way to the name");
+  assert.equal(LF.applyBrand(withPic, { logo: "img:oh-logo" }).blocks.find((b) => b.type === "logo").content.image, "img:oh-logo");
+  const p = b1.theme.palette;
+  assert.ok(p.bg === "#f3eee3" && p.ink === "#3b2620" && p.panel === "#3b2620" && p.onPanel === "#f3eee3");
+  assert.ok(LF.contrast(p.onAccent, p.accent) >= 2.5 && LF.contrast(p.onHighlight, p.highlight) >= 4.5 && p.muted !== d55.theme.palette.muted);
+  assert.equal(b1.theme.fonts.display, "Playfair Display"); assert.equal(b1.theme.fonts.body, d55.theme.fonts.body, "a font left out keeps the template's");
+  assert.equal(LF.applyBrand(d55, null), d55);
+  // the chalkboard keeps its slate and chalk lettering, with the brand's name
+  const chalk = LF.applyLook(b1, { look: "chalkboard" });
+  assert.ok(chalk.theme.palette.bg === LF.SLATE && chalk.blocks.find((b) => b.type === "logo").content.text === "O'Henry's Coffees");
+  // in the menu: checked, and its changes in History
+  const spec = { lists: [{ key: "coffee", name: "Coffee", kind: "items", room: 4, fields: ["name", "price"] }] };
+  assert.equal(MF.checkMenuContent(spec, { lists: {}, brand }).errors.length, 0);
+  assert.equal(MF.checkMenuContent(spec, { lists: {}, brand: { colours: { bg: "red" } } }).errors[0].where, "Brand");
+  assert.deepEqual(MF.menuChanges(spec, { lists: {} }, { lists: {}, brand: { name: "O'Henry's" } }), ["Brand: name (the template's) → O'Henry's"]);
+  // only 1Point changes it: the owner's save keeps 1Point's brand
+  const admin = await login("scot@1pointusa.com", "admin-pass"), owner = await login("leighann@barber.test", "owner-pass");
+  const org = fake.T.organizations.find((o) => /Barber/.test(o.name));
+  const m = { id: crypto.randomUUID(), org_id: org.id, name: "Brand test", customer_edit: true, spec, content: { lists: {} }, rev: 0, created_at: "", updated_at: "" };
+  fake.T.menus.push(m);
+  const save = (tok, content) => fake.handle(new Request(`${SB}/rest/v1/rpc/menu_save`, { method: "POST", body: JSON.stringify({ p_menu: m.id, p_base_rev: m.rev, p_content: content }), headers: { apikey: ANON_KEY, Authorization: `Bearer ${tok}`, "Content-Type": "application/json" } }));
+  assert.equal((await save(admin, { lists: {}, brand })).status, 200);
+  assert.equal((await save(owner, { lists: { coffee: { entries: [{ id: "c0001", name: "Latte" }] } }, brand: { name: "Mine now" } })).status, 200);
+  assert.equal(m.content.brand.name, "O'Henry's Coffees"); assert.equal(m.content.lists.coffee.entries[0].name, "Latte");
+  assert.equal((await save(owner, { lists: {} })).status, 200);
+  assert.deepEqual(m.content.brand, brand, "leaving it out doesn't remove it");
+  // screens and the phone menu: the brand in the answer, the name on the phone page
+  const { toLayoutPayload } = await import("../netlify/functions/screen.mjs");
+  const pl = toLayoutPayload({ key: "x", name: "x", orientation: "landscape" }, { id: crypto.randomUUID(), name: "B", doc: d55, lists: { id: m.id, spec, content: m.content } }, null, {});
+  assert.deepEqual(pl.brand, brand);
+  assert.equal(toLayoutPayload({ key: "x", name: "x", orientation: "landscape" }, { id: "y", name: "B", doc: d55, lists: { id: m.id, spec, content: { lists: {}, brand: { colours: { bg: "red" } } } } }, null, {}).brand, null);
+  // the console and the editor
+  const ed = readFileSync(new URL("../public/menu-edit.js", import.meta.url), "utf8"), cj = readFileSync(new URL("../public/console.js", import.meta.url), "utf8"), bj = readFileSync(new URL("../public/board.js", import.meta.url), "utf8");
+  for (const w of ["function brandHtml(", "(E.admin ? brandHtml() : \"\")", "brand: content.brand || null"]) assert.ok(ed.includes(w), w);
+  assert.ok(cj.includes('field("cp-brand", "Name on the boards"') && cj.includes("board_name:"));
+  assert.ok(bj.includes("applyBrand(checked.doc, data.brand)"));
+  fake.T.menus.splice(fake.T.menus.indexOf(m), 1);
 });
 
 let passed = 0;

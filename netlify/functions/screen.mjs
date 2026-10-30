@@ -10,7 +10,7 @@ import { createHash } from "node:crypto";
 import { SITE_RE } from "../lib/common.mjs";
 import { rpc } from "../lib/sb.mjs";
 import { DISPLAY_VERSION } from "../lib/version.mjs";
-import { boardProblem } from "../../public/menu-format.mjs";
+import { boardProblem, brandProblem } from "../../public/menu-format.mjs";
 
 // Bump when toPayload's output changes shape, so every screen re-downloads once after the deploy. The live display
 // version is part of the tag too (TAG), so a display deploy also gives every screen a fresh answer.
@@ -186,6 +186,12 @@ export function cleanLists(m) {
 
 /** E2d (DP-13): a board's look and options as saved with its menu (content.boards[layout id]), kept to the presets
  *  (menu-format.mjs boardProblem); anything else is dropped, so the board draws its layout's own defaults. */
+/** T1b (DP-13): the shop's brand, kept with the menu (null: none, or not as the rules say) */
+export function cleanBrand(m) {
+  const b = m?.content?.brand;
+  if (!b || typeof b !== "object" || brandProblem(b)) return null;
+  return b;
+}
 export function cleanBoard(m, layoutId) {
   const b = m?.content?.boards?.[layoutId];
   if (!layoutId || !b || typeof b !== "object" || boardProblem(b)) return null;
@@ -225,6 +231,8 @@ export function toLayoutPayload(screen, layout, prop, images) {
     lists: cleanLists(layout?.lists),
     // E2d: the look and options chosen for this board in the menu editor (null: the layout's own)
     look: cleanBoard(layout?.lists, layout?.id),
+    // T1b: the shop's brand (name, logo, colours, fonts), for every board on the menu
+    brand: cleanBrand(layout?.lists),
     propertyName: prop?.name || "",
     address: prop?.address || "",
     timezone: prop?.timezone || "America/Chicago",

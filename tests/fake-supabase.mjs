@@ -784,7 +784,10 @@ export function createFake() {
       const last = T.menu_revisions.find((x) => x.menu_id === m.id && x.rev === m.rev);
       throw Object.assign(new Error(`Someone else saved this menu after you opened it (${last?.by_name || "another user"}). Reload to see their changes, then make yours again.`), { status: 409 });
     }
-    const next = { ...m, content: content || { lists: {} } };
+    let c = content || { lists: {} };
+    // 38-brand.sql: the brand is 1Point's; anyone else's save or Restore keeps the menu's brand as it is
+    if (!admin) { const { brand, ...rest } = c; c = m.content?.brand ? { ...rest, brand: m.content.brand } : rest; }
+    const next = { ...m, content: c };
     const bad = menuRule(next, m); if (bad) throw Object.assign(new Error(bad), { status: 400 });
     Object.assign(m, { content: next.content, rev: m.rev + 1, updated_at: now(), updated_by: who.uid || null });
     const at = now();

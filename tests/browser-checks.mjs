@@ -1242,6 +1242,27 @@ try {
     await v.close();
   });
 
+  await check("T1b: the Brand panel (1Point only): the shop's name, a colour and a font in the menu editor; the preview follows; Save keeps it on the menu, in History; the owner sees no Brand panel", async () => {
+    assert(copied, "needs the copy");
+    await boss.goto(`${B}/menu-edit.html?m=${copied.m.id}`); await boss.waitForTimeout(3000);
+    assert(await boss.locator("#me-brand").isVisible(), "the Brand panel");
+    await boss.fill('#me-brand [data-brand="name"]', "O.Henry's Coffees"); await boss.waitForTimeout(300);
+    await boss.locator('#me-brand [data-brand="colour"][data-k="bg"]').evaluate((el) => { el.value = "#f3eee3"; el.dispatchEvent(new Event("change", { bubbles: true })); });
+    await boss.selectOption('#me-brand [data-brand="font"][data-k="display"]', "Playfair Display");
+    await boss.waitForTimeout(2500);
+    const pv = await boss.frameLocator("#pv").locator("body").evaluate(() => ({ name: [...document.querySelectorAll("#blocks *")].map((e) => e.textContent).find((t) => t.includes("O.Henry's Coffees")) || "", bg: getComputedStyle(document.querySelector("#stage")).getPropertyValue("--p-bg").trim(), font: getComputedStyle(document.querySelector("#stage")).getPropertyValue("--f-display") }));
+    assert(pv.name && pv.bg === "#f3eee3" && pv.font.includes("Playfair Display"), JSON.stringify(pv));
+    await shot(boss, "brand-panel");
+    await boss.click("#save"); await boss.waitForTimeout(2000);
+    const [m] = (await sb(`menus?id=eq.${copied.m.id}&select=content`)).data;
+    assert(m.content.brand?.name === "O.Henry's Coffees" && m.content.brand.colours?.bg === "#f3eee3" && m.content.brand.fonts?.display === "Playfair Display", JSON.stringify(m.content.brand));
+    await boss.click('[data-side="history"]').catch(() => {}); await boss.waitForTimeout(300);
+    assert((await boss.textContent("#history")).includes("Brand: name"), "in History");
+    // the owner's editor has no Brand panel
+    await owner.goto(`${B}/menu-edit.html?m=${menuId}`); await owner.waitForTimeout(2500);
+    assert(!(await owner.locator("#me-brand").count()), "no Brand panel for the owner");
+  });
+
   await sb(`screens?id=eq.${portrait.id}`, { method: "PATCH", body: JSON.stringify({ layout_id: lay.id, property_id: home.id }) });
 
   await owner.close(); await boss.close();

@@ -14,7 +14,7 @@ allows commercial use without credit, but don't use a photo that shows a brand's
 | `latte-art` | Featured: House Latte | https://unsplash.com/photos/latte-with-rosetta-art-served-in-white-teacup-1Np4dWNrA0I |
 | `cold-brew` | Featured: Cold Brew | https://unsplash.com/photos/cold-brew-coffee-in-a-mason-jar-with-ice-WCmMU38zg1c |
 | `butter-croissant` | Featured: Butter Croissant | https://unsplash.com/photos/a-bunch-of-croissants-that-are-on-a-table-sqkXyyj4WdE |
-| `sausage-biscuit` | Featured: Sausage & Cheddar Biscuit | https://unsplash.com/photos/UtXj8dVs2tU |
+| `sausage-biscuit` | Featured: Chicken & Cheese Biscuit (the key kept from T1) | Any free Southern biscuit photo, e.g. https://unsplash.com/s/photos/chicken-biscuit (Scot, T1: the first pick was a British biscuit, a cookie) |
 | `cinnamon-roll` | Featured: Cinnamon Roll | https://unsplash.com/photos/a-pan-filled-with-cinnamon-rolls-covered-in-icing-c07YNJmNfaE |
 | `maple-latte` | Fall favorites (beside the seasonal box) | https://unsplash.com/photos/a-cup-of-coffee-sitting-on-top-of-a-wooden-tray-6tcybUwV-kY |
 | `coffee-beans` | Take some home (when the seasonal menu is off) | https://unsplash.com/photos/coffee-beans-blend-paper-bag-on-ground-mv7kxYh5Rko |

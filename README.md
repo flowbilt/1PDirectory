@@ -488,6 +488,26 @@ once they sign, the fitted copy goes into their own account. Only 1Point copies 
   active." when its menu stops answering (a sample whose links are all off, T0b), as the sample page does; any other
   failure still keeps what's drawn. A board that comes back draws again.
 
+### T1b (DP-13): the shop's brand
+
+Scot (2026-10-30): for now 1Point holds brand setup: the customer provides it on request, 1Point sets it up and sends
+the final design for the customer's approval.
+
+- **A brand per shop, kept with its menu** (`content.brand`; `supabase/38-brand.sql`, `public/menu-format.mjs`
+  `brandProblem`): the **shop's name**, a **logo picture** from the account, **five colours** (background, text,
+  accent, dark panel, highlight; like `#3b2620`) and **two fonts** (headings and body, WayTuGo's fonts only). Anything
+  left out keeps the template's own.
+- **Drawn everywhere the menu is** (`public/layout-format.mjs` `applyBrand`, before the look): every board on the
+  menu, the phone menu and sample links. The name replaces the template's on every logo block (a name without a logo
+  picture takes the template's picture away); the colours bring readable text on the accent, panel and highlight
+  (cream on espresso when it reads well), a quieter text and lines to match; the fonts replace the template's. The
+  Chalkboard look keeps its slate and chalk lettering, with the brand's name and logo.
+- **Only 1Point changes it:** the menu editor's **Brand** panel (1Point only; colour pickers, font lists, the logo
+  from the account's pictures, the name; a warning when text would be hard to read) with the live preview; anyone
+  else's save or Restore keeps the brand as it is (the database's own rule). Changes show in History ("Brand: …").
+- **Copying a shop** (T0) copies the brand, and the dialog's **Name on the boards** (default: the copy's name) puts
+  the prospect's name on every board straight away.
+
 ## Screens and cards (Raspberry Pi)
 
 Every Pi runs from a **prepared card**, and every card is the same. A card carries no identity until it's in a Pi:

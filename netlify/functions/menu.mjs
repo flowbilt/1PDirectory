@@ -10,8 +10,8 @@
 // whose lists fill the blocks that show them: E2a, DP-12).
 import { rpc } from "../lib/sb.mjs";
 import { applyMenu } from "../../public/menu-format.mjs";
-import { checkLayout, applyLook, blockShows, zonedNow, hoursNow, nowNext, niceTime, niceDays, blockColours, readingOrder, FONTS, TAGS } from "../../public/layout-format.mjs";
-import { toLayoutPayload, cleanLists, cleanBoard } from "./screen.mjs";
+import { checkLayout, applyLook, applyBrand, blockShows, zonedNow, hoursNow, nowNext, niceTime, niceDays, blockColours, readingOrder, FONTS, TAGS } from "../../public/layout-format.mjs";
+import { toLayoutPayload, cleanLists, cleanBoard, cleanBrand } from "./screen.mjs";
 
 const CODE_RE = /^[A-HJKMNP-Z2-9]{6}$/i;
 const LINK_RE = /^https?:\/\/[^\s<>"']+\.[^\s<>"']+$/i;
@@ -109,7 +109,7 @@ export function renderMenu(r, base, code, nowMs = Date.now()) {
   const tz = r.prop?.timezone || "America/Chicago";
   const now = zonedNow(nowMs, tz);
   // E2d: in the look and with the options chosen for the board (the chalkboard's colours on a phone too)
-  const doc = applyMenu(applyLook(checked.doc, cleanBoard(r.lists, r.layout?.id)), cleanLists(r.lists), now);   // E2b: specials by their dates, days and times too   // E2a: the lists as they are today (no empty room on a phone)
+  const doc = applyMenu(applyLook(applyBrand(checked.doc, cleanBrand(r.lists)), cleanBoard(r.lists, r.layout?.id)), cleanLists(r.lists), now);   // T1b: the shop's brand   // E2b: specials by their dates, days and times too   // E2a: the lists as they are today (no empty room on a phone)
   const p = doc.theme.palette, f = doc.theme.fonts;
   const images = r.images || {};
   const pic = (ref) => { const m = /^img:(.+)$/.exec(ref || ""); const i = m && images[m[1]]; return i && /^[0-9a-f-]{36}\/[a-z0-9-]+\.(webp|jpg|png)$/.test(i.path) ? `${base}/img/${i.path}` : ""; };

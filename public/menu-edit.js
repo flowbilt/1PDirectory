@@ -17,9 +17,9 @@
 // from six for titles, prices and accents, Sign-writer or Chalk hand lettering, the wooden frame, and options such as
 // "Show the coffee bar"), the customer (and WayTuGo) picks them here; they're saved with the menu (content.boards),
 // shown in the preview at once, checked for fit like any change, and kept in History.
-import { checkMenuContent, menuChanges, newEntryId, capOf, shownEntries, describeWhen, entryStatus, menuPictureKeys, ITEM_TAGS, FIELD_LABEL } from "/menu-format.mjs";
+import { checkMenuContent, menuChanges, newEntryId, capOf, shownEntries, describeWhen, entryStatus, menuPictureKeys, ITEM_TAGS, FIELD_LABEL, BRAND_COLOURS, BRAND_FONT_ROLES, BRAND_FONTS, BRAND_NAME_MAX } from "/menu-format.mjs";
 import { shrink, asDataUrl, niceName } from "/picture-shrink.mjs";
-import { zonedNow, checkLayout, boardChoice, offersChoice, LOOKS, CHALK, CHALK_NAMES, CHALK_ROLES, LETTERING } from "/layout-format.mjs";
+import { zonedNow, checkLayout, boardChoice, offersChoice, applyBrand, contrast, LOOKS, CHALK, CHALK_NAMES, CHALK_ROLES, LETTERING } from "/layout-format.mjs";
 const nowHere = () => zonedNow(Date.now(), E.tz);
 
 const { esc, toast, since } = window.UI;
@@ -72,6 +72,7 @@ function normalise(content) {
   for (const L of E.spec.lists || []) out.lists[L.key] = clone(content?.lists?.[L.key] || { entries: [] });
   for (const L of E.spec.lists || []) out.lists[L.key].entries ||= [];
   out.boards = clone(content?.boards || {});   // E2d
+  out.brand = clone(content?.brand || {});     // T1b
   return out;
 }
 
@@ -180,8 +181,30 @@ function lookHtml(b) {
     ${mine ? `<button type="button" class="ghost" data-look-reset>Back to WayTuGo's design</button>` : ""}
   </section>`;
 }
+// ── T1b (DP-13): the shop's brand (1Point only; Scot: the customer provides it, 1Point sets it up and sends the final
+// design for approval). Blank keeps the template's own; the preview follows each change ──
+function brandHtml() {
+  const br = E.draft.brand || {}, first = E.boards.find((b) => b.checked)?.checked;
+  const base = first?.theme || { palette: {}, fonts: {} };
+  const col = (k) => `<label class="me-brand-col"><span>${esc(BRAND_COLOURS[k])}</span><span class="me-brand-swatch"><input type="color" data-brand="colour" data-k="${k}" value="${esc(br.colours?.[k] || base.palette[k] || "#000000")}" aria-label="${esc(BRAND_COLOURS[k])} colour"></span>
+    <em>${br.colours?.[k] ? esc(br.colours[k]) : "template's"}</em>${br.colours?.[k] ? `<button type="button" class="linkish" data-brand-clear="colour" data-k="${k}">use the template's</button>` : ""}</label>`;
+  const font = (k) => `<label class="me-brand-font"><span>${esc(BRAND_FONT_ROLES[k])}</span><select data-brand="font" data-k="${k}"><option value="">The template's (${esc(base.fonts[k] || "")})</option>${BRAND_FONTS.map((f) => `<option${br.fonts?.[k] === f ? " selected" : ""}>${esc(f)}</option>`).join("")}</select></label>`;
+  // readable? the text colour on the background, and the background on the dark panel
+  let warn = "";
+  if (first) { const p = applyBrand(first, br).theme.palette; if (contrast(p.ink, p.bg) < 4.5) warn = "The text colour is hard to read on the background. "; if (contrast(p.onPanel, p.panel) < 4.5) warn += "Text on the dark panel is hard to read."; }
+  return `<section class="panel me-brand" id="me-brand">
+    <div class="panel-head"><h2>Brand <span class="sub">· WayTuGo only · every board on this menu and the phone menu</span></h2></div>
+    <p class="hint">The shop's name, logo, colours and fonts in place of the template's. Leave one blank to keep the template's. The Chalkboard look keeps its slate and chalk lettering, with this name and logo.</p>
+    <div class="me-brand-row"><label class="me-brand-name"><span>Shop's name</span><input data-brand="name" maxlength="${BRAND_NAME_MAX}" value="${esc(br.name || "")}" placeholder="(the template's)"></label>
+      <label class="me-brand-logo"><span>Logo picture</span><select data-brand="logo"><option value="">None: the name in the heading font</option>${E.pics.map((p) => `<option value="img:${esc(p.key)}"${br.logo === `img:${p.key}` ? " selected" : ""}>${esc(p.name || p.key)}</option>`).join("")}</select></label></div>
+    <div class="me-brand-row">${Object.keys(BRAND_COLOURS).map(col).join("")}</div>
+    <div class="me-brand-row">${Object.keys(BRAND_FONT_ROLES).map(font).join("")}</div>
+    ${warn ? `<p class="warn" role="status">${esc(warn.trim())}</p>` : ""}
+  </section>`;
+}
 function drawLists() {
   $("lists").innerHTML = `<p class="hint me-intro">Change what's on your boards here. The layout, headings, colours and sizes are set by WayTuGo; ask WayTuGo to change them, or for more room on a list.</p>`
+    + (E.admin ? brandHtml() : "")
     + E.boards.filter((b) => b.checked && offersChoice(b.checked)).map(lookHtml).join("")
     + (E.spec.lists || []).map(listHtml).join("");
   if (!canEdit()) $("lists").querySelectorAll("input, select, textarea, button").forEach((x) => (x.disabled = true));
@@ -278,6 +301,25 @@ $("lists").addEventListener("click", (ev) => {
   schedulePreview();
 });
 
+// T1b: the brand (1Point)
+function brandChange(t) {
+  const br = E.draft.brand = { ...(E.draft.brand || {}) }, k = t.dataset.k;
+  if (t.dataset.brand === "name") br.name = t.value;
+  else if (t.dataset.brand === "logo") { if (t.value) br.logo = t.value; else delete br.logo; }
+  else if (t.dataset.brand === "colour") br.colours = { ...(br.colours || {}), [k]: t.value };
+  else if (t.dataset.brand === "font") { br.fonts = { ...(br.fonts || {}) }; if (t.value) br.fonts[k] = t.value; else delete br.fonts[k]; }
+}
+$("lists").addEventListener("input", (ev) => { const t = ev.target; if (!t.dataset.brand || t.dataset.brand !== "name") return; brandChange(t); schedulePreview(); dirty(); });
+$("lists").addEventListener("change", (ev) => {
+  const t = ev.target; if (!t.dataset.brand || t.dataset.brand === "name") return;
+  brandChange(t); drawLists(); schedulePreview();
+});
+$("lists").addEventListener("click", (ev) => {
+  const b = ev.target.closest("[data-brand-clear]"); if (!b) return;
+  const br = E.draft.brand = { ...(E.draft.brand || {}) };
+  br.colours = { ...(br.colours || {}) }; delete br.colours[b.dataset.k];
+  drawLists(); schedulePreview();
+});
 // E2d: a board's look and options
 $("lists").addEventListener("change", (ev) => {
   const t = ev.target, sec = t.closest(".me-look"); if (!sec || !t.dataset.lookF) return;
@@ -332,6 +374,15 @@ function tidy(content) {
     if (Object.keys(x).length) boards[id] = x;
   }
   if (Object.keys(boards).length) out.boards = boards;
+  // T1b: the shop's brand, only what's set (blank: the template's own)
+  const br = content.brand || {}, brand = {};
+  if (br.name?.trim()) brand.name = br.name.trim();
+  if (br.logo) brand.logo = br.logo;
+  const cols = Object.fromEntries(Object.entries(br.colours || {}).filter(([, v]) => /^#[0-9a-fA-F]{6}$/.test(v || "")));
+  if (Object.keys(cols).length) brand.colours = cols;
+  const fonts = Object.fromEntries(Object.entries(br.fonts || {}).filter(([, v]) => BRAND_FONTS.includes(v)));
+  if (Object.keys(fonts).length) brand.fonts = fonts;
+  if (Object.keys(brand).length) out.brand = brand;
   return out;
 }
 const same = () => JSON.stringify(tidy(E.draft)) === JSON.stringify(tidy(E.saved));
@@ -367,7 +418,7 @@ window.addEventListener("message", (ev) => {
 function payload(board, content) {
   const images = Object.fromEntries(E.pics.map((p) => [p.key, { url: `/img/${p.path}`, w: 0, h: 0 }]));
   return { kind: "layout", key: "preview", orientation: board.orientation, layout: { id: board.id, name: board.name, version: board.published_version, doc: board.doc },
-    images, menu: { url: E.menuBase + board.menu_code }, lists: { id: E.menu.id, spec: E.spec, content }, look: content.boards?.[board.id] || null,
+    images, menu: { url: E.menuBase + board.menu_code }, lists: { id: E.menu.id, spec: E.spec, content }, look: content.boards?.[board.id] || null, brand: content.brand || null,
     propertyName: board.prop?.name || "", timezone: board.prop?.timezone || E.tz, weather: { enabled: false }, poweredBy: true };
 }
 // E2e (DP-13): the board fits the column's width and the window's height (a portrait board was taller than a laptop's

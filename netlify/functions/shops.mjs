@@ -2,7 +2,7 @@
 // its own: a template from WayTuGo Templates into WayTuGo Samples before an appointment, or a fitted sample into the
 // customer's account once they sign. 1Point only; never the customer.
 //
-//   POST { action: "copy", menu_id, org_id | new_account: { name, kind }, name, boards?: { <board id>: name },
+//   POST { action: "copy", menu_id, org_id | new_account: { name, kind }, name, board_name?, boards?: { <board id>: name },
 //          building?: { name, address, lat, lon, timezone } }
 //        -> { menu_id, org_id, layouts: [{ id, from, name }], property_id, pictures }
 //
@@ -120,6 +120,9 @@ export default async (req) => {
     // new ids for the boards, so the menu's board looks follow them
     const ids = Object.fromEntries(boards.map((b) => [b.id, randomUUID()]));
     const content = renamePictures({ ...src.content }, renamed);
+    // T1b: the name on the boards (the shop's brand; the template's name otherwise stays on its logo)
+    const shopName = String(body.board_name ?? "").trim().slice(0, 60);
+    if (shopName) content.brand = { ...(content.brand || {}), name: shopName };
     if (src.content?.boards) content.boards = Object.fromEntries(Object.entries(src.content.boards).filter(([k]) => ids[k]).map(([k, v]) => [ids[k], v]));
     const layouts = boards.map((b) => ({
       id: ids[b.id], from: b.id,

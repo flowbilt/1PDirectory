@@ -373,6 +373,7 @@
           ${field("cp-new-kind", "Type", `<select id="cp-new-kind">${Object.entries(ORG_KIND).map(([v, t]) => `<option value="${v}">${t}</option>`).join("")}</select>`)}
         </div>
         ${field("cp-name", "The copy's name", `<input id="cp-name" required maxlength="80" placeholder="e.g. Salvatore's Pizza">`, "The menu's name. Each board is named after it unless you name it below.")}
+        ${field("cp-brand", "Name on the boards", `<input id="cp-brand" maxlength="60" placeholder="(the copy's name)">`, "The shop's name in place of the template's, on every board and the phone menu. Its logo, colours and fonts are set in the menu editor's Brand panel.")}
         <fieldset class="cp-boards"><legend>Boards</legend>${boards.map((l) => `<label class="cp-board"><span>${esc(l.name)}${l.published_version ? "" : ` <span class="warn">(not published: copied as a draft)</span>`}</span>
           <input data-cp-board="${l.id}" maxlength="80" placeholder="(the copy's name): ${esc(l.name)}" aria-label="Name for the copy of ${esc(l.name)}"></label>`).join("")}</fieldset>
         <label class="check"><input type="checkbox" id="cp-bld"> Add a building for it in that account</label>
@@ -389,7 +390,7 @@
       async save() {
         const name = $("cp-name").value.trim();
         if (!name) throw new Error("Give the copy a name, e.g. Salvatore's Pizza.");
-        const body = { action: "copy", menu_id: m.id, name, boards: {} };
+        const body = { action: "copy", menu_id: m.id, name, board_name: $("cp-brand").value.trim() || name, boards: {} };
         for (const i of document.querySelectorAll("[data-cp-board]")) if (i.value.trim()) body.boards[i.dataset.cpBoard] = i.value.trim();
         if ($("cp-org").value === "new") {
           const n = $("cp-new-name").value.trim();

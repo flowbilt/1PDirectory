@@ -44,6 +44,43 @@ export const MAX_LISTS = 20, GROUP_PRICE_MAX = 24, NOTE_MAX = 80, MAX_BYTES = 25
 export const BOARD_LOOKS = ["house", "chalkboard"], BOARD_CHALK = ["white", "yellow", "pink", "blue", "green", "orange"], BOARD_LETTERING = ["sign", "hand"];
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 
+// ── T1b (DP-13): the shop's brand, kept with the menu (content.brand) and drawn on every board on it, the phone menu and
+// sample links (layout-format.mjs applyBrand). Set by 1Point only (supabase/38-brand.sql keeps it for anyone else):
+// the shop's name (in place of the template's), a logo picture, five colours and two fonts. Anything left out keeps
+// the layout's own. ──
+export const BRAND_COLOURS = { bg: "Background", ink: "Text", accent: "Accent", panel: "Dark panel", highlight: "Highlight" };
+export const BRAND_FONT_ROLES = { display: "Headings", body: "Body text" };
+// = layout-format.mjs FONTS (a test keeps them the same; this file has no imports)
+export const BRAND_FONTS = ["Instrument Sans", "Lora", "Oswald", "Bebas Neue", "Alfa Slab One", "Fraunces", "Playfair Display", "Pacifico", "Crimson Pro", "Caveat Brush"];
+export const BRAND_NAME_MAX = 60;
+const HEX6 = /^#[0-9a-fA-F]{6}$/;
+/** The brand's problem in plain words, or null. images: the account's picture keys (a Set), when known. */
+export function brandProblem(b, { images } = {}) {
+  if (!isObj(b)) return "The brand is { \"name\", \"logo\", \"colours\", \"fonts\" }.";
+  for (const k of Object.keys(b)) if (!["name", "logo", "colours", "fonts"].includes(k)) return `"${k}" isn't part of the brand (name, logo, colours, fonts).`;
+  if (b.name !== undefined && (!str(b.name) || !b.name.trim() || b.name.length > BRAND_NAME_MAX)) return `The shop's name is 1 to ${BRAND_NAME_MAX} characters.`;
+  if (b.logo !== undefined) {
+    const m = str(b.logo) && /^img:([a-z0-9][a-z0-9-]{0,59})$/.exec(b.logo);
+    if (!m) return "The logo is one of the account's pictures.";
+    if (images && !images.has(m[1])) return `There's no picture "${m[1]}" in this account for the logo.`;
+  }
+  if (b.colours !== undefined) {
+    if (!isObj(b.colours)) return "The brand's colours are background, text, accent, dark panel and highlight.";
+    for (const [k, v] of Object.entries(b.colours)) {
+      if (!BRAND_COLOURS[k]) return "The brand's colours are background, text, accent, dark panel and highlight.";
+      if (!str(v) || !HEX6.test(v)) return "Each brand colour is a colour like #3b2620.";
+    }
+  }
+  if (b.fonts !== undefined) {
+    if (!isObj(b.fonts)) return "The brand's fonts are for headings and body text.";
+    for (const [k, v] of Object.entries(b.fonts)) {
+      if (!BRAND_FONT_ROLES[k]) return "The brand's fonts are for headings and body text.";
+      if (!BRAND_FONTS.includes(v)) return `"${v}" isn't one of WayTuGo's fonts.`;
+    }
+  }
+  return null;
+}
+
 /** E2d: checks one board's choice. Returns an error in plain words, or "". */
 export function boardProblem(b) {
   if (!isObj(b)) return "Each board's look is { \"look\", \"chalk\", \"lettering\", \"frame\", \"options\" }.";
@@ -146,7 +183,13 @@ export function checkMenuContent(spec, input, { images } = {}) {
   if (!isObj(input) || (input.lists !== undefined && !isObj(input.lists))) { err("menu", "The menu is { \"lists\": { \"<list key>\": { \"entries\": [ … ] } } }."); return { errors, content: null }; }
   if (JSON.stringify(input).length > MAX_BYTES) err("menu", "This menu is too large (at most 256 KB).");
   const out = { lists: {} };
-  for (const k of Object.keys(input)) if (!["lists", "boards"].includes(k)) err("menu", `"${k}" isn't part of a menu (lists, boards).`);
+  for (const k of Object.keys(input)) if (!["lists", "boards", "brand"].includes(k)) err("menu", `"${k}" isn't part of a menu (lists, boards, brand).`);
+  // T1b: the shop's brand
+  if (input.brand !== undefined) {
+    const p = brandProblem(input.brand, { images });
+    if (p) err("Brand", p);
+    else if (Object.keys(input.brand).length) out.brand = input.brand;
+  }
   // E2d: each board's look and options
   if (input.boards !== undefined) {
     if (!isObj(input.boards) || Object.keys(input.boards).length > 20) err("menu", "\"boards\" is { \"<layout id>\": { … } }, up to 20.");
@@ -389,6 +432,12 @@ export function menuChanges(spec, before, after, max = 40, boardNames = null) {
     if (o.frame !== n.frame) lines.push(`Board look (${name}): wooden frame ${word(o.frame)} → ${word(n.frame)}`);
     for (const k of new Set([...Object.keys(o.options || {}), ...Object.keys(n.options || {})])) if (o.options?.[k] !== n.options?.[k]) lines.push(`Board look (${name}): ${k.replace(/-/g, " ")} ${word(o.options?.[k])} → ${word(n.options?.[k])}`);
   }
+  // T1b: the shop's brand
+  const ob = before?.brand || {}, nb = after?.brand || {}, said = (v) => (v === undefined ? "(the template's)" : v);
+  if (ob.name !== nb.name) lines.push(`Brand: name ${said(ob.name)} → ${said(nb.name)}`);
+  if (ob.logo !== nb.logo) lines.push(`Brand: logo ${said(ob.logo?.slice(4))} → ${said(nb.logo?.slice(4))}`);
+  for (const k of Object.keys(BRAND_COLOURS)) if (ob.colours?.[k] !== nb.colours?.[k]) lines.push(`Brand: ${BRAND_COLOURS[k].toLowerCase()} colour ${said(ob.colours?.[k])} → ${said(nb.colours?.[k])}`);
+  for (const k of Object.keys(BRAND_FONT_ROLES)) if (ob.fonts?.[k] !== nb.fonts?.[k]) lines.push(`Brand: ${BRAND_FONT_ROLES[k].toLowerCase()} font ${said(ob.fonts?.[k])} → ${said(nb.fonts?.[k])}`);
   return lines.length > max ? [...lines.slice(0, max), `…and ${lines.length - max} more`] : lines;
 }
 

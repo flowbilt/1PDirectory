@@ -10,7 +10,7 @@
 // applyMenu (public/menu-format.mjs): only the entries shown, sold out today marked, and an items or chips list keeping
 // the room for its full length (invisible rows), so the text stays the size it was designed at however much is filled.
 import { applyMenu, menuMoment } from "/menu-format.mjs";
-import { checkLayout, applyLook, canvas, blockBox, blockShows, zonedNow, hoursNow, nowNext, niceTime, niceDays, FONTS, SIZES, SURFACES, STYLE_PX, TAGS, QR_LINE, qrSide } from "/layout-format.mjs";
+import { checkLayout, applyLook, applyBrand, canvas, blockBox, blockShows, zonedNow, hoursNow, nowNext, niceTime, niceDays, FONTS, SIZES, SURFACES, STYLE_PX, TAGS, QR_LINE, qrSide } from "/layout-format.mjs";
 
 const VERSION = "2.22.1";   // = netlify/lib/version.mjs and display.js (a test keeps them equal)
 const C = window.ScreenCore;
@@ -183,7 +183,8 @@ function render() {
   const nowHere = zonedNow(C.now(), data?.timezone || "America/Chicago");
   drawnDate = nowHere.date; drawnMoment = menuMoment(data.lists, nowHere);
   // E2d: in the look and with the options chosen for this board in the menu editor (else the layout's own)
-  doc = applyMenu(applyLook(checked.doc, data.look), data.lists, nowHere, { room: true });
+  // T1b: in the shop's brand first (its name, logo, colours and fonts; kept with the menu)
+  doc = applyMenu(applyLook(applyBrand(checked.doc, data.brand), data.look), data.lists, nowHere, { room: true });
   drawStart = performance.now();
   const p = doc.theme.palette, f = doc.theme.fonts;
   for (const [k, v] of Object.entries(p)) stage.style.setProperty(`--p-${k}`, v);

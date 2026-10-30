@@ -450,3 +450,13 @@ dialog.wide #dlg-body { max-height: 72vh; overflow: auto; padding-right: 4px; }
 .sample-new label { display: grid; gap: 3px; font-weight: 600; font-size: 14px; }
 #sample-rows tr.ended td { color: #6b7280; }
 #sample-rows .actions { display: flex; flex-wrap: wrap; gap: 6px; justify-content: flex-end; }
+
+/* T1b (DP-13): the menu editor's Brand panel (1Point only) */
+.me-brand-row { display: flex; flex-wrap: wrap; gap: 12px 18px; align-items: flex-start; margin: 8px 0; }
+.me-brand-row label { display: grid; gap: 3px; font-size: 14px; }
+.me-brand-row label > span:first-child { font-weight: 600; }
+.me-brand-name input { width: 260px; max-width: 100%; }
+.me-brand-col { min-width: 108px; }
+.me-brand-col em { font-style: normal; font-size: 12px; color: #6b7280; }
+.me-brand-swatch input[type="color"] { width: 64px; height: 34px; padding: 2px; border: 1px solid var(--line); border-radius: 6px; background: #fff; }
+.me-brand .warn { margin: 4px 0 0; }
