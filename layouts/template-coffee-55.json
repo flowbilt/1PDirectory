@@ -1,0 +1,128 @@
+{
+  "format": 1,
+  "orientation": "landscape",
+  "name": "Template · Coffee shop: counter board, 55\" landscape (DP-13 T1)",
+  "notes": "WayTuGo's coffee-shop template (an invented shop, Daybreak Coffee Co.; prices typical of a Birmingham-area specialty coffee shop in 2026). In the WayTuGo Templates account: upload the pictures first (Pictures tab, named as in layouts/template-coffee-pictures.md), paste this on the Design tab and Check, then on the Menu tab Make lists from this layout (the espresso bar, brewed and bakery lists say their rooms here: 9, 6 and 9), Preview and Publish. The 32\" portrait board (template-coffee-32.json) goes on the same menu. The seasonal box and its picture show while the board's \"Show the seasonal menu\" tick box is on (the customer's, in the menu editor's Board look); off, Take some home shows instead.",
+  "grid": { "cols": 24, "rows": 13, "gap": 16, "margin": 30 },
+  "viewing": { "inches": 55, "metres": 4 },
+  "theme": {
+    "palette": {
+      "bg": "#f7f1e8", "ink": "#2b211b", "muted": "#6e5f53",
+      "accent": "#b5562e", "onAccent": "#ffffff",
+      "panel": "#2b211b", "onPanel": "#f7f1e8",
+      "highlight": "#4f6b52", "onHighlight": "#ffffff",
+      "line": "#e3d6c4"
+    },
+    "fonts": { "display": "Fraunces", "body": "Instrument Sans" },
+    "looks": ["house", "chalkboard"],
+    "look": "house",
+    "chalk": { "titles": "yellow", "prices": "orange", "accents": "white", "lettering": "sign", "frame": false }
+  },
+  "options": [
+    { "key": "seasonal", "label": "Show the seasonal menu", "default": true }
+  ],
+  "blocks": [
+    { "id": "logo", "type": "logo", "at": { "col": 1, "row": 1, "w": 7, "h": 2 },
+      "style": { "align": "left", "size": "xl" }, "content": { "text": "Daybreak Coffee Co." } },
+
+    { "id": "hero", "label": "Featured pictures", "type": "rotator", "at": { "col": 1, "row": 3, "w": 7, "h": 7 },
+      "style": { "radius": "l", "size": "l", "shadow": true },
+      "content": { "seconds": 7, "items": [
+        { "image": "img:latte-art", "alt": "A latte with a rosetta poured on top", "caption": "House Latte", "line": "Our espresso, steamed milk, poured with care", "price": "$4.95" },
+        { "image": "img:cold-brew", "alt": "Cold brew over ice", "caption": "Slow-Steeped Cold Brew", "line": "Smooth, bold & brewed for 18 hours", "price": "$4.50" },
+        { "image": "img:butter-croissant", "alt": "Butter croissants", "caption": "Butter Croissant", "line": "Flaky, golden & baked every morning", "price": "$3.75" },
+        { "image": "img:sausage-biscuit", "alt": "A sausage and cheddar biscuit", "caption": "Sausage & Cheddar Biscuit", "line": "A Southern morning in one bite", "price": "$5.95" },
+        { "image": "img:cinnamon-roll", "alt": "A glazed cinnamon roll", "caption": "Cinnamon Roll", "line": "Soft, swirled & glazed warm", "price": "$4.25" }
+      ] } },
+
+    { "id": "hours", "type": "hours", "at": { "col": 1, "row": 10, "w": 7, "h": 3 },
+      "style": { "surface": "panel", "radius": "m", "size": "l", "pad": "m", "valign": "middle" },
+      "content": { "heading": "Hours", "hours": [
+        { "days": [1, 2, 3, 4, 5], "open": "06:30", "close": "16:00" },
+        { "days": [6], "open": "07:00", "close": "15:00" },
+        { "days": [7], "open": "08:00", "close": "13:00" } ],
+        "note": "Free Wi-Fi · ask for the password" } },
+
+    { "id": "espresso", "type": "items", "at": { "col": 8, "row": 1, "w": 9, "h": 5 },
+      "style": { "size": "m" },
+      "content": { "heading": "Espresso bar", "price": "12 oz · 16 oz", "leaders": true, "room": 9, "items": [
+        { "name": "Espresso", "line": "A double shot", "price": "$3.00" },
+        { "name": "Cortado", "price": "$4.25" },
+        { "name": "Cappuccino", "price": "$4.50 · $5.00" },
+        { "name": "Latte", "tags": ["favorite"], "price": "$4.95 · $5.45" },
+        { "name": "Vanilla Bean Latte", "price": "$5.45 · $5.95" },
+        { "name": "Caramel Macchiato", "price": "$5.45 · $5.95" },
+        { "name": "Mocha", "price": "$5.45 · $5.95" },
+        { "name": "Chai Latte", "price": "$4.95 · $5.45" } ] } },
+
+    { "id": "brewed", "type": "items", "at": { "col": 8, "row": 6, "w": 9, "h": 5 },
+      "style": { "size": "m" },
+      "content": { "heading": "Brewed & iced", "leaders": true, "room": 6, "items": [
+        { "name": "Drip Coffee", "line": "Free refills while you're here", "price": "$2.75 · $3.25" },
+        { "name": "Pour Over", "line": "Single origin, brewed to order", "price": "$4.50" },
+        { "name": "Cold Brew", "price": "$4.50 · $5.00" },
+        { "name": "Iced Latte", "price": "$5.25 · $5.75" },
+        { "name": "Hot Chocolate", "price": "$3.75" } ] } },
+
+    { "id": "catering", "label": "Announcement", "type": "text", "at": { "col": 8, "row": 11, "w": 9, "h": 2 },
+      "style": { "surface": "highlight", "radius": "m", "size": "m", "pad": "m", "valign": "middle" },
+      "content": { "title": "Coffee for the office? Boxes to go serve 10", "body": "Call ahead and we'll have it ready: (205) 555-0142" } },
+
+    { "id": "bakery", "type": "items", "at": { "col": 17, "row": 1, "w": 8, "h": 5 },
+      "style": { "size": "m" },
+      "content": { "heading": "Bakery & breakfast", "leaders": true, "room": 9, "items": [
+        { "name": "Butter Croissant", "price": "$3.75" },
+        { "name": "Blueberry Muffin", "price": "$3.50" },
+        { "name": "Cinnamon Roll", "price": "$4.25" },
+        { "name": "Sausage & Cheddar Biscuit", "price": "$5.95" },
+        { "name": "Breakfast Burrito", "price": "$7.95" },
+        { "name": "Avocado Toast", "line": "Everything seasoning, chili flake", "price": "$8.50" },
+        { "name": "Yogurt Parfait", "price": "$5.50" } ] } },
+
+    { "id": "add-ons", "label": "Make it yours", "type": "chips", "at": { "col": 17, "row": 6, "w": 5, "h": 3 },
+      "style": { "size": "m" },
+      "content": { "heading": "Make it yours", "price": "+75¢", "items": [
+        { "name": "Oat milk" }, { "name": "Almond milk" }, { "name": "Extra shot" },
+        { "name": "Vanilla" }, { "name": "Caramel" }, { "name": "Hazelnut" } ] } },
+
+    { "id": "menu-qr", "type": "qr", "at": { "col": 22, "row": 6, "w": 3, "h": 3 },
+      "style": { "surface": "panel", "radius": "m", "size": "m", "pad": "s", "align": "center" },
+      "content": { "line": "Scan for the menu" } },
+
+    { "id": "seasonal", "type": "items", "at": { "col": 17, "row": 9, "w": 5, "h": 4 },
+      "style": { "surface": "accent", "radius": "m", "size": "m", "pad": "m" },
+      "showWhen": { "option": "seasonal", "is": "on" },
+      "content": { "heading": "Fall favorites", "leaders": true, "items": [
+        { "name": "Maple Pecan Latte", "price": "$5.95" },
+        { "name": "Pumpkin Spice Latte", "price": "$5.95" },
+        { "name": "Hot Apple Cider", "price": "$4.25" } ] } },
+
+    { "id": "seasonal-pic", "type": "photo", "at": { "col": 22, "row": 9, "w": 3, "h": 4 },
+      "style": { "radius": "m" },
+      "showWhen": { "option": "seasonal", "is": "on" },
+      "content": { "image": "img:maple-latte", "alt": "A seasonal latte" } },
+
+    { "id": "take-home", "type": "items", "at": { "col": 17, "row": 9, "w": 5, "h": 4 },
+      "style": { "surface": "panel", "radius": "m", "size": "m", "pad": "m" },
+      "showWhen": { "option": "seasonal", "is": "off" },
+      "content": { "heading": "Take some home", "leaders": true, "items": [
+        { "name": "Whole bean, 12 oz", "price": "$16.00" },
+        { "name": "Gift cards", "price": "$10–$100" },
+        { "name": "Travel mug", "price": "$18.00" } ] } },
+
+    { "id": "take-home-pic", "type": "photo", "at": { "col": 22, "row": 9, "w": 3, "h": 4 },
+      "style": { "radius": "m" },
+      "showWhen": { "option": "seasonal", "is": "off" },
+      "content": { "image": "img:coffee-beans", "alt": "Bags of whole-bean coffee" } },
+
+    { "id": "foot", "label": "Bottom line", "type": "text", "at": { "col": 1, "row": 13, "w": 18, "h": 1 },
+      "style": { "size": "s", "valign": "middle", "ink": "muted" },
+      "content": { "body": "Roasted in small batches · Pull up a chair and stay a while · 123 Main Street" } },
+
+    { "id": "now", "type": "clock", "at": { "col": 19, "row": 13, "w": 3, "h": 1 },
+      "style": { "size": "l", "align": "right", "valign": "middle" }, "content": { "show": "time" } },
+
+    { "id": "weather", "type": "weather", "at": { "col": 22, "row": 13, "w": 3, "h": 1 },
+      "style": { "size": "l", "align": "right", "valign": "middle" }, "content": {} }
+  ]
+}

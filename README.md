@@ -474,6 +474,20 @@ once they sign, the fitted copy goes into their own account. Only 1Point copies 
 - **waytugo.com forwards `/s/*` here**, as it does `/d/*` and `/m/*`: in that site's `_redirects`,
   `/s/*  https://1pdirectory.netlify.app/s/:splat  200!`.
 
+### T1 (DP-13): the coffee-shop template
+
+- **Two boards on one menu**, for an invented shop (Daybreak Coffee Co.), priced like a Birmingham-area specialty
+  coffee shop: `layouts/template-coffee-55.json` (55" landscape counter board: featured pictures, espresso bar with
+  12 oz · 16 oz prices, brewed & iced, bakery & breakfast, Make it yours add-ons, the QR code, hours, an announcement,
+  the clock and weather, and a seasonal box that swaps with Take some home by the board's **Show the seasonal menu**
+  tick box) and `layouts/template-coffee-32.json` (32" portrait menu board: its own Today's specials (room 6) and chalk
+  note, both with dates and times, beside the counter board's lists; Chalkboard look with the wooden frame by default).
+  Both draw clean in House and Chalkboard. Pictures: seven free Unsplash photos, listed with their keys in
+  `layouts/template-coffee-pictures.md`.
+- **The phone menu's See the board** (`board.html?menu=`) now takes the board away and says "This menu link isn't
+  active." when its menu stops answering (a sample whose links are all off, T0b), as the sample page does; any other
+  failure still keeps what's drawn. A board that comes back draws again.
+
 ## Screens and cards (Raspberry Pi)
 
 Every Pi runs from a **prepared card**, and every card is the same. A card carries no identity until it's in a Pi:

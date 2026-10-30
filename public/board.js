@@ -384,9 +384,9 @@ async function loadScreen() {
   if (SAMPLE) {   // T0 (DP-13): a sample link: the board as the phone menu's See the board, marked; it ends on its date
     try {
       const r = await fetch(`/api/sample?code=${encodeURIComponent(SAMPLE)}${data ? "" : "&open=1"}`, { cache: "no-store" });
-      if (r.ok) { apply({ ...(await r.json()), orientation: "auto" }); $("sample-mark").hidden = false; return; }
+      if (r.ok) { $("note").hidden = true; apply({ ...(await r.json()), orientation: "auto" }); $("sample-mark").hidden = false; return; }
       if (r.status === 404 || r.status === 410) {
-        data = null; $("blocks").innerHTML = ""; $("sample-mark").hidden = true;
+        data = null; sig = ""; $("blocks").innerHTML = ""; $("sample-mark").hidden = true;
         $("note").textContent = r.status === 410 ? "This sample has ended. Ask WayTuGo for a new link." : "This sample link isn't active. Ask WayTuGo for a new one.";
         $("note").hidden = false; stage.classList.remove("is-loading");
       }
@@ -396,7 +396,10 @@ async function loadScreen() {
   if (MENU) {   // E1c: the phone menu's "See the board"
     try {
       const r = await fetch(`/api/menu?code=${encodeURIComponent(MENU)}`, { cache: "no-store" });
-      if (r.ok) apply({ ...(await r.json()), orientation: "auto" });
+      if (r.ok) { $("note").hidden = true; apply({ ...(await r.json()), orientation: "auto" }); }
+      // T1 (DP-13; Scot, after T0b): a menu that's no longer active (a sample's link turned off) takes the board away,
+      // as the sample page does; any other failure keeps what's drawn
+      else if (r.status === 404) { data = null; sig = ""; $("blocks").innerHTML = ""; $("note").textContent = "This menu link isn't active."; $("note").hidden = false; stage.classList.remove("is-loading"); }
       else if (!data) { $("note").textContent = "This menu isn't available right now."; $("note").hidden = false; stage.classList.remove("is-loading"); }
     } catch { /* keep what's drawn */ }
     return;

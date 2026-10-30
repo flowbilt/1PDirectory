@@ -1,0 +1,52 @@
+{
+  "format": 1,
+  "orientation": "portrait",
+  "name": "Template · Coffee shop: menu board, 32\" portrait (DP-13 T1)",
+  "notes": "WayTuGo's coffee-shop template, the portrait board beside the counter board (template-coffee-55.json). On a portrait layout in the same account: Menu tab, Use this menu (the counter board's), then paste this on the Design tab and Check: it offers Today's specials (room 6, dates and times) and the Chalk note (dates and times) as new lists on that menu; Make these lists, Preview and Publish. The other blocks show the counter board's lists (the hours are on the counter board and the phone menu). Looks: House or Chalkboard (the default here).",
+  "grid": { "cols": 12, "rows": 24, "gap": 14, "margin": 48 },
+  "viewing": { "inches": 32, "metres": 2 },
+  "theme": {
+    "palette": {
+      "bg": "#f7f1e8", "ink": "#2b211b", "muted": "#6e5f53",
+      "accent": "#b5562e", "onAccent": "#ffffff",
+      "panel": "#2b211b", "onPanel": "#f7f1e8",
+      "highlight": "#4f6b52", "onHighlight": "#ffffff",
+      "line": "#e3d6c4"
+    },
+    "fonts": { "display": "Fraunces", "body": "Instrument Sans" },
+    "looks": ["house", "chalkboard"],
+    "look": "chalkboard",
+    "chalk": { "titles": "yellow", "prices": "orange", "accents": "white", "lettering": "sign", "frame": true }
+  },
+  "blocks": [
+    { "id": "logo", "type": "logo", "at": { "col": 1, "row": 1, "w": 12, "h": 2 },
+      "style": { "align": "center", "size": "xxl" }, "content": { "text": "Daybreak Coffee Co." } },
+
+    { "id": "hero", "label": "Featured pictures", "type": "rotator", "at": { "col": 1, "row": 3, "w": 12, "h": 4 },
+      "style": { "radius": "l", "size": "l", "shadow": true }, "content": { "seconds": 7, "list": "hero" } },
+
+    { "id": "specials", "label": "Today's specials", "type": "items", "at": { "col": 1, "row": 7, "w": 12, "h": 6 },
+      "style": { "size": "l" },
+      "content": { "heading": "Today's specials", "leaders": true, "room": 6, "schedule": true, "items": [
+        { "name": "Honey Lavender Latte", "line": "Local honey, a hint of lavender", "price": "$5.95" },
+        { "name": "Quiche of the Day", "line": "Ask what's baking", "price": "$6.50" },
+        { "name": "Banana Nut Bread", "line": "Warm, with honey butter", "price": "$3.95" } ] } },
+
+    { "id": "note", "label": "Chalk note", "type": "text", "at": { "col": 1, "row": 13, "w": 12, "h": 1 },
+      "style": { "size": "l", "align": "center", "valign": "middle", "font": "accent" },
+      "content": { "title": "Good coffee, good people, every morning", "schedule": true } },
+
+    { "id": "espresso", "type": "items", "at": { "col": 1, "row": 14, "w": 7, "h": 6 },
+      "style": { "size": "m" }, "content": { "heading": "Espresso bar", "leaders": true, "list": "espresso" } },
+
+    { "id": "brewed", "type": "items", "at": { "col": 8, "row": 14, "w": 5, "h": 6 },
+      "style": { "size": "m" }, "content": { "heading": "Brewed & iced", "leaders": true, "list": "brewed" } },
+
+    { "id": "bakery", "type": "items", "at": { "col": 1, "row": 20, "w": 8, "h": 5 },
+      "style": { "surface": "panel", "radius": "m", "size": "s", "pad": "m" }, "content": { "heading": "Bakery & breakfast", "leaders": true, "list": "bakery" } },
+
+    { "id": "menu-qr", "type": "qr", "at": { "col": 9, "row": 20, "w": 4, "h": 5 },
+      "style": { "surface": "panel", "radius": "m", "size": "m", "pad": "s", "align": "center" },
+      "content": { "line": "Scan for the menu" } }
+  ]
+}

@@ -1235,6 +1235,10 @@ try {
     const fr2 = v.frames().find((f) => f.url().includes("sample=demo-salvatores"));
     const ended = await fr2.evaluate(() => ({ note: document.querySelector("#note").textContent, hidden: document.querySelector("#note").hidden, mark: document.querySelector("#sample-mark").hidden }));
     assert(!ended.hidden && ended.note.includes("This sample has ended") && ended.mark, JSON.stringify(ended));
+    // T0b/T1: its phone menu's See the board (board.html?menu=) says the link isn't active, rather than the board
+    await v.goto(`${B}/board.html?menu=${board.menu_code}`); await v.waitForTimeout(2500);
+    const pm = await v.evaluate(() => ({ note: document.querySelector("#note").textContent, hidden: document.querySelector("#note").hidden, blocks: document.querySelectorAll("#blocks > *").length }));
+    assert(!pm.hidden && pm.note === "This menu link isn't active." && pm.blocks === 0, JSON.stringify(pm));
     await v.close();
   });
 

@@ -3117,13 +3117,31 @@ test("T0: sample links (1Point only): made and changed as a signed-in 1Point use
   // the board: sample mode reads the code, draws read-only with the mark
   const core = readFileSync(new URL("../public/screen-core.js", import.meta.url), "utf8"), bj = readFileSync(new URL("../public/board.js", import.meta.url), "utf8"), bh = readFileSync(new URL("../public/board.html", import.meta.url), "utf8");
   assert.ok(core.includes("const CHECKS_IN = !PREVIEW && !VIEW && !MENU && !SAMPLE;"));
-  for (const w of ["/api/sample?code=", "This sample has ended. Ask WayTuGo for a new link.", "const READ_ONLY = MENU || SAMPLE;"]) assert.ok(bj.includes(w), w);
+  for (const w of ["/api/sample?code=", "This sample has ended. Ask WayTuGo for a new link.", "const READ_ONLY = MENU || SAMPLE;", "This menu link isn't active."]) assert.ok(bj.includes(w), w);
   assert.ok(bh.includes('id="sample-mark"') && bh.includes("Sample · WayTuGo"));
   // the console: Copy to an account in Menus, the account types, the Sample tab
   const cjs = readFileSync(new URL("../public/console.js", import.meta.url), "utf8"), ch = readFileSync(new URL("../public/console.html", import.meta.url), "utf8"), cl = readFileSync(new URL("../public/console-layouts.js", import.meta.url), "utf8");
   for (const w of ["data-copy-menu", "function copyDialog(", '"/api/shops"', 'templates: "WayTuGo templates"', 'samples: "WayTuGo samples"', "function readLoc("]) assert.ok(cjs.includes(w), w);
   for (const w of ['data-ltab="sample"', 'id="sample-make"', 'id="sample-rows"']) assert.ok(ch.includes(w), w);
   for (const w of ['const SAMPLE_BASE = "https://waytugo.com/s/";', "async function loadSamples(", "data-sample-off"]) assert.ok(cl.includes(w), w);
+});
+
+test("T1: the coffee-shop template: both boards clean (the counter board's lists and rooms; the portrait board offers Today's specials and the chalk note on the same menu); no real shop's name", async () => {
+  const { offerLists } = await import("../netlify/functions/layouts.mjs");
+  const d55 = JSON.parse(readFileSync(new URL("../layouts/template-coffee-55.json", import.meta.url), "utf8"));
+  const d32 = JSON.parse(readFileSync(new URL("../layouts/template-coffee-32.json", import.meta.url), "utf8"));
+  const c55 = LF.checkLayout(d55);
+  assert.deepEqual(c55.errors, []);
+  const ex = MF.extractMenu(c55.doc);
+  const rooms = Object.fromEntries(ex.spec.lists.map((l) => [l.key, l.room]));
+  assert.deepEqual({ espresso: rooms.espresso, brewed: rooms.brewed, bakery: rooms.bakery, seasonal: rooms.seasonal, "take-home": rooms["take-home"] }, { espresso: 9, brewed: 6, bakery: 9, seasonal: 4, "take-home": 4 });
+  assert.equal(c55.doc.options?.[0]?.key, "seasonal");
+  const pics = new Set(JSON.stringify(d55).match(/img:[a-z0-9-]+/g));
+  assert.deepEqual([...pics].sort(), ["img:butter-croissant", "img:cinnamon-roll", "img:coffee-beans", "img:cold-brew", "img:latte-art", "img:maple-latte", "img:sausage-biscuit"]);
+  const off = offerLists(d32, { spec: ex.spec });
+  assert.deepEqual(off.offer.map((o) => [o.key, o.room]), [["specials", 6], ["note", 1]]);
+  assert.deepEqual(LF.checkLayout(d32, { lists: [...ex.spec.lists, ...off.spec.lists] }).errors, []);
+  for (const d of [d55, d32]) assert.ok(!/Donut Joe|O'Henry|Salvatore|Filling Station|Our Place|Dowdle|Mi Barrio/i.test(JSON.stringify(d.blocks)), "an invented shop");
 });
 
 let passed = 0;
