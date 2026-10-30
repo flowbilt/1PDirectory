@@ -76,6 +76,7 @@
     for (const b of document.querySelectorAll("[data-ltab]")) b.setAttribute("aria-selected", String(b.dataset.ltab === t));
     for (const p of document.querySelectorAll("[data-lpane]")) p.hidden = p.dataset.lpane !== t;
     if (t === "menu") listsTable();
+    if (t === "sample") loadSamples();
   }
   document.querySelector(".ltabs").addEventListener("click", (e) => { const b = e.target.closest("[data-ltab]"); if (b) showLTab(b.dataset.ltab); });
   /** The Menu tab's table: every list on the layout's menu, its kind, room, what's on it, and whether this board shows it */
@@ -94,6 +95,65 @@
       </tbody></table></div>
       <p class="hint">Names, rooms, boxes, dates and hints are changed in List settings. A list another board shows stays on the menu even when this board doesn't show it.</p>`;
   }
+  // ── T0 (DP-13): sample links for this board (1Point only; supabase/36-templates.sql). Made, lengthened and turned off
+  // straight to the database as the signed-in 1Point user; the page is netlify/functions/sample.mjs ──
+  const SAMPLE_BASE = "https://waytugo.com/s/";
+  const SLUG_RE = /^[a-z0-9][a-z0-9-]{2,39}$/;
+  const randomSlug = () => `demo-${Array.from(crypto.getRandomValues(new Uint8Array(6)), (b) => "abcdefghjkmnpqrstuvwxyz23456789"[b % 31]).join("")}`;
+  async function loadSamples() {
+    const l = L.current; if (!l) return;
+    const props = S().props.filter((p) => p.org_id === l.org_id);
+    const keep = $("sample-prop").value;
+    $("sample-prop").innerHTML = `<option value="">(none: the account's first)</option>` + props.map((p) => `<option value="${p.id}">${esc(p.name)}</option>`).join("");
+    if (keep && props.some((p) => p.id === keep)) $("sample-prop").value = keep; else if (props.length === 1) $("sample-prop").value = props[0].id;
+    $("sample-make").disabled = !l.published_version;
+    $("sample-make").title = l.published_version ? "" : "Publish the board first";
+    const rows = await Auth.db(`sample_links?layout_id=eq.${l.id}&select=*&order=created_at.desc`).catch(() => []);
+    const now = Date.now();
+    $("sample-rows").innerHTML = rows.length ? rows.map((r) => {
+      const ended = r.turned_off_at || Date.parse(r.expires_at) <= now;
+      const ends = new Date(r.turned_off_at || r.expires_at).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" });
+      const p = r.property_id ? look().prop(r.property_id) : null;
+      return `<tr data-sample="${esc(r.slug)}"${ended ? ' class="ended"' : ""}>
+        <td><a href="${SAMPLE_BASE}${esc(r.slug)}" target="_blank" rel="noopener">waytugo.com/s/${esc(r.slug)}</a></td>
+        <td>${p ? esc(p.name) : `<span class="sub">the account's first</span>`}</td>
+        <td>${ended ? `<span class="warn">${r.turned_off_at ? "Turned off" : "Ended"} ${ends}</span>` : `${ends}<div class="sub">${r.days} days</div>`}</td>
+        <td>${r.opens}${r.last_open_at ? `<div class="sub">last ${since(r.last_open_at)}</div>` : ""}</td>
+        <td class="actions">${ended ? `<select data-sample-renew aria-label="Open it again for"><option value="">Open again for…</option><option value="30">30 days</option><option value="60">60 days</option><option value="90">90 days</option></select>`
+          : `<button type="button" class="ghost" data-sample-copy>Copy link</button><select data-sample-days aria-label="Length from today"><option value="">Length from today…</option><option value="30">30 days</option><option value="60">60 days</option><option value="90">90 days</option></select><button type="button" class="ghost danger" data-sample-off>Turn off</button>`}</td></tr>`;
+    }).join("") : `<tr><td colspan="5" class="empty-rows">No sample links for this board yet.</td></tr>`;
+  }
+  $("sample-make").addEventListener("click", async () => {
+    const l = L.current; if (!l) return;
+    const slug = ($("sample-slug").value.trim().toLowerCase() || randomSlug()).replace(/\s+/g, "-");
+    if (!SLUG_RE.test(slug)) { toast("A link name is 3 to 40 letters, numbers and dashes, starting with a letter or number.", true); return; }
+    try {
+      await Auth.db("sample_links", { method: "POST", body: { slug, layout_id: l.id, property_id: $("sample-prop").value || null, days: Number($("sample-days").value) }, prefer: "return=minimal" });
+      $("sample-slug").value = "";
+      toast(`Sample link made: waytugo.com/s/${slug}`);
+      await loadSamples();
+    } catch (ex) { toast(/duplicate|already exists|sample_links_pkey/i.test(ex.message) ? `"${slug}" is taken. Choose another name.` : ex.message, true); }
+  });
+  $("sample-rows").addEventListener("click", async (e) => {
+    const tr = e.target.closest("[data-sample]"); if (!tr) return;
+    const slug = tr.dataset.sample, url = `${SAMPLE_BASE}${slug}`;
+    if (e.target.closest("[data-sample-copy]")) {
+      try { await navigator.clipboard.writeText(url); toast("Link copied."); } catch { toast(url); }
+    }
+    if (e.target.closest("[data-sample-off]")) {
+      if (!confirm(`Turn off waytugo.com/s/${slug}? It stops working at once.`)) return;
+      try { await Auth.db(`sample_links?slug=eq.${encodeURIComponent(slug)}`, { method: "PATCH", body: { turned_off_at: new Date().toISOString() }, prefer: "return=minimal" }); toast("Turned off."); await loadSamples(); }
+      catch (ex) { toast(ex.message, true); }
+    }
+  });
+  $("sample-rows").addEventListener("change", async (e) => {
+    const tr = e.target.closest("[data-sample]"), sel = e.target.closest("[data-sample-days],[data-sample-renew]"); if (!tr || !sel?.value) return;
+    // a new length counts from today (the database sets the date); opening an ended link again clears Turned off
+    const body = { days: Number(sel.value), expires_at: new Date().toISOString(), ...(sel.matches("[data-sample-renew]") ? { turned_off_at: null } : {}) };
+    try { await Auth.db(`sample_links?slug=eq.${encodeURIComponent(tr.dataset.sample)}`, { method: "PATCH", body, prefer: "return=minimal" }); toast(`It now ends ${sel.value} days from today.`); await loadSamples(); }
+    catch (ex) { toast(ex.message, true); }
+  });
+
   // ── E2e: one file per board. After Check, blocks that still write their own items, text or hours are offered as
   // lists on the layout's menu ("Make these lists"), with a room each; the JSON then points at them ──
   function renderOffer(offer) {

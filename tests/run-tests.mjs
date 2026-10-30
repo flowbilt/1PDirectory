@@ -2984,6 +2984,139 @@ test("E2e: one file per board: a block's own room and dates become its list's; C
   for (const w of ["window.innerHeight - 84 - others - 40", 'data-side="history"', 'data-side-pane="pics"']) assert.ok(ed.includes(w), w);
 });
 
+// ── Templates, copying a shop, sample links (DP-13, round T0; supabase/36-templates.sql, netlify/functions/shops.mjs, sample.mjs) ──
+const shopsFn = (await import("../netlify/functions/shops.mjs")).default;
+const sampleFn = (await import("../netlify/functions/sample.mjs")).default;
+const scall = (body, token) => shopsFn(req("/api/shops", { method: "POST", body, token }));
+const asU = (tok) => ({ apikey: ANON_KEY, Authorization: `Bearer ${tok}`, "Content-Type": "application/json", Prefer: "return=representation" });
+test("T0: copying a shop (1Point only): the menu, its boards published with new codes and looks, the pictures as the account's own (a key it has gets -2), a building; nothing left when refused", async () => {
+  const admin = await login("scot@1pointusa.com", "admin-pass"), owner = await login("leighann@barber.test", "owner-pass");
+  const T = fake.T;
+  const tpl = { ...{ id: crypto.randomUUID(), notes: "", picture_room: 100, created_at: new Date().toISOString() }, name: "WayTuGo Templates (test)", kind: "templates" };
+  T.organizations.push(tpl);
+  const pic = (org, key) => { const path = `${org}/${key}-${crypto.randomUUID().slice(0, 8)}.webp`; fake.storage.set(`layout-images/${path}`, { bytes: new Uint8Array([1, 2, 3]), mime: "image/webp", at: new Date().toISOString() });
+    T.layout_images.push({ id: crypto.randomUUID(), org_id: org, key, name: key, path, mime: "image/webp", width: 800, height: 600, bytes: 3, created_at: new Date().toISOString() }); return path; };
+  pic(tpl.id, "latte"); pic(tpl.id, "hero");
+  const spec = { lists: [{ key: "specials", name: "Specials", kind: "items", room: 6, fields: ["name", "price", "image"] }] };
+  const menu = { id: crypto.randomUUID(), org_id: tpl.id, name: "Coffee shop template", customer_edit: true, spec, content: { lists: { specials: { entries: [{ id: "sp0001", name: "Latte", price: "$4", image: "img:latte" }] } } }, rev: 1, created_at: "", updated_at: "" };
+  T.menus.push(menu);
+  const doc = { format: 1, orientation: "landscape", grid: { cols: 12, rows: 12 }, blocks: [{ id: "hero", type: "photo", at: { col: 1, row: 1, w: 6, h: 12 }, content: { image: "img:hero" } }, { id: "specials", type: "items", at: { col: 7, row: 1, w: 6, h: 12 }, content: { list: "specials" } }] };
+  const l55 = { id: crypto.randomUUID(), org_id: tpl.id, name: "Coffee 55", family: "menu", orientation: "landscape", draft: doc, menu_id: menu.id, menu_code: "TPLAA2", published_version: 1, published_at: "" };
+  const l32 = { id: crypto.randomUUID(), org_id: tpl.id, name: "Coffee 32", family: "menu", orientation: "landscape", draft: doc, menu_id: menu.id, menu_code: "TPLAA3", published_version: null, published_at: null };
+  T.layouts.push(l55, l32); T.layout_versions.push({ layout_id: l55.id, version: 1, doc, checks: {}, overridden: false, note: "", published_at: "" });
+  menu.content.boards = { [l55.id]: { look: "chalkboard" } };
+  const samples = { id: crypto.randomUUID(), notes: "", picture_room: 100, created_at: "", name: "WayTuGo Samples (test)", kind: "samples" };
+  T.organizations.push(samples); pic(samples.id, "latte");   // the account already has a "latte"
+  // who: 1Point only, signed in
+  assert.equal((await scall({ action: "copy", menu_id: menu.id, org_id: samples.id, name: "X" }, null)).status, 401);
+  assert.equal((await scall({ action: "copy", menu_id: menu.id, org_id: samples.id, name: "X" }, owner)).status, 403);
+  // a bad building, then the copy
+  let r = await scall({ action: "copy", menu_id: menu.id, org_id: samples.id, name: "Salvatore's", building: { name: "Salvatore's Pizza", lat: "north" } }, admin);
+  assert.equal(r.status, 400); assert.match((await r.json()).error, /latitude and a longitude/);
+  const files0 = fake.storage.size;
+  r = await scall({ action: "copy", menu_id: menu.id, org_id: samples.id, name: "Salvatore's Pizza", boards: { [l32.id]: "Salvatore's counter" },
+    building: { name: "Salvatore's Pizza", address: "1 Main St", lat: 33.6, lon: -86.8, timezone: "America/Chicago" } }, admin);
+  let d = await r.json();
+  assert.equal(r.status, 200, JSON.stringify(d));
+  assert.equal(d.pictures, 2); assert.deepEqual(d.renamed, { latte: "latte-2" });
+  assert.equal(fake.storage.size, files0 + 2, "two files copied");
+  const m2 = T.menus.find((m) => m.id === d.menu_id);
+  assert.ok(m2.org_id === samples.id && m2.rev === 1 && m2.name === "Salvatore's Pizza");
+  assert.equal(m2.content.lists.specials.entries[0].image, "img:latte-2", "the copy's own picture");
+  assert.equal(menu.content.lists.specials.entries[0].image, "img:latte", "the template untouched");
+  const n55 = T.layouts.find((l) => l.id === d.layouts.find((x) => x.from === l55.id).id), n32 = T.layouts.find((l) => l.id === d.layouts.find((x) => x.from === l32.id).id);
+  assert.ok(n55.published_version === 1 && n32.published_version == null && n55.menu_code !== l55.menu_code && n55.org_id === samples.id);
+  assert.equal(n55.name, "Salvatore's Pizza: Coffee 55"); assert.equal(n32.name, "Salvatore's counter");
+  assert.deepEqual(Object.keys(m2.content.boards), [n55.id], "the look follows the board");
+  const v1 = T.layout_versions.find((v) => v.layout_id === n55.id && v.version === 1);
+  assert.equal(v1.doc.blocks[0].content.image, "img:hero");
+  const imgs = T.layout_images.filter((i) => i.org_id === samples.id).map((i) => i.key).sort();
+  assert.deepEqual(imgs, ["hero", "latte", "latte-2"]);
+  assert.ok(T.layout_images.filter((i) => i.org_id === samples.id && i.key !== "latte").every((i) => i.path.startsWith(`${samples.id}/`) && fake.storage.has(`layout-images/${i.path}`)));
+  const prop = T.properties.find((p) => p.id === d.property_id);
+  assert.ok(prop && prop.org_id === samples.id && prop.lat === 33.6 && prop.address === "1 Main St");
+  // into a new account made in the same step
+  r = await scall({ action: "copy", menu_id: menu.id, new_account: { name: "Salvatore's Pizza LLC", kind: "owner" }, name: "Salvatore's Pizza" }, admin);
+  d = await r.json(); assert.equal(r.status, 200, JSON.stringify(d));
+  assert.equal(T.organizations.find((o) => o.id === d.org_id)?.name, "Salvatore's Pizza LLC"); assert.deepEqual(d.renamed, {});
+  // refused (no room): the copied files and the new account are taken away again
+  const files1 = fake.storage.size, orgs1 = T.organizations.length, menus1 = T.menus.length;
+  const tight = { id: crypto.randomUUID(), notes: "", picture_room: 1, created_at: "", name: "Tight", kind: "owner" }; T.organizations.push(tight);
+  r = await scall({ action: "copy", menu_id: menu.id, org_id: tight.id, name: "Tight shop" }, admin);
+  assert.equal(r.status, 409); assert.match((await r.json()).error, /Give it more room under Accounts first/);
+  assert.equal(fake.storage.size, files1, "no copied file left"); assert.equal(T.menus.length, menus1);
+  r = await scall({ action: "copy", menu_id: crypto.randomUUID(), new_account: { name: "Ghost" }, name: "Ghost" }, admin);
+  assert.equal(r.status, 404); assert.equal(T.organizations.length, orgs1 + 1, "only Tight was added");
+  // a picture whose file is missing in Storage: refused in plain words, nothing kept
+  const hero = T.layout_images.find((i) => i.org_id === tpl.id && i.key === "hero"); const heroFile = fake.storage.get(`layout-images/${hero.path}`);
+  fake.storage.delete(`layout-images/${hero.path}`);
+  const files2 = fake.storage.size, menus2 = T.menus.length;
+  r = await scall({ action: "copy", menu_id: menu.id, org_id: samples.id, name: "No file" }, admin);
+  assert.equal(r.status, 409); assert.match((await r.json()).error, /The picture "hero" has no file in Storage/);
+  assert.equal(fake.storage.size, files2); assert.equal(T.menus.length, menus2);
+  fake.storage.set(`layout-images/${hero.path}`, heroFile);
+  // the account types
+  const kinds = await fake.handle(new Request(`${SB}/rest/v1/organizations`, { method: "POST", body: JSON.stringify({ name: "Bad", kind: "restaurant" }), headers: asU(admin) }));
+  assert.equal(kinds.status, 409);
+  globalThis.__t0 = { n55, n32, samples, prop };
+});
+
+test("T0: sample links (1Point only): made and changed as a signed-in 1Point user; the page shows the board with the link's building, counts opens, and ends when turned off or past its date", async () => {
+  const admin = await login("scot@1pointusa.com", "admin-pass"), owner = await login("leighann@barber.test", "owner-pass");
+  const { n55, n32, prop } = globalThis.__t0;
+  const make = (tok, body) => fake.handle(new Request(`${SB}/rest/v1/sample_links`, { method: "POST", body: JSON.stringify(body), headers: asU(tok) }));
+  assert.equal((await make(owner, { slug: "owner-made", layout_id: n55.id, days: 30 })).status, 403, "a customer can't");
+  let r = await make(admin, { slug: "demo-n32", layout_id: n32.id, days: 30 });
+  assert.equal(r.status, 409); assert.match((await r.json()).message, /Publish the board/);
+  assert.equal((await make(admin, { slug: "demo-x", layout_id: n55.id, days: 120 })).status, 409);
+  assert.equal((await make(admin, { slug: "demo-x", layout_id: n55.id, days: 30, opens: 9 })).status, 403);
+  r = await make(admin, { slug: "Demo-Salvatores", layout_id: n55.id, property_id: prop.id, days: 30 });
+  assert.equal(r.status, 201);
+  const link = fake.T.sample_links.find((x) => x.slug === "demo-salvatores");
+  assert.ok(link && Math.round((Date.parse(link.expires_at) - Date.now()) / 86400_000) === 30);
+  // the customer can't see them
+  const seen = await (await fake.handle(new Request(`${SB}/rest/v1/sample_links?select=*`, { headers: asU(owner) }))).json();
+  assert.deepEqual(seen, []);
+  // the page: a wrapper framing the board page by full address; the board's answer with the link's building
+  r = await sampleFn(req("/s/Demo-Salvatores"));
+  const html = await r.text();
+  assert.equal(r.status, 200); assert.match(html, /<iframe src="[^"]*\/board\.html\?sample=demo-salvatores"/); assert.equal(r.headers.get("X-Robots-Tag"), "noindex");
+  r = await sampleFn(req("/api/sample?code=demo-salvatores&open=1"));
+  let d = await r.json();
+  assert.equal(r.status, 200, JSON.stringify(d));
+  assert.ok(d.kind === "layout" && d.layout.id === n55.id && d.propertyName === "Salvatore's Pizza" && d.sample.slug === "demo-salvatores" && d.images.hero);
+  assert.ok(d.lists.content.lists.specials.entries[0].image === "img:latte-2" && d.images["latte-2"]);
+  await sampleFn(req("/api/sample?code=demo-salvatores"));
+  assert.equal(link.opens, 1, "only the first load counts");
+  // the board's phone menu names the sample's building too
+  const pm = await (await menuFn(req(`/m/${n55.menu_code}`))).text();
+  assert.match(pm, /Salvatore&#39;s Pizza/);
+  // 1Point lengthens it (from today), then turns it off
+  const patch = (body) => fake.handle(new Request(`${SB}/rest/v1/sample_links?slug=eq.demo-salvatores`, { method: "PATCH", body: JSON.stringify(body), headers: asU(admin) }));
+  assert.equal((await patch({ days: 90 })).status, 200);
+  assert.equal(Math.round((Date.parse(link.expires_at) - Date.now()) / 86400_000), 90);
+  assert.equal((await patch({ opens: 0 })).status, 403);
+  assert.equal((await patch({ turned_off_at: new Date().toISOString() })).status, 200);
+  r = await sampleFn(req("/api/sample?code=demo-salvatores&open=1"));
+  assert.equal(r.status, 410); assert.equal(link.opens, 1);
+  assert.equal((await sampleFn(req("/api/sample?code=no-such-link"))).status, 404);
+  assert.equal((await sampleFn(req("/api/sample?code=x"))).status, 404);
+  // past its date
+  await make(admin, { slug: "demo-old", layout_id: n55.id, days: 30 });
+  fake.T.sample_links.find((x) => x.slug === "demo-old").expires_at = new Date(Date.now() - 1000).toISOString();
+  assert.equal((await sampleFn(req("/api/sample?code=demo-old"))).status, 410);
+  // the board: sample mode reads the code, draws read-only with the mark
+  const core = readFileSync(new URL("../public/screen-core.js", import.meta.url), "utf8"), bj = readFileSync(new URL("../public/board.js", import.meta.url), "utf8"), bh = readFileSync(new URL("../public/board.html", import.meta.url), "utf8");
+  assert.ok(core.includes("const CHECKS_IN = !PREVIEW && !VIEW && !MENU && !SAMPLE;"));
+  for (const w of ["/api/sample?code=", "This sample has ended. Ask WayTuGo for a new link.", "const READ_ONLY = MENU || SAMPLE;"]) assert.ok(bj.includes(w), w);
+  assert.ok(bh.includes('id="sample-mark"') && bh.includes("Sample · WayTuGo"));
+  // the console: Copy to an account in Menus, the account types, the Sample tab
+  const cjs = readFileSync(new URL("../public/console.js", import.meta.url), "utf8"), ch = readFileSync(new URL("../public/console.html", import.meta.url), "utf8"), cl = readFileSync(new URL("../public/console-layouts.js", import.meta.url), "utf8");
+  for (const w of ["data-copy-menu", "function copyDialog(", '"/api/shops"', 'templates: "WayTuGo templates"', 'samples: "WayTuGo samples"', "function readLoc("]) assert.ok(cjs.includes(w), w);
+  for (const w of ['data-ltab="sample"', 'id="sample-make"', 'id="sample-rows"']) assert.ok(ch.includes(w), w);
+  for (const w of ['const SAMPLE_BASE = "https://waytugo.com/s/";', "async function loadSamples(", "data-sample-off"]) assert.ok(cl.includes(w), w);
+});
+
 let passed = 0;
 for (const [name, fn] of tests) {
   try { await fn(); passed++; console.log(`  ok  ${name}`); }

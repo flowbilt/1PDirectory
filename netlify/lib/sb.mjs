@@ -67,6 +67,19 @@ export async function storageRemove(bucket, paths) {
   if (!res.ok) throw Object.assign(new Error(`Storage refused to remove the file (${res.status}).`), { status: 502 });
 }
 
+/** T0 (DP-13): copies a file within a bucket with the service key (a shop copied into another account gets its own
+ *  copy of each picture, so removing one never touches the other). Never overwrites. */
+export async function storageCopy(bucket, from, to) {
+  const key = serviceKey();
+  const res = await fetch(`${base()}/storage/v1/object/copy`, {
+    method: "POST",
+    headers: { apikey: key, ...(key.startsWith("eyJ") ? { Authorization: `Bearer ${key}` } : {}), "Content-Type": "application/json" },
+    body: JSON.stringify({ bucketId: bucket, sourceKey: from, destinationKey: to }),
+    signal: AbortSignal.timeout(20000),
+  });
+  if (!res.ok) { const t = await res.text().catch(() => ""); throw Object.assign(new Error(`Storage couldn't copy a picture (${res.status}): ${t.slice(0, 200)}`), { status: 502 }); }
+}
+
 /** E2c: lists a folder of a bucket (Storage's own record of its files, so a removed file is never shown from a cache).
  *  Each item: { name, id, created_at, ... }; a sub-folder has id null. */
 export async function storageList(bucket, prefix, { search = "", limit = 1000, offset = 0 } = {}) {

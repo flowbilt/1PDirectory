@@ -441,3 +441,12 @@ dialog.wide #dlg-body { max-height: 72vh; overflow: auto; padding-right: 4px; }
 @media (max-width: 1000px) { .workspace.wide-preview > .menu-preview { position: static; max-height: none; } }
 .me-pv-row { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 14px; margin-top: 8px; }
 .menu-preview #pv-note, .menu-preview #phone-line { margin: 6px 0 0; font-size: 13px; }
+
+/* T0 (DP-13): Copy a shop; a layout's sample links */
+.cp-boards { border: 1px solid var(--line); border-radius: 8px; padding: 8px 12px 10px; margin: 10px 0; display: grid; gap: 8px; }
+.cp-boards legend { font-weight: 700; padding: 0 4px; }
+.cp-board { display: grid; gap: 4px; }
+.sample-new { display: flex; flex-wrap: wrap; gap: 10px; align-items: end; margin: 6px 0 4px; }
+.sample-new label { display: grid; gap: 3px; font-weight: 600; font-size: 14px; }
+#sample-rows tr.ended td { color: #6b7280; }
+#sample-rows .actions { display: flex; flex-wrap: wrap; gap: 6px; justify-content: flex-end; }

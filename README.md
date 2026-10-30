@@ -444,6 +444,32 @@ asks the company to change one). Desktop first; the phone version of the editor 
   Mountain, Arizona, Pacific), so a building whose screens show only layouts (a restaurant's boards) has them without a
   directory. The board's clock and dates use the building's time zone.
 
+### T0 (DP-13): templates, copying a shop, sample links
+
+Scot's plan (DP-13): one complete example shop per kind of restaurant (coffee shop, Italian, pizzeria, sandwich shop,
+sports bar and grill, Mexican) to show prospects; before an appointment, a template is copied and fitted to the shop;
+once they sign, the fitted copy goes into their own account. Only 1Point copies or makes samples, never the customer.
+
+- **Account types** (Accounts → Edit → Type): **WayTuGo templates** (the example shops) and **WayTuGo samples** (templates
+  fitted to prospects), besides Owner and Owner / manager. They're ordinary accounts, so a template is edited as any menu is.
+- **Copy to an account…** (Menus, 1Point only; `netlify/functions/shops.mjs`, `supabase/36-templates.sql` `shop_copy`):
+  copies a menu with its lists and items, **every board on it** (published as they are now, each with its own new
+  phone-menu code; one never published comes as a draft), each board's look, and **the pictures they use**, as the
+  account's own files (a key the account already has gets `-2`, and the copy's lists and boards follow it). Into an
+  existing account or a new one made in the same dialog, optionally with a new building (name, address, weather location,
+  time zone). Board names default to "<copy's name>: <board's name>". All or nothing: if the database refuses (no room
+  for the pictures, say), the copied files and a new account are removed again. The copy shares nothing with the original.
+- **Sample links** (a layout's **Sample** tab, 1Point only): `waytugo.com/s/<name>` shows the board's published version to a
+  prospect, filling their window, with a **Sample · WayTuGo** mark in the corner; WayTuGo's changes show within a minute;
+  its QR code opens the board's phone menu. Each link has a building (its name, address and clock), a length of **30,
+  60 or 90 days** from when it's set (changeable; an ended link can be opened again), and **Turn off**, which ends it at
+  once. Opens are counted (the page's first load). The name is chosen or random (`demo-` and six letters). Pages:
+  `/s/<name>` (a small page framing `board.html?sample=<name>` by full address, so it works on waytugo.com) and
+  `/api/sample?code=` (`netlify/functions/sample.mjs`; 404 for no such link, 410 once ended). A board on no screen
+  takes its building from its newest open sample link (`menu_page`), so its phone menu names the prospect's shop.
+- **waytugo.com forwards `/s/*` here**, as it does `/d/*` and `/m/*`: in that site's `_redirects`,
+  `/s/*  https://1pdirectory.netlify.app/s/:splat  200!`.
+
 ## Screens and cards (Raspberry Pi)
 
 Every Pi runs from a **prepared card**, and every card is the same. A card carries no identity until it's in a Pi:
@@ -758,7 +784,7 @@ Local sample logins: `scot@1pointusa.com / admin-pass`, `leighann@barber.test / 
 
 ```
 public/             screen (index.html, display.*; board.* for a layout; screen-core.js, what every screen does, shared by both; layout-format.mjs, the layout format; menu-format.mjs, the menu format), sign-in, console (+ console-devices.js, console-setup.js, console-layouts.js), editor, menu editor (menu-edit.*), technician page (tech.*), shared auth.js
-netlify/functions/  screen, users, config, weather, news, traffic, togo (the Directory to Go page), menu (Take this menu with you: /m/<code> and /api/menu), agent, devices, networks, alert-settings, alerts, layouts (check, preview, publish, roll back; upload and remove pictures; make lists from a layout)
+netlify/functions/  screen, users, config, weather, news, traffic, togo (the Directory to Go page), menu (Take this menu with you: /m/<code> and /api/menu), agent, devices, networks, alert-settings, alerts, layouts (check, preview, publish, roll back; upload and remove pictures; make lists from a layout), pictures (the menu editor's), shops (copy a shop into an account, T0), sample (sample links: /s/<name> and /api/sample, T0)
 netlify/lib/        Supabase client (and Storage), RSS reader, pictures (images.mjs: what a file really is), shared helpers
 supabase/           database schema (01 to 35, run in order), starting data, check queries, setup guide
 migration/          the Yodeck/Wix transcription the starting data was built from

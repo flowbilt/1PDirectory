@@ -14,7 +14,8 @@ import { checkLayout, applyLook, canvas, blockBox, blockShows, zonedNow, hoursNo
 
 const VERSION = "2.22.1";   // = netlify/lib/version.mjs and display.js (a test keeps them equal)
 const C = window.ScreenCore;
-const { PREVIEW, CHECKS_IN, MENU, cache, esc } = C;
+const { PREVIEW, CHECKS_IN, MENU, SAMPLE, cache, esc } = C;
+const READ_ONLY = MENU || SAMPLE;   // drawn for a visitor (the phone menu's See the board, or a sample link): no check-in, never turned
 const $ = (id) => document.getElementById(id);
 const stage = $("stage"), boardEl = $("board"), blocksEl = $("blocks");
 let data = null, sig = "", doc = null, drawn = null, drawnDate = "", drawnMoment = "";
@@ -243,7 +244,7 @@ function measure() {
   const fit = fitAll.last || { overflow: [], shrunk: [] };
   lastReport = { ms, fps: null, slow: 0, look: doc.look?.look || "house", grain: doc.look?.look === "chalkboard" ? (grainDropped ? "dropped" : "on") : "none",
     overflow: fit.overflow.slice(0, 10), shrunk: fit.shrunk.length };
-  if (PREVIEW || MENU || measuring) return;
+  if (PREVIEW || READ_ONLY || measuring) return;
   // Frame gaps over 20 seconds, which takes in a picture's turn or two
   measuring = true;
   const gaps = []; let last = performance.now(); const end = last + 20000;
@@ -380,6 +381,18 @@ function apply(d) {
 
 async function loadScreen() {
   if (PREVIEW) return;
+  if (SAMPLE) {   // T0 (DP-13): a sample link: the board as the phone menu's See the board, marked; it ends on its date
+    try {
+      const r = await fetch(`/api/sample?code=${encodeURIComponent(SAMPLE)}${data ? "" : "&open=1"}`, { cache: "no-store" });
+      if (r.ok) { apply({ ...(await r.json()), orientation: "auto" }); $("sample-mark").hidden = false; return; }
+      if (r.status === 404 || r.status === 410) {
+        data = null; $("blocks").innerHTML = ""; $("sample-mark").hidden = true;
+        $("note").textContent = r.status === 410 ? "This sample has ended. Ask WayTuGo for a new link." : "This sample link isn't active. Ask WayTuGo for a new one.";
+        $("note").hidden = false; stage.classList.remove("is-loading");
+      }
+    } catch { /* keep what's drawn */ }
+    return;
+  }
   if (MENU) {   // E1c: the phone menu's "See the board"
     try {
       const r = await fetch(`/api/menu?code=${encodeURIComponent(MENU)}`, { cache: "no-store" });
@@ -402,8 +415,8 @@ async function loadScreen() {
 }
 
 // ── Boot ──
-if (!C.DEVICE && !C.CHOSEN && !PREVIEW && !MENU) location.replace("/");
-if (!MENU) C.lockdown();
+if (!C.DEVICE && !C.CHOSEN && !PREVIEW && !READ_ONLY) location.replace("/");
+if (!READ_ONLY) C.lockdown();
 C.clock.onTrusted = () => { live(false); refitSoon(); };
 sizeStage();
 window.addEventListener("resize", () => { sizeStage(); });
@@ -416,10 +429,10 @@ if (PREVIEW) {
     sig = ""; apply({ ...e.data.data, kind: "layout" });
   });
   if (HOST) HOST.postMessage({ type: "layout-ready" }, location.origin);
-} else if (MENU) {
+} else if (READ_ONLY) {
   document.documentElement.classList.add("menu-view");   // a phone, not a lobby screen: touches and pinch-zoom work
   loadScreen();
-  setInterval(loadScreen, 5 * 60 * 1000);
+  setInterval(loadScreen, SAMPLE ? 60 * 1000 : 5 * 60 * 1000);   // a sample shows WayTuGo's changes within a minute
 } else {
   const cached = cache.get("directory");
   if (cached) apply(cached);

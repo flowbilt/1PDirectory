@@ -1171,6 +1171,73 @@ try {
     console.log(`       measured: CPU 6x slower: drawn in ${ok.ms} ms, ${ok.fps} fps, grain on; slow frames: ${slow.fps} fps, grain dropped`);
   });
 
+  // ── T0 (DP-13): Copy a shop, and a sample link ──
+  let copied = null;
+  await check("T0: Copy to an account (1Point): Donut Joe's menu and its boards into a new account with a building; the copy's own pictures, boards published, the template untouched", async () => {
+    // the pictures made for these checks as rows only get their files (a real account's pictures all have one)
+    for (const r of (await sb(`layout_images?org_id=eq.${home.org_id}&select=path,mime`)).data)
+      await fetch(`${B}/sb/storage/v1/object/layout-images/${r.path}`, { method: "POST", headers: { ...SVC, "Content-Type": r.mime }, body: new Uint8Array([82, 73, 70, 70]) });
+    await boss.goto(`${B}/console.html?fresh=${Date.now()}#menus`); await boss.waitForTimeout(1500);
+    await boss.click('[data-tab="menus"]'); await boss.waitForTimeout(400);
+    await boss.click(`[data-copy-menu="${menuId}"]`); await boss.waitForTimeout(400);
+    await boss.selectOption("#cp-org", "new");
+    assert(await boss.locator("#cp-new").isVisible(), "the new account's fields");
+    await boss.fill("#cp-new-name", "WayTuGo Samples (check)"); await boss.selectOption("#cp-new-kind", "samples");
+    await boss.click("#dlg-ok"); await boss.waitForTimeout(500);
+    assert((await boss.textContent("#dlg-error")).includes("Give the copy a name"), await boss.textContent("#dlg-error"));
+    await boss.fill("#cp-name", "Salvatore's Pizza");
+    await boss.check("#cp-bld"); await boss.fill("#cp-b-addr", "1 Main St, Gardendale, AL"); await boss.fill("#cp-b-loc", "33.66, -86.81");
+    await shot(boss, "copy-shop-dialog");
+    await boss.click("#dlg-ok"); await boss.waitForTimeout(2500);
+    assert(!(await boss.locator("#dlg").isVisible()), await boss.textContent("#dlg-error").catch(() => ""));
+    const [org] = (await sb("organizations?name=eq.WayTuGo%20Samples%20(check)&select=id,kind")).data;
+    assert(org?.kind === "samples", JSON.stringify(org));
+    const [m] = (await sb(`menus?org_id=eq.${org.id}&select=id,name,content,rev`)).data;
+    const src = (await sb(`menus?id=eq.${menuId}&select=content`)).data[0];
+    const boards = (await sb(`layouts?menu_id=eq.${m.id}&select=id,name,published_version,menu_code,org_id`)).data;
+    const srcBoards = (await sb(`layouts?menu_id=eq.${menuId}&select=id,menu_code,published_version`)).data;
+    assert(m.name === "Salvatore's Pizza" && m.rev === 1 && boards.length === srcBoards.length && boards.every((b) => b.name.startsWith("Salvatore's Pizza: ")), JSON.stringify(boards.map((b) => b.name)));
+    assert(boards.filter((b) => b.published_version === 1).length === srcBoards.filter((b) => b.published_version).length && !boards.some((b) => srcBoards.some((x) => x.menu_code === b.menu_code)), "published, own codes");
+    assert(JSON.stringify(m.content.lists) === JSON.stringify(src.content.lists), "the same lists and items");
+    const pics = (await sb(`layout_images?org_id=eq.${org.id}&select=key,path`)).data;
+    assert(pics.length > 0 && pics.every((p) => p.path.startsWith(`${org.id}/`)), `${pics.length} pictures`);
+    const [bld] = (await sb(`properties?org_id=eq.${org.id}&select=id,name,lat,address`)).data;
+    assert(bld?.name === "Salvatore's Pizza" && bld.lat === 33.66, JSON.stringify(bld));
+    copied = { org, m, boards, bld };
+  });
+
+  await check("T0: a sample link (1Point): made on the board's Sample tab; waytugo.com/s/<name> shows the board with the mark and the building; Turn off ends it", async () => {
+    assert(copied, "needs the copy");
+    const board = copied.boards.find((b) => b.published_version === 1);
+    await boss.goto(`${B}/console.html?fresh=${Date.now()}#layouts`); await boss.waitForTimeout(1500);
+    await boss.click(`[data-open-layout="${board.id}"]`); await boss.waitForTimeout(900);
+    await ltab(boss, "sample"); await boss.waitForTimeout(500);
+    await boss.fill("#sample-slug", "demo salvatores!"); await boss.click("#sample-make"); await boss.waitForTimeout(500);
+    assert(!(await sb("sample_links?slug=like.demo*&select=slug")).data.length, "a bad name is refused");
+    await boss.fill("#sample-slug", "Demo-Salvatores"); await boss.selectOption("#sample-prop", copied.bld.id); await boss.selectOption("#sample-days", "60");
+    await boss.click("#sample-make"); await boss.waitForTimeout(900);
+    const [link] = (await sb("sample_links?slug=eq.demo-salvatores&select=*")).data;
+    assert(link && link.days === 60 && link.property_id === copied.bld.id, JSON.stringify(link));
+    assert((await boss.textContent("#sample-rows")).includes("waytugo.com/s/demo-salvatores"), "listed");
+    // the page a prospect opens (waytugo.com forwards /s/* here)
+    const v = await browser.newPage({ viewport: { width: 1280, height: 800 } });
+    await v.goto(`${B}/s/demo-salvatores`); await v.waitForTimeout(3500);
+    const fr = v.frames().find((f) => f.url().includes("board.html?sample=demo-salvatores"));
+    assert(fr, "the board framed");
+    const r = await fr.evaluate(() => ({ mark: !document.querySelector("#sample-mark").hidden && document.querySelector("#sample-mark").textContent, blocks: document.querySelectorAll("#blocks > *").length, note: document.querySelector("#note").hidden }));
+    assert(r.mark === "Sample · WayTuGo" && r.blocks > 3 && r.note, JSON.stringify(r));
+    await shot(v, "sample-link");
+    assert((await sb("sample_links?slug=eq.demo-salvatores&select=opens")).data[0].opens === 1, "one open counted");
+    // Turn off: the page says it ended within a minute (here: on reload)
+    await boss.click('[data-sample="demo-salvatores"] [data-sample-off]'); await boss.waitForTimeout(800);
+    assert((await sb("sample_links?slug=eq.demo-salvatores&select=turned_off_at")).data[0].turned_off_at, "turned off");
+    await v.reload(); await v.waitForTimeout(2500);
+    const fr2 = v.frames().find((f) => f.url().includes("sample=demo-salvatores"));
+    const ended = await fr2.evaluate(() => ({ note: document.querySelector("#note").textContent, hidden: document.querySelector("#note").hidden, mark: document.querySelector("#sample-mark").hidden }));
+    assert(!ended.hidden && ended.note.includes("This sample has ended") && ended.mark, JSON.stringify(ended));
+    await v.close();
+  });
+
   await sb(`screens?id=eq.${portrait.id}`, { method: "PATCH", body: JSON.stringify({ layout_id: lay.id, property_id: home.id }) });
 
   await owner.close(); await boss.close();

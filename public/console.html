@@ -173,6 +173,7 @@
             <button type="button" role="tab" id="ltab-menu" data-ltab="menu" aria-selected="false">Menu</button>
             <button type="button" role="tab" id="ltab-versions" data-ltab="versions" aria-selected="false">Versions</button>
             <button type="button" role="tab" id="ltab-pictures" data-ltab="pictures" aria-selected="false">Pictures</button>
+            <button type="button" role="tab" id="ltab-sample" data-ltab="sample" aria-selected="false">Sample</button>
           </div>
           <div class="lpane" data-lpane="design" role="tabpanel" aria-labelledby="ltab-design">
           <label for="layout-json" class="layout-label">Layout (JSON)</label>
@@ -206,6 +207,18 @@
           <p class="hint">Shared by all of this account's layouts. Each picture is shrunk here before upload (longest side 1,920 pixels). Its key comes from its name and never changes: a layout says <code>"image": "img:&lt;key&gt;"</code>. A picture used by any draft or kept version can't be removed, so Roll back always works.</p>
           <p id="pics-progress" class="hint" hidden></p>
           <div id="pics-grid" class="pics-grid"></div>
+          </div>
+          <!-- T0 (DP-13): sample links: this board's published version for a prospect, at waytugo.com/s/<name> -->
+          <div class="lpane" data-lpane="sample" role="tabpanel" aria-labelledby="ltab-sample" hidden>
+          <p class="hint">A sample link shows this board, as published, to a prospect at <code>waytugo.com/s/&lt;name&gt;</code>: the whole board in their window, marked "Sample · WayTuGo", with WayTuGo's changes showing within a minute. Its QR code opens the board's phone menu. It ends after the length chosen; <strong>Turn off</strong> ends it at once. Only WayTuGo sees these.</p>
+          <div class="sample-new">
+            <label>Link name <input id="sample-slug" maxlength="40" placeholder="e.g. demo-salvatores" aria-describedby="sample-slug-hint"></label>
+            <label>Building <select id="sample-prop" aria-label="The building the sample names"></select></label>
+            <label>Length <select id="sample-days"><option value="30">30 days</option><option value="60">60 days</option><option value="90">90 days</option></select></label>
+            <button type="button" id="sample-make" class="primary">Make a sample link</button>
+          </div>
+          <p class="hint" id="sample-slug-hint">Letters, numbers and dashes, 3 to 40. Leave it blank for a random one. The building gives the board its name, address and clock.</p>
+          <div class="table-wrap"><table class="grid"><thead><tr><th>Link</th><th>Building</th><th>Ends</th><th>Opens</th><th><span class="sr-only">Actions</span></th></tr></thead><tbody id="sample-rows"></tbody></table></div>
           </div>
         </div>
         <div class="layout-preview-col">

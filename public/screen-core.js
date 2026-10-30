@@ -18,10 +18,12 @@
   const VIEW = q.get("view") === "1";
   // E1c: "See the board" on the phone menu (board.html?menu=<code>): the published layout, drawn read-only
   const MENU = /^[A-HJKMNP-Z2-9]{6}$/i.test(q.get("menu") || "") ? q.get("menu").toUpperCase() : "";
+  // T0 (DP-13): a sample link (waytugo.com/s/<name>, board.html?sample=<name>): the same, for a prospect, with a mark
+  const SAMPLE = /^[a-z0-9][a-z0-9-]{2,39}$/i.test(q.get("sample") || "") ? q.get("sample").toLowerCase() : "";
   const SITE = DEVICE ? `device-${DEVICE}` : CHOSEN || "preview";
   const SCREEN_URL = DEVICE ? `/api/screen?device=${encodeURIComponent(DEVICE)}` : `/api/screen?key=${encodeURIComponent(SITE)}`;
   const URL_ROTATE = ["90", "270"].includes(q.get("rotate")) ? Number(q.get("rotate")) : null;
-  const CHECKS_IN = !PREVIEW && !VIEW && !MENU; // only a real screen records a check-in
+  const CHECKS_IN = !PREVIEW && !VIEW && !MENU && !SAMPLE; // only a real screen records a check-in
 
   const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 
@@ -171,5 +173,5 @@
   }
 
   window.ScreenCore = { DEVICE, CHOSEN, PREVIEW, VIEW, SITE, SCREEN_URL, URL_ROTATE, CHECKS_IN, PAGE, esc, cache, clock, now, timeParts,
-    rotation, route, fetchScreen, WX, reloadIfOutdated, scheduleNightlyReload, showIdentify, lockdown, registerOfflineCache, svgQR, MENU };
+    rotation, route, fetchScreen, WX, reloadIfOutdated, scheduleNightlyReload, showIdentify, lockdown, registerOfflineCache, svgQR, MENU, SAMPLE };
 })();

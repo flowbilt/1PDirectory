@@ -221,6 +221,15 @@
   const orgOptions = (selected) => S.orgs.map((o) => `<option value="${o.id}"${o.id === selected ? " selected" : ""}>${esc(o.name)}</option>`).join("");
 
   const TZS = [["America/Chicago", "Central"], ["America/New_York", "Eastern"], ["America/Denver", "Mountain"], ["America/Phoenix", "Arizona"], ["America/Los_Angeles", "Pacific"]];
+  /** "33.3449, -86.8236" -> { lat, lon }; blank -> nulls; anything else is refused in plain words */
+  function readLoc(text) {
+    const loc = String(text || "").trim();
+    if (!loc) return { lat: null, lon: null };
+    const m = /^\s*(-?\d{1,2}(?:\.\d+)?)\s*[, ]\s*(-?\d{1,3}(?:\.\d+)?)\s*$/.exec(loc);
+    const lat = m ? Number(m[1]) : NaN, lon = m ? Number(m[2]) : NaN;
+    if (!(lat >= -90 && lat <= 90 && lon >= -180 && lon <= 180)) throw new Error("The weather location is a latitude and longitude, like 33.3449, -86.8236.");
+    return { lat, lon };
+  }
   function buildingDialog(p) {
     const isNew = !p;
     openDialog({
@@ -235,13 +244,7 @@
         const body = { org_id: $("b-org").value, name: $("b-name").value.trim(), address: $("b-addr").value.trim(), timezone: $("b-tz").value };
         if (!body.name) throw new Error("Enter the building name.");
         // E2f (DP-13): the weather location and time zone, here as in the directory editor (a layout-only building has no directory)
-        const loc = $("b-loc").value.trim();
-        if (loc) {
-          const m = /^\s*(-?\d{1,2}(?:\.\d+)?)\s*[, ]\s*(-?\d{1,3}(?:\.\d+)?)\s*$/.exec(loc);
-          const lat = m ? Number(m[1]) : NaN, lon = m ? Number(m[2]) : NaN;
-          if (!(lat >= -90 && lat <= 90 && lon >= -180 && lon <= 180)) throw new Error("The weather location is a latitude and longitude, like 33.3449, -86.8236.");
-          Object.assign(body, { lat, lon });
-        } else Object.assign(body, { lat: null, lon: null });
+        Object.assign(body, readLoc($("b-loc").value));
         if (isNew) await Auth.db("properties", { method: "POST", body, prefer: "return=minimal" });
         else await Auth.db(`properties?id=eq.${p.id}`, { method: "PATCH", body, prefer: "return=minimal" });
         toast(isNew ? "Building added. Now add its directories." : "Saved.");
@@ -346,8 +349,60 @@
         <td>${boards.length ? boards.map((l) => esc(l.name)).join("<br>") : `<span class="sub">none yet</span>`}</td>
         <td>${m.rev ? `Save ${m.rev}<div class="sub">${since(m.updated_at)}</div>` : `<span class="sub">not saved yet</span>`}</td>
         <td>${m.customer_edit ? "You and WayTuGo" : "WayTuGo keeps it up to date"}</td>
-        <td class="actions"><a class="ghost" href="/menu-edit.html?m=${m.id}">${m.customer_edit || S.admin ? "Edit menu" : "See menu"}</a></td></tr>`;
+        <td class="actions"><a class="ghost" href="/menu-edit.html?m=${m.id}">${m.customer_edit || S.admin ? "Edit menu" : "See menu"}</a>${S.admin && boards.length ? `<button type="button" class="ghost" data-copy-menu="${m.id}">Copy to an account…</button>` : ""}</td></tr>`;
     }).join("") : `<tr><td colspan="5" class="empty-rows">No menus yet. WayTuGo builds each menu board from your own layout; its lists show here to edit.</td></tr>`;
+  }
+
+  // T0 (DP-13): 1Point's own accounts for the example shops and for prospects' samples
+  const ORG_KIND = { owner: "Owner", manager: "Owner / manager", templates: "WayTuGo templates", samples: "WayTuGo samples" };
+  // ── T0 (DP-13): Copy a shop (1Point only): a menu, every board on it and their pictures, into an account as its own:
+  // a template into WayTuGo Samples before an appointment, or a fitted sample into the customer's account once they sign
+  $("menu-rows").addEventListener("click", (e) => { const b = e.target.closest("[data-copy-menu]"); if (b) copyDialog(S.menus.find((m) => m.id === b.dataset.copyMenu)); });
+  function copyDialog(m) {
+    if (!m) return;
+    const boards = S.layouts.filter((l) => l.menu_id === m.id);
+    const from = org(m.org_id);
+    const preferred = (from?.kind === "templates" && S.orgs.find((o) => o.kind === "samples")) || S.orgs.find((o) => o.id !== m.org_id) || S.orgs[0];
+    const orgsSorted = [...S.orgs].sort((a, b) => a.name.localeCompare(b.name));
+    openDialog({
+      title: `Copy "${m.name}" to an account`, ok: "Copy", wide: true,
+      body: `<p class="hint">Copies the menu with its lists, ${boards.length === 1 ? "its board" : `its ${boards.length} boards`} (published as they are now, each with its own phone-menu QR code) and the pictures they use. The copy is the account's own: changing it never touches "${esc(m.name)}".</p>
+        ${field("cp-org", "Copy into", `<select id="cp-org">${orgsSorted.map((o) => `<option value="${o.id}"${o.id === preferred?.id ? " selected" : ""}>${esc(o.name)}${o.kind === "templates" || o.kind === "samples" ? ` (${ORG_KIND[o.kind]})` : ""}</option>`).join("")}<option value="new">New account…</option></select>`)}
+        <div id="cp-new" hidden>
+          ${field("cp-new-name", "New account's name", `<input id="cp-new-name" maxlength="80" placeholder="e.g. Salvatore's Pizza LLC">`)}
+          ${field("cp-new-kind", "Type", `<select id="cp-new-kind">${Object.entries(ORG_KIND).map(([v, t]) => `<option value="${v}">${t}</option>`).join("")}</select>`)}
+        </div>
+        ${field("cp-name", "The copy's name", `<input id="cp-name" required maxlength="80" placeholder="e.g. Salvatore's Pizza">`, "The menu's name. Each board is named after it unless you name it below.")}
+        <fieldset class="cp-boards"><legend>Boards</legend>${boards.map((l) => `<label class="cp-board"><span>${esc(l.name)}${l.published_version ? "" : ` <span class="warn">(not published: copied as a draft)</span>`}</span>
+          <input data-cp-board="${l.id}" maxlength="80" placeholder="(the copy's name): ${esc(l.name)}" aria-label="Name for the copy of ${esc(l.name)}"></label>`).join("")}</fieldset>
+        <label class="check"><input type="checkbox" id="cp-bld"> Add a building for it in that account</label>
+        <div id="cp-bld-box" hidden>
+          ${field("cp-b-name", "Building name", `<input id="cp-b-name" maxlength="80" placeholder="(the copy's name)">`)}
+          ${field("cp-b-addr", "Address", `<input id="cp-b-addr" maxlength="120">`)}
+          ${field("cp-b-loc", "Weather location", `<input id="cp-b-loc" inputmode="decimal" placeholder="e.g. 33.3449, -86.8236">`, "Latitude, longitude, copied from Google Maps (right-click the building).")}
+          ${field("cp-b-tz", "Time zone", `<select id="cp-b-tz">${TZS.map(([v, n]) => `<option value="${v}">${n}</option>`).join("")}</select>`)}
+        </div>`,
+      afterOpen() {
+        $("cp-org").addEventListener("change", () => { $("cp-new").hidden = $("cp-org").value !== "new"; });
+        $("cp-bld").addEventListener("change", () => { $("cp-bld-box").hidden = !$("cp-bld").checked; });
+      },
+      async save() {
+        const name = $("cp-name").value.trim();
+        if (!name) throw new Error("Give the copy a name, e.g. Salvatore's Pizza.");
+        const body = { action: "copy", menu_id: m.id, name, boards: {} };
+        for (const i of document.querySelectorAll("[data-cp-board]")) if (i.value.trim()) body.boards[i.dataset.cpBoard] = i.value.trim();
+        if ($("cp-org").value === "new") {
+          const n = $("cp-new-name").value.trim();
+          if (!n) throw new Error("Give the new account a name.");
+          body.new_account = { name: n, kind: $("cp-new-kind").value };
+        } else body.org_id = $("cp-org").value;
+        if ($("cp-bld").checked) body.building = { name: $("cp-b-name").value.trim() || name, address: $("cp-b-addr").value.trim(), timezone: $("cp-b-tz").value, ...readLoc($("cp-b-loc").value) };
+        const r = await Auth.api("/api/shops", { method: "POST", body });
+        const renamed = Object.entries(r.renamed || {});
+        toast(`Copied: "${name}" with ${r.layouts.length} board${r.layouts.length === 1 ? "" : "s"} and ${r.pictures} picture${r.pictures === 1 ? "" : "s"}${renamed.length ? ` (${renamed.map(([a, b]) => `${a} is ${b} there`).join(", ")})` : ""}.`);
+        await refresh();
+      },
+    });
   }
 
   function renderAccounts() {
@@ -356,7 +411,7 @@
     $("account-rows").innerHTML = S.orgs.map((o) => {
       const ps = S.props.filter((p) => p.org_id === o.id);
       const sc = S.screens.filter((s) => ps.some((p) => p.id === screenProp(s)?.id));
-      return `<tr><td><strong>${esc(o.name)}</strong></td><td>${o.kind === "manager" ? "Owner / manager" : "Owner"}</td><td>${ps.length}</td><td>${sc.length}</td>
+      return `<tr><td><strong>${esc(o.name)}</strong></td><td>${esc(ORG_KIND[o.kind] || "Owner")}</td><td>${ps.length}</td><td>${sc.length}</td>
         <td><button type="button" class="linkish" data-people="${o.id}">View people</button></td>
         <td class="actions"><button type="button" class="ghost" data-edit-org="${o.id}">Edit</button></td></tr>`;
     }).join("");
@@ -372,7 +427,7 @@
       orgId: o?.id,
       title: o ? `Account: ${o.name}` : "Add account",
       body: `${field("a-name", "Name", `<input id="a-name" required maxlength="80" value="${esc(o?.name || "")}">`)}
-        ${field("a-kind", "Type", `<select id="a-kind"><option value="owner"${o?.kind === "owner" ? " selected" : ""}>Owner</option><option value="manager"${o?.kind === "manager" ? " selected" : ""}>Owner / manager</option></select>`)}
+        ${field("a-kind", "Type", `<select id="a-kind">${Object.entries(ORG_KIND).map(([v, t]) => `<option value="${v}"${(o?.kind || "owner") === v ? " selected" : ""}>${t}</option>`).join("")}</select>`, "WayTuGo templates and WayTuGo samples are 1Point's own accounts: the example shops, and templates fitted to a prospect (T0).")}
         ${o && "picture_room" in o ? field("a-pics", "Room for pictures", `<input id="a-pics" type="number" min="0" max="10000" step="1" value="${o.picture_room}">`,
           "How many pictures the account can keep (its own and WayTuGo's). More room is a picture expansion.")
           + `<div class="row"><button type="button" class="ghost" id="a-check">Check storage</button><span class="sub" id="a-check-out"></span></div>` : ""}

@@ -17,7 +17,7 @@ const CODE_ALPHA = "ABCDEFGHJKMNPQRSTUVWXYZ23456789";
 const newCode = () => Array.from({ length: 6 }, () => CODE_ALPHA[Math.floor(Math.random() * CODE_ALPHA.length)]).join("");
 
 export function createFake() {
-  const T = { organizations: [], profiles: [], properties: [], directories: [], tenants: [], screens: [], audit_log: [], devices: [], device_commands: [], device_daily: [], wifi_networks: [], prepare_codes: [], alert_recipients: [], mail_settings: [], togo_scans: [], companies: [], people: [], layouts: [], layout_versions: [], layout_images: [], menu_scans: [], menus: [], menu_revisions: [] };
+  const T = { organizations: [], profiles: [], properties: [], directories: [], tenants: [], screens: [], audit_log: [], devices: [], device_commands: [], device_daily: [], wifi_networks: [], prepare_codes: [], alert_recipients: [], mail_settings: [], togo_scans: [], companies: [], people: [], layouts: [], layout_versions: [], layout_images: [], menu_scans: [], menus: [], menu_revisions: [], sample_links: [] };
   const storage = new Map();   // bucket/path -> { bytes, mime, cacheControl } (E1b)
   const SERVICE_ONLY = new Set(["togo_scans", "devices", "device_commands", "device_daily", "wifi_networks", "prepare_codes", "alert_recipients", "mail_settings", "menu_scans"]); // row-level security on, no policies: server key only
   // Columns of screens signed-in users may read (supabase/06-trust.sql, plus sizes from 18 and no_cec from 21). hardware is server-only.
@@ -184,6 +184,7 @@ export function createFake() {
     people: () => ({ id: randomUUID(), sort: 0, first_name: "", last_name: "", title: "", phone: "", email: "", suite: "", show: true, created_at: now(), updated_at: now() }),
     layout_images: () => ({ id: randomUUID(), name: "", created_at: now(), created_by: null }),
     menus: () => ({ id: randomUUID(), customer_edit: true, spec: { lists: [] }, content: { lists: {} }, rev: 0, created_at: now(), updated_at: now(), updated_by: null }),
+    sample_links: () => ({ days: 30, property_id: null, turned_off_at: null, opens: 0, last_open_at: null }),
     layouts: () => ({ id: randomUUID(), menu_id: null, menu_code: newCode(), family: "menu", draft: {}, published_version: null, published_at: null, created_at: now(), updated_at: now(), updated_by: null }),
     screens: () => ({ id: randomUUID(), directory_id: null, layout_id: null, property_id: null, location_note: "", orientation: "auto", hardware: {}, last_seen: null, last_report: {}, sizes: {}, no_cec: false, traffic_at: null, hide_powered_by: false, touch: false, screen_inches: null, touch_idle_s: 45, created_at: now() }),
     profiles: () => ({ full_name: "", created_at: now() }),
@@ -250,6 +251,18 @@ export function createFake() {
     return c.errors.length ? `${c.errors[0].where}: ${c.errors[0].msg}` : null;
   }
   function checkRow(table, row, before) {
+    if (table === "organizations" && row.kind !== undefined && !["owner", "manager", "templates", "samples"].includes(row.kind)) return "new row violates check constraint \"organizations_kind_check\"";   // 36
+    if (table === "sample_links") {   // 36-templates.sql
+      if (!/^[a-z0-9][a-z0-9-]{2,39}$/.test(String(row.slug || "").toLowerCase())) return "new row violates check constraint \"sample_links_slug_check\"";
+      if (![30, 60, 90].includes(Number(row.days))) return "new row violates check constraint \"sample_links_days_check\"";
+      const l = T.layouts.find((x) => x.id === row.layout_id);
+      if (!before) {
+        if (!l) return "No such board.";
+        if (l.published_version == null) return `Publish the board "${l.name}" first, so the sample has something to show.`;
+        if (T.sample_links.some((x) => x.slug === String(row.slug).toLowerCase())) return "duplicate key value violates unique constraint \"sample_links_pkey\"";
+      } else if (row.slug !== before.slug || row.layout_id !== before.layout_id) return "A sample link keeps its name and its board. Make a new link instead.";
+      if (row.property_id && propOrg(row.property_id) !== l?.org_id) return "Choose a building in the board's own account.";
+    }
     if (table === "menus") { const bad = menuRule(row, before); if (bad) return bad; }
     if (table === "layouts" && row.menu_id && T.menus.find((m) => m.id === row.menu_id)?.org_id !== row.org_id) return `That menu belongs to a different account from the layout "${row.name}".`;
     if (table === "screens") { const bad = layoutRule(row, before); if (bad) return bad; }
@@ -317,8 +330,10 @@ export function createFake() {
         } else {
           if (table === "layouts" && !who.service && ["draft", "published_version", "published_at", "menu_code"].some((k) => k in item)) return err(403, "permission denied for table layouts");
           if (table === "menus" && !who.service && ["content", "rev", "updated_by"].some((k) => k in item)) return err(403, "permission denied for table menus");
+          if (table === "sample_links" && !who.service && Object.keys(item).some((k) => !["slug", "layout_id", "property_id", "days"].includes(k))) return err(403, "permission denied for table sample_links");
           const row = { ...(defaults[table]?.() || {}), ...item };
           if (!canWrite(table, "insert", row, who)) return err(403, `new row violates row-level security policy for table "${table}"`);
+          if (table === "sample_links") Object.assign(row, { slug: String(row.slug).toLowerCase(), expires_at: new Date(Date.parse(now()) + Number(row.days ?? 30) * 86400_000).toISOString(), created_at: now(), opens: 0, last_open_at: null, created_by: who.uid || row.created_by || null });
           const bad = checkRow(table, row); if (bad) return err(409, bad);
           if (table === "tenants") linkTenant(row, null);
           T[table].push(row); result.push({ ...row });
@@ -343,12 +358,14 @@ export function createFake() {
         if (table === "layouts" && !who.service && ["draft", "published_version", "published_at", "menu_code"].some((k) => k in body)) return err(403, "permission denied for table layouts");
         if (table === "layout_images" && !who.service && Object.keys(body).some((k) => k !== "name")) return err(403, "permission denied for table layout_images");
         if (table === "menus" && !who.service && ["content", "rev", "updated_by", "org_id"].some((k) => k in body)) return err(403, "permission denied for table menus");
+        if (table === "sample_links" && !who.service && Object.keys(body).some((k) => !["property_id", "days", "expires_at", "turned_off_at"].includes(k))) return err(403, "permission denied for table sample_links");
         if (table === "layout_images" && ["key", "path", "org_id", "mime", "width", "height", "bytes"].some((k) => k in body && body[k] !== r[k])) return err(409, "A picture can't be changed once it's uploaded (only its name). Upload the new picture instead.");
       }
       rows.forEach((r) => {
         const before = { ...r };
         const { company_id, ...rest } = body;                     // a tenant's company comes from its name, never from the editor
         Object.assign(r, table === "tenants" ? rest : body);
+        if (table === "sample_links" && (r.days !== before.days || r.expires_at !== before.expires_at)) r.expires_at = new Date(Date.parse(now()) + r.days * 86400_000).toISOString();   // 36: from now
         if (table === "properties" || table === "directories" || table === "menus") { r.updated_at = now(); if (table !== "menus") r.updated_by = who.uid || null; }
         if (table === "tenants") { linkTenant(r, before); touchDir(r.directory_id, who.uid); }
         if (table === "people") touchCompany(r.company_id, who.uid);
@@ -558,7 +575,9 @@ export function createFake() {
       if (!l || l.published_version == null) return { missing: true };
       const lv = T.layout_versions.find((x) => x.layout_id === l.id && x.version === l.published_version);
       const scr = T.screens.filter((x) => x.layout_id === l.id && x.property_id).sort((a, b) => String(b.last_seen || "").localeCompare(String(a.last_seen || "")))[0];
-      const p = (scr && T.properties.find((x) => x.id === scr.property_id)) || order(T.properties.filter((x) => x.org_id === l.org_id), "name")[0] || null;
+      // 36: a board on no screen names the building of its newest sample link still open
+      const sl = T.sample_links.filter((x) => x.layout_id === l.id && x.property_id && !x.turned_off_at && Date.parse(x.expires_at) > Date.parse(now())).sort((a, b) => String(b.created_at).localeCompare(String(a.created_at)))[0];
+      const p = (scr && T.properties.find((x) => x.id === scr.property_id)) || (sl && T.properties.find((x) => x.id === sl.property_id)) || order(T.properties.filter((x) => x.org_id === l.org_id), "name")[0] || null;
       if (p_count) {
         const day = new Intl.DateTimeFormat("en-CA", { timeZone: "America/Chicago" }).format(new Date(now()));
         const row = T.menu_scans.find((x) => x.layout_id === l.id && x.day === day);
@@ -569,6 +588,64 @@ export function createFake() {
         lists: m ? { id: m.id, spec: m.spec, content: m.content } : null,
         images: Object.fromEntries(T.layout_images.filter((i) => i.org_id === l.org_id && (JSON.stringify(lv.doc) + JSON.stringify(m?.content || {})).includes(`"img:${i.key}"`)).map((i) => [i.key, { path: i.path, w: i.width, h: i.height }])),
         prop: p ? { id: p.id, name: p.name, address: p.address, timezone: p.timezone, lat: p.lat, lon: p.lon, updated_at: p.updated_at } : null };
+    },
+    // 36-templates.sql: a sample link's page (the site only)
+    sample_page({ p_slug, p_open = false }) {
+      const s = T.sample_links.find((x) => x.slug === String(p_slug || "").toLowerCase());
+      if (!s) return { missing: true };
+      if (s.turned_off_at || Date.parse(s.expires_at) <= Date.parse(now())) return { ended: true, until: s.turned_off_at && s.turned_off_at < s.expires_at ? s.turned_off_at : s.expires_at };
+      const r = FUNCS.menu_page({ p_code: T.layouts.find((x) => x.id === s.layout_id)?.menu_code, p_count: false });
+      if (r.missing) return r;
+      const p = s.property_id && T.properties.find((x) => x.id === s.property_id);
+      if (p) r.prop = { id: p.id, name: p.name, address: p.address, timezone: p.timezone, lat: p.lat, lon: p.lon, updated_at: p.updated_at };
+      if (p_open) { s.opens++; s.last_open_at = now(); }
+      return { ...r, sample: { slug: s.slug, until: s.expires_at } };
+    },
+    // 36: copying a shop into an account (the site only; all or nothing)
+    shop_copy({ p_from, p_org, p_name, p_content, p_layouts, p_images, p_property, p_by }) {
+      const fail = (m, status = 400) => { throw Object.assign(new Error(m), { status }); };
+      const src = T.menus.find((x) => x.id === p_from); if (!src) fail("No such menu.", 404);
+      const org = T.organizations.find((x) => x.id === p_org); if (!org) fail("No such account.", 404);
+      if (!Array.isArray(p_layouts) || !p_layouts.length) fail(`The menu "${src.name}" has no boards to copy.`);
+      const have = T.layout_images.filter((x) => x.org_id === p_org).length, room = org.picture_room ?? 100;
+      if (have + (p_images || []).length > room) fail(`That account has room for ${room} pictures and has ${have} already; this shop brings ${(p_images || []).length}. Give it more room under Accounts first.`);
+      const snap = JSON.stringify({ i: T.layout_images, m: T.menus, r: T.menu_revisions, l: T.layouts, v: T.layout_versions, p: T.properties });
+      try {
+        for (const x of p_images || []) {
+          if (!String(x.path).startsWith(`${p_org}/`)) fail("A copied picture must be in the account's own folder.");
+          if (T.layout_images.some((i) => i.org_id === p_org && i.key === x.key)) fail("duplicate key value violates unique constraint \"layout_images_org_id_key_key\"", 409);
+          T.layout_images.push({ ...defaults.layout_images(), org_id: p_org, key: x.key, name: x.name || "", path: x.path, mime: x.mime, width: x.width, height: x.height, bytes: x.bytes, created_by: p_by });
+        }
+        const menu = { ...defaults.menus(), org_id: p_org, name: String(p_name).trim().slice(0, 80), customer_edit: src.customer_edit, spec: src.spec, content: p_content, rev: 1, updated_by: p_by };
+        const bad = menuRule(menu, null); if (bad) fail(bad);
+        T.menus.push(menu);
+        const pr = T.profiles.find((x) => x.user_id === p_by);
+        T.menu_revisions.push({ menu_id: menu.id, rev: 1, content: p_content, saved_at: now(), saved_by: p_by, by_name: pr?.full_name || pr?.email || "", by_1point: true, restored_from: null });
+        const outL = [];
+        for (const x of p_layouts) {
+          const l = T.layouts.find((y) => y.id === x.from && y.menu_id === p_from); if (!l) fail(`A board to copy isn't on the menu "${src.name}".`);
+          const nl = { ...defaults.layouts(), id: x.id, org_id: p_org, name: String(x.name).trim().slice(0, 80), family: l.family, orientation: l.orientation, draft: x.draft || {}, menu_id: menu.id, updated_by: p_by };
+          T.layouts.push(nl);
+          if (x.doc && typeof x.doc === "object") {
+            T.layout_versions.push({ layout_id: nl.id, version: 1, doc: x.doc, checks: {}, overridden: false, note: `Copied from "${l.name}"`.slice(0, 200), rolled_back_from: null, published_at: now(), published_by: p_by });
+            Object.assign(nl, { published_version: 1, published_at: now() });
+          }
+          outL.push({ id: nl.id, from: x.from, name: nl.name });
+        }
+        for (const k of Object.keys(p_content?.boards || {})) if (!p_layouts.some((x) => x.id === k)) fail("A board look in the copy names a board that isn't in it.");
+        let property_id = null;
+        if (p_property && typeof p_property === "object") {
+          const row = { ...defaults.properties(), org_id: p_org, name: String(p_property.name).trim().slice(0, 80), address: String(p_property.address || "").slice(0, 200), lat: p_property.lat ?? null, lon: p_property.lon ?? null, timezone: p_property.timezone || "America/Chicago", updated_by: p_by };
+          T.properties.push(row); property_id = row.id;
+        }
+        T.audit_log.push({ id: T.audit_log.length + 1, at: now(), user_id: p_by, action: "copy shop", entity: "menu", entity_id: menu.id, detail: { from: p_from, org: p_org } });
+        return { menu_id: menu.id, layouts: outL, property_id };
+      } catch (e) {
+        const b = JSON.parse(snap);
+        T.layout_images.splice(0, Infinity, ...b.i); T.menus.splice(0, Infinity, ...b.m); T.menu_revisions.splice(0, Infinity, ...b.r);
+        T.layouts.splice(0, Infinity, ...b.l); T.layout_versions.splice(0, Infinity, ...b.v); T.properties.splice(0, Infinity, ...b.p);
+        throw e;
+      }
     },
     menu_scan_count({ p_layout }, who) {
       const me = who.profile;
@@ -779,6 +856,14 @@ export function createFake() {
   async function storageApi(req, rest) {
     const who = whoFrom(req);
     if (!who?.service) return err(403, "new row violates row-level security policy");
+    if (req.method === "POST" && rest === "copy") {   // T0: a shop's pictures copied into another account
+      const { bucketId, sourceKey, destinationKey } = await req.json().catch(() => ({}));
+      const src = storage.get(`${bucketId}/${sourceKey}`);
+      if (!src) return err(404, "Object not found");
+      if (storage.has(`${bucketId}/${destinationKey}`)) return err(409, "The resource already exists");
+      storage.set(`${bucketId}/${destinationKey}`, { ...src, at: new Date().toISOString() });
+      return out({ Key: `${bucketId}/${destinationKey}` }, 200);
+    }
     if (req.method === "POST" && rest.startsWith("list/")) {   // Storage's list of a folder (E2c)
       const bucket = rest.slice(5);
       const { prefix = "", search = "", limit = 100, offset = 0 } = await req.json().catch(() => ({}));
