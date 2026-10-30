@@ -406,11 +406,31 @@ asks the company to change one). Desktop first; the phone version of the editor 
   whose text doesn't fit: E1's open item, the overflow report). Below 25 frames a second the grain is dropped on that
   screen, and the line says so.
 - **Sold out on a name that wraps** (Scot, DP-13): the mark is anchored to the name's last line. Display **2.22.0**.
-- **The Donut Joe's chalkboard** (`layouts/donut-joes-chalkboard-32.json`, then `donut-joes-chalkboard-32-lists.json`):
+- **The Donut Joe's chalkboard** (`layouts/donut-joes-chalkboard-32.json`, one file since E2e):
   32" portrait, 12 × 24, on the counter board's menu: featured pictures, **Today's specials** (its own list, room 6),
   the **chalk note** (its own, one line), Fall flavors or Take some home, Jammin' Joe's, the announcement, hours and the
-  phone-menu QR; the coffee bar by tick box. Step 1 is pasted to Add lists from this layout; step 2 is the board on
-  its lists.
+  phone-menu QR; the coffee bar by tick box.
+
+### E2e (DP-13): the layout page in tabs, one file per board, the menu editor's preview
+
+- **The layout page has four tabs** (Scot: the JSON, Add lists and List settings were confusing in one space):
+  **Design** (Layout (JSON), Check, Preview, Publish), **Menu** (which menu, a table of its lists with kind, room,
+  what's on each and whether this board shows it, List settings, Add lists from this layout, customer editing),
+  **Versions** and **Pictures**. The preview stays beside them.
+- **One file per board:** on a layout whose Menu tab has a menu, **Check** offers the blocks that still write their
+  own items, text or hours as new lists on that menu ("Make these lists", with a room each); until they're made, a
+  block of the same file may already show one of them (the chalkboard's specials beside the coffee bar), Preview draws
+  them as they will be, and Publish refuses. A block that writes its own items may say `"room": 6` and `"schedule": true`
+  (items or text): the list it becomes gets that room (never below what it holds) and dates and times; both are taken
+  off the block when it's made a list, and a block on a list can't say them.
+- **List settings** refuses a layout pasted under *Advanced: edit as JSON*: "This is a layout, not list settings.
+  Cancel, then paste it on the Design tab, in Layout (JSON)."
+- **The menu editor's preview** (Scot: a portrait board was cut off at the bottom): the board fits the window's height
+  as well as the column's width, the preview column stays in view while the lists scroll, and **Your pictures** and
+  **History** are tabs under it, each scrolling on its own. A landscape board still fills the column's width.
+- The counter board's Joe to Go Carafe links to its own page on the shop's site (Scot); on the live menu that link is
+  the customer's (menu editor → Coffee bar).
+- Display **2.22.1** (the layout format's new `room` and `schedule`, so every screen has the same format as the site).
 
 ## Screens and cards (Raspberry Pi)
 
@@ -731,6 +751,6 @@ netlify/lib/        Supabase client (and Storage), RSS reader, pictures (images.
 supabase/           database schema (01 to 35, run in order), starting data, check queries, setup guide
 migration/          the Yodeck/Wix transcription the starting data was built from
 public/pi/          setup-kiosk.sh, agent.py, startup.png (the start-up picture) and startup/ (the start-up animation), served by the site so Pis can download them
-layouts/            layouts written as data (Donut Joe's Pelham; Donut Joe's counter board, 55" landscape, and the same board on its lists, E2b; the 32" portrait chalkboard, E2d, steps 1 and 2) and the menu source; not deployed, pasted into the console
+layouts/            layouts written as data (Donut Joe's Pelham; Donut Joe's counter board, 55" landscape, and the same board on its lists, E2b; the 32" portrait chalkboard, E2d, one file since E2e) and the menu source; not deployed, pasted into the console
 tests/              function tests, fake Supabase, local test server, browser checks, the SQL runner and its Supabase stand-in
 ```

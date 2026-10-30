@@ -72,9 +72,12 @@ const FOCUS = ["center", "top", "bottom", "left", "right"];
 const ITEM = { name: ["text", 80], line: ["text", 160], price: ["text", 16], tags: ["tags"], link: ["link"] };
 const SESSION = { days: ["days"], from: ["time"], to: ["time"], name: ["text", 60], line: ["text", 120] };
 export const TYPES = {
-  text:      { kicker: ["text", 60], title: ["text", 120], body: ["text", 400], note: ["text", 120], link: ["link"], list: ["listkey"] },
-  items:     { heading: ["text", 60], price: ["text", 24], columns: ["int", 1, 3], leaders: ["bool"], items: ["list", 60, ITEM], list: ["listkey"] },
-  chips:     { heading: ["text", 60], price: ["text", 24], items: ["list", 60, { name: ["text", 80], tags: ["tags"] }], list: ["listkey"] },
+  text:      { kicker: ["text", 60], title: ["text", 120], body: ["text", 400], note: ["text", 120], link: ["link"], list: ["listkey"], schedule: ["bool"] },
+  // E2e (DP-13): "room" on a block that writes its own items: the room its list gets when Make these lists turns it
+  // into one (and the board keeps that room meanwhile); "schedule": true, its entries get dates and times. A block on
+  // a list takes both from the list
+  items:     { heading: ["text", 60], price: ["text", 24], columns: ["int", 1, 3], leaders: ["bool"], items: ["list", 60, ITEM], list: ["listkey"], room: ["int", 1, 60], schedule: ["bool"] },
+  chips:     { heading: ["text", 60], price: ["text", 24], items: ["list", 60, { name: ["text", 80], tags: ["tags"] }], list: ["listkey"], room: ["int", 1, 60] },
   price:     { label: ["text", 20], price: ["text", 16], note: ["text", 30] },
   photo:     { image: ["image"], alt: ["text", 120], caption: ["text", 80], line: ["text", 120], price: ["text", 16], fit: ["enum", ["cover", "contain"]], focus: ["enum", FOCUS], link: ["link"], list: ["listkey"] },
   logo:      { image: ["image"], text: ["text", 60], chalkImage: ["image"] },   // E2d: a light logo for the chalkboard (else the name in chalk)

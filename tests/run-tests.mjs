@@ -2084,7 +2084,7 @@ test("/api/layouts: 1Point only; check keeps the draft; publish refuses problems
   const l = { id: crypto.randomUUID(), org_id: org.id, name: "DJ test", family: "menu", orientation: "portrait", draft: {}, published_version: null, published_at: null, created_at: new Date().toISOString(), updated_at: new Date().toISOString() };
   fake.T.layouts.push(l);
   let r = await lcall({ action: "check", doc: JSON.stringify(DJ), layout_id: l.id }, admin);
-  assert.equal(r.status, 200); assert.deepEqual(await r.json(), { errors: [], warnings: [] });
+  assert.equal(r.status, 200); assert.deepEqual(await r.json(), { errors: [], warnings: [], offer: [] });
   assert.deepEqual(l.draft, DJ, "kept as the draft");
   r = await lcall({ action: "check", doc: "{ nope", layout_id: l.id }, admin);
   assert.equal(r.status, 400); assert.match((await r.json()).error, /isn't valid JSON/);
@@ -2803,7 +2803,7 @@ test("customers' pictures: admins and editors upload, rename and remove their ow
 
 // ── The chalkboard (DP-13, round E2d; supabase/35-board-looks.sql): looks, chalk colours, options ──
 const CHALK1 = JSON.parse(readFileSync(new URL("../layouts/donut-joes-chalkboard-32.json", import.meta.url), "utf8"));
-const CHALK2 = JSON.parse(readFileSync(new URL("../layouts/donut-joes-chalkboard-32-lists.json", import.meta.url), "utf8"));
+const CHALK2 = CHALK1;   // E2e: one file per board (it was two in E2d)
 test("chalkboard: looks in the layout format: House and Chalkboard, chalk colours from six (each readable on slate), lettering, frame, options by tick box", () => {
   const c1 = LF.checkLayout(CHALK1);
   assert.deepEqual(c1.errors, []); assert.deepEqual(c1.warnings, [], "step 1 clean, on the chalkboard too");
@@ -2867,15 +2867,26 @@ test("chalkboard: on the counter board's menu: Add lists (specials, chalk note),
   const menu = fake.T.menus.find((m) => m.org_id === org.id && m.spec.lists.some((l) => l.key === "hero"));
   assert.ok(menu, "the counter board's menu from the earlier test");
   const [l] = await (await svc("layouts", "POST", { org_id: org.id, name: "Chalkboard 32", family: "menu", orientation: "portrait", menu_id: menu.id })).json();
+  // E2e: one file. Check offers its own content as lists (the room and dates and times from the file), and a block
+  // showing one of them (the specials beside the coffee bar) passes meanwhile; Publish refuses until they're made
   let r = await lcall({ action: "check", layout_id: l.id, doc: CHALK1 }, admin);
-  assert.deepEqual((await r.json()).errors, []);
-  r = await lcall({ action: "make_menu", layout_id: l.id, blocks: ["specials", "note"], rooms: { specials: 6 } }, admin);
+  let chk = await r.json();
+  assert.deepEqual(chk.errors, []);
+  assert.deepEqual(chk.offer.map((o) => [o.block, o.key, o.kind, o.room]), [["specials", "specials", "items", 6], ["note", "note", "text", 1]]);
+  r = await lcall({ action: "publish", layout_id: l.id, doc: CHALK1, override: true }, admin);
+  assert.equal(r.status, 400); assert.match(JSON.stringify(await r.json()), /no list \\"specials\\"/, "not published while a block shows a list not made yet");
+  const pv = await (await lcall({ action: "preview", layout_id: l.id, doc: CHALK1, property_id: prop.id }, admin)).json();
+  assert.ok(pv.payload.lists.spec.lists.some((x) => x.key === "specials") && pv.payload.layout.doc.blocks.find((b) => b.id === "specials").content.list === "specials", "the preview draws the lists as they will be");
+  r = await lcall({ action: "make_menu", layout_id: l.id, blocks: chk.offer.map((o) => o.block) }, admin);
   const out = await r.json();
   assert.equal(r.status, 200, JSON.stringify(out)); assert.deepEqual(out.made, ["specials", "note"]);
-  assert.equal(menu.spec.lists.find((x) => x.key === "specials").room, 6); assert.equal(menu.spec.lists.find((x) => x.key === "note").kind, "text");
-  r = await lcall({ action: "check", layout_id: l.id, doc: CHALK2 }, admin);
-  assert.deepEqual((await r.json()).errors, [], "step 2 checks against the menu");
-  r = await lcall({ action: "publish", layout_id: l.id, doc: CHALK2, override: true }, admin);
+  const sp = menu.spec.lists.find((x) => x.key === "specials"), nt = menu.spec.lists.find((x) => x.key === "note");
+  assert.ok(sp.room === 6 && sp.schedule === true && nt.kind === "text" && nt.schedule === true, JSON.stringify([sp, nt]));
+  const lay0 = fake.T.layouts.find((x) => x.id === l.id);
+  assert.ok(!("room" in lay0.draft.blocks.find((b) => b.id === "specials").content), "the room went to the list");
+  chk = await (await lcall({ action: "check", layout_id: l.id, doc: lay0.draft }, admin)).json();
+  assert.deepEqual([chk.errors, chk.offer], [[], []], "nothing left to offer");
+  r = await lcall({ action: "publish", layout_id: l.id, doc: lay0.draft, override: true }, admin);
   assert.equal(r.status, 200, JSON.stringify(await r.clone().json()));
   const scr = fake.T.screens.find((x) => x.orientation === "portrait" && x.directory_id);
   const keep = { directory_id: scr.directory_id, layout_id: scr.layout_id ?? null, property_id: scr.property_id ?? null, last_report: scr.last_report };
@@ -2929,6 +2940,31 @@ test("chalkboard: the screen's files: the look drawn by the board page, the grai
   assert.match(readFileSync(new URL("../public/fonts/CaveatBrush-OFL.txt", import.meta.url), "utf8"), /SIL Open Font License/);
   const ed = readFileSync(new URL("../public/menu-edit.js", import.meta.url), "utf8");
   for (const w of ["function lookHtml(", "Back to WayTuGo's design", "data-look-f", "look: content.boards?.[board.id]"]) assert.ok(ed.includes(w), w);
+});
+
+test("E2e: one file per board: a block's own room and dates become its list's; Check's offer (a key already on the menu gets -2); the layout page's tabs and List settings' guard", async () => {
+  const { offerLists } = await import("../netlify/functions/layouts.mjs");
+  const doc = { format: 1, orientation: "portrait", grid: { cols: 12, rows: 24 }, blocks: [
+    { id: "specials", type: "items", at: { col: 1, row: 1, w: 12, h: 6 }, content: { heading: "Today", room: 6, schedule: true, items: [{ name: "A" }, { name: "B" }] } },
+    { id: "donuts", type: "items", at: { col: 1, row: 7, w: 12, h: 6 }, content: { heading: "Donuts", items: [{ name: "Glazed" }] } },
+    { id: "note", type: "text", at: { col: 1, row: 13, w: 12, h: 1 }, content: { title: "Hi", schedule: true } },
+    { id: "logo", type: "logo", at: { col: 1, row: 14, w: 12, h: 2 }, content: { text: "Shop" } }] };
+  const ex = MF.extractMenu(LF.checkLayout(doc).doc);
+  const by = Object.fromEntries(ex.spec.lists.map((l) => [l.key, l]));
+  assert.ok(by.specials.room === 6 && by.specials.schedule === true && by.note.schedule === true && !by.donuts.schedule && by.donuts.room === 2);
+  assert.ok(!("room" in ex.doc.blocks[0].content) && !("schedule" in ex.doc.blocks[0].content) && !("schedule" in ex.doc.blocks[2].content), "taken off the blocks");
+  assert.equal(MF.extractMenu(LF.checkLayout({ ...doc, blocks: [{ ...doc.blocks[0], content: { ...doc.blocks[0].content, room: 1 } }] }).doc).spec.lists[0].room, 2, "never below what it holds");
+  const off = offerLists(doc, { spec: { lists: [{ key: "donuts", kind: "items" }] } });
+  assert.deepEqual(off.offer.map((o) => [o.block, o.key]), [["specials", "specials"], ["donuts", "donuts-2"], ["note", "note"]]);
+  assert.deepEqual(off.spec.lists.map((l) => l.key), ["specials", "note"], "only keys the menu doesn't have count as lists meanwhile");
+  // a block on a list can't also say room or schedule (they're the list's)
+  const bad = { ...doc, blocks: [{ ...doc.blocks[0], content: { list: "specials", room: 6 } }] };
+  assert.match(LF.checkLayout(bad).errors.map((e) => e.msg).join(), /its room come from the menu/);
+  const html = readFileSync(new URL("../public/console.html", import.meta.url), "utf8"), js = readFileSync(new URL("../public/console-layouts.js", import.meta.url), "utf8");
+  for (const w of ['data-ltab="design"', 'data-ltab="menu"', 'data-ltab="versions"', 'data-ltab="pictures"', 'id="layout-offer"', 'id="layout-lists"']) assert.ok(html.includes(w), w);
+  for (const w of ["Make these lists", "This is a layout, not list settings.", "function listsTable("]) assert.ok(js.includes(w), w);
+  const ed = readFileSync(new URL("../public/menu-edit.js", import.meta.url), "utf8") + readFileSync(new URL("../public/menu-edit.html", import.meta.url), "utf8");
+  for (const w of ["window.innerHeight - 84 - others - 40", 'data-side="history"', 'data-side-pane="pics"']) assert.ok(ed.includes(w), w);
 });
 
 let passed = 0;

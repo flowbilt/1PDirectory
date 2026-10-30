@@ -80,6 +80,19 @@ async function menuOf(layout) {
   return m || null;
 }
 
+/** E2e: the lists a layout's own content would make on its menu (as Make lists would by default: items, chips, pictures
+ *  that take turns, text and hours, not a lone photo), each under its block's id where the menu doesn't have that key
+ *  yet. Returns { spec, content, doc, offer: [{ block, key, name, kind, room, entries }] }. */
+export function offerLists(doc, menu) {
+  let ex;
+  try { ex = extractMenu(checkLayout(doc).doc || { blocks: [] }); } catch { return null; }
+  if (!ex?.made?.length) return { spec: { lists: [] }, content: { lists: {} }, doc, offer: [] };
+  const taken = new Set((menu.spec?.lists || []).map((l) => l.key));
+  const lists = ex.spec.lists.filter((l) => !taken.has(l.key));
+  return { spec: { lists }, content: { lists: Object.fromEntries(lists.map((l) => [l.key, ex.content.lists[l.key]])) }, doc: ex.doc,
+    offer: ex.spec.lists.map((l) => ({ block: l.key, key: taken.has(l.key) ? `${l.key}-2` : l.key, name: l.name, kind: l.kind, room: l.room, entries: (ex.content.lists[l.key]?.entries || []).length })) };
+}
+
 export default async (req) => {
   try {
     if (req.method !== "POST") return json({ error: "POST only." }, 405);
@@ -91,8 +104,13 @@ export default async (req) => {
       const doc = parseDoc(body.doc);
       const layout = body.layout_id ? await loadLayout(body.layout_id) : null;
       const menu = await menuOf(layout);
+      // E2e (DP-13): one file per board. On a layout that has a menu, the blocks that still write their own items, text
+      // or hours are offered as new lists on it ("Make these lists"), and until then they count as lists already, so
+      // another block of the same file can show one (the chalkboard's specials beside the coffee bar). Publish doesn't
+      // count them: a block can't go on a screen showing a list that isn't made yet.
+      const pending = body.action !== "publish" && menu ? offerLists(doc, menu) : null;
       // E2a: with a layout, its blocks' lists are checked against its menu (no menu: a block on a list is a problem)
-      const { errors, warnings, doc: clean } = checkLayout(doc, layout ? { lists: menu ? menu.spec?.lists || [] : null } : {});
+      const { errors, warnings, doc: clean } = checkLayout(doc, layout ? { lists: menu ? [...(menu.spec?.lists || []), ...(pending?.spec.lists || [])] : null } : {});
       if (layout && clean && clean.orientation && clean.orientation !== layout.orientation)
         errors.push({ where: "orientation", msg: `This layout is ${layout.orientation}, so "orientation" must be "${layout.orientation}".` });
       const pics = layout && clean ? await picturesFor(layout.org_id, doc) : { images: {}, missing: [] };
@@ -100,7 +118,7 @@ export default async (req) => {
 
       if (body.action === "check") {
         if (layout && !errors.length) await db(`layouts?id=eq.${enc(layout.id)}`, { method: "PATCH", prefer: "return=minimal", body: { draft: doc, updated_by: user.id } });
-        return json({ errors, warnings });
+        return json({ errors, warnings, offer: errors.length ? [] : pending?.offer || [] });
       }
 
       if (body.action === "preview") {
@@ -111,8 +129,10 @@ export default async (req) => {
         }
         const payload = errors.length ? null : toLayoutPayload(
           { key: "preview", name: "Preview", orientation: clean.orientation, hide_powered_by: false, touch: false, screen_inches: clean.viewing.inches, touch_idle_s: 45 },
-          { id: layout?.id || null, name: layout?.name || "Preview", version: null, doc, menu_code: layout?.menu_code,
-            lists: menu ? { id: menu.id, spec: menu.spec, content: menu.content } : null }, prop, { ...pics.images, ...(await menuPictures(layout, menu)) });
+          // E2e: lists still to be made are drawn as they will be once made
+          { id: layout?.id || null, name: layout?.name || "Preview", version: null, doc: pending?.offer.length ? pending.doc : doc, menu_code: layout?.menu_code,
+            lists: menu ? { id: menu.id, spec: { ...menu.spec, lists: [...(menu.spec?.lists || []), ...(pending?.spec.lists || [])] },
+              content: { ...menu.content, lists: { ...(menu.content?.lists || {}), ...(pending?.content.lists || {}) } } } : null }, prop, { ...pics.images, ...(await menuPictures(layout, menu)) });
         return json({ errors, warnings, payload });
       }
 

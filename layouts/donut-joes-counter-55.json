@@ -66,7 +66,7 @@
         { "name": "Sugar-Free Vanilla Latte", "price": "$4.99" },
         { "name": "Mocha Joe Frappe", "price": "$5.25" },
         { "name": "Cold Brew", "price": "$4.29" },
-        { "name": "Joe to Go Carafe", "line": "Fresh brewed for meetings & events", "price": "$25.99", "link": "https://donutjoescoffee.com" } ] } },
+        { "name": "Joe to Go Carafe", "line": "Fresh brewed for meetings & events", "price": "$25.99", "link": "https://donutjoescoffee.com/products/joe-to-go-coffee-carafe-fresh-brewed-for-meetings-events-on-the-go-mornings" } ] } },
 
     { "id": "energy", "type": "chips", "at": { "col": 17, "row": 7, "w": 5, "h": 3 },
       "style": { "size": "m" },

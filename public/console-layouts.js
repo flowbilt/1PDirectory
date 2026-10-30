@@ -66,8 +66,68 @@
     const frame = $("layout-frame");
     frame.className = `layout-frame ${l.orientation}`;
     $("layout-iframe").src = "about:blank"; L.frameReady = false;
+    showLTab("design"); $("layout-offer").hidden = true;
     meta(); await loadVersions(); await loadPictures(); await menuLine(); menuBox();
     history.replaceState(null, "", `#layouts`);
+  }
+  // ── E2e (DP-13): the layout page's tabs: Design (the JSON, Check, Preview, Publish), Menu (its lists, List settings,
+  // customer editing), Versions, Pictures; the preview stays beside them ──
+  function showLTab(t) {
+    for (const b of document.querySelectorAll("[data-ltab]")) b.setAttribute("aria-selected", String(b.dataset.ltab === t));
+    for (const p of document.querySelectorAll("[data-lpane]")) p.hidden = p.dataset.lpane !== t;
+    if (t === "menu") listsTable();
+  }
+  document.querySelector(".ltabs").addEventListener("click", (e) => { const b = e.target.closest("[data-ltab]"); if (b) showLTab(b.dataset.ltab); });
+  /** The Menu tab's table: every list on the layout's menu, its kind, room, what's on it, and whether this board shows it */
+  async function listsTable() {
+    const box = $("layout-lists"), l = L.current;
+    if (!l?.menu_id) { box.innerHTML = ""; return; }
+    const [m] = await Auth.db(`menus?id=eq.${l.menu_id}&select=spec,content`).catch(() => []);
+    if (!m) { box.innerHTML = ""; return; }
+    let doc; try { doc = JSON.parse($("layout-json").value); } catch { doc = l.draft; }
+    const shown = new Set((doc?.blocks || []).map((b) => b.content?.list).filter(Boolean));
+    const KIND = { items: "Items", text: "Text (one entry)", hours: "Hours" };
+    box.innerHTML = `<h3 class="section-title">Lists on this menu</h3>
+      <div class="table-wrap"><table class="grid"><thead><tr><th>List (the customer sees)</th><th>Key</th><th>Kind</th><th>Room</th><th>On it now</th><th>On this board</th></tr></thead><tbody>
+      ${(m.spec?.lists || []).map((x) => `<tr><td><strong>${esc(x.name)}</strong>${x.schedule ? ` <span class="sub">· dates and times</span>` : ""}</td><td><code>${esc(x.key)}</code></td><td>${esc(KIND[x.kind] || x.kind)}</td>
+        <td>${x.room}</td><td>${(m.content?.lists?.[x.key]?.entries || []).length}</td><td>${shown.has(x.key) ? "Yes" : `<span class="sub">no</span>`}</td></tr>`).join("")}
+      </tbody></table></div>
+      <p class="hint">Names, rooms, boxes, dates and hints are changed in List settings. A list another board shows stays on the menu even when this board doesn't show it.</p>`;
+  }
+  // ── E2e: one file per board. After Check, blocks that still write their own items, text or hours are offered as
+  // lists on the layout's menu ("Make these lists"), with a room each; the JSON then points at them ──
+  function renderOffer(offer) {
+    const box = $("layout-offer"), l = L.current, m = l?.menu_id ? look().menu(l.menu_id) : null;
+    if (!offer?.length || !m) { box.hidden = true; box.innerHTML = ""; return; }
+    box.hidden = false;
+    box.innerHTML = `<p><strong>${offer.length === 1 ? "One block writes" : `${offer.length} blocks write`} ${offer.length === 1 ? "its" : "their"} own content.</strong> Make ${offer.length === 1 ? "it a list" : "them lists"} on <strong>${esc(m.name)}</strong>, so the customer edits ${offer.length === 1 ? "it" : "them"} in the menu editor:</p>
+      <ul class="make-lists">${offer.map((o) => `<li><input type="checkbox" data-of="${esc(o.block)}" checked aria-label="Make a list from ${esc(o.block)}">
+        <span><strong>${esc(o.name)}</strong> <span class="sub">${esc(o.key)} · ${esc(o.kind)} · ${o.entries} now</span></span>
+        ${o.kind === "text" ? `<span class="sub">room 1</span>` : `<label class="sub">room <input type="number" min="${Math.max(1, o.entries)}" max="${o.kind === "hours" ? 14 : 60}" value="${o.room}" data-of-room="${esc(o.block)}"></label>`}</li>`).join("")}</ul>
+      <div class="row"><button type="button" class="primary" id="offer-make">Make these lists</button>
+      <span class="hint">Then Preview and Publish. Untick a block to keep its content in the layout (only WayTuGo can change it there).</span></div>`;
+  }
+  $("layout-offer").addEventListener("click", async (e) => {
+    if (e.target.id !== "offer-make") return;
+    const blocks = [...document.querySelectorAll("[data-of]")].filter((x) => x.checked).map((x) => x.dataset.of);
+    if (!blocks.length) { toast("Tick at least one block.", true); return; }
+    const rooms = Object.fromEntries([...document.querySelectorAll("[data-of-room]")].map((x) => [x.dataset.ofRoom, Number(x.value)]));
+    e.target.disabled = true;
+    try { await makeLists({ blocks, rooms }); $("layout-check").click(); }
+    catch (ex) { toast(ex.message, true); }
+    finally { e.target.disabled = false; }
+  });
+  /** Make lists (a new menu) or add them to the layout's menu, from the saved draft; the JSON box then shows the draft
+   *  pointing at them. Shared by the Menu tab's dialog and Design's "Make these lists". */
+  async function makeLists({ blocks, rooms = {}, names = {}, name = "" }) {
+    const l = L.current, adding = !!l.menu_id;
+    const r = await Auth.api("/api/layouts", { method: "POST", body: { action: "make_menu", layout_id: l.id, blocks, rooms, names, name } });
+    await window.ConsoleRefresh();
+    const [fresh] = await Auth.db(`layouts?id=eq.${l.id}&select=*`); if (fresh) L.current = fresh;
+    $("layout-json").value = JSON.stringify(L.current.draft, null, 2);
+    menuBox(); $("layout-offer").hidden = true;
+    toast(`${adding ? "Added" : "Made"} ${r.made.length} list${r.made.length === 1 ? "" : "s"}. Preview and publish to put the board on them.`);
+    return r;
   }
   function meta() {
     const l = L.current; if (!l) return;
@@ -131,7 +191,8 @@
     try {
       const r = await Auth.api("/api/layouts", { method: "POST", body: { action: "check", layout_id: L.current.id, doc: p.doc } });
       showResults({ ...r, note: "Kept as the draft." });
-    } catch (ex) { showResults({ errors: ex.data?.errors || [{ where: "layout", msg: ex.message }] }); }
+      renderOffer(r.offer);
+    } catch (ex) { showResults({ errors: ex.data?.errors || [{ where: "layout", msg: ex.message }] }); renderOffer(null); }
   });
 
   // The preview: the real layout page in a frame, given the layout by message; it answers with the blocks that overflow
@@ -267,6 +328,7 @@
   const LISTABLE = { items: "items", chips: "items", rotator: "pictures", photo: "a picture", text: "text", hours: "hours" };
   function menuBox() {
     const l = L.current, box = $("layout-menu-box"); if (!l) return;
+    if (!document.querySelector('[data-lpane="menu"]').hidden) listsTable();
     const m = l.menu_id ? look().menu(l.menu_id) : null;
     if (!("menu_id" in l)) { box.innerHTML = `<p class="hint">Menus come with 32-menus.sql.</p>`; return; }
     if (m) {
@@ -324,12 +386,8 @@
           if (!blocks.length) throw new Error("Tick at least one block.");
           const rooms = Object.fromEntries([...document.querySelectorAll("[data-room]")].map((x) => [x.dataset.room, Number(x.value)]));
           const names = Object.fromEntries([...document.querySelectorAll("[data-name]")].map((x) => [x.dataset.name, x.value.trim()]));
-          const r = await Auth.api("/api/layouts", { method: "POST", body: { action: "make_menu", layout_id: l.id, blocks, rooms, names, name: $("mk-name")?.value.trim() || "" } });
-          await window.ConsoleRefresh();
-          const [fresh] = await Auth.db(`layouts?id=eq.${l.id}&select=*`); if (fresh) L.current = fresh;
-          $("layout-json").value = JSON.stringify(L.current.draft, null, 2);
-          menuBox();
-          toast(`${adding ? "Added" : "Made"} ${r.made.length} list${r.made.length === 1 ? "" : "s"}. Preview and publish to put the board on them.`);
+          await makeLists({ blocks, rooms, names, name: $("mk-name")?.value.trim() || "" });
+          showLTab("design");
         },
       });
     }
@@ -398,6 +456,9 @@
         const jsonBox = $("spec-json"), jsonChanged = jsonBox.value !== JSON.stringify(full.spec, null, 2);
         let next;
         if (jsonChanged) { try { next = JSON.parse(jsonBox.value); } catch (ex) { throw new Error(`The JSON under Advanced isn't valid: ${ex.message}`); } }
+        // E2e: a layout pasted here by mistake (it has blocks, a grid or an orientation; list settings have only "lists")
+        if (next && typeof next === "object" && ["blocks", "grid", "orientation", "format", "theme"].some((k) => k in next))
+          throw new Error("This is a layout, not list settings. Cancel, then paste it on the Design tab, in Layout (JSON).");
         else next = specFromForm(spec);
         const c = F.checkMenuSpec(next);
         if (c.errors.length) throw new Error(c.errors.map((x) => `${x.where}: ${x.msg}`).join(" "));

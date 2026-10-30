@@ -33,19 +33,25 @@
       <select id="board-pick" aria-label="Which board to preview"></select>
     </div>
     <div class="preview-box landscape" id="pv-box"><iframe id="pv" title="Board preview" src="about:blank"></iframe></div>
-    <button type="button" class="ghost" id="full">Preview full size</button>
-    <label class="check inline"><input type="checkbox" id="show-room"> Show the empty room</label>
+    <div class="me-pv-row"><button type="button" class="ghost" id="full">Preview full size</button>
+    <label class="check inline"><input type="checkbox" id="show-room"> Show the empty room</label></div>
     <p class="hint" id="pv-note">As the board will show it, with your changes, before you save.</p>
     <p class="hint" id="phone-line"></p>
-    <!-- E2c: the account's own pictures -->
-    <h3 class="section-title">Your pictures <span class="sub" id="pics-count"></span></h3>
+    <!-- E2e (DP-13): Your pictures and History as tabs under the preview, each scrolling on its own -->
+    <div class="me-side-tabs" role="tablist" aria-label="Pictures and history">
+      <button type="button" role="tab" id="side-pics" data-side="pics" aria-selected="true">Your pictures <span class="sub" id="pics-count"></span></button>
+      <button type="button" role="tab" id="side-history" data-side="history" aria-selected="false">History</button>
+    </div>
+    <div class="me-side-pane" data-side-pane="pics" role="tabpanel" aria-labelledby="side-pics">
     <p class="hint" id="pics-note">Pictures you add belong to your account and can be used on any of your boards. One on the boards now can't be removed.</p>
     <label class="file-btn ghost" id="pics-upload" hidden>Upload pictures<input type="file" id="pics-file" accept="image/jpeg,image/png,image/webp" multiple></label>
     <p class="hint" id="pics-progress" role="status" hidden></p>
     <ul class="my-pics" id="pics"></ul>
-    <h3 class="section-title">History</h3>
+    </div>
+    <div class="me-side-pane" data-side-pane="history" role="tabpanel" aria-labelledby="side-history" hidden>
     <p class="hint">Every save is kept. Restore puts an earlier one back on the boards (as a new save).</p>
     <ol class="menu-history" id="history"></ol>
+    </div>
   </aside>
 </div>
 <!-- E2c: choosing an item's picture -->

@@ -1,8 +1,8 @@
 {
  "format": 1,
  "orientation": "portrait",
- "name": "Donut Joe's Pelham: chalkboard, 32\" portrait (DP-13 E2d), step 1",
- "notes": "Step 1 of 2. Paste this into a new portrait layout, choose the counter board's menu (Use this menu), then Add lists from this layout: Today's specials (room 6) and the Chalk note (room 1) become lists on that menu. Then tick Dates and times on both in List settings, and paste step 2 (donut-joes-chalkboard-32-lists.json). The other blocks show the counter board's lists. Internal spec only: not for a public ad without the owner's permission.",
+ "name": "Donut Joe's Pelham: chalkboard, 32\" portrait (DP-13 E2d; one file since E2e)",
+ "notes": "Paste into Layout (JSON) on the Design tab of a portrait layout whose Menu tab uses the counter board's menu (Use this menu), then Check: it offers Today's specials (room 6, dates and times) and the Chalk note (dates and times) as new lists on that menu; Make these lists, then Preview and Publish. The other blocks show the counter board's lists. With \"Show the coffee bar\" off (the customer's tick box in the menu editor's Board look), Today's specials takes the full width; with it on, it sits beside the coffee bar. Looks: House (the counter board's colours and fonts) or Chalkboard. Internal spec only: not for a public ad without the owner's permission.",
  "grid": {
   "cols": 12,
   "rows": 24,
@@ -104,6 +104,8 @@
    "content": {
     "heading": "Today's specials",
     "leaders": true,
+    "room": 6,
+    "schedule": true,
     "items": [
      {
       "name": "Classic Apple Fritter",
@@ -127,7 +129,56 @@
      }
     ]
    },
-   "label": "Today's specials"
+   "label": "Today's specials",
+   "showWhen": {
+    "option": "coffee-bar",
+    "is": "off"
+   }
+  },
+  {
+   "id": "specials-coffee",
+   "type": "items",
+   "at": {
+    "col": 1,
+    "row": 7,
+    "w": 7,
+    "h": 8
+   },
+   "style": {
+    "size": "l"
+   },
+   "content": {
+    "heading": "Today's specials",
+    "leaders": true,
+    "list": "specials"
+   },
+   "label": "Today's specials (beside the coffee bar)",
+   "showWhen": {
+    "option": "coffee-bar",
+    "is": "on"
+   }
+  },
+  {
+   "id": "coffee",
+   "type": "items",
+   "at": {
+    "col": 8,
+    "row": 7,
+    "w": 5,
+    "h": 8
+   },
+   "style": {
+    "size": "m"
+   },
+   "content": {
+    "heading": "Coffee bar",
+    "leaders": true,
+    "list": "coffee"
+   },
+   "showWhen": {
+    "option": "coffee-bar",
+    "is": "on"
+   }
   },
   {
    "id": "note",
@@ -145,7 +196,8 @@
     "font": "accent"
    },
    "content": {
-    "title": "Made fresh every morning since 2009"
+    "title": "Made fresh every morning since 2009",
+    "schedule": true
    },
    "label": "Chalk note"
   },

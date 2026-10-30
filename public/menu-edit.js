@@ -370,12 +370,30 @@ function payload(board, content) {
     images, menu: { url: E.menuBase + board.menu_code }, lists: { id: E.menu.id, spec: E.spec, content }, look: content.boards?.[board.id] || null,
     propertyName: board.prop?.name || "", timezone: board.prop?.timezone || E.tz, weather: { enabled: false }, poweredBy: true };
 }
+// E2e (DP-13): the board fits the column's width and the window's height (a portrait board was taller than a laptop's
+// window, so its foot was cut off), leaving room under it for the buttons and the first lines of the tabs below
 function fitFrame() {
   const b = E.board; if (!b) return;
   const land = b.orientation === "landscape", cw = land ? 1920 : 1080, ch = land ? 1080 : 1920;
   const box = $("pv-box"); box.classList.toggle("landscape", land);
+  const col = box.parentElement.clientWidth, border = 20;
+  // everything else in the column (its picker, buttons, lines and the tabs' bar), measured, plus room for a few lines
+  // of the open tab; the column sits 72 px from the window's top
+  const aside = box.closest(".menu-preview");
+  const others = [...aside.children].filter((c) => c !== box && !c.matches("[data-side-pane]") && !c.hidden)
+    .reduce((h, c) => { const st = getComputedStyle(c); return h + c.getBoundingClientRect().height + (parseFloat(st.marginTop) || 0) + (parseFloat(st.marginBottom) || 0); }, 0);
+  const maxH = window.innerWidth > 1000 ? Math.max(240, window.innerHeight - 84 - others - 40) : Infinity;
+  const w = Math.min(col, ((maxH - border) * cw) / ch + border);
+  box.style.width = `${Math.floor(w)}px`;
+  box.style.height = `${Math.round(((Math.floor(w) - border) * ch) / cw + border)}px`;   // the board's own shape inside the 10 px frame
   const f = $("pv"); f.style.width = `${cw}px`; f.style.height = `${ch}px`; f.style.transform = `scale(${box.clientWidth / cw})`;
 }
+// Your pictures and History, as tabs under the preview
+document.querySelector(".me-side-tabs").addEventListener("click", (e) => {
+  const t = e.target.closest("[data-side]"); if (!t) return;
+  for (const b of document.querySelectorAll("[data-side]")) b.setAttribute("aria-selected", String(b === t));
+  for (const p of document.querySelectorAll("[data-side-pane]")) p.hidden = p.dataset.sidePane !== t.dataset.side;
+});
 async function ensureFrame() {
   if (E.frameReady) return;
   await new Promise((res) => { E.waiters.push(res); $("pv").src = "/board.html?preview=1"; setTimeout(res, 8000); });

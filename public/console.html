@@ -167,6 +167,14 @@
       <p class="hint layout-menu" id="layout-menu" hidden></p>
       <div class="layout-work">
         <div class="layout-edit">
+          <!-- E2e (DP-13; Scot: the layout JSON, Add lists and List settings were confusing in one space): four tabs -->
+          <div class="ltabs" role="tablist" aria-label="This layout">
+            <button type="button" role="tab" id="ltab-design" data-ltab="design" aria-selected="true">Design</button>
+            <button type="button" role="tab" id="ltab-menu" data-ltab="menu" aria-selected="false">Menu</button>
+            <button type="button" role="tab" id="ltab-versions" data-ltab="versions" aria-selected="false">Versions</button>
+            <button type="button" role="tab" id="ltab-pictures" data-ltab="pictures" aria-selected="false">Pictures</button>
+          </div>
+          <div class="lpane" data-lpane="design" role="tabpanel" aria-labelledby="ltab-design">
           <label for="layout-json" class="layout-label">Layout (JSON)</label>
           <textarea id="layout-json" class="layout-json" spellcheck="false" autocomplete="off" aria-describedby="layout-help"></textarea>
           <p class="hint" id="layout-help">The layout as data: grid, theme and blocks (see the README, Layouts). Check keeps it as the draft; nothing reaches a screen until Publish.</p>
@@ -178,12 +186,19 @@
             <button type="button" id="layout-publish" class="primary">Publish</button>
           </div>
           <div id="layout-results" class="layout-results" aria-live="polite"></div>
+          <!-- E2e: blocks that still write their own content, offered as lists on the layout's menu (one file per board) -->
+          <div id="layout-offer" class="layout-offer" hidden></div>
+          </div>
           <!-- E2a: the layout's menu: the lists its blocks show ({"list": "donuts"}), which the customer edits -->
-          <h3 class="section-title">Menu</h3>
+          <div class="lpane" data-lpane="menu" role="tabpanel" aria-labelledby="ltab-menu" hidden>
           <div id="layout-menu-box" class="layout-menu-box"></div>
-          <h3 class="section-title">Versions</h3>
+          <div id="layout-lists" class="layout-lists"></div>
+          </div>
+          <div class="lpane" data-lpane="versions" role="tabpanel" aria-labelledby="ltab-versions" hidden>
           <div class="table-wrap"><table class="grid"><thead><tr><th>Version</th><th>Published</th><th>Checks</th><th>Note</th><th><span class="sr-only">Actions</span></th></tr></thead><tbody id="layout-versions"></tbody></table></div>
+          </div>
           <!-- E1b: the account's pictures. A layout uses one by its key: "image": "img:maple-bacon" -->
+          <div class="lpane" data-lpane="pictures" role="tabpanel" aria-labelledby="ltab-pictures" hidden>
           <div class="pics-head">
             <h3 class="section-title">Pictures <span class="sub" id="pics-account"></span></h3>
             <label class="primary pics-upload">Upload pictures<input type="file" id="pics-file" accept="image/jpeg,image/png,image/webp" multiple hidden></label>
@@ -191,6 +206,7 @@
           <p class="hint">Shared by all of this account's layouts. Each picture is shrunk here before upload (longest side 1,920 pixels). Its key comes from its name and never changes: a layout says <code>"image": "img:&lt;key&gt;"</code>. A picture used by any draft or kept version can't be removed, so Roll back always works.</p>
           <p id="pics-progress" class="hint" hidden></p>
           <div id="pics-grid" class="pics-grid"></div>
+          </div>
         </div>
         <div class="layout-preview-col">
           <div id="layout-frame" class="layout-frame"><iframe id="layout-iframe" title="Layout preview" src="about:blank"></iframe></div>

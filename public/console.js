@@ -45,7 +45,7 @@
   const status = (s) => (!s.last_seen ? "never" : (Date.now() - Date.parse(s.last_seen)) / 60000 <= ONLINE_MIN ? "online" : "offline");
 
   // ── Tabs ──
-  document.querySelectorAll("[role=tab]").forEach((b) => b.addEventListener("click", () => showTab(b.dataset.tab)));
+  document.querySelectorAll(".tabs [role=tab]").forEach((b) => b.addEventListener("click", () => showTab(b.dataset.tab)));
   // Back/forward buttons and links to #people etc. switch tabs too
   window.addEventListener("hashchange", () => {
     const t = location.hash.slice(1);
@@ -53,7 +53,7 @@
     if (btn && !btn.hidden) showTab(t);
   });
   function showTab(name) {
-    document.querySelectorAll("[role=tab]").forEach((b) => b.setAttribute("aria-selected", String(b.dataset.tab === name)));
+    document.querySelectorAll(".tabs [role=tab]").forEach((b) => b.setAttribute("aria-selected", String(b.dataset.tab === name)));
     document.querySelectorAll(".tabpanel").forEach((p) => (p.hidden = p.id !== `panel-${name}`));
     if (location.hash.slice(1) !== name) history.replaceState(null, "", `#${name}`);
     if (name === "people") renderPeople();

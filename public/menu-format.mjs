@@ -37,8 +37,8 @@ export const ITEM_TAGS = { new: "New", seasonal: "Seasonal", limited: "Limited",
 /** Which list kinds each block type can show. */
 export const BINDS = { items: "items", chips: "items", rotator: "items", photo: "items", text: "text", hours: "hours" };
 /** The content a block takes from its list (so the layout can't say these too). */
-export const PROVIDES = { items: ["items", "price"], chips: ["items", "price"], rotator: ["items"], photo: ["image", "caption", "line", "price", "link", "alt"],
-  text: ["title", "body", "link"], hours: ["hours", "note"] };
+export const PROVIDES = { items: ["items", "price", "room", "schedule"], chips: ["items", "price", "room"], rotator: ["items"], photo: ["image", "caption", "line", "price", "link", "alt"],
+  text: ["title", "body", "link", "schedule"], hours: ["hours", "note"] };
 export const MAX_LISTS = 20, GROUP_PRICE_MAX = 24, NOTE_MAX = 80, MAX_BYTES = 256 * 1024;
 /** E2d: a board's look choices (the same names as layout-format.mjs's LOOKS, CHALK and LETTERING) */
 export const BOARD_LOOKS = ["house", "chalkboard"], BOARD_CHALK = ["white", "yellow", "pink", "blue", "green", "orange"], BOARD_LETTERING = ["sign", "hand"];
@@ -423,7 +423,9 @@ export function extractMenu(doc, ids) {
       const fields = ["name", ...["line", "price", "image", "tags", "link"].filter((f) => used(f) || (pics && (f === "image" || f === "line" || f === "price")))];
       const caps = {};
       for (const f of fields.filter((x) => FIELD_MAX[x])) caps[f] = capFor(entries.map((e) => e[f]), f, MINCAP[f]);
-      L = { key, name: nameOf(b), kind: "items", room: roomFor(entries.length, KINDS.items.maxRoom), fields, caps, groupPrice: !!c.price, note: false, hint: "" };
+      // E2e: a block's own "room" (one file per board says the room it wants), never below what it holds
+      const room = Number.isInteger(c.room) ? Math.min(KINDS.items.maxRoom, Math.max(entries.length, c.room)) : roomFor(entries.length, KINDS.items.maxRoom);
+      L = { key, name: nameOf(b), kind: "items", room, fields, caps, groupPrice: !!c.price, note: false, hint: "", ...(c.schedule === true && b.type === "items" ? { schedule: true } : {}) };
       content.lists[key] = { ...(c.price ? { price: c.price } : {}), entries };
       for (const k of PROVIDES[b.type]) delete c[k];
     } else if (b.type === "photo") {
@@ -437,7 +439,7 @@ export function extractMenu(doc, ids) {
       entries = [{ id: newEntryId(), ...Object.fromEntries(fields.map((f) => [f, c[f]])) }];
       const caps = {};
       for (const f of fields.filter((x) => FIELD_MAX[x])) caps[f] = capFor([c[f]], f, MINCAP[f]);
-      L = { key, name: nameOf(b), kind: "text", room: 1, fields, caps, groupPrice: false, note: false, hint: "" };
+      L = { key, name: nameOf(b), kind: "text", room: 1, fields, caps, groupPrice: false, note: false, hint: "", ...(c.schedule === true ? { schedule: true } : {}) };
       content.lists[key] = { entries };
       for (const k of PROVIDES.text) delete c[k];
     } else if (b.type === "hours") {

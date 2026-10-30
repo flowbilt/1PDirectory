@@ -12,7 +12,7 @@
 import { applyMenu, menuMoment } from "/menu-format.mjs";
 import { checkLayout, applyLook, canvas, blockBox, blockShows, zonedNow, hoursNow, nowNext, niceTime, niceDays, FONTS, SIZES, SURFACES, STYLE_PX, TAGS, QR_LINE, qrSide } from "/layout-format.mjs";
 
-const VERSION = "2.22.0";   // = netlify/lib/version.mjs and display.js (a test keeps them equal)
+const VERSION = "2.22.1";   // = netlify/lib/version.mjs and display.js (a test keeps them equal)
 const C = window.ScreenCore;
 const { PREVIEW, CHECKS_IN, MENU, cache, esc } = C;
 const $ = (id) => document.getElementById(id);

@@ -18,7 +18,7 @@ const PORT = 8931, OLD_PORT = 8932, B = `http://localhost:${PORT}`;
 const compareDir = process.argv.includes("--compare") ? process.argv[process.argv.indexOf("--compare") + 1] : null;
 const DOC = JSON.parse(readFileSync(new URL("../layouts/donut-joes-pelham.json", import.meta.url), "utf8"));
 const CHALK1 = JSON.parse(readFileSync(new URL("../layouts/donut-joes-chalkboard-32.json", import.meta.url), "utf8"));
-const CHALK2 = JSON.parse(readFileSync(new URL("../layouts/donut-joes-chalkboard-32-lists.json", import.meta.url), "utf8"));
+const CHALK2 = CHALK1;   // E2e: one file per board
 
 let pass = 0, total = 0;
 // SHOTS=<folder>: also save screenshots of the menu editor and the board (for looking at, not checked)
@@ -27,7 +27,7 @@ const shot = async (page, name) => { if (SHOTS) await page.screenshot({ path: jo
 async function check(name, fn) {
   total++;
   try { await fn(); pass++; console.log(`  ok  ${name}`); }
-  catch (e) { console.log(`  FAIL ${name}\n       ${String(e.message || e).split("\n").slice(0, 4).join("\n       ")}`); }
+  catch (e) { console.log(`  FAIL ${name}\n       ${String(e.message || e).split("\n").slice(0, process.env.FULL ? 14 : 4).join("\n       ")}`); }
 }
 const assert = (c, msg) => { if (!c) throw new Error(msg || "assertion failed"); };
 const near = (a, b, tol, msg) => assert(Math.abs(a - b) <= tol, `${msg}: ${a} vs ${b}`);
@@ -42,6 +42,12 @@ async function waitUp(base) { for (let i = 0; i < 50; i++) { try { if ((await fe
 const SVC = { apikey: "test-service-key", "Content-Type": "application/json", Prefer: "return=representation" };
 const sb = async (path, opts = {}) => { const r = await fetch(`${B}/sb/rest/v1/${path}`, { headers: SVC, ...opts }); const t = await r.text(); return { status: r.status, data: t ? JSON.parse(t) : null }; };
 
+// E2e: the layout page's tabs (Design, Menu, Versions, Pictures)
+const ltab = async (page, t) => { await page.click(`[data-ltab="${t}"]`); await page.waitForTimeout(250); };
+// E2e: the menu editor's tabs under the preview (Your pictures, History)
+const side = async (page, t) => { const b = page.locator(`[data-side="${t}"]`); if (await b.isVisible().catch(() => false) && (await b.getAttribute("aria-selected")) !== "true") { await b.click(); await page.waitForTimeout(250); } };
+// Design's controls: back on the Design tab first if the layout page is open on another
+const design = async (page) => { const t = page.locator('[data-ltab="design"]'); if (await t.isVisible().catch(() => false) && (await t.getAttribute("aria-selected")) !== "true") await ltab(page, "design"); };
 async function signIn(page, email, password) {
   await page.goto(`${B}/login.html`);
   await page.fill("#email", email); await page.fill("#password", password);
@@ -291,11 +297,11 @@ try {
     await admin.fill("#l-name", "Browser check layout"); await admin.selectOption("#l-orient", "portrait");
     await admin.click("#dlg-ok"); await admin.waitForTimeout(1200);
     assert(await admin.isVisible("#layout-detail") && (await admin.textContent("#layout-title")) === "Browser check layout", "opened");
-    await admin.fill("#layout-json", "{ not json");
-    await admin.click("#layout-check"); await admin.waitForTimeout(400);
+    await design(admin); await admin.fill("#layout-json", "{ not json");
+    await design(admin); await admin.click("#layout-check"); await admin.waitForTimeout(400);
     assert((await admin.textContent("#layout-results")).includes("That isn't valid JSON"), "bad JSON");
-    await admin.fill("#layout-json", JSON.stringify({ format: 1, orientation: "portrait", grid: { cols: 12, rows: 24 }, blocks: [{ id: "a", type: "banner", at: { col: 1, row: 1, w: 13, h: 1 } }] }));
-    await admin.click("#layout-check"); await admin.waitForTimeout(600);
+    await design(admin); await admin.fill("#layout-json", JSON.stringify({ format: 1, orientation: "portrait", grid: { cols: 12, rows: 24 }, blocks: [{ id: "a", type: "banner", at: { col: 1, row: 1, w: 13, h: 1 } }] }));
+    await design(admin); await admin.click("#layout-check"); await admin.waitForTimeout(600);
     const t = await admin.textContent("#layout-results");
     assert(t.includes("problem") && t.includes('"type" must be one of'), t);
   });
@@ -303,24 +309,24 @@ try {
   await check("Layouts tab: preview draws it, the overflow guardrail warns, Publish asks, Publish anyway publishes", async () => {
     const doc = JSON.parse(JSON.stringify(DOC));
     doc.blocks.find((b) => b.id === "more").content.items.push(...Array.from({ length: 14 }, (_, i) => ({ name: `Extra item ${i + 1}`, price: "$1.00" })));
-    await admin.fill("#layout-json", JSON.stringify(doc, null, 2));
-    await admin.click("#layout-preview"); await admin.waitForTimeout(4500);
+    await design(admin); await admin.fill("#layout-json", JSON.stringify(doc, null, 2));
+    await design(admin); await admin.click("#layout-preview"); await admin.waitForTimeout(4500);
     const frame = admin.frameLocator("#layout-iframe");
     assert(await frame.locator(".b").count() > 0, "the preview drew blocks");
     assert((await admin.textContent("#layout-results")).includes(`block "more"`), "overflow warned");
-    await admin.click("#layout-publish"); await admin.waitForTimeout(1500);
+    await design(admin); await admin.click("#layout-publish"); await admin.waitForTimeout(1500);
     assert(await admin.isVisible("#layout-anyway"), "Publish anyway offered");
     await admin.click("#layout-anyway"); await admin.waitForTimeout(1500);
     assert((await admin.textContent("#layout-versions")).includes("published anyway"), await admin.textContent("#layout-versions"));
   });
 
   await check("Layouts tab: a clean change publishes as the next version; Roll back brings an old one back as a new version", async () => {
-    await admin.fill("#layout-json", JSON.stringify(DOC, null, 2));
+    await design(admin); await admin.fill("#layout-json", JSON.stringify(DOC, null, 2));
     await admin.fill("#layout-note", "clean");
-    await admin.click("#layout-publish"); await admin.waitForTimeout(5000);
+    await design(admin); await admin.click("#layout-publish"); await admin.waitForTimeout(5000);
     const v = await admin.textContent("#layout-versions");
     assert(/2\s*· live/.test(v) && v.includes("clean"), v);
-    await admin.click('[data-rollback="1"]'); await admin.waitForTimeout(1500);
+    await ltab(admin, "versions"); await admin.click('[data-rollback="1"]'); await admin.waitForTimeout(1500); await ltab(admin, "design");
     assert(/3\s*· live/.test(await admin.textContent("#layout-versions")) && (await admin.textContent("#layout-versions")).includes("Rolled back to version 1"), await admin.textContent("#layout-versions"));
   });
 
@@ -329,6 +335,7 @@ try {
   copyFileSync(new URL("./fixtures/picture.png", import.meta.url), join(picDir, "maple-bacon.png"));
   copyFileSync(new URL("./fixtures/picture.jpg", import.meta.url), join(picDir, "Shop Front.jpg"));
   await check("Pictures: uploading through the console shrinks to WebP, gives each a key from its file name, and shows it", async () => {
+    await ltab(admin, "pictures");
     await admin.setInputFiles("#pics-file", [join(picDir, "maple-bacon.png"), join(picDir, "Shop Front.jpg")]);
     await admin.waitForFunction(() => /2 uploaded/.test(document.getElementById("pics-progress").textContent), null, { timeout: 15000 });
     const t = await admin.textContent("#pics-progress");
@@ -349,8 +356,8 @@ try {
         { image: "img:maple-bacon", caption: "Maple Bacon", price: "$1.89" }, { image: "img:shop-front", caption: "Come see us" }] } },
       { id: "over", type: "text", at: { col: 2, row: 2, w: 6, h: 3 }, layer: 1, style: { size: "xl" }, content: { title: "On the photo" } },
       { id: "logo", type: "logo", at: { col: 1, row: 12, w: 6, h: 3 }, content: { image: "img:shop-front", text: "Shop" } }] };
-    await admin.fill("#layout-json", JSON.stringify(doc, null, 2));
-    await admin.click("#layout-preview"); await admin.waitForTimeout(4000);
+    await design(admin); await admin.fill("#layout-json", JSON.stringify(doc, null, 2));
+    await design(admin); await admin.click("#layout-preview"); await admin.waitForTimeout(4000);
     assert((await admin.textContent("#layout-results")).includes("sits straight on the picture"), await admin.textContent("#layout-results"));
     const frame = admin.frameLocator("#layout-iframe");
     const first = await frame.locator('[data-id="hero"] .rot-slide.on').getAttribute("data-slide");
@@ -363,21 +370,21 @@ try {
   });
 
   await check("Pictures: a missing one is a problem; one the draft uses can't be removed; an unused one can", async () => {
-    await admin.fill("#layout-json", JSON.stringify({ format: 1, orientation: "portrait", grid: { cols: 12, rows: 24 }, blocks: [
+    await design(admin); await admin.fill("#layout-json", JSON.stringify({ format: 1, orientation: "portrait", grid: { cols: 12, rows: 24 }, blocks: [
       { id: "p", type: "photo", at: { col: 1, row: 1, w: 12, h: 8 }, content: { image: "img:maple-bacon" } }] }));
-    await admin.click("#layout-check"); await admin.waitForTimeout(800);   // clean, so kept as the draft
-    await admin.fill("#layout-json", JSON.stringify({ format: 1, orientation: "portrait", grid: { cols: 12, rows: 24 }, blocks: [
+    await design(admin); await admin.click("#layout-check"); await admin.waitForTimeout(800);   // clean, so kept as the draft
+    await design(admin); await admin.fill("#layout-json", JSON.stringify({ format: 1, orientation: "portrait", grid: { cols: 12, rows: 24 }, blocks: [
       { id: "p", type: "photo", at: { col: 1, row: 1, w: 12, h: 8 }, content: { image: "img:maple-bacon" } },
       { id: "q", type: "photo", at: { col: 1, row: 9, w: 12, h: 8 }, content: { image: "img:not-here" } }] }));
-    await admin.click("#layout-check"); await admin.waitForTimeout(800);
+    await design(admin); await admin.click("#layout-check"); await admin.waitForTimeout(800);
     assert((await admin.textContent("#layout-results")).includes(`There's no picture "not-here"`), await admin.textContent("#layout-results"));
     const ids = Object.fromEntries((await sb("layout_images?select=id,key")).data.map((r) => [r.key, r.id]));
-    await admin.click(`[data-pic-delete="${ids["maple-bacon"]}"]`); await admin.waitForTimeout(1000);
+    await ltab(admin, "pictures"); await admin.click(`[data-pic-delete="${ids["maple-bacon"]}"]`); await admin.waitForTimeout(1000);
     assert((await sb("layout_images?select=id")).data.length === 2, "the one in the draft stays");
     await admin.click(`[data-pic-delete="${ids["shop-front"]}"]`); await admin.waitForTimeout(1000);
     const left = (await sb("layout_images?select=key")).data.map((r) => r.key);
     assert(left.length === 1 && left[0] === "maple-bacon", JSON.stringify(left));
-    await admin.fill("#layout-json", JSON.stringify(DOC, null, 2)); await admin.click("#layout-check"); await admin.waitForTimeout(600);
+    await design(admin); await admin.fill("#layout-json", JSON.stringify(DOC, null, 2)); await design(admin); await admin.click("#layout-check"); await admin.waitForTimeout(600);
   });
 
   // ── Take this menu with you (E1c) ──
@@ -389,11 +396,11 @@ try {
       { id: "code", type: "qr", at: { col: 4, row: 15, w: 6, h: 7 }, style: { align: "center" }, content: {} }] };
   let menuCode = "";
   await check("Take this menu with you: the QR block draws the layout's own code; the console shows its address once published", async () => {
-    await admin.fill("#layout-json", JSON.stringify(MENU_DOC, null, 2));
-    await admin.click("#layout-preview"); await admin.waitForTimeout(4000);
+    await design(admin); await admin.fill("#layout-json", JSON.stringify(MENU_DOC, null, 2));
+    await design(admin); await admin.click("#layout-preview"); await admin.waitForTimeout(4000);
     const frame = admin.frameLocator("#layout-iframe");
     assert(await frame.locator('[data-id="code"] .qr-code svg').count() === 1, "the preview draws the QR code");
-    await admin.click("#layout-publish"); await admin.waitForTimeout(1500);
+    await design(admin); await admin.click("#layout-publish"); await admin.waitForTimeout(1500);
     if (await admin.isVisible("#layout-anyway")) { await admin.click("#layout-anyway"); await admin.waitForTimeout(1500); }
     menuCode = (await sb(`layouts?name=eq.Browser%20check%20layout&select=menu_code`)).data[0].menu_code;
     await admin.waitForFunction((c) => document.getElementById("layout-menu").textContent.includes(`waytugo.com/m/${c}`), menuCode, { timeout: 8000 });
@@ -425,7 +432,7 @@ try {
     await admin.click("#layout-back"); await admin.waitForTimeout(300);
     await admin.click(`[data-open-layout="${(await sb("layouts?name=eq.Browser%20check%20layout&select=id")).data[0].id}"]`); await admin.waitForTimeout(1500);
     assert(/opened 1 time in the last 30 days \(1 in all\)/.test(await admin.textContent("#layout-menu")), await admin.textContent("#layout-menu"));
-    await admin.fill("#layout-json", JSON.stringify(DOC, null, 2)); await admin.click("#layout-check"); await admin.waitForTimeout(600);
+    await design(admin); await admin.fill("#layout-json", JSON.stringify(DOC, null, 2)); await design(admin); await admin.click("#layout-check"); await admin.waitForTimeout(600);
   });
 
   await check("Layouts tab: a layout a screen shows can't be removed, in plain words", async () => {
@@ -483,10 +490,10 @@ try {
   await check("Make lists from this layout (1Point): each list proposed with its room; the blocks point at the new menu's lists", async () => {
     await boss.click('[data-tab="layouts"]'); await boss.waitForTimeout(300);
     await boss.click(`[data-open-layout="${counter.id}"]`); await boss.waitForTimeout(900);
-    await boss.fill("#layout-json", JSON.stringify(COUNTER, null, 2));
-    await boss.click("#layout-check"); await boss.waitForTimeout(800);
+    await design(boss); await boss.fill("#layout-json", JSON.stringify(COUNTER, null, 2));
+    await design(boss); await boss.click("#layout-check"); await boss.waitForTimeout(800);
     assert(/No problems|warning/.test(await boss.textContent("#layout-results")), await boss.textContent("#layout-results"));
-    await boss.click("#menu-make"); await boss.waitForTimeout(500);
+    await ltab(boss, "menu"); await boss.click("#menu-make"); await boss.waitForTimeout(500);
     const offered = await boss.$$eval("[data-mk]", (xs) => xs.map((x) => [x.dataset.mk, x.checked]));
     assert(offered.find(([k]) => k === "donuts")?.[1] && offered.find(([k]) => k === "fall-pic") && !offered.find(([k]) => k === "fall-pic")[1], `offered ${JSON.stringify(offered)}`);
     for (const [k, n] of Object.entries(ROOMS)) await boss.fill(`[data-room="${k}"]`, String(n));
@@ -506,11 +513,11 @@ try {
   });
 
   await check("Layouts tab: preview and publish the board on its lists; the screen draws them", async () => {
-    await boss.click("#layout-preview"); await boss.waitForTimeout(2500);
+    await design(boss); await boss.click("#layout-preview"); await boss.waitForTimeout(2500);
     const n = await boss.frameLocator("#layout-iframe").locator('[data-id="donuts"] .item:not(.ghost)').count();
     assert(n === 12, `${n} donuts in the preview`);
     assert(await boss.frameLocator("#layout-iframe").locator('[data-id="donuts"] .item.ghost').count() === 4, "the room kept as 4 empty rows");
-    await boss.click("#layout-publish"); await boss.waitForTimeout(1500);
+    await design(boss); await boss.click("#layout-publish"); await boss.waitForTimeout(1500);
     if (await boss.isVisible("#layout-anyway")) { await boss.click("#layout-anyway"); await boss.waitForTimeout(1500); }
     const [l] = (await sb(`layouts?id=eq.${counter.id}&select=published_version`)).data;
     assert(l.published_version === 1, JSON.stringify(l));
@@ -634,7 +641,7 @@ try {
   await check("History: Restore brings an earlier save back as a new save; two people at once: the later save is refused, saying who", async () => {
     await boss.reload(); await boss.waitForTimeout(3000);
     const revs = (await sb(`menu_revisions?menu_id=eq.${menuId}&select=rev&order=rev.desc`)).data.map((r) => r.rev);
-    await boss.click(`[data-restore="${revs[1]}"]`); await boss.waitForTimeout(2500);
+    await side(boss, "history"); await boss.click(`[data-restore="${revs[1]}"]`); await boss.waitForTimeout(2500);
     const top = (await sb(`menu_revisions?menu_id=eq.${menuId}&select=rev,restored_from&order=rev.desc&limit=1`)).data[0];
     assert(top.restored_from === revs[1] && !(await listOf("pastries")).entries[0].name.startsWith("An extremely"), JSON.stringify(top));
     // the owner's page is from before that restore
@@ -674,7 +681,7 @@ try {
   await check("List settings (1Point): room changed for a list; below what's in it is refused in plain words; a stranger sees no menu", async () => {
     await boss.goto(`${B}/console.html#layouts`); await boss.waitForTimeout(1500);
     await boss.click(`[data-open-layout="${counter.id}"]`); await boss.waitForTimeout(900);
-    await boss.click("#menu-spec"); await boss.waitForTimeout(800);   // since after E2b: a form, one card per list
+    await ltab(boss, "menu"); await boss.click("#menu-spec"); await boss.waitForTimeout(800);   // since after E2b: a form, one card per list
     const room = boss.locator('.ls-card[data-ls-key="coffee"] [data-ls="room"]');
     await room.fill("3");
     await boss.click("#dlg-ok"); await boss.waitForTimeout(800);
@@ -686,7 +693,7 @@ try {
     assert((await other.json()).length === 0, "signed out: nothing");
   });
   await check("List settings form: boxes ticked with their most characters, dates and times switched on, a hint; a box in use can't go; JSON only under Advanced", async () => {
-    await boss.click("#menu-spec"); await boss.waitForTimeout(800);
+    await ltab(boss, "menu"); await boss.click("#menu-spec"); await boss.waitForTimeout(800);
     assert(await boss.locator("#dlg.wide .ls-card").count() >= 8, "a card per list, in a wide dialog");
     await shot(boss, "list-settings-form");
     assert(!(await boss.isVisible("#spec-json")), "the JSON is behind Advanced");
@@ -845,6 +852,7 @@ try {
   copyFileSync(new URL("./fixtures/picture.webp", import.meta.url), join(picDir, "Apple Cider.webp"));
   const picRows = async () => (await sb(`layout_images?org_id=eq.${home.org_id}&select=id,key,name,path`)).data;
   await check("E2c: Your pictures: the owner uploads (shrunk to WebP), N of 100, each says whether it's on the boards", async () => {
+    await side(owner, "pics");
     await owner.goto(`${B}/menu-edit.html?m=${menuId}&fresh=${Date.now()}`); await owner.waitForTimeout(3000);
     const n0 = (await picRows()).length;
     assert((await owner.textContent("#pics-count")).includes(`${n0} of 100`), await owner.textContent("#pics-count"));
@@ -862,6 +870,7 @@ try {
     await shot(owner, "menu-editor-pictures");
   });
   await check("E2c: the picker: thumbnails, find by name, choose; Save puts it on the board; Rename keeps what the menu says", async () => {
+    await side(owner, "pics");
     const hero = owner.locator('.me-list[data-key="hero"]');
     await hero.locator('.me-row[data-i="0"] [data-pick]').click();
     assert(await owner.isVisible("#pic-dialog"), "the picker opens");
@@ -882,6 +891,7 @@ try {
     assert((await owner.locator(`.my-pic[data-id="${ps.id}"]`).textContent()).includes("On the boards now"), "still on the boards");
   });
   await check("E2c: Upload a new picture from the picker chooses it; removing one checks it's gone from storage; one on the boards can't go", async () => {
+    await side(owner, "pics");
     const hero = owner.locator('.me-list[data-key="hero"]');
     await hero.locator('.me-row[data-i="0"] [data-pick]').click();
     await owner.setInputFiles("#pic-dlg-file", join(picDir, "Apple Cider.webp"));
@@ -901,6 +911,7 @@ try {
     assert(/is on the boards now/.test(err), err);
   });
   await check("E2c: a picture only an old save used can go; Restoring that save brings the item back without it, and says so", async () => {
+    await side(owner, "pics");
     const ps = (await picRows()).find((r) => r.key === "pumpkin-spice");
     await owner.reload(); await owner.waitForTimeout(3000);
     const card = owner.locator(`.my-pic[data-id="${ps.id}"]`);
@@ -909,7 +920,7 @@ try {
     assert(!(await picRows()).some((r) => r.id === ps.id) && (await fetch(`${B}/img/${ps.path}`)).status === 404, "removed");
     const revs = (await sb(`menu_revisions?menu_id=eq.${menuId}&select=rev,content&order=rev.desc`)).data;
     const old = revs.find((r) => r.content.lists.hero?.entries[0]?.image === "img:pumpkin-spice");
-    await owner.click(`[data-restore="${old.rev}"]`); await owner.waitForTimeout(2500);
+    await side(owner, "history"); await owner.click(`[data-restore="${old.rev}"]`); await owner.waitForTimeout(2500);
     assert(/came back without a picture, because its picture was removed since/.test(await owner.textContent(".toast")), await owner.textContent(".toast"));
     const e0 = (await theMenu()).content.lists.hero.entries[0];
     assert(!e0.image, JSON.stringify(e0));
@@ -919,6 +930,7 @@ try {
     await owner.click('#pic-choices [data-choose="apple-cider"]'); await owner.click("#save"); await owner.waitForTimeout(4000);
   });
   await check("E2c: Accounts (1Point): room for pictures, and Check storage compares the account's files with its pictures", async () => {
+    await side(owner, "pics");
     await boss.goto(`${B}/console.html?fresh=${Date.now()}#accounts`); await boss.waitForTimeout(1500);
     await boss.click(`[data-edit-org="${home.org_id}"]`); await boss.waitForTimeout(500);
     assert(await boss.inputValue("#a-pics") === "100", "room shown");
@@ -933,10 +945,11 @@ try {
     const [chalk] = (await sb("layouts", { method: "POST", body: JSON.stringify({ org_id: home.org_id, name: "Chalkboard check", family: "menu", orientation: "portrait" }) })).data;
     await boss.goto(`${B}/console.html?fresh=${Date.now()}#layouts`); await boss.waitForTimeout(1500);   // a new address, so the page reloads
     await boss.click(`[data-open-layout="${chalk.id}"]`); await boss.waitForTimeout(900);
-    await boss.selectOption("#menu-pick", menuId); await boss.click("#menu-use"); await boss.waitForTimeout(1200);
-    await boss.fill("#layout-json", JSON.stringify({ format: 1, orientation: "portrait", grid: { cols: 12, rows: 24 }, blocks: [
+    await ltab(boss, "menu"); await boss.selectOption("#menu-pick", menuId); await boss.click("#menu-use"); await boss.waitForTimeout(1200);
+    await ltab(boss, "design");
+    await design(boss); await boss.fill("#layout-json", JSON.stringify({ format: 1, orientation: "portrait", grid: { cols: 12, rows: 24 }, blocks: [
       { id: "donuts", type: "items", at: { col: 1, row: 1, w: 12, h: 8 }, content: { heading: "Today", items: [{ name: "Glazed" }, { name: "Maple" }] } }] }));
-    await boss.click("#menu-make"); await boss.waitForTimeout(1200);
+    await ltab(boss, "menu"); await boss.click("#menu-make"); await boss.waitForTimeout(1200);
     assert((await boss.textContent("#dlg-title")).startsWith("Add lists to"), await boss.textContent("#dlg-title"));
     await boss.click("#dlg-ok"); await boss.waitForTimeout(1500);
     const m = await theMenu();
@@ -950,27 +963,42 @@ try {
   const CH = { white: "#f3f1e8", yellow: "#f6dd6b", pink: "#f4a7c1", blue: "#9fd3f0", green: "#a9df9c", orange: "#f6b46a" };
   const boardPage = async (extra = "&view=1") => { const p = await browser.newPage({ viewport: { width: 540, height: 960 } }); await p.goto(`${B}/board.html?screen=${portrait.key}${extra}`); await p.waitForTimeout(3000); return p; };
 
-  await check("E2d: the chalkboard in the console: Use this menu, Add lists (Today's specials room 6, the chalk note), step 2 checks clean on the menu, published", async () => {
+  await check("E2d/E2e: the chalkboard in the console: Menu tab, Use this menu; Design tab, one file, Check offers Today's specials (room 6, dates) and the chalk note; Make these lists; clean; published", async () => {
     await boss.goto(`${B}/console.html?fresh=${Date.now()}#layouts`); await boss.waitForTimeout(1500);
     await boss.click(`[data-open-layout="${chalkLay.id}"]`); await boss.waitForTimeout(900);
+    assert(await boss.locator("#layout-json").isVisible() && !(await boss.locator("#layout-menu-box").isVisible()), "opens on Design, the Menu tab's parts out of sight");
+    await ltab(boss, "menu");
     await boss.selectOption("#menu-pick", menuId); await boss.click("#menu-use"); await boss.waitForTimeout(1200);
-    await boss.fill("#layout-json", JSON.stringify(CHALK1, null, 2));
-    await boss.click("#menu-make"); await boss.waitForTimeout(1200);
-    const offered = await boss.$$eval("[data-mk]", (xs) => xs.map((x) => x.dataset.mk));
-    assert(offered.join() === "specials,note", `offered ${offered}`);
-    await boss.fill('[data-room="specials"]', "6");
-    await boss.click("#dlg-ok"); await boss.waitForTimeout(1500);
+    assert((await boss.textContent("#layout-lists")).includes("Lists on this menu"), "the Menu tab lists the menu's lists");
+    await ltab(boss, "design");
+    await design(boss); await boss.fill("#layout-json", JSON.stringify(CHALK1, null, 2));
+    await design(boss); await boss.click("#layout-check"); await boss.waitForTimeout(1200);
+    assert(/No problems/.test(await boss.textContent("#layout-results")), await boss.textContent("#layout-results"));
+    assert(await boss.locator("#layout-offer").isVisible(), "Check offers the board's own content as lists");
+    const offered = await boss.$$eval("[data-of]", (xs) => xs.map((x) => x.dataset.of));
+    assert(offered.join() === "specials,note" && await boss.inputValue('[data-of-room="specials"]') === "6", `offered ${offered}`);
+    await boss.click("#offer-make"); await boss.waitForTimeout(2500);
     const m = await theMenu();
-    assert(m.spec.lists.find((x) => x.key === "specials")?.room === 6 && m.content.lists.note.entries[0].title === "Made fresh every morning since 2009", m.spec.lists.map((x) => x.key).join());
-    await boss.fill("#layout-json", JSON.stringify(CHALK2, null, 2));
-    await boss.click("#layout-check"); await boss.waitForTimeout(800);
-    const res = await boss.textContent("#layout-results");
-    assert(/No problems/.test(res), res);
-    await boss.click("#layout-publish"); await boss.waitForTimeout(1500);
+    const sp = m.spec.lists.find((x) => x.key === "specials"), nt = m.spec.lists.find((x) => x.key === "note");
+    assert(sp?.room === 6 && sp.schedule && nt?.schedule && m.content.lists.note.entries[0].title === "Made fresh every morning since 2009", JSON.stringify([sp, nt]));
+    assert((await boss.inputValue("#layout-json")).includes('"list": "specials"'), "the JSON now shows the lists");
+    assert(/No problems/.test(await boss.textContent("#layout-results")) && !(await boss.locator("#layout-offer").isVisible()), "checked again by itself, nothing left to offer");
+    await design(boss); await boss.click("#layout-publish"); await boss.waitForTimeout(1500);
     if (await boss.isVisible("#layout-anyway")) { await boss.click("#layout-anyway"); await boss.waitForTimeout(1500); }
     const [l] = (await sb(`layouts?id=eq.${chalkLay.id}&select=published_version`)).data;
     assert(l.published_version === 1, JSON.stringify(l));
     await sb(`screens?id=eq.${portrait.id}`, { method: "PATCH", body: JSON.stringify({ directory_id: null, layout_id: chalkLay.id, property_id: home.id }) });
+  });
+
+  await check("E2e: List settings refuses a layout pasted under Advanced, pointing to Design → Layout (JSON)", async () => {
+    await ltab(boss, "menu"); await boss.click("#menu-spec"); await boss.waitForTimeout(800);
+    await boss.click(".ls-advanced summary");
+    await boss.fill("#spec-json", JSON.stringify(CHALK1));
+    await boss.click("#dlg-ok"); await boss.waitForTimeout(800);
+    const msg = await boss.textContent("#dlg-error");
+    assert(msg.includes("This is a layout, not list settings."), msg.slice(0, 300));
+    await boss.click('#dlg button[value="cancel"]'); await boss.waitForTimeout(400);
+    await ltab(boss, "design");
   });
 
   await check("E2d: the screen draws the Chalkboard look: slate, chalk colours for titles and prices, Pacifico and Bebas Neue, the grain on the lettering, no frame, nothing overflowing", async () => {
@@ -1027,6 +1055,28 @@ try {
     await owner.click("[data-look-reset]"); await owner.waitForTimeout(1500);
     assert(!/framed/.test(await pvStage()) && !(await owner.isDisabled("#save")), "back to the design, waiting for Save");
     await owner.click("#undo"); await owner.waitForTimeout(800);
+  });
+
+  await check("E2e (Scot): the menu editor's preview on a laptop: a portrait board whole in the window, still in view after scrolling the lists; Your pictures and History as tabs under it", async () => {
+    const p = await browser.newPage({ viewport: { width: 1366, height: 768 } });
+    p.on("dialog", (d) => d.accept());
+    await signIn(p, "leighann@barber.test", "owner-pass");
+    await p.goto(`${B}/menu-edit.html?m=${menuId}`); await p.waitForTimeout(3000);
+    await p.selectOption("#board-pick", chalkLay.id); await p.waitForTimeout(2500);
+    const box = async () => p.evaluate(() => { const r = document.querySelector("#pv-box").getBoundingClientRect(); return { top: r.top, bottom: r.bottom, w: r.width, h: r.height, vh: innerHeight }; });
+    let r = await box();
+    assert(r.bottom <= r.vh && r.top >= 0 && r.h > 300, `portrait preview ${JSON.stringify(r)}`);
+    await p.mouse.wheel(0, 2500); await p.waitForTimeout(600);
+    r = await box();
+    assert(r.top >= 0 && r.bottom <= r.vh, `after scrolling the lists ${JSON.stringify(r)}`);
+    assert(await p.locator("#pics").isVisible() && !(await p.locator("#history").isVisible()), "Your pictures first");
+    await p.click('[data-side="history"]'); await p.waitForTimeout(300);
+    assert(await p.locator("#history").isVisible() && !(await p.locator("#pics").isVisible()), "History tab");
+    await shot(p, "menu-editor-laptop");
+    // a landscape board still fills the column's width
+    const counterId = (await sb("layouts?name=eq.Counter board&select=id")).data[0]?.id;
+    if (counterId) { await p.selectOption("#board-pick", counterId); await p.waitForTimeout(2000); r = await box(); const col = await p.evaluate(() => document.querySelector("#pv-box").parentElement.clientWidth); near(r.w, col, 2, "landscape width"); }
+    await p.close();
   });
 
   await check("E2d (Scot): SOLD OUT on a name that wraps sits beside its last line, not across both", async () => {
