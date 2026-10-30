@@ -3099,6 +3099,15 @@ test("T0: sample links (1Point only): made and changed as a signed-in 1Point use
   assert.equal((await patch({ turned_off_at: new Date().toISOString() })).status, 200);
   r = await sampleFn(req("/api/sample?code=demo-salvatores&open=1"));
   assert.equal(r.status, 410); assert.equal(link.opens, 1);
+  // T0b (Scot): its board's phone menu (the QR code) and See the board end with it; opened again, they're back
+  assert.equal((await menuFn(req(`/m/${n55.menu_code}`))).status, 404);
+  assert.equal((await menuFn(req(`/api/menu?code=${n55.menu_code}`))).status, 404);
+  assert.equal((await patch({ turned_off_at: null, days: 30, expires_at: new Date().toISOString() })).status, 200);
+  assert.equal((await menuFn(req(`/m/${n55.menu_code}`))).status, 200);
+  assert.equal((await patch({ turned_off_at: new Date().toISOString() })).status, 200);
+  // a customer's board on no screen and with no link keeps its phone menu as always
+  const custBoard = fake.T.layouts.find((l) => l.published_version && fake.T.organizations.find((o) => o.id === l.org_id)?.kind === "owner");
+  if (custBoard) assert.equal((await menuFn(req(`/api/menu?code=${custBoard.menu_code}`))).status, 200);
   assert.equal((await sampleFn(req("/api/sample?code=no-such-link"))).status, 404);
   assert.equal((await sampleFn(req("/api/sample?code=x"))).status, 404);
   // past its date

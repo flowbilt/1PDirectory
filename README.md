@@ -467,6 +467,10 @@ once they sign, the fitted copy goes into their own account. Only 1Point copies 
   `/s/<name>` (a small page framing `board.html?sample=<name>` by full address, so it works on waytugo.com) and
   `/api/sample?code=` (`netlify/functions/sample.mjs`; 404 for no such link, 410 once ended). A board on no screen
   takes its building from its newest open sample link (`menu_page`), so its phone menu names the prospect's shop.
+- **A sample's phone menu ends with it** (T0b, Scot: the QR code still opened after Turn off; `supabase/37-sample-menus.sql`):
+  a board in a WayTuGo samples account has a phone menu (its QR code, and See the board) only while one of its sample
+  links is open; once the last is turned off or past its date, the QR code says the link isn't active, and opening a
+  link again brings it back. Boards in every other account (customers', WayTuGo templates) are unchanged.
 - **waytugo.com forwards `/s/*` here**, as it does `/d/*` and `/m/*`: in that site's `_redirects`,
   `/s/*  https://1pdirectory.netlify.app/s/:splat  200!`.
 

@@ -573,6 +573,8 @@ export function createFake() {
     menu_page({ p_code, p_count = true }) {
       const l = T.layouts.find((x) => x.menu_code === String(p_code || "").toUpperCase());
       if (!l || l.published_version == null) return { missing: true };
+      // 37-sample-menus.sql: a board in a WayTuGo samples account answers only while one of its sample links is open
+      if (T.organizations.find((o) => o.id === l.org_id)?.kind === "samples" && !T.sample_links.some((x) => x.layout_id === l.id && !x.turned_off_at && Date.parse(x.expires_at) > Date.parse(now()))) return { missing: true };
       const lv = T.layout_versions.find((x) => x.layout_id === l.id && x.version === l.published_version);
       const scr = T.screens.filter((x) => x.layout_id === l.id && x.property_id).sort((a, b) => String(b.last_seen || "").localeCompare(String(a.last_seen || "")))[0];
       // 36: a board on no screen names the building of its newest sample link still open
