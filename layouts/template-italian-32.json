@@ -1,0 +1,59 @@
+{
+  "format": 1,
+  "orientation": "portrait",
+  "name": "Template · Italian-American: specials board, 32\" portrait (DP-13 T2)",
+  "notes": "WayTuGo's Italian-American template, the portrait specials board beside the menu board (template-italian-55.json). On a portrait layout in the same account: Menu tab, Use this menu (the menu board's), then paste this on the Design tab and Check: it offers What's on (the events pictures), the note and Save room (desserts) as new lists on that menu; Make these lists, Preview and Publish. Today's specials, the featured pictures and the hours are the menu board's lists, so a change there shows on both boards. Looks: House or Chalkboard (the default here).",
+  "grid": { "cols": 12, "rows": 24, "gap": 14, "margin": 48 },
+  "viewing": { "inches": 32, "metres": 2 },
+  "theme": {
+    "palette": {
+      "bg": "#fbf6ee", "ink": "#2b1d16", "muted": "#6f5f55",
+      "accent": "#b0281f", "onAccent": "#ffffff",
+      "panel": "#1f4a34", "onPanel": "#fbf6ee",
+      "highlight": "#e0a43a", "onHighlight": "#2b1d16",
+      "line": "#ead9c3"
+    },
+    "fonts": { "display": "Playfair Display", "body": "Instrument Sans" },
+    "looks": ["house", "chalkboard"],
+    "look": "chalkboard",
+    "chalk": { "titles": "yellow", "prices": "orange", "accents": "white", "lettering": "sign", "frame": true }
+  },
+  "blocks": [
+    { "id": "logo", "type": "logo", "at": { "col": 1, "row": 1, "w": 12, "h": 2 },
+      "style": { "align": "center", "size": "xxl" }, "content": { "text": "Hwy 31 Pizza Café & Bar" } },
+
+    { "id": "hero", "label": "Featured pictures", "type": "rotator", "at": { "col": 1, "row": 3, "w": 12, "h": 5 },
+      "style": { "radius": "l", "size": "l", "shadow": true }, "content": { "seconds": 7, "list": "hero" } },
+
+    { "id": "specials", "label": "Today's specials", "type": "items", "at": { "col": 1, "row": 8, "w": 12, "h": 5 },
+      "style": { "size": "l" }, "content": { "heading": "Today's specials", "leaders": true, "list": "specials" } },
+
+    { "id": "note", "label": "Chalk note", "type": "text", "at": { "col": 1, "row": 13, "w": 12, "h": 1 },
+      "style": { "size": "l", "align": "center", "valign": "middle", "font": "accent" },
+      "content": { "title": "Family recipes, cold beer & good company", "schedule": true } },
+
+    { "id": "events", "label": "What's on", "type": "rotator", "at": { "col": 1, "row": 14, "w": 6, "h": 7 },
+      "style": { "radius": "m", "size": "m" },
+      "content": { "seconds": 8, "items": [
+        { "image": "img:live-music", "alt": "A guitarist on a dark stage", "caption": "Live music", "line": "Fri–Sun, 6–9 pm on the patio" },
+        { "image": "img:pasta-night", "alt": "Spaghetti with a bottle of wine", "caption": "Wednesday pasta night", "line": "$12 pastas, half-off wine" },
+        { "image": "img:party-pizza", "alt": "A stack of pizza boxes", "caption": "Parties & catering", "line": "Feeding a crowd? Call ahead" }
+      ] } },
+
+    { "id": "desserts", "label": "Save room", "type": "items", "at": { "col": 7, "row": 14, "w": 6, "h": 7 },
+      "style": { "surface": "panel", "radius": "m", "size": "m", "pad": "m" },
+      "content": { "heading": "Save room", "leaders": true, "room": 7, "items": [
+        { "name": "Tiramisu", "price": "$9" },
+        { "name": "Cannoli", "price": "$7" },
+        { "name": "Brownie Sundae", "price": "$9" },
+        { "name": "NY Cheesecake", "price": "$9" },
+        { "name": "Bread Pudding", "price": "$8" } ] } },
+
+    { "id": "hours", "type": "hours", "at": { "col": 1, "row": 21, "w": 8, "h": 4 },
+      "style": { "size": "m", "valign": "middle" }, "content": { "heading": "Hours", "list": "hours" } },
+
+    { "id": "menu-qr", "type": "qr", "at": { "col": 9, "row": 21, "w": 4, "h": 4 },
+      "style": { "align": "center", "size": "m" },
+      "content": { "line": "Scan for the menu" } }
+  ]
+}

@@ -106,7 +106,8 @@ const BODY = {
     const c = b.content, items = (c.items || []).length ? c.items : [{}];
     return items.map((it, i) => {
       const src = picture(it.image);
-      const cap = it.caption || it.line ? `<div class="photo-cap">${it.caption ? `<div class="b-title ${titleClass(b)}">${esc(it.caption)}</div>` : ""}${it.line ? `<div class="b-body">${esc(it.line)}</div>` : ""}</div>` : "";
+      // T2: "captions": false, for pictures that carry their own words (a shop's event flyers); the caption stays the alt text
+      const cap = c.captions !== false && (it.caption || it.line) ? `<div class="photo-cap">${it.caption ? `<div class="b-title ${titleClass(b)}">${esc(it.caption)}</div>` : ""}${it.line ? `<div class="b-body">${esc(it.line)}</div>` : ""}</div>` : "";
       const pic = src ? `<img class="photo-img" src="${esc(src)}" alt="${esc(it.alt || it.caption || "")}" style="object-fit:${c.fit || "cover"};object-position:${FOCUS_POS[c.focus || "center"]}">` : `<div class="photo-fill"></div>`;
       return `<div class="rot-slide${i === 0 ? " on" : ""}" data-slide="${i}">${pic}${cap}${it.price ? `<div class="photo-price">${esc(it.price)}</div>` : ""}</div>`;
     }).join("");

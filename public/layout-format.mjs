@@ -69,7 +69,9 @@ const FOCUS = ["center", "top", "bottom", "left", "right"];
 // menu (public/menu-format.mjs), and the content the list gives can't also be written in the layout.
 // E1c: "link" on items, text, photos and a rotator's pictures: a web address the phone menu opens in a new tab (the board
 // itself shows no links)
-const ITEM = { name: ["text", 80], line: ["text", 160], price: ["text", 16], tags: ["tags"], link: ["link"] };
+// T2: an item may say when it shows ({ "days": [1], "from": "17:00", "to": "22:00" }); Make lists keeps it on a list with
+// "schedule": true (the board shows a list's entries by their own times once the menu holds them)
+const ITEM = { name: ["text", 80], line: ["text", 160], price: ["text", 16], tags: ["tags"], link: ["link"], when: ["entrywhen"] };
 const SESSION = { days: ["days"], from: ["time"], to: ["time"], name: ["text", 60], line: ["text", 120] };
 export const TYPES = {
   text:      { kicker: ["text", 60], title: ["text", 120], body: ["text", 400], note: ["text", 120], link: ["link"], list: ["listkey"], schedule: ["bool"] },
@@ -82,7 +84,7 @@ export const TYPES = {
   photo:     { image: ["image"], alt: ["text", 120], caption: ["text", 80], line: ["text", 120], price: ["text", 16], fit: ["enum", ["cover", "contain"]], focus: ["enum", FOCUS], link: ["link"], list: ["listkey"] },
   logo:      { image: ["image"], text: ["text", 60], chalkImage: ["image"] },   // E2d: a light logo for the chalkboard (else the name in chalk)
   // E1b: several pictures taking turns, each with its own caption, line and price
-  rotator:   { seconds: ["int", 4, 60], fit: ["enum", ["cover", "contain"]], focus: ["enum", FOCUS],
+  rotator:   { seconds: ["int", 4, 60], fit: ["enum", ["cover", "contain"]], focus: ["enum", FOCUS], captions: ["bool"],
                items: ["list", 12, { image: ["image"], alt: ["text", 120], caption: ["text", 80], line: ["text", 120], price: ["text", 16], link: ["link"] }], list: ["listkey"] },
   clock:     { show: ["enum", ["time", "date", "both"]] },
   weather:   { label: ["text", 30] },
@@ -400,6 +402,11 @@ function checkValue(rule, v, where, label, err) {
     case "link":
       if (typeof v !== "string" || v.length > 300 || !LINK_RE.test(v)) { err(where, `${label} is a web address written in full, like "https://donutjoescoffee.com/pages/events" (at most 300 characters).`); return undefined; }
       return v;
+    case "entrywhen": {
+      if (!isObj(v)) { err(where, `${label} is one schedule: { "days": [1,2,3,4,5], "from": "11:00", "to": "15:00" }.`); return undefined; }
+      const w = checkWhen(v, where, err);
+      return w?.[0];
+    }
     case "listkey": return typeof v === "string" && /^[a-z0-9][a-z0-9-]{0,39}$/.test(v) ? v : (err(where, `${label} is a list's key on this layout's menu, like "donuts".`), undefined);
     case "image": return typeof v === "string" && IMAGE_RE.test(v) ? v : (err(where, `${label} is a picture's key, like "img:maple-bacon" (Layouts → Pictures shows each one's key).`), undefined);
     case "strings":

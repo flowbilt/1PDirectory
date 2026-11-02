@@ -1,0 +1,60 @@
+{
+  "format": 1,
+  "orientation": "portrait",
+  "name": "The Filling Station Gardendale: specials board, 32\" portrait (DP-13 T2 sample)",
+  "notes": "The Filling Station's portrait specials board, beside its menu board (the-filling-station-55.json), in WayTuGo Samples only. On a portrait layout in the same account: Menu tab, Use this menu (the menu board's), then paste this on the Design tab and Check: it offers What's on (their own event flyers, shown whole), the note and Desserts as new lists; Make these lists, Preview and Publish. Today's specials, the featured pictures and the hours are the menu board's lists.",
+  "grid": { "cols": 12, "rows": 24, "gap": 14, "margin": 48 },
+  "viewing": { "inches": 32, "metres": 2 },
+  "theme": {
+    "palette": {
+      "bg": "#ffffff", "ink": "#231f20", "muted": "#5f5a58",
+      "accent": "#9e262f", "onAccent": "#ffffff",
+      "panel": "#016e5d", "onPanel": "#ffffff",
+      "highlight": "#f4ece0", "onHighlight": "#231f20",
+      "line": "#e7e1da"
+    },
+    "fonts": { "display": "Alfa Slab One", "body": "Instrument Sans" },
+    "looks": ["house", "chalkboard"],
+    "look": "house",
+    "chalk": { "titles": "white", "prices": "orange", "accents": "white", "lettering": "sign", "frame": true }
+  },
+  "blocks": [
+    { "id": "logo", "type": "logo", "at": { "col": 1, "row": 1, "w": 12, "h": 3 },
+      "style": { "align": "center" }, "content": { "image": "img:tfs-logo", "chalkImage": "img:tfs-logo-white", "text": "The Filling Station" } },
+
+    { "id": "hero", "label": "Featured pictures", "type": "rotator", "at": { "col": 1, "row": 4, "w": 12, "h": 5 },
+      "style": { "radius": "l", "size": "l", "shadow": true }, "content": { "seconds": 7, "list": "hero" } },
+
+    { "id": "specials", "label": "Today's specials", "type": "items", "at": { "col": 1, "row": 9, "w": 12, "h": 5 },
+      "style": { "surface": "accent", "radius": "m", "size": "l", "pad": "m" }, "content": { "heading": "Today's specials", "leaders": true, "list": "specials" } },
+
+    { "id": "note", "label": "Note", "type": "text", "at": { "col": 1, "row": 14, "w": 12, "h": 1 },
+      "style": { "size": "l", "align": "center", "valign": "middle", "font": "display" },
+      "content": { "title": "Arrive on empty, leave on full!", "schedule": true } },
+
+    { "id": "events", "label": "What's on", "type": "rotator", "at": { "col": 1, "row": 15, "w": 6, "h": 6 },
+      "style": { "radius": "m" },
+      "content": { "seconds": 8, "fit": "contain", "captions": false, "items": [
+        { "image": "img:flyer-live-music", "alt": "Live music & karaoke" },
+        { "image": "img:flyer-pasta-night", "alt": "Wednesday pasta specials" },
+        { "image": "img:flyer-party", "alt": "Plan a party" }
+      ] } },
+
+    { "id": "desserts", "label": "Desserts", "type": "items", "at": { "col": 7, "row": 15, "w": 6, "h": 6 },
+      "style": { "surface": "panel", "radius": "m", "size": "m", "pad": "m" },
+      "content": { "heading": "Desserts", "leaders": true, "room": 7, "items": [
+        { "name": "Tiramisu", "price": "$9" },
+        { "name": "White Chocolate Bread Pudding", "price": "$9" },
+        { "name": "Brownie Sundae", "price": "$10" },
+        { "name": "Triple Chocolate Cheesecake", "price": "$10" },
+        { "name": "Chocolate Mousse Pie", "price": "$9" },
+        { "name": "Apple or Peach Turnover", "price": "$8" } ] } },
+
+    { "id": "hours", "type": "hours", "at": { "col": 1, "row": 21, "w": 7, "h": 4 },
+      "style": { "size": "m", "valign": "middle" }, "content": { "heading": "Hours", "list": "hours" } },
+
+    { "id": "menu-qr", "type": "qr", "at": { "col": 8, "row": 21, "w": 5, "h": 4 },
+      "style": { "align": "center", "size": "m" },
+      "content": { "line": "Scan for the menu" } }
+  ]
+}

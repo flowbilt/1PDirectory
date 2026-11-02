@@ -565,6 +565,33 @@ on a phone), the logo or shop's name sized to its spot, and the QR code open on 
   title get 0.2em of room below inside the masked box; a caption's lines clip only side to side (`overflow-x: clip`),
   so "Steeped"'s p keeps its tail in any look.
 
+### T2 (DP-13): the Italian-American template, The Filling Station sample, specials through the day
+
+- **Hwy 31 Pizza Café & Bar** (invented; Scot's name): `layouts/template-italian-55.json` (55" landscape menu board:
+  the name, six featured pictures, hours, Specialty pizzas with "14″ · slice" prices (room 10), Starters (8), Pasta "with
+  salad & bread" (9), Burgers & subs "with fries" (7), **Today's specials**, the QR code, the bottom line, clock, weather)
+  and `layouts/template-italian-32.json` (32" portrait specials board on the same menu: the name, the featured pictures,
+  Today's specials, a chalk note, **What's on** (three event pictures taking turns), Save room (desserts), hours, QR).
+  Playfair Display and Instrument Sans on cream, tomato red, basil green and mustard; House or Chalkboard (the 32"
+  board's default, framed). Pictures: nine Unsplash photos, `layouts/template-italian-pictures.md`.
+- **The Filling Station Gardendale sample** (for Scot's pitch to the owner; WayTuGo Samples only):
+  `layouts/the-filling-station-55.json` and `the-filling-station-32.json`, the same boards with their own menu, prices,
+  hours, slogan, logo (a white one for the Chalkboard look), red `#9e262f` and green `#016e5d` on white, Alfa Slab One
+  headings, their photos and their three event flyers (shown whole, no captions over them). Pictures and their keys:
+  `layouts/the-filling-station-pictures.md` (one stock pizza; they have no pizza photo of their own).
+- **Today's specials changes itself through the day and week:** a list with `"schedule": true` whose items each say
+  `"when"` (days and times). Make lists now keeps each item's days and times on the list's entries (`menu-format.mjs`
+  `extractMenu`; a layout item may say `"when"`, checked like a block's), so the specials arrive scheduled: lunch Mon–Fri
+  11–3, happy hour Mon–Fri 3–6, a night's special Monday to Thursday from 5, live music, late-night offers, weekend
+  nachos. The menu editor changes them like any scheduled entry.
+- **Room for the specials that are on, not the whole list:** a board keeps a list's empty room so the text stays one
+  size (E2a). For a scheduled list whose entries have days or times of their own, the board now keeps room for the
+  most entries that are ever on together in a week (`menu-format.mjs` `peakRoom`: 3 for both specials lists), never more
+  than the list's room. A list whose entries only have dates (Donut Joe's seasons), or none, keeps its whole room as
+  before.
+- **A rotator with no captions:** `"captions": false` on a `rotator` block, for pictures that carry their own words (a
+  shop's flyers); each entry's name stays as the picture's description.
+
 ## Screens and cards (Raspberry Pi)
 
 Every Pi runs from a **prepared card**, and every card is the same. A card carries no identity until it's in a Pi:

@@ -339,6 +339,22 @@ export function shownEntries(L, c, now) {
 }
 
 /**
+ * T2 (DP-13): the room a board keeps for a scheduled list. When its entries have days or times of their own (lunch,
+ * happy hour, a night's special), only a few are on at once, so the board keeps room for the most that are ever on
+ * together in a week (as of today's dates), never more than the list's room; the text then stays one size all week.
+ * A list whose entries only have dates (or nothing) keeps its whole room, as before.
+ */
+export function peakRoom(L, C, nowOrDate) {
+  const entries = (C?.entries || []).filter((e) => !e.hidden && String(e.name || "").trim());
+  if (!entries.some((e) => e.when && (e.when.days || e.when.from))) return L.room;
+  const date = asNow(nowOrDate).date;
+  const times = [...new Set(["00:00", ...entries.flatMap((e) => (e.when?.from ? [e.when.from, e.when.to] : []))])].filter((t) => t < "24:00");
+  let peak = 0;
+  for (let dow = 1; dow <= 7; dow++) for (const hm of times) peak = Math.max(peak, entries.filter((e) => entryOn(e, { date, dow, hm })).length);
+  return Math.min(L.room, Math.max(peak, 1));
+}
+
+/**
  * The layout as drawn with its menu: each block that says {"list": …} takes that list's entries (only those shown; an
  * item sold out today is marked so), and a block whose list shows nothing is switched off. date is the building's
  * "YYYY-MM-DD". With room: true (the boards), an items or chips block also carries its list's room, so the board keeps
@@ -370,7 +386,7 @@ export function applyMenu(doc, menu, nowOrDate, { room = false } = {}) {
       case "items": case "chips":
         c.items = shown.map(item);
         if (L.groupPrice && C.price) c.price = C.price;
-        if (room) c.room = L.room;
+        if (room) c.room = L.schedule ? peakRoom(L, C, now) : L.room;
         break;
       case "rotator": {   // a featured item that's sold out today steps out of the turns
         const feat = shown.filter((e) => !sold(e));
@@ -490,7 +506,9 @@ export function extractMenu(doc, ids) {
       entries = src.map((it) => ({ id: newEntryId(), name: pics ? it.caption || it.alt || "" : it.name || "",
         ...(it.line ? { line: it.line } : {}), ...(it.price ? { price: it.price } : {}), ...(it.image ? { image: it.image } : {}),
         ...(it.link ? { link: it.link } : {}), ...((it.tags || []).filter((t) => ITEM_TAGS[t]).length ? { tags: it.tags.filter((t) => ITEM_TAGS[t]) } : {}),
-        ...((it.tags || []).includes("sold-out") ? { hidden: true } : {}) })).filter((e) => e.name);
+        ...((it.tags || []).includes("sold-out") ? { hidden: true } : {}),
+        // T2: a scheduled list's entries keep their days and times from the layout (a night's special, lunch, happy hour)
+        ...(c.schedule === true && b.type === "items" && it.when !== undefined && checkWhen(it.when).when ? { when: checkWhen(it.when).when } : {}) })).filter((e) => e.name);
       const used = (f) => entries.some((e) => e[f] !== undefined);
       const fields = ["name", ...["line", "price", "image", "tags", "link"].filter((f) => used(f) || (pics && (f === "image" || f === "line" || f === "price")))];
       const caps = {};

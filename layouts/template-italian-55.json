@@ -1,0 +1,115 @@
+{
+  "format": 1,
+  "orientation": "landscape",
+  "name": "Template · Italian-American: menu board, 55\" landscape (DP-13 T2)",
+  "notes": "WayTuGo's Italian-American template (an invented shop, Hwy 31 Pizza Café & Bar; a menu and prices typical of a Birmingham-area pizza café and bar in 2026). In the WayTuGo Templates account: upload the pictures first (Pictures tab, named as in layouts/template-italian-pictures.md), paste this on the Design tab and Check, then on the Menu tab Make lists from this layout, Preview and Publish. Today's specials changes itself through the day and week: each entry has its own days and times (lunch Mon–Fri 11–3, happy hour Mon–Fri 3–6, a dinner special each weeknight from 5, live music Fri–Sun evenings, late slices Fri–Sat, gameday nachos at the weekend); the menu editor changes them. The 32\" specials board (template-italian-32.json) goes on the same menu.",
+  "grid": { "cols": 24, "rows": 13, "gap": 16, "margin": 30 },
+  "viewing": { "inches": 55, "metres": 4 },
+  "theme": {
+    "palette": {
+      "bg": "#fbf6ee", "ink": "#2b1d16", "muted": "#6f5f55",
+      "accent": "#b0281f", "onAccent": "#ffffff",
+      "panel": "#1f4a34", "onPanel": "#fbf6ee",
+      "highlight": "#e0a43a", "onHighlight": "#2b1d16",
+      "line": "#ead9c3"
+    },
+    "fonts": { "display": "Playfair Display", "body": "Instrument Sans" },
+    "looks": ["house", "chalkboard"],
+    "look": "house",
+    "chalk": { "titles": "yellow", "prices": "orange", "accents": "white", "lettering": "sign", "frame": false }
+  },
+  "blocks": [
+    { "id": "logo", "type": "logo", "at": { "col": 1, "row": 1, "w": 7, "h": 2 },
+      "style": { "align": "left", "size": "xl" }, "content": { "text": "Hwy 31 Pizza\nCafé & Bar" } },
+
+    { "id": "hero", "label": "Featured pictures", "type": "rotator", "at": { "col": 1, "row": 3, "w": 7, "h": 7 },
+      "style": { "radius": "l", "size": "l", "shadow": true },
+      "content": { "seconds": 7, "items": [
+        { "image": "img:pizza-margherita", "alt": "A margherita pizza with fresh basil", "caption": "Margherita", "line": "Fresh mozzarella, tomato & basil", "price": "$20" },
+        { "image": "img:pizza-pepperoni", "alt": "A pepperoni pizza", "caption": "Double Pepperoni", "line": "Loaded edge to edge, every day", "price": "$19" },
+        { "image": "img:spaghetti-meatballs", "alt": "Spaghetti and meatballs", "caption": "Spaghetti & Meatballs", "line": "Homemade meatballs in our Sunday sauce", "price": "$17" },
+        { "image": "img:lasagna", "alt": "A slice of lasagna", "caption": "Baked Lasagna", "line": "Beef, sausage & three cheeses", "price": "$19" },
+        { "image": "img:wings", "alt": "Chicken wings with dipping sauce", "caption": "Wings", "line": "Hot, mild, garlic parm or BBQ", "price": "$14" },
+        { "image": "img:tiramisu", "alt": "Tiramisu", "caption": "Tiramisu", "line": "Espresso-soaked & made in-house", "price": "$9" }
+      ] } },
+
+    { "id": "hours", "type": "hours", "at": { "col": 1, "row": 10, "w": 7, "h": 3 },
+      "style": { "surface": "panel", "radius": "m", "size": "l", "pad": "m", "valign": "middle" },
+      "content": { "heading": "Hours", "hours": [
+        { "days": [1, 2, 3], "open": "11:00", "close": "22:00" },
+        { "days": [4, 5, 6], "open": "11:00", "close": "23:00" },
+        { "days": [7], "open": "11:00", "close": "21:00" } ],
+        "note": "Dine in · Carry out · Catering" } },
+
+    { "id": "pizza", "label": "Specialty pizzas", "type": "items", "at": { "col": 8, "row": 1, "w": 9, "h": 7 },
+      "style": { "size": "m" },
+      "content": { "heading": "Specialty pizzas", "price": "14″ · slice", "leaders": true, "room": 10, "items": [
+        { "name": "The Hwy 31", "line": "Pepperoni, sausage, mushrooms, peppers & onions", "price": "$27 · $12", "tags": ["favorite"] },
+        { "name": "Margherita", "line": "Fresh mozzarella, tomato & basil", "price": "$20 · $9" },
+        { "name": "Meat Lover's", "line": "Pepperoni, sausage, bacon & ham", "price": "$27 · $12" },
+        { "name": "White Garlic", "line": "Ricotta, roasted garlic & spinach", "price": "$23 · $10" },
+        { "name": "BBQ Chicken", "line": "Red onion, bacon & cilantro", "price": "$25 · $11" },
+        { "name": "Garden Veggie", "line": "Peppers, mushrooms, olives & artichokes", "price": "$24 · $10" },
+        { "name": "Double Pepperoni", "price": "$19 · $9" },
+        { "name": "Build your own", "line": "Cheese, then toppings at $1.50 each", "price": "$15 · $8" } ] } },
+
+    { "id": "starters", "label": "Starters", "type": "items", "at": { "col": 8, "row": 8, "w": 9, "h": 5 },
+      "style": { "size": "m" },
+      "content": { "heading": "Starters", "leaders": true, "room": 8, "items": [
+        { "name": "Garlic Knots", "price": "$7" },
+        { "name": "Fried Mozzarella", "price": "$9" },
+        { "name": "Toasted Ravioli", "price": "$10" },
+        { "name": "Wings", "price": "$14" },
+        { "name": "Meatballs & Marinara", "price": "$11" },
+        { "name": "Spinach Artichoke Dip", "price": "$12" },
+        { "name": "Fried Pickles", "price": "$9" } ] } },
+
+    { "id": "pasta", "label": "Pasta", "type": "items", "at": { "col": 17, "row": 1, "w": 8, "h": 5 },
+      "style": { "size": "m" },
+      "content": { "heading": "Pasta", "price": "with salad & bread", "leaders": true, "room": 9, "items": [
+        { "name": "Spaghetti & Meatballs", "price": "$17" },
+        { "name": "Baked Lasagna", "price": "$19" },
+        { "name": "Chicken Parmesan", "price": "$20" },
+        { "name": "Fettuccine Alfredo", "line": "Add chicken $4", "price": "$16" },
+        { "name": "Baked Ziti", "price": "$16" },
+        { "name": "Shrimp Scampi", "price": "$21" } ] } },
+
+    { "id": "subs", "label": "Burgers & subs", "type": "items", "at": { "col": 17, "row": 6, "w": 8, "h": 4 },
+      "style": { "size": "m" },
+      "content": { "heading": "Burgers & subs", "price": "with fries", "leaders": true, "room": 7, "items": [
+        { "name": "Hwy 31 Burger", "price": "$15" },
+        { "name": "Chicken Parm Sub", "price": "$15" },
+        { "name": "Meatball Sub", "price": "$14" },
+        { "name": "Hot Italian Sub", "price": "$14" },
+        { "name": "Philly Cheesesteak", "price": "$16" } ] } },
+
+    { "id": "specials", "label": "Today's specials", "type": "items", "at": { "col": 17, "row": 10, "w": 5, "h": 3 },
+      "style": { "surface": "accent", "radius": "m", "size": "m", "pad": "m" },
+      "content": { "heading": "Today's specials", "leaders": true, "room": 14, "schedule": true, "items": [
+        { "name": "Lunch: slice, salad & drink", "price": "$11.99", "when": { "days": [1, 2, 3, 4, 5], "from": "11:00", "to": "15:00" } },
+        { "name": "Lunch pasta & drink", "price": "$12.99", "when": { "days": [1, 2, 3, 4, 5], "from": "11:00", "to": "15:00" } },
+        { "name": "Happy hour drafts", "line": "Mon–Fri, 3–6", "price": "$4", "when": { "days": [1, 2, 3, 4, 5], "from": "15:00", "to": "18:00" } },
+        { "name": "Happy hour house wine", "price": "$5", "when": { "days": [1, 2, 3, 4, 5], "from": "15:00", "to": "18:00" } },
+        { "name": "Monday: large pepperoni", "price": "$14", "when": { "days": [1], "from": "17:00", "to": "22:00" } },
+        { "name": "Tuesday: any specialty pizza", "price": "$20", "when": { "days": [2], "from": "17:00", "to": "22:00" } },
+        { "name": "Wednesday: pasta night", "line": "Half-off bottles of wine", "price": "$12", "when": { "days": [3], "from": "17:00", "to": "22:00" } },
+        { "name": "Thursday: wings & a pitcher", "price": "$24", "when": { "days": [4], "from": "17:00", "to": "23:00" } },
+        { "name": "Live music on the patio", "line": "6–9 pm", "when": { "days": [5, 6, 7], "from": "17:00", "to": "21:00" } },
+        { "name": "Late-night slices", "price": "$5", "when": { "days": [5, 6], "from": "21:00", "to": "23:00" } },
+        { "name": "Gameday nachos", "price": "$14", "when": { "days": [6, 7], "from": "11:00", "to": "17:00" } } ] } },
+
+    { "id": "menu-qr", "type": "qr", "at": { "col": 22, "row": 10, "w": 3, "h": 3 },
+      "style": { "align": "center", "size": "m" },
+      "content": { "line": "Scan for the menu" } },
+
+    { "id": "foot", "label": "Bottom line", "type": "text", "at": { "col": 1, "row": 13, "w": 18, "h": 1 },
+      "style": { "size": "s", "valign": "middle", "ink": "muted" },
+      "content": { "body": "Pizza · Pasta · Cold beer on tap · Call ahead: (205) 555-0131" } },
+
+    { "id": "now", "type": "clock", "at": { "col": 19, "row": 13, "w": 3, "h": 1 },
+      "style": { "size": "l", "align": "right", "valign": "middle" }, "content": { "show": "time" } },
+
+    { "id": "weather", "type": "weather", "at": { "col": 22, "row": 13, "w": 3, "h": 1 },
+      "style": { "size": "l", "align": "right", "valign": "middle" }, "content": {} }
+  ]
+}

@@ -3146,6 +3146,46 @@ test("T1: the coffee-shop template: both boards clean (the counter board's lists
   for (const d of [d55, d32]) assert.ok(!/Donut Joe|O'Henry|Salvatore|Filling Station|Our Place|Dowdle|Mi Barrio/i.test(JSON.stringify(d.blocks)), "an invented shop");
 });
 
+test("T2: the Italian-American template and The Filling Station sample: all four boards clean; Make lists keeps each special's days and times; the board keeps room for the most specials on at once; a rotator with no captions; no real shop in the template", async () => {
+  const { offerLists } = await import("../netlify/functions/layouts.mjs");
+  const read = (f) => JSON.parse(readFileSync(new URL(`../layouts/${f}`, import.meta.url), "utf8"));
+  for (const [f55, f32, offer] of [["template-italian-55.json", "template-italian-32.json", [["note", 1], ["events", 4], ["desserts", 7]]],
+    ["the-filling-station-55.json", "the-filling-station-32.json", [["note", 1], ["events", 4], ["desserts", 7]]]]) {
+    const d55 = read(f55), d32 = read(f32);
+    const c55 = LF.checkLayout(d55);
+    assert.deepEqual(c55.errors, [], f55);
+    const ex = MF.extractMenu(c55.doc);
+    const L = ex.spec.lists.find((l) => l.key === "specials");
+    assert.ok(L.schedule, "specials is scheduled");
+    const entries = ex.content.lists.specials.entries;
+    assert.ok(entries.length >= 10 && entries.every((e) => e.when && (e.when.days || e.when.from)), `${f55}: each special keeps its days and times`);
+    assert.deepEqual(MF.checkMenuContent(ex.spec, ex.content).errors, [], "the made menu passes the menu's own rules");
+    // what's on: Monday noon is lunch; Wednesday 7 pm is pasta night; Saturday 1 pm the nachos
+    const on = (date, dow, hm) => MF.shownEntries(L, ex.content.lists.specials, { date, dow, hm }).map((e) => e.name);
+    assert.ok(on("2026-11-02", 1, "12:00").every((n) => /^Lunch/.test(n)) && on("2026-11-02", 1, "12:00").length >= 2, JSON.stringify(on("2026-11-02", 1, "12:00")));
+    assert.ok(on("2026-11-04", 3, "19:00").some((n) => /^Wednesday/.test(n)));
+    assert.ok(on("2026-11-07", 6, "13:00").some((n) => /nachos/i.test(n)));
+    // the board keeps room for the most on at once (3), not the list's whole room
+    assert.equal(MF.peakRoom(L, ex.content.lists.specials, "2026-11-02"), 3, f55);
+    const drawn = MF.applyMenu(LF.checkLayout(ex.doc, { lists: ex.spec.lists }).doc, ex, { date: "2026-11-02", dow: 1, hm: "12:00" }, { room: true });
+    assert.equal(drawn.blocks.find((b) => b.id === "specials").content.room, 3);
+    assert.ok(drawn.blocks.find((b) => b.id === "pizza").content.room >= 10, "other lists keep their whole room");
+    const off = offerLists(d32, { spec: ex.spec });
+    assert.deepEqual(off.offer.map((o) => [o.key, o.room]), offer, f32);
+    assert.deepEqual(LF.checkLayout(d32, { lists: [...ex.spec.lists, ...off.spec.lists] }).errors, [], f32);
+  }
+  // a list whose entries only have dates (Donut Joe's seasons) keeps its whole room
+  assert.equal(MF.peakRoom({ room: 6, schedule: true }, { entries: [{ name: "a", when: { dates: { from: "2026-09-15", to: "2026-11-30" } } }, { name: "b" }] }, "2026-11-02"), 6);
+  assert.equal(MF.peakRoom({ room: 6, schedule: true }, { entries: [{ name: "a" }, { name: "b" }] }, "2026-11-02"), 6);
+  // an item's when is checked like a list entry's
+  assert.match(LF.checkLayout({ ...read("template-italian-55.json"), blocks: [{ id: "x", type: "items", at: { col: 1, row: 1, w: 4, h: 4 }, content: { schedule: true, items: [{ name: "a", when: { days: [9] } }] } }] }).errors.map((e) => e.msg).join(" "), /1 = Monday to 7 = Sunday/);
+  // the flyers: no captions over them, the board's own rotator rule
+  const fs32 = LF.checkLayout(read("the-filling-station-32.json"));
+  assert.equal(fs32.doc.blocks.find((b) => b.id === "events").content.captions, false);
+  // the template is an invented shop; the sample is the real one
+  for (const f of ["template-italian-55.json", "template-italian-32.json"]) assert.ok(!/Donut Joe|O'Henry|Salvatore|Filling Station|Our Place|Dowdle|Mi Barrio|Lorino/i.test(JSON.stringify(read(f).blocks)), `${f}: an invented shop`);
+});
+
 test("T1b: the shop's brand: its rules; drawn on every board (name, logo, colours, fonts) and the phone menu; only 1Point changes it; a copy takes the name on the boards", async () => {
   // the fonts are the same list in both files
   assert.deepEqual(MF.BRAND_FONTS, Object.keys(LF.FONTS));
