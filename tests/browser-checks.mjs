@@ -316,7 +316,11 @@ try {
     assert((await admin.textContent("#layout-results")).includes(`block "more"`), "overflow warned");
     await design(admin); await admin.click("#layout-publish"); await admin.waitForTimeout(1500);
     assert(await admin.isVisible("#layout-anyway"), "Publish anyway offered");
-    await admin.click("#layout-anyway"); await admin.waitForTimeout(1500);
+    // T1c (Scot): a pop-up says at once that it isn't published yet, with the warnings and Publish anyway
+    assert(await admin.locator("#dlg").isVisible() && (await admin.textContent("#dlg-title")).startsWith("Not published yet:") && (await admin.textContent("#dlg-ok")) === "Publish anyway"
+      && (await admin.textContent("#dlg-body")).includes('block "more"'), await admin.textContent("#dlg-title"));
+    await shot(admin, "publish-warnings-popup");
+    await admin.click("#dlg-ok"); await admin.waitForTimeout(1500);
     assert((await admin.textContent("#layout-versions")).includes("published anyway"), await admin.textContent("#layout-versions"));
   });
 
@@ -401,7 +405,7 @@ try {
     const frame = admin.frameLocator("#layout-iframe");
     assert(await frame.locator('[data-id="code"] .qr-code svg').count() === 1, "the preview draws the QR code");
     await design(admin); await admin.click("#layout-publish"); await admin.waitForTimeout(1500);
-    if (await admin.isVisible("#layout-anyway")) { await admin.click("#layout-anyway"); await admin.waitForTimeout(1500); }
+    if (await admin.isVisible("#layout-anyway")) { await admin.click("#dlg-ok"); await admin.waitForTimeout(1500); }   // T1c: the pop-up's Publish anyway
     menuCode = (await sb(`layouts?name=eq.Browser%20check%20layout&select=menu_code`)).data[0].menu_code;
     await admin.waitForFunction((c) => document.getElementById("layout-menu").textContent.includes(`waytugo.com/m/${c}`), menuCode, { timeout: 8000 });
     assert((await admin.getAttribute("#layout-menu a", "target")) === "_blank", "opens in a new tab");
@@ -518,7 +522,7 @@ try {
     assert(n === 12, `${n} donuts in the preview`);
     assert(await boss.frameLocator("#layout-iframe").locator('[data-id="donuts"] .item.ghost').count() === 4, "the room kept as 4 empty rows");
     await design(boss); await boss.click("#layout-publish"); await boss.waitForTimeout(1500);
-    if (await boss.isVisible("#layout-anyway")) { await boss.click("#layout-anyway"); await boss.waitForTimeout(1500); }
+    if (await boss.isVisible("#layout-anyway")) { await boss.click("#dlg-ok"); await boss.waitForTimeout(1500); }   // T1c: the pop-up's Publish anyway
     const [l] = (await sb(`layouts?id=eq.${counter.id}&select=published_version`)).data;
     assert(l.published_version === 1, JSON.stringify(l));
     await sb(`screens?id=eq.${landscape.id}`, { method: "PATCH", body: JSON.stringify({ directory_id: null, layout_id: counter.id, property_id: home.id }) });
@@ -984,7 +988,7 @@ try {
     assert((await boss.inputValue("#layout-json")).includes('"list": "specials"'), "the JSON now shows the lists");
     assert(/No problems/.test(await boss.textContent("#layout-results")) && !(await boss.locator("#layout-offer").isVisible()), "checked again by itself, nothing left to offer");
     await design(boss); await boss.click("#layout-publish"); await boss.waitForTimeout(1500);
-    if (await boss.isVisible("#layout-anyway")) { await boss.click("#layout-anyway"); await boss.waitForTimeout(1500); }
+    if (await boss.isVisible("#layout-anyway")) { await boss.click("#dlg-ok"); await boss.waitForTimeout(1500); }   // T1c: the pop-up's Publish anyway
     const [l] = (await sb(`layouts?id=eq.${chalkLay.id}&select=published_version`)).data;
     assert(l.published_version === 1, JSON.stringify(l));
     // E2f: the same file pasted again: Check offers the lists already on the menu ("use it"), not "-2" copies

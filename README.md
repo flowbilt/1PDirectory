@@ -508,6 +508,23 @@ the final design for the customer's approval.
 - **Copying a shop** (T0) copies the brand, and the dialog's **Name on the boards** (default: the copy's name) puts
   the prospect's name on every board straight away.
 
+### T1c (DP-13): publishing and lists that seemed to go nowhere
+
+Scot (2026-11-02): on the O'Henry's sample, a new Bottom line saved in the menu editor but the board kept the old one.
+The coffee boards had been published before Make lists linked them to their lists, and Publish had stopped at its
+guardrail warnings with only a note at the foot of the page.
+
+- **Publish says so at once:** with warnings, a pop-up lists them ("Not published yet: 6 warnings") with **Publish
+  anyway**; with problems, a pop-up says nothing was published and lists them.
+- **The size guardrail:** a picture with no words on it (no caption, line or price, and not on a list) isn't measured
+  (it has no text), and the sizes show one decimal ("about 12.6 mm; at least 12.9 mm"), not "13 mm; at least 13 mm".
+- **The menu editor:** a list that no published board shows says "Not on a board yet" (saving it changes only the
+  phone menu; WayTuGo publishes the board); coming back to the tab after a board on the menu was published offers
+  **Reload to see it**.
+- **The layout's Menu tab:** "On this board" says **In the draft only: Publish to show it** for a list the draft shows
+  but the published version doesn't.
+- **Menu changes never need a Publish:** once a board is published on its lists, Save in the menu editor is all it takes.
+
 ## Screens and cards (Raspberry Pi)
 
 Every Pi runs from a **prepared card**, and every card is the same. A card carries no identity until it's in a Pi:

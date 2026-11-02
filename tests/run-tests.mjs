@@ -3201,6 +3201,20 @@ test("T1b: the shop's brand: its rules; drawn on every board (name, logo, colour
   fake.T.menus.splice(fake.T.menus.indexOf(m), 1);
 });
 
+test("T1c: the size guardrail: pictures with no words aren't measured, one decimal; Publish's pop-up; the editor says when no published board shows a list, or a board was published since it opened", async () => {
+  const doc = { format: 1, orientation: "landscape", viewing: { inches: 55, metres: 4 }, grid: { cols: 12, rows: 6 }, blocks: [
+    { id: "pic", type: "photo", at: { col: 1, row: 1, w: 3, h: 3 }, content: { image: "img:x" } },
+    { id: "pic-words", type: "photo", at: { col: 4, row: 1, w: 3, h: 3 }, style: { size: "xs" }, content: { image: "img:x", caption: "Latte", line: "Steamed milk" } },
+    { id: "spin", type: "rotator", at: { col: 7, row: 1, w: 3, h: 3 }, content: { items: [{ image: "img:x" }, { image: "img:y" }] } },
+    { id: "list", type: "items", at: { col: 1, row: 4, w: 12, h: 3 }, style: { size: "xs" }, content: { items: [{ name: "Espresso", line: "A double shot", price: "$3" }] } }] };
+  const w = LF.checkLayout(doc).warnings.filter((x) => x.kind === "small").map((x) => x.where);
+  assert.deepEqual(w.sort(), ['block "list"', 'block "pic-words"']);
+  assert.match(LF.checkLayout(doc).warnings.find((x) => x.kind === "small").msg, /about \d+\.\d mm .* at least \d+\.\d mm/);
+  const cl = readFileSync(new URL("../public/console-layouts.js", import.meta.url), "utf8"), ed = readFileSync(new URL("../public/menu-edit.js", import.meta.url), "utf8");
+  for (const x of ["function publishPopup(", "Not published yet: ", "Publish anyway", "In the draft only: Publish to show it"]) assert.ok(cl.includes(x), x);
+  for (const x of ["Not on a board yet: no published board shows this list", "A board on this menu was published since you opened this page."]) assert.ok(ed.includes(x), x);
+});
+
 let passed = 0;
 for (const [name, fn] of tests) {
   try { await fn(); passed++; console.log(`  ok  ${name}`); }

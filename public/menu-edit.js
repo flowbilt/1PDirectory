@@ -157,11 +157,31 @@ function listHtml(L) {
     L.note ? `<div class="field me-gp"><label>Line under the hours <span class="hint">optional</span></label><input data-list-f="note" maxlength="80" value="${esc(C.note || "")}"></div>` : "",
   ].join("");
   const nofit = E.nofit.get(L.key);
+  // T1c (DP-13; Scot's bottom line): a list that no published board shows yet (a board published before its lists were
+  // made, or not yet published) says so, rather than changes that seem to go nowhere
+  const onBoard = E.boards.some((b) => (b.doc?.blocks || []).some((x) => x.content?.list === L.key));
+  const unshown = E.boards.length && !onBoard
+    ? `<p class="me-unshown" role="status">Not on a board yet: no published board shows this list, so saving it changes only the phone menu. ${E.admin ? "Publish the board that should show it (Layouts → the board → Publish)." : "Ask WayTuGo."}</p>` : "";
   return `<section class="panel me-list${nofit ? " nofit" : ""}" data-key="${esc(L.key)}">
-    <div class="panel-head"><h2>${esc(L.name)} ${count}</h2></div>
+    <div class="panel-head"><h2>${esc(L.name)} ${count}</h2></div>${unshown}
     <p class="me-nofit" role="status"${nofit ? "" : " hidden"}>${nofit ? esc(nofitText(nofit)) : ""}</p>
     ${L.hint ? `<p class="hint">${esc(L.hint)}</p>` : ""}${top}${body}</section>`;
 }
+// T1c: a board published since this page opened (in the console, say) is drawn here only after a reload; on coming back
+// to this tab, it says so
+window.addEventListener("focus", async () => {
+  if (!E.boards?.length || E.publishedNote) return;
+  try {
+    const now = await Auth.db(`layouts?menu_id=eq.${E.menu.id}&select=id,published_version`);
+    if (now.some((l) => (E.boards.find((b) => b.id === l.id)?.published_version ?? null) !== (l.published_version ?? null))) {
+      E.publishedNote = true;
+      const bar = document.createElement("p"); bar.className = "me-republished"; bar.setAttribute("role", "status");
+      bar.innerHTML = `A board on this menu was published since you opened this page. <button type="button" class="ghost" id="me-reload">Reload to see it</button>${same() ? "" : " (save your changes first)"}`;
+      $("lists").before(bar);
+      $("me-reload").addEventListener("click", () => { if (same() || confirm("Reload without saving your changes?")) location.reload(); });
+    }
+  } catch { /* try again next time */ }
+});
 // ── Board look (E2d): a board's look and options, from the presets its layout offers ──
 function lookHtml(b) {
   const doc = b.checked, ch = boardChoice(doc, E.draft.boards?.[b.id]), mine = E.draft.boards?.[b.id] && Object.keys(E.draft.boards[b.id]).length;

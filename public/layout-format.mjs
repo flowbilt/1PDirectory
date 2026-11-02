@@ -528,8 +528,12 @@ function guardrails(doc, warn, ctx = {}) {
     const size = SIZES[b.style.size || "m"];
     const c = contrast(ink, back), large = size >= SIZES.l;
     if (c < (large ? 3 : 4.5)) warn(where, `Its text is hard to read on its background (contrast ${c.toFixed(1)}:1; at least ${large ? 3 : 4.5}:1 is needed).`, "contrast");
+    // T1c (DP-13; Scot): a picture with no words on it (no caption, line or price, and not on a list) has no text to measure
+    const c0 = b.content || {}, words = (x) => x && (x.caption || x.line || x.price);
+    if ((b.type === "photo" && !c0.list && !words(c0)) || (b.type === "rotator" && !c0.list && !(c0.items || []).some(words))) continue;
     const smallest = size * smallestShare(b, lists[b.content?.list]) * perPx;
-    if (smallest < need) warn(where, `Its smallest text is about ${smallest.toFixed(0)} mm tall on a ${inches}" screen; from ${metres} m away it should be at least ${need.toFixed(0)} mm. Use a larger size.`, "small");
+    // one decimal, so a near miss doesn't read "about 13 mm; at least 13 mm"
+    if (smallest < need) warn(where, `Its smallest text is about ${smallest.toFixed(1)} mm tall on a ${inches}" screen; from ${metres} m away it should be at least ${need.toFixed(1)} mm. Use a larger size.`, "small");
   }
   // E1c: a QR code too small to read from where people stand
   for (const b of doc.blocks.filter((x) => x.type === "qr")) {

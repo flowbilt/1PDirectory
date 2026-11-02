@@ -87,11 +87,15 @@
     if (!m) { box.innerHTML = ""; return; }
     let doc; try { doc = JSON.parse($("layout-json").value); } catch { doc = l.draft; }
     const shown = new Set((doc?.blocks || []).map((b) => b.content?.list).filter(Boolean));
+    // T1c: and whether the published version shows it (a board published before its lists were made doesn't)
+    let live = null;
+    if (l.published_version) { const [v] = await Auth.db(`layout_versions?layout_id=eq.${l.id}&version=eq.${l.published_version}&select=doc`).catch(() => []); live = new Set((v?.doc?.blocks || []).map((b) => b.content?.list).filter(Boolean)); }
+    const onBoard = (k) => (shown.has(k) ? (live && !live.has(k) ? `<span class="warn">In the draft only: Publish to show it</span>` : "Yes") : `<span class="sub">no</span>`);
     const KIND = { items: "Items", text: "Text (one entry)", hours: "Hours" };
     box.innerHTML = `<h3 class="section-title">Lists on this menu</h3>
       <div class="table-wrap"><table class="grid"><thead><tr><th>List (the customer sees)</th><th>Key</th><th>Kind</th><th>Room</th><th>On it now</th><th>On this board</th></tr></thead><tbody>
       ${(m.spec?.lists || []).map((x) => `<tr><td><strong>${esc(x.name)}</strong>${x.schedule ? ` <span class="sub">· dates and times</span>` : ""}</td><td><code>${esc(x.key)}</code></td><td>${esc(KIND[x.kind] || x.kind)}</td>
-        <td>${x.room}</td><td>${(m.content?.lists?.[x.key]?.entries || []).length}</td><td>${shown.has(x.key) ? "Yes" : `<span class="sub">no</span>`}</td></tr>`).join("")}
+        <td>${x.room}</td><td>${(m.content?.lists?.[x.key]?.entries || []).length}</td><td>${onBoard(x.key)}</td></tr>`).join("")}
       </tbody></table></div>
       <p class="hint">Names, rooms, boxes, dates and hints are changed in List settings. A list another board shows stays on the menu even when this board doesn't show it.</p>`;
   }
@@ -309,12 +313,26 @@
       showResults({ errors: [], warnings: r.warnings || [], note: `Version ${r.version} published.` });
       await afterPublish(r.version);
     } catch (ex) {
-      if (ex.status === 409) showResults({ errors: [], warnings: ex.data?.warnings || [], anyway: true });
-      else showResults({ errors: ex.data?.errors || [{ where: "layout", msg: ex.message }], warnings: ex.data?.warnings || [] });
+      if (ex.status === 409) { L.lastWarnings = ex.data?.warnings || []; showResults({ errors: [], warnings: ex.data?.warnings || [], anyway: true }); publishPopup("warnings", ex.data?.warnings || []); }
+      else { const errors = ex.data?.errors || [{ where: "layout", msg: ex.message }]; showResults({ errors, warnings: ex.data?.warnings || [] }); publishPopup("errors", errors); }
+    }
+  }
+  // T1c (DP-13; Scot: the warnings were only at the foot of the page, so a Publish that stopped there looked like nothing
+  // happened): Publish says at once, in a pop-up, that it hasn't published yet and why
+  function publishPopup(kind, list) {
+    const D = window.ConsoleDialog, n = list.length;
+    const items = `<ul class="publish-list">${list.slice(0, 20).map((w) => `<li><strong>${esc(w.where || "")}</strong>: ${esc(w.msg || "")}</li>`).join("")}${n > 20 ? `<li>…and ${n - 20} more (listed under the layout)</li>` : ""}</ul>`;
+    if (kind === "warnings") {
+      D.open({ title: `Not published yet: ${n} warning${n === 1 ? "" : "s"}`, ok: "Publish anyway", wide: true,
+        body: `<p>These are the guardrails: a customer designer couldn't publish this; WayTuGo can, if it's meant. Publishing anyway records them with the version.</p>${items}`,
+        async save() { await publish(true); } });
+    } else {
+      D.open({ title: `Not published: ${n} problem${n === 1 ? "" : "s"} to fix`, ok: "OK", wide: true,
+        body: `<p>Nothing was published. Fix these in Layout (JSON), then Publish again.</p>${items}`, async save() {} });
     }
   }
   $("layout-publish").addEventListener("click", () => publish(false));
-  $("layout-results").addEventListener("click", (e) => { if (e.target.id === "layout-anyway" && confirm("Publish with these warnings? It's recorded with the version.")) publish(true); });
+  $("layout-results").addEventListener("click", (e) => { if (e.target.id === "layout-anyway") publishPopup("warnings", L.lastWarnings || []); });
   async function afterPublish(version) {
     L.current.published_version = version;
     await window.ConsoleRefresh();
