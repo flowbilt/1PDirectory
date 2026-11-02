@@ -46,7 +46,7 @@
       "style": { "surface": "panel", "radius": "m", "size": "s", "pad": "m" }, "content": { "heading": "Bakery & breakfast", "leaders": true, "list": "bakery" } },
 
     { "id": "menu-qr", "type": "qr", "at": { "col": 9, "row": 20, "w": 4, "h": 5 },
-      "style": { "surface": "panel", "radius": "m", "size": "m", "pad": "s", "align": "center" },
+      "style": { "align": "center", "size": "m" },
       "content": { "line": "Scan for the menu" } }
   ]
 }

@@ -465,3 +465,6 @@ dialog.wide #dlg-body { max-height: 72vh; overflow: auto; padding-right: 4px; }
 .publish-list { margin: 8px 0 0; padding-left: 18px; display: grid; gap: 6px; max-height: 50vh; overflow: auto; }
 .me-unshown { margin: 2px 0 8px; padding: 6px 10px; border-radius: 6px; background: #fff4d6; color: #6b4a00; font-size: 14px; }
 .me-republished { margin: 0 0 12px; padding: 8px 12px; border-radius: 8px; background: #e8f1ff; color: #123a6b; display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+
+/* T1d (DP-13): a board's sizes (1Point only) */
+.me-sizes { margin-top: 10px; padding-top: 8px; border-top: 1px dashed var(--line); }

@@ -3215,6 +3215,39 @@ test("T1c: the size guardrail: pictures with no words aren't measured, one decim
   for (const x of ["Not on a board yet: no published board shows this list", "A board on this menu was published since you opened this page."]) assert.ok(ed.includes(x), x);
 });
 
+test("T1d: a board's sizes: the QR code the same size on the glass on any screen (never past its spot), the logo's share; only 1Point sets them", async () => {
+  assert.equal(MF.boardProblem({ sizes: { qr: "s", logo: 80 } }), "");
+  assert.match(MF.boardProblem({ sizes: { qr: "xl" } }), /Small, Medium or Large/);
+  assert.match(MF.boardProblem({ sizes: { logo: 50 } }), /60% to 100%/);
+  assert.match(MF.boardProblem({ sizes: { clock: 1 } }), /QR code and the logo/);
+  const d55 = LF.checkLayout(JSON.parse(readFileSync(new URL("../layouts/template-coffee-55.json", import.meta.url), "utf8"))).doc;
+  const qr = d55.blocks.find((b) => b.type === "qr"), fill = LF.qrSide(d55, qr);
+  assert.equal(LF.qrSide(d55, qr, {}), fill, "no size: it fills its spot");
+  const s55 = LF.qrSide(d55, qr, { size: "s", inches: 55 }), s32 = LF.qrSide(d55, qr, { size: "s", inches: 32 });
+  assert.ok(s55 < s32, "the same 7 cm takes fewer of a 55-inch board's pixels than a 32-inch's");
+  assert.ok(Math.abs(s55 * LF.mmPerPx(55) - 70) < 1, `${s55 * LF.mmPerPx(55)} mm`);
+  assert.equal(LF.qrSide(d55, qr, { size: "l", inches: 32 }), fill, "never past its spot");
+  assert.deepEqual(LF.boardChoice(d55, { sizes: { qr: "m", logo: 70 } }).sizes, { qr: "m", logo: 70 });
+  assert.deepEqual(LF.boardChoice(d55, {}).sizes, { qr: null, logo: 100 });
+  assert.equal(LF.applyLook(d55, { sizes: { qr: "s" } }).look.sizes.qr, "s");
+  assert.deepEqual(MF.menuChanges({ lists: [] }, { lists: {} }, { lists: {}, boards: { [crypto.randomUUID()]: { sizes: { qr: "s", logo: 80 } } } }), ["Board look (a board): QR code (fills its spot) → Small", "Board look (a board): logo 100% → 80%"]);
+  // only 1Point: the owner's save keeps them
+  const admin = await login("scot@1pointusa.com", "admin-pass"), owner = await login("leighann@barber.test", "owner-pass");
+  const org = fake.T.organizations.find((o) => /Barber/.test(o.name)), lid = crypto.randomUUID();
+  const m = { id: crypto.randomUUID(), org_id: org.id, name: "Sizes test", customer_edit: true, spec: { lists: [] }, content: { lists: {} }, rev: 0, created_at: "", updated_at: "" };
+  fake.T.menus.push(m);
+  const save = (tok, content) => fake.handle(new Request(`${SB}/rest/v1/rpc/menu_save`, { method: "POST", body: JSON.stringify({ p_menu: m.id, p_base_rev: m.rev, p_content: content }), headers: { apikey: ANON_KEY, Authorization: `Bearer ${tok}`, "Content-Type": "application/json" } }));
+  assert.equal((await save(admin, { lists: {}, boards: { [lid]: { sizes: { qr: "s", logo: 80 } } } })).status, 200);
+  assert.equal((await save(owner, { lists: {}, boards: { [lid]: { look: "chalkboard", sizes: { qr: "l" } } } })).status, 200);
+  assert.deepEqual(m.content.boards[lid], { look: "chalkboard", sizes: { qr: "s", logo: 80 } });
+  assert.equal((await save(owner, { lists: {} })).status, 200);
+  assert.deepEqual(m.content.boards[lid], { sizes: { qr: "s", logo: 80 } }, "Back to WayTuGo's design keeps them");
+  fake.T.menus.splice(fake.T.menus.indexOf(m), 1);
+  const ed = readFileSync(new URL("../public/menu-edit.js", import.meta.url), "utf8"), bj = readFileSync(new URL("../public/board.js", import.meta.url), "utf8");
+  assert.ok(ed.includes("function sizesHtml(") && ed.includes("${E.admin ? sizesHtml(b, ch) : \"\"}"));
+  assert.ok(bj.includes("qrSide(doc, b, { size: doc.look?.sizes?.qr, inches: data?.screenInches })") && bj.includes("transform:scale(${k})"));
+});
+
 let passed = 0;
 for (const [name, fn] of tests) {
   try { await fn(); passed++; console.log(`  ok  ${name}`); }

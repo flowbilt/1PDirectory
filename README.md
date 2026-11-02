@@ -525,6 +525,22 @@ guardrail warnings with only a note at the foot of the page.
   but the published version doesn't.
 - **Menu changes never need a Publish:** once a board is published on its lists, Save in the menu editor is all it takes.
 
+### T1d (DP-13): a board's sizes; the QR code without a box
+
+Scot (2026-11-02): the QR code sized for the screen (on a 55" it can take less of the board than on a 32" and still read
+on a phone), the logo or shop's name sized to its spot, and the QR code open on the background with its line under it.
+
+- **Sizes, per board, 1Point only** (the menu editor's **Board look** panel, under "WayTuGo only: sizes for this
+  board"; kept with the board's look in `content.boards[<id>].sizes`; `supabase/39-board-sizes.sql`):
+  **QR code** Fills its spot (as before), **Small** (7 cm), **Medium** (10 cm) or **Large** (13 cm) on the glass,
+  worked out from the screen's own size in inches (Screen settings), else the layout's, and never past its spot
+  (`layout-format.mjs` `qrSide`); **Logo** 60% to 100% of its spot (a picture scaled from the side it's aligned to, a
+  name in smaller lettering). Anyone else's save, Restore or "Back to WayTuGo's design" keeps them; History says
+  "Board look (…): QR code … → Small".
+- **The QR code without a box** (the coffee templates): `"style": { "align": "center", "size": "m" }` on the `qr`
+  block: the code's own white square (phones need it) straight on the background, "Scan for the menu" under it in the
+  board's text colour.
+
 ## Screens and cards (Raspberry Pi)
 
 Every Pi runs from a **prepared card**, and every card is the same. A card carries no identity until it's in a Pi:

@@ -41,6 +41,8 @@ export const PROVIDES = { items: ["items", "price", "room", "schedule"], chips: 
   text: ["title", "body", "link", "schedule"], hours: ["hours", "note"] };
 export const MAX_LISTS = 20, GROUP_PRICE_MAX = 24, NOTE_MAX = 80, MAX_BYTES = 256 * 1024;
 /** E2d: a board's look choices (the same names as layout-format.mjs's LOOKS, CHALK and LETTERING) */
+// T1d: the QR code's size on the glass, in mm (the same on any screen: a 55" gives it less of the board than a 32")
+export const BOARD_QR_SIZES = { s: 70, m: 100, l: 130 };
 export const BOARD_LOOKS = ["house", "chalkboard"], BOARD_CHALK = ["white", "yellow", "pink", "blue", "green", "orange"], BOARD_LETTERING = ["sign", "hand"];
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 
@@ -84,7 +86,7 @@ export function brandProblem(b, { images } = {}) {
 /** E2d: checks one board's choice. Returns an error in plain words, or "". */
 export function boardProblem(b) {
   if (!isObj(b)) return "Each board's look is { \"look\", \"chalk\", \"lettering\", \"frame\", \"options\" }.";
-  for (const k of Object.keys(b)) if (!["look", "chalk", "lettering", "frame", "options"].includes(k)) return `"${k}" isn't part of a board's look.`;
+  for (const k of Object.keys(b)) if (!["look", "chalk", "lettering", "frame", "options", "sizes"].includes(k)) return `"${k}" isn't part of a board's look.`;
   if (b.look !== undefined && !BOARD_LOOKS.includes(b.look)) return "The look is House or Chalkboard.";
   if (b.chalk !== undefined) {
     if (!isObj(b.chalk)) return "The chalk colours are for titles, prices and accents.";
@@ -98,6 +100,15 @@ export function boardProblem(b) {
   if (b.options !== undefined) {
     if (!isObj(b.options) || Object.keys(b.options).length > 6) return "A board has up to 6 options.";
     for (const [k, v] of Object.entries(b.options)) if (!KEY_RE.test(k) || typeof v !== "boolean") return "Each option is ticked or not.";
+  }
+  // T1d (DP-13): the QR code's size on the glass and the logo's share of its spot (1Point's; 39-board-sizes.sql)
+  if (b.sizes !== undefined) {
+    if (!isObj(b.sizes)) return "A board's sizes are for the QR code and the logo.";
+    for (const [k, v] of Object.entries(b.sizes)) {
+      if (k === "qr") { if (!BOARD_QR_SIZES[v]) return "The QR code is Small, Medium or Large."; }
+      else if (k === "logo") { if (!Number.isInteger(v) || v < 60 || v > 100) return "The logo's size is 60% to 100% of its spot."; }
+      else return "A board's sizes are for the QR code and the logo.";
+    }
   }
   return "";
 }
@@ -431,6 +442,9 @@ export function menuChanges(spec, before, after, max = 40, boardNames = null) {
     if (o.lettering !== n.lettering) lines.push(`Board look (${name}): lettering ${word(o.lettering)} → ${word(n.lettering)}`);
     if (o.frame !== n.frame) lines.push(`Board look (${name}): wooden frame ${word(o.frame)} → ${word(n.frame)}`);
     for (const k of new Set([...Object.keys(o.options || {}), ...Object.keys(n.options || {})])) if (o.options?.[k] !== n.options?.[k]) lines.push(`Board look (${name}): ${k.replace(/-/g, " ")} ${word(o.options?.[k])} → ${word(n.options?.[k])}`);
+    const QS = { s: "Small", m: "Medium", l: "Large" };
+    if (o.sizes?.qr !== n.sizes?.qr) lines.push(`Board look (${name}): QR code ${o.sizes?.qr ? QS[o.sizes.qr] : "(fills its spot)"} → ${n.sizes?.qr ? QS[n.sizes.qr] : "(fills its spot)"}`);
+    if (o.sizes?.logo !== n.sizes?.logo) lines.push(`Board look (${name}): logo ${o.sizes?.logo ? `${o.sizes.logo}%` : "100%"} → ${n.sizes?.logo ? `${n.sizes.logo}%` : "100%"}`);
   }
   // T1b: the shop's brand
   const ob = before?.brand || {}, nb = after?.brand || {}, said = (v) => (v === undefined ? "(the template's)" : v);

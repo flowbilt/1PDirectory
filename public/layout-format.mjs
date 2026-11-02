@@ -300,7 +300,9 @@ export function boardChoice(doc, choice) {
   if (typeof c.frame === "boolean") chalk.frame = c.frame;
   const options = {};
   for (const o of doc?.options || []) options[o.key] = typeof c.options?.[o.key] === "boolean" ? c.options[o.key] : o.default;
-  return { look, chalk, options };
+  // T1d: the QR code's size on the glass (null: it fills its spot) and the logo's share of its spot
+  const sizes = { qr: ["s", "m", "l"].includes(c.sizes?.qr) ? c.sizes.qr : null, logo: Number.isInteger(c.sizes?.logo) && c.sizes.logo >= 60 && c.sizes.logo <= 100 ? c.sizes.logo : 100 };
+  return { look, chalk, options, sizes };
 }
 
 /** E2d: whether a layout offers the customer anything to choose (a second look, or an option). */
@@ -644,11 +646,15 @@ export const STYLE_PX = { RADII, PADS };
 
 /** E1c: how many canvas pixels across a QR block draws its code (the board draws it exactly this size): the box less
  *  its padding, and less one line of text under the code. */
-export function qrSide(doc, b) {
+export function qrSide(doc, b, { size = null, inches = null } = {}) {
   const box = blockBox(doc, b), surf = b.style.surface || "none";
   const pad = PADS[b.style.pad || (surf === "none" ? "none" : "m")];
   const line = SIZES[b.style.size || "m"] * 0.62 * 1.2 + 10;
-  return Math.floor(Math.min(box.width - 2 * pad, box.height - 2 * pad - line));
+  const fill = Math.floor(Math.min(box.width - 2 * pad, box.height - 2 * pad - line));
+  // T1d (DP-13; Scot): a size on the glass (Small 7, Medium 10, Large 13 cm) on this screen, never past its spot
+  const mm = { s: 70, m: 100, l: 130 }[size];
+  if (!mm) return fill;
+  return Math.min(fill, Math.floor(mm / mmPerPx(Number(inches) || doc.viewing?.inches || 55)));
 }
 
 /** E1c: the order a person reads a layout's blocks in (the phone menu lists them this way). The board is cut into

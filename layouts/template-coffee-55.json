@@ -86,7 +86,7 @@
         { "name": "Vanilla" }, { "name": "Caramel" }, { "name": "Hazelnut" } ] } },
 
     { "id": "menu-qr", "type": "qr", "at": { "col": 22, "row": 6, "w": 3, "h": 3 },
-      "style": { "surface": "panel", "radius": "m", "size": "m", "pad": "s", "align": "center" },
+      "style": { "align": "center", "size": "m" },
       "content": { "line": "Scan for the menu" } },
 
     { "id": "seasonal", "type": "items", "at": { "col": 17, "row": 9, "w": 5, "h": 4 },

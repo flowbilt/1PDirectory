@@ -786,7 +786,18 @@ export function createFake() {
     }
     let c = content || { lists: {} };
     // 38-brand.sql: the brand is 1Point's; anyone else's save or Restore keeps the menu's brand as it is
-    if (!admin) { const { brand, ...rest } = c; c = m.content?.brand ? { ...rest, brand: m.content.brand } : rest; }
+    if (!admin) {
+      const { brand, ...rest } = c; c = m.content?.brand ? { ...rest, brand: m.content.brand } : rest;
+      // 39-board-sizes.sql: each board's sizes stay as 1Point set them
+      const boards = {};
+      for (const k of new Set([...Object.keys(m.content?.boards || {}), ...Object.keys(c.boards || {})])) {
+        const { sizes, ...b } = c.boards?.[k] || {};
+        const keep = m.content?.boards?.[k]?.sizes;
+        const nb = keep ? { ...b, sizes: keep } : b;
+        if (Object.keys(nb).length) boards[k] = nb;
+      }
+      const { boards: _b, ...noBoards } = c; c = Object.keys(boards).length ? { ...noBoards, boards } : noBoards;
+    }
     const next = { ...m, content: c };
     const bad = menuRule(next, m); if (bad) throw Object.assign(new Error(bad), { status: 400 });
     Object.assign(m, { content: next.content, rev: m.rev + 1, updated_at: now(), updated_by: who.uid || null });

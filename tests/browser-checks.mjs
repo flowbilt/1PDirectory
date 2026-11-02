@@ -1246,7 +1246,7 @@ try {
     await v.close();
   });
 
-  await check("T1b: the Brand panel (1Point only): the shop's name, a colour and a font in the menu editor; the preview follows; Save keeps it on the menu, in History; the owner sees no Brand panel", async () => {
+  await check("T1b/T1d: the Brand panel (1Point only): the shop's name, a colour and a font in the menu editor; the preview follows; Save keeps it on the menu, in History; a board's QR code Small; the owner sees neither", async () => {
     assert(copied, "needs the copy");
     await boss.goto(`${B}/menu-edit.html?m=${copied.m.id}`); await boss.waitForTimeout(3000);
     assert(await boss.locator("#me-brand").isVisible(), "the Brand panel");
@@ -1262,9 +1262,23 @@ try {
     assert(m.content.brand?.name === "O.Henry's Coffees" && m.content.brand.colours?.bg === "#f3eee3" && m.content.brand.fonts?.display === "Playfair Display", JSON.stringify(m.content.brand));
     await boss.click('[data-side="history"]').catch(() => {}); await boss.waitForTimeout(300);
     assert((await boss.textContent("#history")).includes("Brand: name"), "in History");
+    // T1d: a board's sizes (1Point only): the QR code Small draws smaller in the preview, and saves on the board's look
+    const qrW = async () => boss.frameLocator("#pv").locator(".qr-code").first().evaluate((el) => el.getBoundingClientRect().width).catch(() => 0);
+    const sec = boss.locator(".me-look").filter({ has: boss.locator('[data-look-f="qr"]') }).first();
+    await sec.locator('[data-look-f="qr"]').first().scrollIntoViewIfNeeded().catch(() => {});
+    const bid = await sec.getAttribute("data-board");
+    await boss.selectOption("#board-pick", bid); await boss.waitForTimeout(2000);
+    const w0 = await qrW();
+    await sec.locator('[data-look-f="qr"][value="s"]').check(); await boss.waitForTimeout(2500);
+    const w1 = await qrW();
+    assert(w1 > 0 && w1 < w0, `QR ${w0} → ${w1}`);
+    await boss.click("#save"); await boss.waitForTimeout(2000);
+    const [m2] = (await sb(`menus?id=eq.${copied.m.id}&select=content`)).data;
+    assert(m2.content.boards?.[bid]?.sizes?.qr === "s", JSON.stringify(m2.content.boards));
     // the owner's editor has no Brand panel
     await owner.goto(`${B}/menu-edit.html?m=${menuId}`); await owner.waitForTimeout(2500);
     assert(!(await owner.locator("#me-brand").count()), "no Brand panel for the owner");
+    assert(!(await owner.locator(".me-sizes").count()), "no sizes for the owner");
   });
 
   await sb(`screens?id=eq.${portrait.id}`, { method: "PATCH", body: JSON.stringify({ layout_id: lay.id, property_id: home.id }) });

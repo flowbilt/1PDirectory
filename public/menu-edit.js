@@ -183,8 +183,18 @@ window.addEventListener("focus", async () => {
   } catch { /* try again next time */ }
 });
 // ── Board look (E2d): a board's look and options, from the presets its layout offers ──
+// T1d (DP-13; Scot): this board's sizes, 1Point only: the QR code's size on the glass and the logo's share of its spot
+function sizesHtml(b, ch) {
+  const doc = b.checked, hasQr = doc.blocks.some((x) => x.type === "qr"), hasLogo = doc.blocks.some((x) => x.type === "logo");
+  if (!hasQr && !hasLogo) return "";
+  const q = (v, label) => `<label class="me-choice${(ch.sizes.qr || "") === v ? " is-on" : ""}"><input type="radio" name="qr:${esc(b.id)}" data-look-f="qr" value="${v}"${(ch.sizes.qr || "") === v ? " checked" : ""}> ${label}</label>`;
+  return `<div class="me-sizes"><p class="hint">WayTuGo only: sizes for this board.</p>
+    ${hasQr ? `<div class="me-look-row"><span class="me-look-label">QR code</span>${q("", "Fills its spot")}${q("s", "Small · 7 cm")}${q("m", "Medium · 10 cm")}${q("l", "Large · 13 cm")}</div>` : ""}
+    ${hasLogo ? `<div class="me-look-row"><span class="me-look-label">Logo</span><select data-look-f="logo" aria-label="Logo size">${[100, 90, 80, 70, 60].map((n) => `<option value="${n}"${ch.sizes.logo === n ? " selected" : ""}>${n}% of its spot</option>`).join("")}</select></div>` : ""}
+  </div>`;
+}
 function lookHtml(b) {
-  const doc = b.checked, ch = boardChoice(doc, E.draft.boards?.[b.id]), mine = E.draft.boards?.[b.id] && Object.keys(E.draft.boards[b.id]).length;
+  const doc = b.checked, ch = boardChoice(doc, E.draft.boards?.[b.id]), mine = E.draft.boards?.[b.id] && Object.keys(E.draft.boards[b.id]).some((k) => k !== "sizes");
   const looks = doc.theme.looks || ["house"], chalk = ch.look === "chalkboard";
   const radio = (name, val, label, on) => `<label class="me-choice${on ? " is-on" : ""}"><input type="radio" name="${esc(name)}" data-look-f="${esc(name.split(":")[0])}" value="${esc(val)}"${on ? " checked" : ""}> ${esc(label)}</label>`;
   const swatches = (role) => `<div class="me-swatches" role="radiogroup" aria-label="${esc(CHALK_ROLES[role])} chalk">${Object.entries(CHALK).map(([k, hex]) =>
@@ -198,6 +208,7 @@ function lookHtml(b) {
       + `<div class="me-look-row"><span class="me-look-label">Lettering</span>${Object.entries(LETTERING).map(([k, lbl]) => radio(`lettering:${b.id}`, k, lbl, ch.chalk.lettering === k)).join("")}</div>`
       + `<div class="me-look-row"><span class="me-look-label">Frame</span><label class="check inline"><input type="checkbox" data-look-f="frame"${ch.chalk.frame ? " checked" : ""}> Wooden frame around the board</label></div>` : ""}
     ${(doc.options || []).length ? `<div class="me-look-row"><span class="me-look-label">Show</span>${doc.options.map((o) => `<label class="check inline"><input type="checkbox" data-look-f="option" data-opt="${esc(o.key)}"${ch.options[o.key] ? " checked" : ""}> ${esc(o.label)}</label>`).join("")}</div>` : ""}
+    ${E.admin ? sizesHtml(b, ch) : ""}
     ${mine ? `<button type="button" class="ghost" data-look-reset>Back to WayTuGo's design</button>` : ""}
   </section>`;
 }
@@ -225,7 +236,7 @@ function brandHtml() {
 function drawLists() {
   $("lists").innerHTML = `<p class="hint me-intro">Change what's on your boards here. The layout, headings, colours and sizes are set by WayTuGo; ask WayTuGo to change them, or for more room on a list.</p>`
     + (E.admin ? brandHtml() : "")
-    + E.boards.filter((b) => b.checked && offersChoice(b.checked)).map(lookHtml).join("")
+    + E.boards.filter((b) => b.checked && (offersChoice(b.checked) || E.admin)).map(lookHtml).join("")
     + (E.spec.lists || []).map(listHtml).join("");
   if (!canEdit()) $("lists").querySelectorAll("input, select, textarea, button").forEach((x) => (x.disabled = true));
   dirty();
@@ -352,12 +363,16 @@ $("lists").addEventListener("change", (ev) => {
   else if (f === "lettering") c.lettering = t.value;
   else if (f === "frame") c.frame = t.checked;
   else if (f === "option") c.options = { ...(c.options || {}), [t.dataset.opt]: t.checked };
+  else if (f === "qr") { c.sizes = { ...(c.sizes || {}) }; if (t.value) c.sizes.qr = t.value; else delete c.sizes.qr; }
+  else if (f === "logo") { c.sizes = { ...(c.sizes || {}) }; if (Number(t.value) < 100) c.sizes.logo = Number(t.value); else delete c.sizes.logo; }
   showBoard(id); drawLists(); schedulePreview();
 });
 $("lists").addEventListener("click", (ev) => {
   const btn = ev.target.closest("[data-look-reset]"); if (!btn) return;
   const id = btn.closest(".me-look").dataset.board;
-  delete E.draft.boards[id]; showBoard(id); drawLists(); schedulePreview();
+  const sizes = E.draft.boards[id]?.sizes;   // T1d: the sizes are WayTuGo's, not part of the customer's choices
+  delete E.draft.boards[id]; if (sizes) E.draft.boards[id] = { sizes };
+  showBoard(id); drawLists(); schedulePreview();
 });
 /** The preview turns to the board being changed */
 function showBoard(id) { if ($("board-pick").value !== id && E.boards.some((b) => b.id === id)) { $("board-pick").value = id; $("phone-line").innerHTML = phoneLine(E.boards.find((b) => b.id === id)); } }
@@ -391,6 +406,7 @@ function tidy(content) {
     if (b?.lettering) x.lettering = b.lettering;
     if (typeof b?.frame === "boolean") x.frame = b.frame;
     if (b?.options && Object.keys(b.options).length) x.options = { ...b.options };
+    if (b?.sizes && Object.keys(b.sizes).length) x.sizes = { ...b.sizes };   // T1d
     if (Object.keys(x).length) boards[id] = x;
   }
   if (Object.keys(boards).length) out.boards = boards;

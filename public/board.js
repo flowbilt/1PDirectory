@@ -116,7 +116,9 @@ const BODY = {
     // name written in chalk
     const chalk = doc.look?.look === "chalkboard";
     const src = chalk ? picture(b.content.chalkImage) : picture(b.content.image), text = b.content.text || data?.propertyName || "";
-    return src ? `<img class="logo-img" src="${esc(src)}" alt="${esc(text)}">` : `<div class="b-logo ${titleClass(b)}">${esc(text)}</div>`;
+    // T1d: the logo's share of its spot (1Point's, per board), from the side it's aligned to
+    const k = (doc.look?.sizes?.logo || 100) / 100, sc = k < 1 ? ` style="transform:scale(${k});transform-origin:var(--logo-pos, left center)"` : "";
+    return src ? `<img class="logo-img" src="${esc(src)}" alt="${esc(text)}"${sc}>` : `<div class="b-logo ${titleClass(b)}"${k < 1 ? ` style="font-size:${k}em"` : ""}>${esc(text)}</div>`;
   },
   clock(b) { return `<div class="b-clock" data-live="clock" data-show="${b.content.show || "both"}"></div>`; },
   weather(b) { return `<div data-live="weather">${b.content.label ? `<span class="wlabel">${esc(b.content.label)}</span>` : ""}<div class="b-weather"></div></div>`; },
@@ -135,7 +137,8 @@ const BODY = {
   // E1c: "Take this menu with you": the layout's own code (waytugo.com/m/<code>), drawn here, exactly the size the
   // guardrail measured; until the layout has a code (a preview of a new one) a quiet square
   qr(b) {
-    const side = Math.max(0, qrSide(doc, b)), url = data?.menu?.url || "";
+    // T1d: the size chosen for this board, on this screen (its own size in inches, else the layout's)
+    const side = Math.max(0, qrSide(doc, b, { size: doc.look?.sizes?.qr, inches: data?.screenInches })), url = data?.menu?.url || "";
     let code = "";
     if (url) { try { code = C.svgQR(url); } catch (e) { console.warn("QR failed", e); } }
     return `<div class="b-qr"><div class="qr-code${code ? "" : " qr-empty"}" style="width:${side}px;height:${side}px">${code}</div><div class="qr-line">${esc(b.content.line || QR_LINE)}</div></div>`;
