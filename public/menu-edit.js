@@ -186,10 +186,11 @@ window.addEventListener("focus", async () => {
 // T1d (DP-13; Scot): this board's sizes, 1Point only: the QR code's size on the glass and the logo's share of its spot
 function sizesHtml(b, ch) {
   const doc = b.checked, hasQr = doc.blocks.some((x) => x.type === "qr"), hasLogo = doc.blocks.some((x) => x.type === "logo");
-  if (!hasQr && !hasLogo) return "";
+  const pct = (f, label) => `<div class="me-look-row"><span class="me-look-label">${label}</span><select data-look-f="${f}" aria-label="${label} size">${[80, 90, 100, 110, 120, 130].map((n) => `<option value="${n}"${ch.sizes[f] === n ? " selected" : ""}>${n}%${n === 100 ? " (as designed)" : ""}</option>`).join("")}</select></div>`;
   const q = (v, label) => `<label class="me-choice${(ch.sizes.qr || "") === v ? " is-on" : ""}"><input type="radio" name="qr:${esc(b.id)}" data-look-f="qr" value="${v}"${(ch.sizes.qr || "") === v ? " checked" : ""}> ${label}</label>`;
   return `<div class="me-sizes"><p class="hint">WayTuGo only: sizes for this board.</p>
     ${hasQr ? `<div class="me-look-row"><span class="me-look-label">QR code</span>${q("", "Fills its spot")}${q("s", "Small · 7 cm")}${q("m", "Medium · 10 cm")}${q("l", "Large · 13 cm")}</div>` : ""}
+    ${pct("headings", "Headings")}${pct("body", "Body text")}
     ${hasLogo ? `<div class="me-look-row"><span class="me-look-label">Logo</span><select data-look-f="logo" aria-label="Logo size">${[100, 90, 80, 70, 60].map((n) => `<option value="${n}"${ch.sizes.logo === n ? " selected" : ""}>${n}% of its spot</option>`).join("")}</select></div>` : ""}
   </div>`;
 }
@@ -365,6 +366,7 @@ $("lists").addEventListener("change", (ev) => {
   else if (f === "option") c.options = { ...(c.options || {}), [t.dataset.opt]: t.checked };
   else if (f === "qr") { c.sizes = { ...(c.sizes || {}) }; if (t.value) c.sizes.qr = t.value; else delete c.sizes.qr; }
   else if (f === "logo") { c.sizes = { ...(c.sizes || {}) }; if (Number(t.value) < 100) c.sizes.logo = Number(t.value); else delete c.sizes.logo; }
+  else if (f === "headings" || f === "body") { c.sizes = { ...(c.sizes || {}) }; if (Number(t.value) !== 100) c.sizes[f] = Number(t.value); else delete c.sizes[f]; }   // T1e
   showBoard(id); drawLists(); schedulePreview();
 });
 $("lists").addEventListener("click", (ev) => {

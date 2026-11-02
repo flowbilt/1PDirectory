@@ -215,3 +215,15 @@ html.menu-view, html.menu-view body { overflow: auto; }
 .sample-mark { position: fixed; right: 12px; bottom: 10px; z-index: 50; margin: 0; padding: 5px 12px; border-radius: 999px;
   background: rgba(0, 0, 0, 0.62); color: #fff; font: 600 13px/1.3 system-ui, -apple-system, "Segoe UI", sans-serif; letter-spacing: 0.02em;
   pointer-events: none; }
+
+/* T1d (DP-13): a caption's lines are as wide as its box, so a word too long for it is measured and shrunk */
+.photo-cap > .b-title, .photo-cap > .b-body { overflow: hidden; }
+
+/* T1e (DP-13; Scot): a board's body text and headings, each as a share of the layout's sizes (1Point's, per board).
+   The body share scales a block's text; a heading takes the headings' share instead, whatever the body's. The logo,
+   clock, weather and QR line keep their own sizes. Text still shrinks to fit its box. */
+.b-in { font-size: calc(var(--fs) * var(--fit, 1) * var(--body-k, 1)); }
+.b.logo .b-in, .b.clock .b-in, .b.weather .b-in, .b.qr .b-in, .b.price .b-in { font-size: calc(var(--fs) * var(--fit, 1)); }
+.items-head, .chips-head { font-size: calc(1.15em * var(--head-k, 1) / var(--body-k, 1)); }
+.tt-head { font-size: calc(1.1em * var(--head-k, 1) / var(--body-k, 1)); }
+.b-title, .photo-cap .b-title, .hours-now { font-size: calc(1em * var(--head-k, 1) / var(--body-k, 1)); }

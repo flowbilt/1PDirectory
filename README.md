@@ -537,6 +537,16 @@ on a phone), the logo or shop's name sized to its spot, and the QR code open on 
   (`layout-format.mjs` `qrSide`); **Logo** 60% to 100% of its spot (a picture scaled from the side it's aligned to, a
   name in smaller lettering). Anyone else's save, Restore or "Back to WayTuGo's design" keeps them; History says
   "Board look (…): QR code … → Small".
+- **Text sizes, per board, 1Point only** (T1e, Scot: "I'll need the ability to change Headings and Body text font
+  size", per board; `supabase/40-text-sizes.sql`): **Headings** and **Body text** 80% to 130% in steps of 10, in the
+  same "WayTuGo only: sizes for this board" part of the Board look. The body share scales a block's text; headings
+  (lists' headings, a text block's or caption's title, "Open now") take the headings' share whatever the body's
+  (`board.css` `--head-k`, `--body-k`); the logo, clock, weather, QR line and price badges keep their own. Text still
+  shrinks to fit its box, and the preview marks a box that no longer fits. History: "Board look (…): headings 100% → 120%".
+- **A picture's caption fits its box** (T1e, Scot: "A seasonal latte" in Playfair Display ran to the box's right edge):
+  a caption sits over its picture, outside the block's flow, so the fitting now measures it too (a word too long for
+  the caption box, or a caption taller or wider than the picture) and shrinks the block's text until it fits inside
+  the caption's padding (`board.js` `fits`).
 - **The QR code without a box** (the coffee templates): `"style": { "align": "center", "size": "m" }` on the `qr`
   block: the code's own white square (phones need it) straight on the background, "Scan for the menu" under it in the
   board's text colour.

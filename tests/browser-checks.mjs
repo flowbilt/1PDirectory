@@ -1175,6 +1175,19 @@ try {
     console.log(`       measured: CPU 6x slower: drawn in ${ok.ms} ms, ${ok.fps} fps, grain on; slow frames: ${slow.fps} fps, grain dropped`);
   });
 
+  await check("T1d (Scot): a picture's caption with a word too long for its box shrinks until the word fits inside its padding", async () => {
+    const p = await browser.newPage({ viewport: { width: 1920, height: 1080 } });
+    await p.goto(`${B}/board.html?preview=1`); await p.waitForTimeout(500);
+    const doc = { format: 1, orientation: "landscape", viewing: { inches: 55, metres: 4 }, grid: { cols: 24, rows: 13, gap: 16, margin: 30 },
+      theme: { fonts: { display: "Playfair Display", body: "Instrument Sans" } },
+      blocks: [{ id: "seasonal-pic", type: "photo", at: { col: 22, row: 9, w: 3, h: 4 }, style: { radius: "m", size: "m" }, content: { caption: "A seasonal latte" } }] };
+    await p.evaluate((d) => window.postMessage({ type: "layout-draft", data: { kind: "layout", orientation: "landscape", layout: { id: null, name: "x", doc: d }, images: {}, lists: null } }, location.origin), doc);
+    await p.waitForTimeout(2500);
+    const r = await p.evaluate(() => { const el = document.querySelector('[data-id="seasonal-pic"]'); return { fit: Number(getComputedStyle(el.firstElementChild).getPropertyValue("--fit")), lines: [...el.querySelectorAll(".photo-cap > *")].map((x) => [x.scrollWidth, x.clientWidth]) }; });
+    await p.close();
+    assert(r.fit < 0.95 && r.lines.every(([sw, cw]) => sw <= cw + 1), JSON.stringify(r));
+  });
+
   // ── T0 (DP-13): Copy a shop, and a sample link ──
   let copied = null;
   await check("T0: Copy to an account (1Point): Donut Joe's menu and its boards into a new account with a building; the copy's own pictures, boards published, the template untouched", async () => {
@@ -1275,6 +1288,16 @@ try {
     await boss.click("#save"); await boss.waitForTimeout(2000);
     const [m2] = (await sb(`menus?id=eq.${copied.m.id}&select=content`)).data;
     assert(m2.content.boards?.[bid]?.sizes?.qr === "s", JSON.stringify(m2.content.boards));
+    // T1e (Scot): the board's headings at 120%: the preview's headings grow, the items don't; saved
+    const fs = async () => boss.frameLocator("#pv").locator("body").evaluate(() => ({ head: parseFloat(getComputedStyle(document.querySelector(".items-head") || document.body).fontSize), name: parseFloat(getComputedStyle(document.querySelector(".item-name") || document.body).fontSize) }));
+    const f0 = await fs();
+    await sec.locator('[data-look-f="headings"]').selectOption("120"); await boss.waitForTimeout(2500);
+    const f1 = await fs();
+    // the items only re-fit (a box can shrink its text a touch)
+    assert(f1.head > f0.head * 1.1 && Math.abs(f1.name - f0.name) < f0.name * 0.05, `${JSON.stringify(f0)} → ${JSON.stringify(f1)}`);
+    await boss.click("#save"); await boss.waitForTimeout(2000);
+    const [m3] = (await sb(`menus?id=eq.${copied.m.id}&select=content`)).data;
+    assert(m3.content.boards?.[bid]?.sizes?.headings === 120 && m3.content.boards[bid].sizes.qr === "s", JSON.stringify(m3.content.boards));
     // the owner's editor has no Brand panel
     await owner.goto(`${B}/menu-edit.html?m=${menuId}`); await owner.waitForTimeout(2500);
     assert(!(await owner.locator("#me-brand").count()), "no Brand panel for the owner");

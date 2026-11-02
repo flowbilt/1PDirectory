@@ -228,6 +228,9 @@ function grain() {
   return grainUrl;
 }
 function styleLook(look) {
+  // T1e (DP-13; Scot): this board's headings and body text, as a share of the layout's sizes (board.css)
+  stage.style.setProperty("--head-k", String((look?.sizes?.headings || 100) / 100));
+  stage.style.setProperty("--body-k", String((look?.sizes?.body || 100) / 100));
   const chalk = look?.look === "chalkboard";
   stage.classList.toggle("look-chalk", chalk);
   stage.classList.toggle("lettering-hand", chalk && look.chalk.lettering === "hand");
@@ -283,7 +286,17 @@ function startRotators() {
 }
 
 // ── Fitting: each block's text shrinks until it fits its box; one that still doesn't is an overflow ──
-function fits(el) { const inner = el.firstElementChild; return inner.scrollHeight <= el.clientHeight - 2 * (parseFloat(getComputedStyle(el).paddingTop) || 0) + 1 && inner.scrollWidth <= inner.clientWidth + 1; }
+function fits(el) {
+  const inner = el.firstElementChild;
+  if (!(inner.scrollHeight <= el.clientHeight - 2 * (parseFloat(getComputedStyle(el).paddingTop) || 0) + 1 && inner.scrollWidth <= inner.clientWidth + 1)) return false;
+  // T1d (Scot: "A seasonal latte" ran to the box's right edge): a picture's caption sits over the picture, outside the
+  // flow, so its own width and height are checked too: a word too long for it, or a caption taller than the picture
+  for (const cap of el.querySelectorAll(".photo-cap")) {
+    if (cap.scrollWidth > cap.clientWidth + 1 || cap.offsetHeight > el.clientHeight + 1 || cap.offsetWidth > el.clientWidth + 1) return false;
+    for (const line of cap.children) if (line.scrollWidth > line.clientWidth + 1) return false;   // a word into the padding
+  }
+  return true;
+}
 function fitBlock(el) {
   const inner = el.firstElementChild;
   inner.style.setProperty("--fit", "1");

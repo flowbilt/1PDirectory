@@ -3219,7 +3219,7 @@ test("T1d: a board's sizes: the QR code the same size on the glass on any screen
   assert.equal(MF.boardProblem({ sizes: { qr: "s", logo: 80 } }), "");
   assert.match(MF.boardProblem({ sizes: { qr: "xl" } }), /Small, Medium or Large/);
   assert.match(MF.boardProblem({ sizes: { logo: 50 } }), /60% to 100%/);
-  assert.match(MF.boardProblem({ sizes: { clock: 1 } }), /QR code and the logo/);
+  assert.match(MF.boardProblem({ sizes: { clock: 1 } }), /QR code, the logo, the headings and the body text/);
   const d55 = LF.checkLayout(JSON.parse(readFileSync(new URL("../layouts/template-coffee-55.json", import.meta.url), "utf8"))).doc;
   const qr = d55.blocks.find((b) => b.type === "qr"), fill = LF.qrSide(d55, qr);
   assert.equal(LF.qrSide(d55, qr, {}), fill, "no size: it fills its spot");
@@ -3227,8 +3227,14 @@ test("T1d: a board's sizes: the QR code the same size on the glass on any screen
   assert.ok(s55 < s32, "the same 7 cm takes fewer of a 55-inch board's pixels than a 32-inch's");
   assert.ok(Math.abs(s55 * LF.mmPerPx(55) - 70) < 1, `${s55 * LF.mmPerPx(55)} mm`);
   assert.equal(LF.qrSide(d55, qr, { size: "l", inches: 32 }), fill, "never past its spot");
-  assert.deepEqual(LF.boardChoice(d55, { sizes: { qr: "m", logo: 70 } }).sizes, { qr: "m", logo: 70 });
-  assert.deepEqual(LF.boardChoice(d55, {}).sizes, { qr: null, logo: 100 });
+  assert.deepEqual(LF.boardChoice(d55, { sizes: { qr: "m", logo: 70 } }).sizes, { qr: "m", logo: 70, headings: 100, body: 100 });
+  assert.deepEqual(LF.boardChoice(d55, {}).sizes, { qr: null, logo: 100, headings: 100, body: 100 });
+  // T1e: the headings' and body text's sizes
+  assert.deepEqual(LF.boardChoice(d55, { sizes: { headings: 120, body: 90 } }).sizes, { qr: null, logo: 100, headings: 120, body: 90 });
+  assert.equal(MF.boardProblem({ sizes: { headings: 130, body: 80 } }), "");
+  assert.match(MF.boardProblem({ sizes: { headings: 140 } }), /80% to 130%, in steps of 10/);
+  assert.match(MF.boardProblem({ sizes: { body: 95 } }), /80% to 130%, in steps of 10/);
+  assert.deepEqual(MF.menuChanges({ lists: [] }, { lists: {} }, { lists: {}, boards: { [crypto.randomUUID()]: { sizes: { headings: 120 } } } }), ["Board look (a board): headings 100% → 120%"]);
   assert.equal(LF.applyLook(d55, { sizes: { qr: "s" } }).look.sizes.qr, "s");
   assert.deepEqual(MF.menuChanges({ lists: [] }, { lists: {} }, { lists: {}, boards: { [crypto.randomUUID()]: { sizes: { qr: "s", logo: 80 } } } }), ["Board look (a board): QR code (fills its spot) → Small", "Board look (a board): logo 100% → 80%"]);
   // only 1Point: the owner's save keeps them
@@ -3246,6 +3252,7 @@ test("T1d: a board's sizes: the QR code the same size on the glass on any screen
   const ed = readFileSync(new URL("../public/menu-edit.js", import.meta.url), "utf8"), bj = readFileSync(new URL("../public/board.js", import.meta.url), "utf8");
   assert.ok(ed.includes("function sizesHtml(") && ed.includes("${E.admin ? sizesHtml(b, ch) : \"\"}"));
   assert.ok(bj.includes("qrSide(doc, b, { size: doc.look?.sizes?.qr, inches: data?.screenInches })") && bj.includes("transform:scale(${k})"));
+  assert.ok(bj.includes('for (const cap of el.querySelectorAll(".photo-cap"))') && bj.includes("for (const line of cap.children) if (line.scrollWidth > line.clientWidth + 1) return false;"), "a picture's caption is fitted too");
 });
 
 let passed = 0;

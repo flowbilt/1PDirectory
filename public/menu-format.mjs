@@ -43,6 +43,8 @@ export const MAX_LISTS = 20, GROUP_PRICE_MAX = 24, NOTE_MAX = 80, MAX_BYTES = 25
 /** E2d: a board's look choices (the same names as layout-format.mjs's LOOKS, CHALK and LETTERING) */
 // T1d: the QR code's size on the glass, in mm (the same on any screen: a 55" gives it less of the board than a 32")
 export const BOARD_QR_SIZES = { s: 70, m: 100, l: 130 };
+// T1e (DP-13; Scot): a board's headings and body text, as a share of the layout's sizes
+export const BOARD_TEXT_SIZES = [80, 90, 100, 110, 120, 130];
 export const BOARD_LOOKS = ["house", "chalkboard"], BOARD_CHALK = ["white", "yellow", "pink", "blue", "green", "orange"], BOARD_LETTERING = ["sign", "hand"];
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 
@@ -103,11 +105,13 @@ export function boardProblem(b) {
   }
   // T1d (DP-13): the QR code's size on the glass and the logo's share of its spot (1Point's; 39-board-sizes.sql)
   if (b.sizes !== undefined) {
-    if (!isObj(b.sizes)) return "A board's sizes are for the QR code and the logo.";
+    if (!isObj(b.sizes)) return "A board's sizes are for the QR code, the logo, the headings and the body text.";
     for (const [k, v] of Object.entries(b.sizes)) {
       if (k === "qr") { if (!BOARD_QR_SIZES[v]) return "The QR code is Small, Medium or Large."; }
       else if (k === "logo") { if (!Number.isInteger(v) || v < 60 || v > 100) return "The logo's size is 60% to 100% of its spot."; }
-      else return "A board's sizes are for the QR code and the logo.";
+      // T1e: the headings' and the body text's sizes, 80% to 130% in steps of 10
+      else if (k === "headings" || k === "body") { if (!BOARD_TEXT_SIZES.includes(v)) return "Text sizes are 80% to 130%, in steps of 10."; }
+      else return "A board's sizes are for the QR code, the logo, the headings and the body text.";
     }
   }
   return "";
@@ -445,6 +449,7 @@ export function menuChanges(spec, before, after, max = 40, boardNames = null) {
     const QS = { s: "Small", m: "Medium", l: "Large" };
     if (o.sizes?.qr !== n.sizes?.qr) lines.push(`Board look (${name}): QR code ${o.sizes?.qr ? QS[o.sizes.qr] : "(fills its spot)"} → ${n.sizes?.qr ? QS[n.sizes.qr] : "(fills its spot)"}`);
     if (o.sizes?.logo !== n.sizes?.logo) lines.push(`Board look (${name}): logo ${o.sizes?.logo ? `${o.sizes.logo}%` : "100%"} → ${n.sizes?.logo ? `${n.sizes.logo}%` : "100%"}`);
+    for (const [k, w] of [["headings", "headings"], ["body", "body text"]]) if (o.sizes?.[k] !== n.sizes?.[k]) lines.push(`Board look (${name}): ${w} ${o.sizes?.[k] || 100}% → ${n.sizes?.[k] || 100}%`);
   }
   // T1b: the shop's brand
   const ob = before?.brand || {}, nb = after?.brand || {}, said = (v) => (v === undefined ? "(the template's)" : v);

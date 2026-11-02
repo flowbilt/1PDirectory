@@ -301,7 +301,9 @@ export function boardChoice(doc, choice) {
   const options = {};
   for (const o of doc?.options || []) options[o.key] = typeof c.options?.[o.key] === "boolean" ? c.options[o.key] : o.default;
   // T1d: the QR code's size on the glass (null: it fills its spot) and the logo's share of its spot
-  const sizes = { qr: ["s", "m", "l"].includes(c.sizes?.qr) ? c.sizes.qr : null, logo: Number.isInteger(c.sizes?.logo) && c.sizes.logo >= 60 && c.sizes.logo <= 100 ? c.sizes.logo : 100 };
+  const pct = (v) => ([80, 90, 100, 110, 120, 130].includes(v) ? v : 100);   // T1e: headings and body text
+  const sizes = { qr: ["s", "m", "l"].includes(c.sizes?.qr) ? c.sizes.qr : null, logo: Number.isInteger(c.sizes?.logo) && c.sizes.logo >= 60 && c.sizes.logo <= 100 ? c.sizes.logo : 100,
+    headings: pct(c.sizes?.headings), body: pct(c.sizes?.body) };
   return { look, chalk, options, sizes };
 }
 
