@@ -189,6 +189,10 @@ html.menu-view, html.menu-view body { overflow: auto; }
    script's tall letters and tails past a tight line were cut. On the chalkboard the titles get lines tall enough for them. */
 .look-chalk .b-logo { line-height: 1.3; }
 .look-chalk .items-head, .look-chalk .chips-head, .look-chalk .tt-head, .look-chalk .b-title, .look-chalk .hours-now { line-height: 1.3; }
+/* T1f2 (Scot: the tails below the line still cut, "Daybreak", "Slow-Steeped", "Good coffee"): a script's tails reach
+   well past even a tall line, so a title that can sit on a block's edge (the logo, a text block's or caption's title)
+   gets room below inside the masked box (the tall line already holds the tops; a caption isn't masked); the fitting counts it, so the text stays inside its block. */
+.look-chalk .b-logo, .look-chalk .b:not(.photo):not(.rotator) .b-title { padding-bottom: 0.2em; }
 .look-chalk .items-head { border-bottom: 5px solid var(--chalk-accents); padding-bottom: 0.08em; margin-bottom: 0.3em; }
 .look-chalk .item-price, .look-chalk .group-price, .look-chalk .b-price .amount { color: var(--chalk-prices); }
 .look-chalk .item-name, .look-chalk .item-price, .look-chalk .chip { font-family: var(--f-item); font-weight: 400; letter-spacing: 0.02em; }
@@ -221,7 +225,8 @@ html.menu-view, html.menu-view body { overflow: auto; }
   pointer-events: none; }
 
 /* T1d (DP-13): a caption's lines are as wide as its box, so a word too long for it is measured and shrunk */
-.photo-cap > .b-title, .photo-cap > .b-body { overflow: hidden; }
+/* T1f2: clipped side to side only (a word too long is measured), never top and bottom, where a script's tails reach */
+.photo-cap > .b-title, .photo-cap > .b-body { overflow-x: clip; overflow-y: visible; }
 
 /* T1e (DP-13; Scot): a board's body text and headings, each as a share of the layout's sizes (1Point's, per board).
    The body share scales a block's text; a heading takes the headings' share instead, whatever the body's. The logo,

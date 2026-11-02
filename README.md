@@ -560,7 +560,10 @@ on a phone), the logo or shop's name sized to its spot, and the QR code open on 
 - **Chalkboard titles keep their tall letters** (T1f, Scot: the header chopped off): the chalk grain is a mask, and a
   mask shows only the lettering's own box, so a script's tall letters and tails past a tight line were cut (the
   logo's line was 0.95). On the chalkboard the logo and headings get lines of 1.3 (`board.css`); text still fits its box
-  (Donut Joe's chalk note fits at a little smaller).
+  (Donut Joe's chalk note fits at a little smaller). **T1f2** (Scot: the tails below the line still cut, "Daybreak",
+  "Slow-Steeped", "Good coffee"): a script's tails reach past even that line, so the chalkboard's logo and a text block's
+  title get 0.2em of room below inside the masked box; a caption's lines clip only side to side (`overflow-x: clip`),
+  so "Steeped"'s p keeps its tail in any look.
 
 ## Screens and cards (Raspberry Pi)
 
