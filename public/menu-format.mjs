@@ -111,6 +111,8 @@ export function boardProblem(b) {
       else if (k === "logo") { if (!Number.isInteger(v) || v < 60 || v > 100) return "The logo's size is 60% to 100% of its spot."; }
       // T1e: the headings' and the body text's sizes, 80% to 130% in steps of 10
       else if (k === "headings" || k === "body") { if (!BOARD_TEXT_SIZES.includes(v)) return "Text sizes are 80% to 130%, in steps of 10."; }
+      // T1f: the QR code on its white square, or drawn on the board (41-qr-on-board.sql)
+      else if (k === "qrcode") { if (v !== "white" && v !== "board") return "The QR code is on a white square or drawn on the board."; }
       else return "A board's sizes are for the QR code, the logo, the headings and the body text.";
     }
   }
@@ -450,6 +452,8 @@ export function menuChanges(spec, before, after, max = 40, boardNames = null) {
     if (o.sizes?.qr !== n.sizes?.qr) lines.push(`Board look (${name}): QR code ${o.sizes?.qr ? QS[o.sizes.qr] : "(fills its spot)"} → ${n.sizes?.qr ? QS[n.sizes.qr] : "(fills its spot)"}`);
     if (o.sizes?.logo !== n.sizes?.logo) lines.push(`Board look (${name}): logo ${o.sizes?.logo ? `${o.sizes.logo}%` : "100%"} → ${n.sizes?.logo ? `${n.sizes.logo}%` : "100%"}`);
     for (const [k, w] of [["headings", "headings"], ["body", "body text"]]) if (o.sizes?.[k] !== n.sizes?.[k]) lines.push(`Board look (${name}): ${w} ${o.sizes?.[k] || 100}% → ${n.sizes?.[k] || 100}%`);
+    const QD = { white: "on a white square", board: "drawn on the board" };   // T1f
+    if ((o.sizes?.qrcode || "white") !== (n.sizes?.qrcode || "white")) lines.push(`Board look (${name}): QR code ${QD[o.sizes?.qrcode || "white"]} → ${QD[n.sizes?.qrcode || "white"]}`);
   }
   // T1b: the shop's brand
   const ob = before?.brand || {}, nb = after?.brand || {}, said = (v) => (v === undefined ? "(the template's)" : v);

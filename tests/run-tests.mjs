@@ -3227,12 +3227,18 @@ test("T1d: a board's sizes: the QR code the same size on the glass on any screen
   assert.ok(s55 < s32, "the same 7 cm takes fewer of a 55-inch board's pixels than a 32-inch's");
   assert.ok(Math.abs(s55 * LF.mmPerPx(55) - 70) < 1, `${s55 * LF.mmPerPx(55)} mm`);
   assert.equal(LF.qrSide(d55, qr, { size: "l", inches: 32 }), fill, "never past its spot");
-  assert.deepEqual(LF.boardChoice(d55, { sizes: { qr: "m", logo: 70 } }).sizes, { qr: "m", logo: 70, headings: 100, body: 100 });
-  assert.deepEqual(LF.boardChoice(d55, {}).sizes, { qr: null, logo: 100, headings: 100, body: 100 });
+  assert.deepEqual(LF.boardChoice(d55, { sizes: { qr: "m", logo: 70 } }).sizes, { qr: "m", logo: 70, headings: 100, body: 100, qrcode: "white" });
+  assert.deepEqual(LF.boardChoice(d55, {}).sizes, { qr: null, logo: 100, headings: 100, body: 100, qrcode: "white" });
   // T1e: the headings' and body text's sizes
-  assert.deepEqual(LF.boardChoice(d55, { sizes: { headings: 120, body: 90 } }).sizes, { qr: null, logo: 100, headings: 120, body: 90 });
+  assert.deepEqual(LF.boardChoice(d55, { sizes: { headings: 120, body: 90 } }).sizes, { qr: null, logo: 100, headings: 120, body: 90, qrcode: "white" });
   assert.equal(MF.boardProblem({ sizes: { headings: 130, body: 80 } }), "");
   assert.match(MF.boardProblem({ sizes: { headings: 140 } }), /80% to 130%, in steps of 10/);
+  // T1f: the QR code on its white square, or drawn on the board
+  assert.equal(LF.boardChoice(d55, { sizes: { qrcode: "board" } }).sizes.qrcode, "board");
+  assert.equal(LF.boardChoice(d55, { sizes: { qrcode: "odd" } }).sizes.qrcode, "white");
+  assert.equal(MF.boardProblem({ sizes: { qrcode: "board" } }), "");
+  assert.match(MF.boardProblem({ sizes: { qrcode: "inverted" } }), /white square or drawn on the board/);
+  assert.deepEqual(MF.menuChanges({ lists: [] }, { lists: {} }, { lists: {}, boards: { [crypto.randomUUID()]: { sizes: { qrcode: "board" } } } }), ["Board look (a board): QR code on a white square → drawn on the board"]);
   assert.match(MF.boardProblem({ sizes: { body: 95 } }), /80% to 130%, in steps of 10/);
   assert.deepEqual(MF.menuChanges({ lists: [] }, { lists: {} }, { lists: {}, boards: { [crypto.randomUUID()]: { sizes: { headings: 120 } } } }), ["Board look (a board): headings 100% → 120%"]);
   assert.equal(LF.applyLook(d55, { sizes: { qr: "s" } }).look.sizes.qr, "s");

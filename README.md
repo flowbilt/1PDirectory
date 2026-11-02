@@ -550,6 +550,17 @@ on a phone), the logo or shop's name sized to its spot, and the QR code open on 
 - **The QR code without a box** (the coffee templates): `"style": { "align": "center", "size": "m" }` on the `qr`
   block: the code's own white square (phones need it) straight on the background, "Scan for the menu" under it in the
   board's text colour.
+- **The QR code drawn on the board, per board, 1Point only** (T1f, Scot on the chalkboard's white square: "Inverting
+  the code may be the way to go. We can try it for layout purposes and test it later before launch";
+  `supabase/41-qr-on-board.sql`): **QR drawn** in the sizes part of the Board look: **On a white square** (as before;
+  every phone reads it) or **On the board**, the code in the board's own lettering colour with no square (light on a
+  chalkboard, dark on a light board; `screen-core.js` `svgQR(url, ink)`). Light on dark is an inverted code: newer
+  iPhones and most Android cameras read it, some older phones and scanner apps don't, so test it with several phones
+  before a board goes live with it. History: "Board look (…): QR code on a white square → drawn on the board".
+- **Chalkboard titles keep their tall letters** (T1f, Scot: the header chopped off): the chalk grain is a mask, and a
+  mask shows only the lettering's own box, so a script's tall letters and tails past a tight line were cut (the
+  logo's line was 0.95). On the chalkboard the logo and headings get lines of 1.3 (`board.css`); text still fits its box
+  (Donut Joe's chalk note fits at a little smaller).
 
 ## Screens and cards (Raspberry Pi)
 

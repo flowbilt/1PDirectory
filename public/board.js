@@ -140,8 +140,10 @@ const BODY = {
     // T1d: the size chosen for this board, on this screen (its own size in inches, else the layout's)
     const side = Math.max(0, qrSide(doc, b, { size: doc.look?.sizes?.qr, inches: data?.screenInches })), url = data?.menu?.url || "";
     let code = "";
-    if (url) { try { code = C.svgQR(url); } catch (e) { console.warn("QR failed", e); } }
-    return `<div class="b-qr"><div class="qr-code${code ? "" : " qr-empty"}" style="width:${side}px;height:${side}px">${code}</div><div class="qr-line">${esc(b.content.line || QR_LINE)}</div></div>`;
+    // T1f: drawn on the board (1Point's choice per board): the code in the board's own lettering colour
+    const onBoard = doc.look?.sizes?.qrcode === "board";
+    if (url) { try { code = C.svgQR(url, onBoard ? "currentColor" : ""); } catch (e) { console.warn("QR failed", e); } }
+    return `<div class="b-qr"><div class="qr-code${code ? "" : " qr-empty"}${onBoard ? " on-board" : ""}" style="width:${side}px;height:${side}px">${code}</div><div class="qr-line">${esc(b.content.line || QR_LINE)}</div></div>`;
   },
 };
 

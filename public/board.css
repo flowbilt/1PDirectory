@@ -185,6 +185,10 @@ html.menu-view, html.menu-view body { overflow: auto; }
 .look-chalk .b-title, .look-chalk .items-head, .look-chalk .chips-head, .look-chalk .hours-head, .look-chalk .hours-now,
 .look-chalk .tt-head, .look-chalk .b-logo, .look-chalk .nn .lbl { color: var(--chalk-titles); }
 .look-chalk .items-head, .look-chalk .chips-head { font-weight: 400; }
+/* T1f (Scot: the header's tall letters cut off): the grain is a mask, and a mask shows only the lettering's own box, so a
+   script's tall letters and tails past a tight line were cut. On the chalkboard the titles get lines tall enough for them. */
+.look-chalk .b-logo { line-height: 1.3; }
+.look-chalk .items-head, .look-chalk .chips-head, .look-chalk .tt-head, .look-chalk .b-title, .look-chalk .hours-now { line-height: 1.3; }
 .look-chalk .items-head { border-bottom: 5px solid var(--chalk-accents); padding-bottom: 0.08em; margin-bottom: 0.3em; }
 .look-chalk .item-price, .look-chalk .group-price, .look-chalk .b-price .amount { color: var(--chalk-prices); }
 .look-chalk .item-name, .look-chalk .item-price, .look-chalk .chip { font-family: var(--f-item); font-weight: 400; letter-spacing: 0.02em; }

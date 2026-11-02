@@ -1259,7 +1259,7 @@ try {
     await v.close();
   });
 
-  await check("T1b/T1d: the Brand panel (1Point only): the shop's name, a colour and a font in the menu editor; the preview follows; Save keeps it on the menu, in History; a board's QR code Small; the owner sees neither", async () => {
+  await check("T1b/T1d: the Brand panel (1Point only): the shop's name, a colour and a font in the menu editor; the preview follows; Save keeps it on the menu, in History; a board's QR code Small, then drawn on the board (T1f); the owner sees neither", async () => {
     assert(copied, "needs the copy");
     await boss.goto(`${B}/menu-edit.html?m=${copied.m.id}`); await boss.waitForTimeout(3000);
     assert(await boss.locator("#me-brand").isVisible(), "the Brand panel");
@@ -1298,6 +1298,18 @@ try {
     await boss.click("#save"); await boss.waitForTimeout(2000);
     const [m3] = (await sb(`menus?id=eq.${copied.m.id}&select=content`)).data;
     assert(m3.content.boards?.[bid]?.sizes?.headings === 120 && m3.content.boards[bid].sizes.qr === "s", JSON.stringify(m3.content.boards));
+    // T1f (Scot): the QR code drawn on the board: no white square, the code in the board's lettering colour; saved
+    const sq = async () => boss.frameLocator("#pv").locator(".qr-code").first().evaluate((el) => ({ svg: !!el.querySelector("svg"), white: !!el.querySelector("svg rect"), fill: el.querySelector("svg path")?.getAttribute("fill") || "", on: el.classList.contains("on-board") }));
+    const q0 = await sq();
+    assert(q0.svg && q0.white && !q0.on, `white square first: ${JSON.stringify(q0)}`);
+    await sec.locator('[data-look-f="qrcode"][value="board"]').check(); await boss.waitForTimeout(2500);
+    const q1 = await sq();
+    assert(q1.svg && !q1.white && q1.fill === "currentColor" && q1.on, `on the board: ${JSON.stringify(q1)}`);
+    await boss.click("#save"); await boss.waitForTimeout(2000);
+    const [m4] = (await sb(`menus?id=eq.${copied.m.id}&select=content`)).data;
+    assert(m4.content.boards?.[bid]?.sizes?.qrcode === "board" && m4.content.boards[bid].sizes.headings === 120, JSON.stringify(m4.content.boards));
+    await boss.click('[data-side="history"]').catch(() => {}); await boss.waitForTimeout(300);
+    assert((await boss.textContent("#history")).includes("drawn on the board"), "QR drawing in History");
     // the owner's editor has no Brand panel
     await owner.goto(`${B}/menu-edit.html?m=${menuId}`); await owner.waitForTimeout(2500);
     assert(!(await owner.locator("#me-brand").count()), "no Brand panel for the owner");

@@ -165,10 +165,12 @@
   /** A QR code as an SVG: dark modules on white with the standard quiet zone of four (public/vendor/qrcode.js, which the
    *  page loads first). Throws if the encoder can't take it. Used by the directory (Directory to Go, a place's card)
    *  and the layout page (the QR block, E1c). */
-  function svgQR(url) {
+  function svgQR(url, ink) {
     const q = window.LobbyQR(url), n = q.size, Q = 4;
     let d = "";
     for (let r = 0; r < n; r++) for (let c = 0; c < n; c++) if (q.dark(r, c)) d += `M${c + Q} ${r + Q}h1v1h-1z`;
+    // T1f: with an ink (a board's lettering colour), the code is drawn in it straight on the board, no white square
+    if (ink) return `<svg viewBox="0 0 ${n + 2 * Q} ${n + 2 * Q}" shape-rendering="crispEdges" role="img" aria-label="QR code"><path d="${d}" fill="${ink}"/></svg>`;
     return `<svg viewBox="0 0 ${n + 2 * Q} ${n + 2 * Q}" shape-rendering="crispEdges" role="img" aria-label="QR code"><rect width="100%" height="100%" fill="#fff"/><path d="${d}" fill="#0d1b2e"/></svg>`;
   }
 
