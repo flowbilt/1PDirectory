@@ -63,19 +63,22 @@ window.Auth = (() => {
   }
 
   /** Database call as the signed-in user. path like "tenants?directory_id=eq.X&order=sort.asc" */
-  async function db(path, { method = "GET", body, prefer } = {}) {
+  // M1b (DP-13): keepalive: the browser finishes sending it even if the page is closed meanwhile (bodies under 60 kB)
+  async function db(path, { method = "GET", body, prefer, keepalive = false } = {}) {
     const c = await config();
     const s = await requireSession();
+    const data = body === undefined ? undefined : JSON.stringify(body);
     const r = await fetch(`${c.url}/rest/v1/${path}`, {
       method,
       headers: { apikey: c.anonKey, Authorization: `Bearer ${s.access_token}`, "Content-Type": "application/json", ...(prefer ? { Prefer: prefer } : {}) },
-      body: body === undefined ? undefined : JSON.stringify(body),
+      body: data,
+      keepalive: keepalive && (!data || data.length < 60000),
     });
     const text = await r.text();
     let d = null;
     try { d = text ? JSON.parse(text) : null; } catch { /* empty */ }
     if (r.status === 401) { signOut(); throw new Error("Your sign-in expired."); }
-    if (!r.ok) throw new Error(friendly(d?.message) || `Request failed (${r.status}).`);
+    if (!r.ok) throw Object.assign(new Error(friendly(d?.message) || `Request failed (${r.status}).`), { status: r.status, code: d?.code || "" });
     return d;
   }
 

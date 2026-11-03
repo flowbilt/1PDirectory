@@ -536,3 +536,4 @@ body.phone.pv-sheet #pv-note { color: #dfe5ee; text-align: center; margin: 0; }
 body.phone:not(.pv-sheet) #pv-close { display: none; }
 body.phone .pic-dialog, body.phone dialog.wide { width: calc(100vw - 24px); max-width: none; }
 body.phone .toast { bottom: calc(130px + env(safe-area-inset-bottom)); z-index: 30; }
+body .me-offline { color: #ffd27a; font-weight: 700; }

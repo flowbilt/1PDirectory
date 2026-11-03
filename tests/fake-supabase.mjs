@@ -404,7 +404,7 @@ export function createFake() {
   const MAX_ROWS = 1000;
   const addDays = (day, n) => new Date(Date.parse(day + "T12:00:00Z") + n * 86400_000).toISOString().slice(0, 10);
   // Functions signed-in users may call (they check access themselves); the rest are server-only
-  const USER_FUNCS = new Set(["set_screen_sizes", "togo_scan_count", "togo_replace_code", "menu_scan_count", "menu_save", "menu_restore"]);
+  const USER_FUNCS = new Set(["set_screen_sizes", "togo_scan_count", "togo_replace_code", "menu_scan_count", "menu_save", "menu_restore", "menu_switch"]);
   const FUNCS = {
     // Mirror of 18-sizes.sql and 22-widget-sizes.sql (SIZE_RANGES, exported below)
     set_screen_sizes({ p_screen, p_sizes = {} }, who) {
@@ -675,6 +675,20 @@ export function createFake() {
     },
     // 32-menus.sql: saving a menu as the signed-in user (menu_write's rules), restoring, and "Make lists" (the site only)
     menu_save({ p_menu, p_base_rev, p_content }, who) { return menuWrite(p_menu, p_base_rev, p_content, null, who); },
+    // 42-quick-switch.sql (M1b): Sold out or Hide on one entry, in the menu as it is now, saved through menuWrite
+    menu_switch({ p_menu, p_list, p_entry, p_what, p_on, p_today }, who) {
+      const m = T.menus.find((x) => x.id === p_menu), me = who.profile;
+      if (!["sold", "hidden"].includes(p_what)) throw Object.assign(new Error("A switch is sold or hidden."), { status: 400 });
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(String(p_today || "")) || Math.abs(Date.parse(p_today) - Date.parse(now().slice(0, 10))) > 86400_000 * 1.5) throw Object.assign(new Error("Sold out is for today."), { status: 400 });
+      if (!m || !(who.service || me?.role === "platform_admin" || me?.org_id === m.org_id)) throw Object.assign(new Error("That menu doesn't exist, or you don't have access to it."), { status: 403 });
+      const content = JSON.parse(JSON.stringify(m.content || { lists: {} }));
+      const es = content.lists?.[p_list]?.entries;
+      if (!Array.isArray(es)) throw Object.assign(new Error("That list isn't on this menu any more."), { status: 404 });
+      const e = es.find((x) => x.id === p_entry);
+      if (!e) throw Object.assign(new Error("That item isn't on the menu any more. Reload to see the menu as it is now."), { status: 404 });
+      if (p_what === "sold") { if (p_on) e.soldOut = p_today; else delete e.soldOut; } else if (p_on) e.hidden = true; else delete e.hidden;
+      return { ...menuWrite(p_menu, m.rev, content, null, who), entry: e };
+    },
     menu_restore({ p_menu, p_rev, p_base_rev }, who) {
       const m = T.menus.find((x) => x.id === p_menu), me = who.profile;
       if (!m || !(who.service || me?.role === "platform_admin" || me?.org_id === m.org_id)) throw Object.assign(new Error("That menu doesn't exist, or you don't have access to it."), { status: 403 });

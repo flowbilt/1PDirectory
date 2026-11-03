@@ -460,7 +460,9 @@ if (PREVIEW) {
   const cached = cache.get("directory");
   if (cached) apply(cached);
   loadScreen().then(() => { if (!data) setTimeout(() => location.reload(), 30000); });
-  setInterval(loadScreen, 60 * 1000);
+  // M1b (DP-13; Scot: "Let's go with 30 seconds"): a board checks every 30 seconds, so a menu's Sold out reaches it
+  // within half a minute (directories stay at a minute; each check is one database call)
+  setInterval(loadScreen, 30 * 1000);
   setInterval(loadWeather, 10 * 60 * 1000);
   C.scheduleNightlyReload();
   C.registerOfflineCache();

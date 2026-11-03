@@ -612,6 +612,28 @@ sideways (500 px or less tall, up to 950 px wide), `menu-edit.js` sets `body.pho
 Wider screens draw exactly as before (no folds, the old item rows, no bottom bar). The console's other pages (M2) and
 the directory editor (M3) are next.
 
+### M1b (DP-13): Sold out and Hide on a tap; Save in the background; boards every 30 seconds
+
+Scot, behind the counter: "I sell out of baked ziti ... I need it off the board and I don't need to wait for the save
+... does the save keep going?" Prices and names still take Save (Scot: they "need a 'Yes, I meant to do that' that save
+implies and the audit trail").
+- **Sold out today and Hide save on the tap** (on any screen): `supabase/42-quick-switch.sql` `menu_switch(menu, list,
+  entry, 'sold' | 'hidden', on, today)` changes just that item in the menu as WayTuGo has it now, then saves through
+  `menu_write` (the same rules: who may edit, customer editing on, the menu's checks, the brand and sizes kept; a new
+  revision, so History shows who did it). Taps go one after another in the order made; a tap on one phone never undoes
+  another's. An item not saved yet goes with Save, as before.
+- **Save runs in the background:** the editor stays usable while it checks the boards and saves; what's typed meanwhile
+  stays as Unsaved changes (before M1b it was wiped when the save finished). A Save keeps every item's Sold out and Hide
+  that it didn't change itself, from this phone's taps or another's; if someone saved meanwhile and all they changed was
+  Sold out or Hide, the Save folds that in and goes again rather than refusing. The line in the bar says Saving…,
+  Saved 12:41, or "Not saved yet: no connection. Trying again…" (every 5 seconds, and when the connection comes back).
+- **A page closed meanwhile:** every request goes with `keepalive` (`auth.js`), so one already sent finishes. Taps not yet
+  confirmed are kept on the phone (`localStorage`, `waytugo-menu-pending:<menu>`) and sent the next time the menu opens
+  ("1 change didn't save before the page closed: sending it now"); a Save that hadn't gone out comes back as Unsaved
+  changes to check and Save again.
+- **Boards check every 30 seconds** (`board.js`; Scot: "Let's go with 30 seconds"), so a change reaches them within half
+  a minute. Directories stay at a minute. Each check is one database call (about double a board's checking cost).
+
 ## Screens and cards (Raspberry Pi)
 
 Every Pi runs from a **prepared card**, and every card is the same. A card carries no identity until it's in a Pi:

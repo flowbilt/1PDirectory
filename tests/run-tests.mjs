@@ -2492,6 +2492,47 @@ test("menus: Make lists from the Donut Joe's counter board: names, rooms, only t
   assert.deepEqual(drawn.blocks.find((b) => b.id === "coffee").content.items, LF.checkLayout(COUNTER).doc.blocks.find((b) => b.id === "coffee").content.items.map((it) => ({ ...it, tags: [] })), "the same board as before");
 });
 
+test("M1b: Sold out and Hide save on a tap (menu_switch): just that item, in the menu as it is now; two phones at once both kept; a new revision; a stranger, an unknown item and another day refused", async () => {
+  const org = fake.T.organizations.find((o) => /Barber/.test(o.name));
+  const admin = await login("scot@1pointusa.com", "admin-pass"), owner = await login("leighann@barber.test", "owner-pass"), editor = await login("editor@barber.test", "editor-pass");
+  if (!fake.T.profiles.some((p) => p.email === "stranger2@other.test")) fake.addUser("stranger2@other.test", "x-pass", "org_admin", fake.T.organizations.find((o) => o.name === "Other Owner LLC").id, "Stranger");
+  const stranger = await login("stranger2@other.test", "x-pass");
+  let r = await fake.handle(new Request(`${SB}/rest/v1/menus`, { method: "POST", body: JSON.stringify({ org_id: org.id, name: "Switch menu", spec: SPEC }), headers: { apikey: ANON_KEY, Authorization: `Bearer ${admin}`, Prefer: "return=representation" } }));
+  const [m] = await r.json();
+  r = await asUser(owner, "menu_save", { p_menu: m.id, p_base_rev: 0, p_content: { lists: { donuts: { entries: [{ id: "sw0001", name: "Baked Ziti" }, { id: "sw0002", name: "Anchovy" }] } } } });
+  assert.equal((await r.json()).rev, 1);
+  const today = new Date().toISOString().slice(0, 10);
+  // two phones, one after the other with no reload between: both kept, each a revision
+  r = await asUser(owner, "menu_switch", { p_menu: m.id, p_list: "donuts", p_entry: "sw0001", p_what: "sold", p_on: true, p_today: today });
+  assert.equal(r.status, 200); const a = await r.json(); assert.equal(a.rev, 2); assert.equal(a.entry.soldOut, today);
+  r = await asUser(editor, "menu_switch", { p_menu: m.id, p_list: "donuts", p_entry: "sw0002", p_what: "hidden", p_on: true, p_today: today });
+  assert.equal((await r.json()).rev, 3);
+  const es = () => fake.T.menus.find((x) => x.id === m.id).content.lists.donuts.entries;
+  assert.equal(es()[0].soldOut, today); assert.equal(es()[1].hidden, true);
+  const revs = fake.T.menu_revisions.filter((x) => x.menu_id === m.id);
+  assert.deepEqual(revs.map((x) => [x.rev, x.by_name]), [[1, "Leigh Ann"], [2, "Leigh Ann"], [3, "Front Desk"]]);
+  assert.ok(MF.menuChanges(SPEC, revs[0].content, revs[1].content).some((l) => /Baked Ziti/.test(l) && /sold out/i.test(l)), JSON.stringify(MF.menuChanges(SPEC, revs[0].content, revs[1].content)));
+  // off again
+  r = await asUser(owner, "menu_switch", { p_menu: m.id, p_list: "donuts", p_entry: "sw0001", p_what: "sold", p_on: false, p_today: today });
+  assert.equal(r.status, 200); assert.ok(!("soldOut" in es()[0]));
+  // a Save from a page opened before the taps is refused as stale (the editor then keeps the taps and saves again)
+  r = await asUser(owner, "menu_save", { p_menu: m.id, p_base_rev: 1, p_content: { lists: { donuts: { entries: [{ id: "sw0001", name: "Baked Ziti" }] } } } });
+  assert.equal(r.status, 409);
+  // refused: a stranger, an item that isn't there, another day, another switch
+  r = await asUser(stranger, "menu_switch", { p_menu: m.id, p_list: "donuts", p_entry: "sw0001", p_what: "sold", p_on: true, p_today: today });
+  assert.equal(r.status, 403);
+  r = await asUser(owner, "menu_switch", { p_menu: m.id, p_list: "donuts", p_entry: "nope01", p_what: "sold", p_on: true, p_today: today });
+  assert.equal(r.status, 404); assert.match((await r.json()).message, /isn't on the menu any more/);
+  r = await asUser(owner, "menu_switch", { p_menu: m.id, p_list: "donuts", p_entry: "sw0001", p_what: "sold", p_on: true, p_today: "2026-01-01" });
+  assert.equal(r.status, 400);
+  r = await asUser(owner, "menu_switch", { p_menu: m.id, p_list: "donuts", p_entry: "sw0001", p_what: "price", p_on: true, p_today: today });
+  assert.equal(r.status, 400);
+  // a full maintenance plan: the customer's taps are refused too
+  fake.T.menus.find((x) => x.id === m.id).customer_edit = false;
+  r = await asUser(owner, "menu_switch", { p_menu: m.id, p_list: "donuts", p_entry: "sw0001", p_what: "sold", p_on: true, p_today: today });
+  assert.equal(r.status, 403);
+});
+
 test("menus: saving as the signed-in user: owner and editor go live and are named; a stranger, a stale save and past the room are refused; Restore", async () => {
   const org = fake.T.organizations.find((o) => /Barber/.test(o.name));
   const admin = await login("scot@1pointusa.com", "admin-pass"), owner = await login("leighann@barber.test", "owner-pass"), editor = await login("editor@barber.test", "editor-pass");

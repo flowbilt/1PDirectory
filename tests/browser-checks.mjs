@@ -648,7 +648,10 @@ try {
     await side(boss, "history"); await boss.click(`[data-restore="${revs[1]}"]`); await boss.waitForTimeout(2500);
     const top = (await sb(`menu_revisions?menu_id=eq.${menuId}&select=rev,restored_from&order=rev.desc&limit=1`)).data[0];
     assert(top.restored_from === revs[1] && !(await listOf("pastries")).entries[0].name.startsWith("An extremely"), JSON.stringify(top));
-    // the owner's page is from before that restore
+    // the owner's page is from before that restore; and 1Point renames an item (a change Save can't fold in, M1b)
+    await boss.reload(); await boss.waitForTimeout(3000);
+    await boss.locator('.me-list[data-key="pastries"] .me-row[data-i="0"] input[data-f="name"]').fill("Bear Claw");
+    await boss.click("#save"); await boss.waitForTimeout(4000);
     await owner.locator('.me-list[data-key="donuts"] input[data-list-f="price"]').fill("$1.99 each");
     await owner.click("#save"); await owner.waitForTimeout(4000);
     const msg = await owner.textContent("#save-problems");
@@ -848,7 +851,13 @@ try {
     });
     assert(r.solid && r.priceHidden && !r.inline && r.inside && r.oneLine, JSON.stringify(r));   // 2.21.1: solid red, the price under it hidden
     await shot(owner, "menu-editor-all-sold-out");
-    await owner.click("#undo"); await owner.waitForTimeout(1500);
+    // M1b: each tick saved itself; untick them (each saves too), and put back anything else typed here
+    for (const key of ["pastries", "fall", "coffee"]) {
+      const boxes = owner.locator(`.me-list[data-key="${key}"] [data-sw="sold"]`);
+      for (let i = 0; i < await boxes.count(); i++) await boxes.nth(i).uncheck();
+    }
+    await owner.waitForTimeout(2500);
+    if (await owner.isEnabled("#undo")) { owner.once("dialog", (d) => d.accept()); await owner.click("#undo"); await owner.waitForTimeout(1500); }
   });
   // ── Customers' own pictures (E2c) ──
   copyFileSync(new URL("./fixtures/picture.jpg", import.meta.url), join(picDir, "Pumpkin Spice.jpg"));
@@ -1317,7 +1326,7 @@ try {
   });
 
   // M1 (DP-13; Scot: "optimize the console editing for mobile use"): the menu editor on a phone
-  await check("M1: the menu editor on a phone (iPhone 13): no page wider than the screen, boxes at 16 px, lists folded with a summary, an item one line until More, Sold out saved from the bottom bar, See the board full screen (upright and sideways); a desktop keeps its layout", async () => {
+  await check("M1: the menu editor on a phone (iPhone 13): no page wider than the screen, boxes at 16 px, lists folded with a summary, an item one line until More, Save in a bar at the bottom, Sold out saved on the tap, See the board full screen (upright and sideways); a desktop keeps its layout", async () => {
     const ctx = await browser.newContext({ viewport: { width: 390, height: 664 }, deviceScaleFactor: 2, isMobile: true, hasTouch: true });
     const ph = await ctx.newPage();
     await signIn(ph, "scot@1pointusa.com", "admin-pass");
@@ -1340,9 +1349,10 @@ try {
     // the bottom bar: Save in reach at the foot of the screen
     const bar = await ph.locator("#save").boundingBox();
     assert(bar && bar.y > 664 - 80, `Save at the bottom: ${JSON.stringify(bar)}`);
-    await ph.locator("#save").tap(); await ph.waitForTimeout(2500);
+    await ph.waitForTimeout(2500);   // M1b: Sold out saves on the tap, without Save
     const m = (await sb(`menus?id=eq.${menuId}&select=content`)).data[0];
     assert((m.content.lists[key].entries[0].soldOut || "").length === 10, "sold out saved");
+    await L.locator('[data-i="0"] [data-sw="sold"]').tap(); await ph.waitForTimeout(2000);   // and off again
     // See the board: the whole screen, the board inside it, upright and sideways
     await ph.locator("#see-board").tap(); await ph.waitForTimeout(2500);
     const sheet = async () => ph.evaluate(() => { const a = document.querySelector(".menu-preview").getBoundingClientRect(), b = document.getElementById("pv-box").getBoundingClientRect(); return { a: [a.top, a.height, a.width], b: [b.left, b.right, b.bottom], vw: innerWidth, vh: innerHeight }; });
@@ -1358,6 +1368,66 @@ try {
     await boss.goto(`${B}/menu-edit.html?m=${menuId}`); await boss.waitForTimeout(2500);
     const dk = await boss.evaluate(() => ({ phone: document.body.classList.contains("phone"), folds: document.querySelectorAll("[data-fold]").length, see: getComputedStyle(document.getElementById("see-board")).display, rows: document.querySelectorAll(".me-row-m").length }));
     assert(!dk.phone && dk.folds === 0 && dk.see === "none" && dk.rows === 0, JSON.stringify(dk));
+  });
+
+  // M1b (DP-13; Scot behind the counter: "I don't need to wait for the save"): Sold out and Hide save on a tap; Save runs
+  // in the background; a closed page's taps go next time; another phone's tap meanwhile is kept
+  await check("M1b: Sold out saves on the tap (two taps in a row, no Save); typing during a Save is kept; with no connection a tap waits, and is sent when the menu opens again; another phone's tap is kept by this phone's Save", async () => {
+    const ctx = await browser.newContext({ viewport: { width: 390, height: 664 }, isMobile: true, hasTouch: true });
+    const ph = await ctx.newPage();
+    await signIn(ph, "scot@1pointusa.com", "admin-pass");
+    const open = async (pg) => { await pg.goto(`${B}/menu-edit.html?m=${menuId}`); await pg.waitForTimeout(3000); };
+    await open(ph);
+    const menu = async () => (await sb(`menus?id=eq.${menuId}&select=content,rev`)).data[0];
+    let m = await menu();
+    const key = Object.keys(m.content.lists).find((k) => (m.content.lists[k].entries || []).length >= 3 && (m.content.lists[k].entries || []).every((e) => e.name));
+    const ids = m.content.lists[key].entries.map((e) => e.id);
+    // clear the slate: nothing sold out or hidden on that list
+    for (const e of m.content.lists[key].entries) { delete e.soldOut; delete e.hidden; }
+    await sb(`menus?id=eq.${menuId}`, { method: "PATCH", body: JSON.stringify({ content: m.content }) });
+    await open(ph);
+    await ph.locator(`[data-fold="list:${key}"]`).tap(); await ph.waitForTimeout(300);
+    const L = ph.locator(`.me-list[data-key="${key}"]`);
+    // 1. two taps, one right after the other; no Save
+    await L.locator('[data-i="0"] [data-sw="sold"]').tap(); await L.locator('[data-i="1"] [data-sw="sold"]').tap();
+    await ph.waitForTimeout(2500);
+    m = await menu();
+    assert(m.content.lists[key].entries[0].soldOut && m.content.lists[key].entries[1].soldOut, "both taps saved");
+    assert(await ph.locator("#save").isDisabled(), "nothing left to Save");
+    assert(/^Saved /.test(await ph.textContent("#saved-line")), await ph.textContent("#saved-line"));
+    // 2. a price change saved, and a second typed while it saves stays as Unsaved changes
+    const price = L.locator('[data-i="2"] input[data-f="price"], [data-i="2"] input[data-f="name"]').first();
+    const f = await price.getAttribute("data-f");
+    await price.fill(f === "price" ? "$9.99" : "Changed once"); await ph.waitForTimeout(200);
+    await ph.locator("#save").tap();
+    await price.fill(f === "price" ? "$8.88" : "Changed twice");   // while the save runs
+    await ph.waitForTimeout(4000);
+    m = await menu();
+    assert(m.content.lists[key].entries[2][f] === (f === "price" ? "$9.99" : "Changed once"), `first saved: ${m.content.lists[key].entries[2][f]}`);
+    assert(m.content.lists[key].entries[0].soldOut, "the Save kept the taps");
+    assert(await price.inputValue() === (f === "price" ? "$8.88" : "Changed twice") && /Unsaved changes/.test(await ph.textContent("#saved-line")), "the second change is still here");
+    await ph.locator("#save").tap(); await ph.waitForTimeout(4000);
+    // 3. another phone hides an item; this phone's next Save keeps it (no "someone else saved")
+    const before = (await menu()).rev;
+    const other = await ctx.newPage(); await open(other);
+    await other.locator(`[data-fold="list:${key}"]`).tap(); await other.waitForTimeout(300);
+    await other.locator(`.me-list[data-key="${key}"] [data-i="0"] [data-sw="sold"]`).tap(); await other.waitForTimeout(2500);   // sold out off, on the other phone
+    await other.close();
+    await price.fill(f === "price" ? "$7.77" : "Changed thrice"); await ph.locator("#save").tap(); await ph.waitForTimeout(4500);
+    m = await menu();
+    assert(m.rev >= before + 2 && m.content.lists[key].entries[2][f] === (f === "price" ? "$7.77" : "Changed thrice"), "saved over the other phone's tap");
+    assert(!m.content.lists[key].entries[0].soldOut && m.content.lists[key].entries[1].soldOut, "the other phone's tap kept");
+    assert(!(await ph.textContent("#save-problems")).includes("Someone else"), "no conflict shown");
+    // 4. no connection: the tap waits, the page closes, and the next opening sends it
+    await ctx.setOffline(true);
+    await L.locator('[data-i="2"] [data-sw="sold"]').tap(); await ph.waitForTimeout(1500);
+    assert(/no connection/.test(await ph.textContent("#saved-line")), await ph.textContent("#saved-line"));
+    assert(!(await menu()).content.lists[key].entries[2].soldOut, "not there yet");
+    await ph.close(); await ctx.setOffline(false);
+    const again = await ctx.newPage(); await open(again); await again.waitForTimeout(2500);
+    assert((await menu()).content.lists[key].entries[2].soldOut, "sent when the menu opened again");
+    await ctx.close();
+    void ids;
   });
 
   await sb(`screens?id=eq.${portrait.id}`, { method: "PATCH", body: JSON.stringify({ layout_id: lay.id, property_id: home.id }) });

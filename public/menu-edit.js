@@ -380,6 +380,8 @@ $("lists").addEventListener("change", (ev) => {
   if (t.dataset.day) { const s = new Set(e.days || []); t.checked ? s.add(Number(t.dataset.day)) : s.delete(Number(t.dataset.day)); e.days = [...s].sort(); }
   if (t.dataset.sw === "sold") { if (t.checked) e.soldOut = today(); else delete e.soldOut; t.closest(".me-row")?.classList.toggle("is-sold", t.checked); }
   if (t.dataset.sw === "hidden") { if (t.checked) e.hidden = true; else delete e.hidden; t.closest(".me-row")?.classList.toggle("is-hidden", t.checked); }
+  // M1b (Scot: "I need it off the board and I don't need to wait for the save"): Sold out and Hide save on the tap
+  if ((t.dataset.sw === "sold" || t.dataset.sw === "hidden") && quickSwitch(L, e, t.dataset.sw, t.checked)) { schedulePreview(); return; }
   dirty(); schedulePreview();
 });
 $("lists").addEventListener("click", (ev) => {
@@ -505,8 +507,18 @@ function dirty() {
   const changed = !same();
   $("save").disabled = !changed || !canEdit();
   $("undo").disabled = !changed;
-  $("saved-line").textContent = changed ? "Unsaved changes" : savedLine();
+  status();
   document.title = `${changed ? "• " : ""}Edit menu: ${E.menu?.name || ""}`;
+}
+// M1b: what's saving, waiting for a connection, or saved (and when)
+function status() {
+  const el = $("saved-line"); if (!el || !E.saved) return;
+  const n = (E.qs?.length || 0) + (E.qf?.length || 0), changed = !same();
+  const at = E.lastSaved ? E.lastSaved.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" }) : "";
+  el.classList.toggle("me-offline", !!E.offline);
+  el.textContent = E.offline ? E.offline
+    : n ? `Saving${n > 1 ? ` ${n} changes` : ""}…${changed ? " · Unsaved changes" : ""}`
+    : changed ? "Unsaved changes" : at ? `Saved ${at}` : savedLine();
 }
 function savedLine() {
   const r = E.revs[0];
@@ -659,34 +671,129 @@ const phoneLine = (b) => { const url = E.menuBase + b.menu_code; return `The pho
 
 // ── Save ──
 function showProblems(html) { const el = $("save-problems"); el.innerHTML = html; el.hidden = !html; if (html) el.scrollIntoView({ block: "nearest" }); }
-async function save(anyway = false) {
+// ── M1b (DP-13; Scot: "the save for the baked ziti needs to save in the background while other things are happening
+// ... I accidentally close the app on the phone, does the save keep going?"). Nothing here waits on a save: editing
+// carries on while one runs.
+//  · A tap on Sold out or Hide is a small save of its own (menu_switch, 42-quick-switch.sql), sent at once, one after
+//    another in the order tapped; WayTuGo changes just that item in the menu as it is now.
+//  · Save sends the whole menu (after the fit check), in the background; changes made meanwhile stay as Unsaved
+//    changes for the next Save. Whatever else changed since (this phone's taps, or another phone's), Save keeps: an
+//    item's Sold out and Hide that this Save didn't change are taken from the menu as WayTuGo has it.
+//  · Every request goes with keepalive, so one already on its way finishes even if the page is closed. Taps not yet
+//    confirmed are kept on the phone and sent the next time the menu opens; a Save that hadn't gone out comes back as
+//    Unsaved changes to check and Save again. No connection: it tries again every few seconds. ──
+const PKEY = () => `waytugo-menu-pending:${E.menu.id}`;
+E.qs = []; E.qf = []; E.busyS = false; E.busyF = false; E.retryS = null; E.offline = ""; E.lastSaved = null;
+function keepPending() {
+  try {
+    const p = { switches: E.qs.map(({ list, entry, what, on, today: d }) => ({ list, entry, what, on, today: d })), save: E.qf[0] ? { content: E.qf[0].content, at: E.qf[0].at } : null };
+    if (p.switches.length || p.save) localStorage.setItem(PKEY(), JSON.stringify(p)); else localStorage.removeItem(PKEY());
+  } catch { /* private mode: the request itself still goes */ }
+}
+const offline = (ex) => ex instanceof TypeError || (!ex.status && !ex.code && /fetch|network|load failed|signing in/i.test(ex.message || ""));
+const conflict = (ex) => ex.status === 409 || ex.code === "40001" || /Someone else saved/.test(ex.message || "");
+const savedEntry = (list, id) => E.saved.lists?.[list]?.entries?.find((x) => x.id === id);
+const FLAG = { sold: "soldOut", hidden: "hidden" };
+function setFlag(e, what, on, day) { const f = FLAG[what]; if (on) e[f] = what === "sold" ? day : true; else delete e[f]; }
+/** A tap on Sold out or Hide; false when the item isn't saved yet (then it goes with Save, like any change) */
+function quickSwitch(L, e, what, on) {
+  if (!canEdit() || !savedEntry(L.key, e.id)) return false;
+  const job = { list: L.key, entry: e.id, what, on, today: today() };
+  setFlag(savedEntry(L.key, e.id), what, on, job.today);   // the editor counts it as saved; the queue makes it so
+  E.qs.push(job); keepPending(); status(); pumpSwitches();
+  return true;
+}
+async function pumpSwitches() {
+  if (E.busyS || !E.qs.length) { status(); return; }
+  E.busyS = true; status();
+  const job = E.qs[0];
+  try {
+    const r = await Auth.db("rpc/menu_switch", { method: "POST", keepalive: true, body: { p_menu: E.menu.id, p_list: job.list, p_entry: job.entry, p_what: job.what, p_on: job.on, p_today: job.today } });
+    E.menu.rev = Math.max(E.menu.rev, r.rev); E.qs.shift(); E.offline = ""; E.lastSaved = new Date(); keepPending();
+  } catch (ex) {
+    E.busyS = false;
+    if (offline(ex)) { E.offline = "Not saved yet: no connection. Trying again…"; status(); clearTimeout(E.retryS); E.retryS = setTimeout(pumpSwitches, 5000); return; }
+    // refused (the item was removed on another phone, say): put this phone back as it was and say why
+    E.qs.shift(); keepPending();
+    for (const c of [E.draft, E.saved]) { const x = c.lists?.[job.list]?.entries?.find((y) => y.id === job.entry); if (x) setFlag(x, job.what, !job.on, job.today); }
+    drawLists(); schedulePreview(); toast(`Not saved: ${ex.message}`, true);
+  }
+  E.busyS = false;
+  if (E.qs.length) pumpSwitches(); else { status(); loadHistory().then(() => { drawHistory(); status(); }); }
+}
+/** This Save's content, with each item's Sold out and Hide that it didn't change taken from `now` (the menu as saved) */
+function withFlags(content, base, now) {
+  const out = clone(content);
+  for (const [k, c] of Object.entries(out.lists || {})) for (const e of c.entries || []) {
+    const b = base.lists?.[k]?.entries?.find((x) => x.id === e.id), n = now.lists?.[k]?.entries?.find((x) => x.id === e.id);
+    if (!n) continue;
+    for (const f of ["soldOut", "hidden"]) if ((b?.[f] ?? null) === (e[f] ?? null)) { if (n[f] !== undefined) e[f] = n[f]; else delete e[f]; }
+  }
+  return out;
+}
+const bare = (c) => { const x = clone(c); for (const l of Object.values(x.lists || {})) for (const e of l.entries || []) { delete e.soldOut; delete e.hidden; } return JSON.stringify(x); };
+function save(anyway = false) {
   showProblems("");
   const content = tidy(E.draft);
   const pics = new Set(E.pics.map((p) => p.key));
   const { errors } = checkMenuContent(E.spec, content, { images: pics });
   if (errors.length) { showProblems(`<strong>Fix these first:</strong><ul>${errors.map((x) => `<li><strong>${esc(x.where)}</strong>: ${esc(x.msg)}</li>`).join("")}</ul>`); return; }
-  $("save").disabled = true; $("save").textContent = "Checking the boards…";
+  E.qf.push({ content, base: clone(E.saved), anyway, at: new Date().toISOString() }); keepPending(); status(); pumpSaves();
+}
+async function pumpSaves() {
+  if (E.busyF || !E.qf.length) { status(); return; }
+  E.busyF = true; status();
+  const job = E.qf[0];
   try {
     // Every board on this menu, drawn with the changes: a list that runs out of its box isn't saved (1Point may save anyway)
-    const map = await checkAll(content);
+    const map = await checkAll(job.content);
     const over = [...map].map(([k, boards]) => `${listNames([k])} on ${[...new Set(boards)].join(" and ")}`);
-    if (over.length && !anyway) {
+    if (over.length && !job.anyway) {
+      E.qf.shift(); keepPending();
       showProblems(`<strong>This wouldn't fit on the board:</strong> ${esc(over.join("; "))}. Shorten the names or descriptions there, or hide an item.`
         + (E.admin ? ` <button type="button" class="ghost" id="save-anyway">Save anyway (1Point)</button>` : ""));
-      return;
+    } else {
+      let sent = withFlags(job.content, job.base, E.saved), r;
+      try {
+        r = await Auth.db("rpc/menu_save", { method: "POST", keepalive: true, body: { p_menu: E.menu.id, p_base_rev: E.menu.rev, p_content: sent } });
+      } catch (ex) {
+        if (!conflict(ex)) throw ex;
+        // someone saved meanwhile: if all they changed was Sold out or Hide, this Save keeps theirs and goes again
+        const [m] = await Auth.db(`menus?id=eq.${E.menu.id}&select=content,rev`);
+        const there = normalise(m.content);
+        if (bare(there) !== bare(job.base)) throw ex;
+        sent = withFlags(job.content, job.base, there);
+        r = await Auth.db("rpc/menu_save", { method: "POST", keepalive: true, body: { p_menu: E.menu.id, p_base_rev: m.rev, p_content: sent } });
+      }
+      E.menu.rev = r.rev; E.saved = normalise(sent); E.offline = ""; E.lastSaved = new Date();
+      // the editor keeps what's been typed since; this phone's later taps are already in the queue
+      for (const s2 of E.qs) { const x = savedEntry(s2.list, s2.entry); if (x) setFlag(x, s2.what, s2.on, s2.today); }
+      E.qf.shift(); keepPending();
+      toast("Saved. Every board on this menu shows it within 30 seconds.");
+      loadHistory().then(() => { drawHistory(); status(); }); loadPics().then(drawPics);
     }
-    $("save").textContent = "Saving…";
-    const r = await Auth.db("rpc/menu_save", { method: "POST", body: { p_menu: E.menu.id, p_base_rev: E.menu.rev, p_content: content } });
-    E.menu.rev = r.rev;
-    E.saved = normalise(content); E.draft = clone(E.saved);
-    await Promise.all([loadHistory(), loadPics()]);
-    drawLists(); drawHistory(); drawPics();
-    toast("Saved. Every board on this menu shows it within a minute.");
   } catch (ex) {
+    if (offline(ex)) { E.busyF = false; E.offline = "Not saved yet: no connection. Trying again…"; status(); setTimeout(pumpSaves, 5000); return; }
+    E.qf.shift(); keepPending();
     showProblems(`<strong>Not saved:</strong> ${esc(ex.message)}`);
-  } finally {
-    $("save").textContent = "Save: goes live"; dirty();
   }
+  E.busyF = false; dirty();
+  if (E.qf.length) pumpSaves();
+}
+window.addEventListener("online", () => { pumpSwitches(); pumpSaves(); });
+/** On opening: taps that weren't confirmed go now; a Save that hadn't gone out comes back as Unsaved changes */
+function resumePending() {
+  let p = null;
+  try { p = JSON.parse(localStorage.getItem(PKEY()) || "null"); } catch { /* none */ }
+  if (!p) return;
+  const sw = (p.switches || []).filter((j) => savedEntry(j.list, j.entry));
+  for (const j of sw) { for (const c of [E.draft, E.saved]) { const x = c.lists?.[j.list]?.entries?.find((y) => y.id === j.entry); if (x) setFlag(x, j.what, j.on, j.today); } E.qs.push(j); }
+  if (p.save?.content) E.draft = withFlags(normalise(p.save.content), normalise(p.save.content), E.saved);
+  keepPending();
+  const n = sw.length;
+  if (n) toast(`${n} change${n === 1 ? "" : "s"} didn't save before the page closed: sending ${n === 1 ? "it" : "them"} now.`);
+  if (p.save?.content && !same()) showProblems(`<strong>Your save from ${esc(new Date(p.save.at).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" }))} didn't finish before the page closed.</strong> Its changes are back here: check them and Save again.`);
+  if (n) pumpSwitches();
 }
 $("save").addEventListener("click", () => save(false));
 $("save-problems").addEventListener("click", (ev) => { if (ev.target.id === "save-anyway" && confirm("Save it although it doesn't fit? The list will be cut off on the board.")) save(true); });
@@ -728,6 +835,7 @@ $("history").addEventListener("click", async (ev) => {
     $("board-pick").innerHTML = E.boards.length ? E.boards.map((b) => `<option value="${b.id}">${esc(b.name)}</option>`).join("") : `<option value="">No board shows this menu yet</option>`;
     if (E.boards[0]) $("phone-line").innerHTML = phoneLine(E.boards[0]);
     else $("pv-note").textContent = "Once WayTuGo publishes a board on this menu, it shows here.";
+    resumePending();
     drawLists(); drawHistory(); drawPics();
     makeCheckers();
     $("full").disabled = !E.boards.length;
