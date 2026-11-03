@@ -106,7 +106,49 @@ function whenHtml(L, e) {
       <button type="button" class="ghost" data-when-clear>Always</button>
       <p class="hint">Leave out what doesn't matter: no days ticked is every day; no times is all day. It shows only while all of it is true, by the shop's clock.</p></div>` : ""}</div>`;
 }
+// ── M1 (DP-13; Scot: "optimize the console editing for mobile use"): on a phone (720 px or narrower, or sideways: 500 px or less tall) each list folds to
+// its name and a one-line summary, an item is one line (name, price, Sold out) with the rest behind More, and Save and
+// See the board sit in a bar at the bottom. Wider screens draw as before. ──
+// a phone held sideways (up to 950 px wide but 500 px or less tall) is still a phone
+const PHONE = window.matchMedia("(max-width: 720px), (max-height: 500px) and (max-width: 950px)");
+E.openFold = new Set(); E.openRows = new Set();
+const isPhone = () => PHONE.matches;
+const folded = (k) => isPhone() && !E.openFold.has(k);
+function foldHead(k, inner, sum) {
+  if (!isPhone()) return `<h2>${inner}</h2>`;
+  return `<h2 class="me-fold-h"><button type="button" class="me-fold" data-fold="${esc(k)}" aria-expanded="${E.openFold.has(k)}"><span class="me-fold-name">${inner}</span>${sum ? `<span class="me-fold-sum">${esc(sum)}</span>` : ""}</button></h2>`;
+}
+function listSummary(L, C) {
+  const es = C.entries || [];
+  if (L.kind === "text") { const e = es[0] || {}; const t = String(e.title || e.body || "").trim(); return e.hidden ? "Hidden" : t ? (t.length > 44 ? `${t.slice(0, 42)}…` : t) : "Empty"; }
+  if (L.kind === "hours") return `${es.length} line${es.length === 1 ? "" : "s"}`;
+  const sold = es.filter((e) => e.soldOut === today()).length, hid = es.filter((e) => e.hidden).length;
+  const on = L.schedule ? es.filter((e) => !e.hidden && entryStatus(e, nowHere()) === "On now").length : null;
+  return [`${es.length} item${es.length === 1 ? "" : "s"}`, on !== null ? `${on} on now` : "", sold ? `${sold} sold out` : "", hid ? `${hid} hidden` : ""].filter(Boolean).join(" · ");
+}
+function itemRowPhone(L, e, i, n) {
+  const f = L.fields, sold = e.soldOut === today(), open = E.openRows.has(`${L.key}:${e.id}`);
+  const main = ["name", "price"].filter((x) => f.includes(x)).map((x) => textBox(L, x, e, i)).join("");
+  const rest = f.filter((x) => x !== "name" && x !== "price").map((x) => x === "image" ? pickPic(L, e, i)
+    : x === "tags" ? `<div class="me-tags" role="group" aria-label="Tags for item ${i + 1}">${Object.entries(ITEM_TAGS).map(([t, lbl]) => `<label class="me-tag"><input type="checkbox" data-tag="${t}"${(e.tags || []).includes(t) ? " checked" : ""}> ${lbl}</label>`).join("")}</div>`
+    : x === "link" ? `<input data-f="link" maxlength="300" value="${esc(e.link || "")}" placeholder="Web link (optional), https://…" aria-label="Web link for item ${i + 1}" class="me-link">`
+    : textBox(L, x, e, i)).join("");
+  const st = L.schedule ? entryStatus(e, nowHere()) : "";
+  return `<li class="me-row me-row-m${e.hidden ? " is-hidden" : ""}${sold ? " is-sold" : ""}${open ? " is-open" : ""}" data-i="${i}">
+    <div class="me-m-main">${main}</div>
+    <div class="me-m-bar"><label class="me-sold"><input type="checkbox" data-sw="sold"${sold ? " checked" : ""}> Sold out today</label>
+      ${st ? `<span class="me-status ${st === "On now" ? "on" : "off"}">${esc(st)}</span>` : ""}${e.hidden ? `<span class="me-status off">Hidden</span>` : ""}
+      <button type="button" class="ghost me-more-btn" data-row-toggle aria-expanded="${open}" aria-label="${open ? "Done with" : "More for"} item ${i + 1}">${open ? "Done" : "More"}</button></div>
+    ${open ? `<div class="me-m-more"><div class="me-fields">${rest}${whenHtml(L, e)}</div>
+      <label class="check inline"><input type="checkbox" data-sw="hidden"${e.hidden ? " checked" : ""}> Hide</label>
+      <div class="me-move">
+        <button type="button" class="icon-btn" data-mv="-1" aria-label="Move item ${i + 1} up"${i === 0 ? " disabled" : ""}>↑ Up</button>
+        <button type="button" class="icon-btn" data-mv="1" aria-label="Move item ${i + 1} down"${i === n - 1 ? " disabled" : ""}>↓ Down</button>
+        <button type="button" class="icon-btn danger" data-rm aria-label="Remove item ${i + 1}">✕ Remove</button>
+      </div></div>` : ""}</li>`;
+}
 function itemRow(L, e, i, n) {
+  if (isPhone()) return itemRowPhone(L, e, i, n);
   const f = L.fields;
   const sold = e.soldOut === today();
   const cells = [];
@@ -162,8 +204,9 @@ function listHtml(L) {
   const onBoard = E.boards.some((b) => (b.doc?.blocks || []).some((x) => x.content?.list === L.key));
   const unshown = E.boards.length && !onBoard
     ? `<p class="me-unshown" role="status">Not on a board yet: no published board shows this list, so saving it changes only the phone menu. ${E.admin ? "Publish the board that should show it (Layouts → the board → Publish)." : "Ask WayTuGo."}</p>` : "";
-  return `<section class="panel me-list${nofit ? " nofit" : ""}" data-key="${esc(L.key)}">
-    <div class="panel-head"><h2>${esc(L.name)} ${count}</h2></div>${unshown}
+  const fk = `list:${L.key}`;
+  return `<section class="panel me-list${nofit ? " nofit" : ""}${folded(fk) && !nofit ? " is-folded" : ""}" data-key="${esc(L.key)}" data-fold-key="${esc(fk)}">
+    <div class="panel-head">${foldHead(fk, `${esc(L.name)} ${count}`, listSummary(L, C))}</div>${unshown}
     <p class="me-nofit" role="status"${nofit ? "" : " hidden"}>${nofit ? esc(nofitText(nofit)) : ""}</p>
     ${L.hint ? `<p class="hint">${esc(L.hint)}</p>` : ""}${top}${body}</section>`;
 }
@@ -204,8 +247,9 @@ function lookHtml(b) {
   const swatches = (role) => `<div class="me-swatches" role="radiogroup" aria-label="${esc(CHALK_ROLES[role])} chalk">${Object.entries(CHALK).map(([k, hex]) =>
     `<label class="me-swatch${ch.chalk[role] === k ? " is-on" : ""}" title="${esc(CHALK_NAMES[k])}"><input type="radio" name="chalk-${role}:${b.id}" data-look-f="chalk" data-role="${role}" value="${k}"${ch.chalk[role] === k ? " checked" : ""}>`
     + `<span style="background:${hex}"></span><em>${esc(CHALK_NAMES[k])}</em></label>`).join("")}</div>`;
-  return `<section class="panel me-look" data-board="${esc(b.id)}">
-    <div class="panel-head"><h2>Board look <span class="sub">· ${esc(b.name)}</span></h2></div>
+  const fk = `look:${b.id}`;
+  return `<section class="panel me-look${folded(fk) ? " is-folded" : ""}" data-board="${esc(b.id)}" data-fold-key="${esc(fk)}">
+    <div class="panel-head">${foldHead(fk, `Board look <span class="sub">· ${esc(b.name)}</span>`, LOOKS[ch.look] || "")}</div>
     <p class="hint">Choose how this board looks. Every choice here is made to read well on the board; the preview shows it before you save.</p>
     ${looks.length > 1 ? `<div class="me-look-row"><span class="me-look-label">Look</span>${looks.map((l) => radio(`look:${b.id}`, l, LOOKS[l], ch.look === l)).join("")}</div>` : ""}
     ${chalk ? Object.keys(CHALK_ROLES).map((r) => `<div class="me-look-row"><span class="me-look-label">${esc(CHALK_ROLES[r])}</span>${swatches(r)}</div>`).join("")
@@ -227,8 +271,8 @@ function brandHtml() {
   // readable? the text colour on the background, and the background on the dark panel
   let warn = "";
   if (first) { const p = applyBrand(first, br).theme.palette; if (contrast(p.ink, p.bg) < 4.5) warn = "The text colour is hard to read on the background. "; if (contrast(p.onPanel, p.panel) < 4.5) warn += "Text on the dark panel is hard to read."; }
-  return `<section class="panel me-brand" id="me-brand">
-    <div class="panel-head"><h2>Brand <span class="sub">· WayTuGo only · every board on this menu and the phone menu</span></h2></div>
+  return `<section class="panel me-brand${folded("brand") ? " is-folded" : ""}" id="me-brand" data-fold-key="brand">
+    <div class="panel-head">${foldHead("brand", `Brand <span class="sub">· WayTuGo only · every board on this menu and the phone menu</span>`, br.name ? `Name: ${br.name}` : "The template's")}</div>
     <p class="hint">The shop's name, logo, colours and fonts in place of the template's. Leave one blank to keep the template's. The Chalkboard look keeps its slate and chalk lettering, with this name and logo.</p>
     <div class="me-brand-row"><label class="me-brand-name"><span>Shop's name</span><input data-brand="name" maxlength="${BRAND_NAME_MAX}" value="${esc(br.name || "")}" placeholder="(the template's)"></label>
       <label class="me-brand-logo"><span>Logo picture</span><select data-brand="logo"><option value="">None: the name in the heading font</option>${E.pics.map((p) => `<option value="img:${esc(p.key)}"${br.logo === `img:${p.key}` ? " selected" : ""}>${esc(p.name || p.key)}</option>`).join("")}</select></label></div>
@@ -242,9 +286,38 @@ function drawLists() {
     + (E.admin ? brandHtml() : "")
     + E.boards.filter((b) => b.checked && (offersChoice(b.checked) || E.admin)).map(lookHtml).join("")
     + (E.spec.lists || []).map(listHtml).join("");
-  if (!canEdit()) $("lists").querySelectorAll("input, select, textarea, button").forEach((x) => (x.disabled = true));
+  // M1: folding and More stay usable on a read-only menu, so its lists can still be read on a phone
+  if (!canEdit()) $("lists").querySelectorAll("input, select, textarea, button:not([data-fold]):not([data-row-toggle])").forEach((x) => (x.disabled = true));
   dirty();
 }
+
+// M1: folding a list (or the Brand and Board look panels) and opening an item's More, on a phone
+$("lists").addEventListener("click", (ev) => {
+  const b = ev.target.closest("[data-fold], [data-row-toggle]"); if (!b) return;
+  ev.stopImmediatePropagation();
+  if (b.dataset.fold !== undefined) {
+    const k = b.dataset.fold;
+    if (E.openFold.has(k)) E.openFold.delete(k); else E.openFold.add(k);
+    drawLists();
+    const sec = $("lists").querySelector(`[data-fold-key="${CSS.escape(k)}"]`);
+    sec?.querySelector("[data-fold]")?.focus();
+    if (E.openFold.has(k)) sec?.scrollIntoView({ block: "nearest" });
+    return;
+  }
+  const { L, e } = entryAt(b); if (!L || !e) return;
+  const k = `${L.key}:${e.id}`, i = L && E.draft.lists[L.key].entries.indexOf(e);
+  if (E.openRows.has(k)) E.openRows.delete(k); else E.openRows.add(k);
+  drawLists();
+  const row = $("lists").querySelector(`.me-list[data-key="${CSS.escape(L.key)}"] [data-i="${i}"]`);
+  (E.openRows.has(k) ? row?.querySelector(".me-m-more input, .me-m-more button") : row?.querySelector("[data-row-toggle]"))?.focus();
+});
+document.body.classList.toggle("phone", isPhone());
+PHONE.addEventListener("change", () => {
+  document.body.classList.toggle("phone", isPhone());
+  if (!isPhone()) document.body.classList.remove("pv-sheet");
+  if (E.spec) drawLists();
+  fitFrame();
+});
 
 // ── Editing ──
 function entryAt(el) {
@@ -475,8 +548,15 @@ function fitFrame() {
   const aside = box.closest(".menu-preview");
   const others = [...aside.children].filter((c) => c !== box && !c.matches("[data-side-pane]") && !c.hidden)
     .reduce((h, c) => { const st = getComputedStyle(c); return h + c.getBoundingClientRect().height + (parseFloat(st.marginTop) || 0) + (parseFloat(st.marginBottom) || 0); }, 0);
-  const maxH = window.innerWidth > 1000 ? Math.max(240, window.innerHeight - 84 - others - 40) : Infinity;
-  const w = Math.min(col, ((maxH - border) * cw) / ch + border);
+  const sheet = document.body.classList.contains("pv-sheet");   // M1: See the board, full screen on a phone
+  const maxH = sheet ? Math.max(200, window.innerHeight - others - 40) : window.innerWidth > 1000 ? Math.max(240, window.innerHeight - 84 - others - 40) : Infinity;
+  let w = Math.min(col, ((maxH - border) * cw) / ch + border);
+  if (sheet) {   // M1: full screen: the width inside the sheet's padding, the height left under the picker and above the note
+    const st = getComputedStyle(aside), inner = aside.clientWidth - parseFloat(st.paddingLeft) - parseFloat(st.paddingRight);
+    const head = aside.querySelector(".preview-head").getBoundingClientRect().height, note = $("pv-note").getBoundingClientRect().height;
+    const room = window.innerHeight - head - note - parseFloat(st.paddingTop) - parseFloat(st.paddingBottom) - 24;
+    w = Math.min(inner, ((room - border) * cw) / ch + border);
+  }
   box.style.width = `${Math.floor(w)}px`;
   box.style.height = `${Math.round(((Math.floor(w) - border) * ch) / cw + border)}px`;   // the board's own shape inside the 10 px frame
   const f = $("pv"); f.style.width = `${cw}px`; f.style.height = `${ch}px`; f.style.transform = `scale(${box.clientWidth / cw})`;
@@ -522,6 +602,10 @@ function sendFull() {
   E.full.postMessage({ type: "layout-draft", data: payload(b, tidy(E.draft)) }, location.origin);
   E.full.postMessage({ type: "layout-room", on: $("show-room").checked }, location.origin);
 }
+// M1: See the board (a phone): the preview full screen over the editor, with the board picker; Close comes back
+$("see-board").addEventListener("click", () => { document.body.classList.add("pv-sheet"); fitFrame(); schedulePreview(); $("pv-close").focus(); });
+$("pv-close").addEventListener("click", () => { document.body.classList.remove("pv-sheet"); fitFrame(); $("see-board").focus(); });
+window.addEventListener("resize", () => { if (document.body.classList.contains("pv-sheet")) fitFrame(); });
 $("full").addEventListener("click", () => {
   if (E.full && !E.full.closed) { E.full.focus(); sendFull(); return; }
   E.full = window.open("/board.html?preview=1", "waytugo-full-preview", "popup,width=1280,height=760");
@@ -561,6 +645,7 @@ function markNofit() {
   for (const sec of $("lists").querySelectorAll(".me-list")) {
     const b = E.nofit.get(sec.dataset.key), msg = sec.querySelector(".me-nofit");
     sec.classList.toggle("nofit", !!b);
+    if (b) sec.classList.remove("is-folded");   // M1: a list that no longer fits opens, so its message shows
     if (msg) { msg.hidden = !b; msg.textContent = b ? nofitText(b) : ""; }
   }
 }

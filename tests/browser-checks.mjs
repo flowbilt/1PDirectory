@@ -1316,6 +1316,50 @@ try {
     assert(!(await owner.locator(".me-sizes").count()), "no sizes for the owner");
   });
 
+  // M1 (DP-13; Scot: "optimize the console editing for mobile use"): the menu editor on a phone
+  await check("M1: the menu editor on a phone (iPhone 13): no page wider than the screen, boxes at 16 px, lists folded with a summary, an item one line until More, Sold out saved from the bottom bar, See the board full screen (upright and sideways); a desktop keeps its layout", async () => {
+    const ctx = await browser.newContext({ viewport: { width: 390, height: 664 }, deviceScaleFactor: 2, isMobile: true, hasTouch: true });
+    const ph = await ctx.newPage();
+    await signIn(ph, "scot@1pointusa.com", "admin-pass");
+    await ph.goto(`${B}/menu-edit.html?m=${menuId}`); await ph.waitForTimeout(3000);
+    const st = await ph.evaluate(() => ({ phone: document.body.classList.contains("phone"), wide: document.documentElement.scrollWidth, small: [...document.querySelectorAll("input:not([type=checkbox]):not([type=radio]), select, textarea")].filter((e) => e.getBoundingClientRect().width && parseFloat(getComputedStyle(e).fontSize) < 16).length,
+      folded: document.querySelectorAll(".me-list.is-folded").length, lists: document.querySelectorAll(".me-list").length, sum: document.querySelector(".me-list .me-fold-sum")?.textContent || "" }));
+    assert(st.phone && st.wide <= 390 && st.small === 0 && st.lists > 0 && st.folded === st.lists && /item|line|Empty/.test(st.sum), JSON.stringify(st));
+    // open the first items list; its first item is one line, with More
+    const sec = ph.locator(".me-list").filter({ has: ph.locator('[data-sw="sold"]') }).first();
+    const key = await sec.getAttribute("data-key");
+    await ph.locator(`[data-fold="list:${key}"]`).tap(); await ph.waitForTimeout(400);
+    const L = ph.locator(`.me-list[data-key="${key}"]`);
+    assert(!(await L.evaluate((el) => el.classList.contains("is-folded"))), "opened");
+    assert(await L.locator('[data-i="0"] .me-m-more').count() === 0 && await L.locator('[data-i="0"] [data-row-toggle]').isVisible(), "one line until More");
+    const tall = await L.locator('[data-i="0"] [data-row-toggle], [data-i="0"] .me-sold').evaluateAll((els) => els.map((e) => e.getBoundingClientRect().height));
+    assert(tall.every((h) => h >= 43.5), `44 px buttons: ${tall}`);
+    await L.locator('[data-i="0"] [data-row-toggle]').tap(); await ph.waitForTimeout(400);
+    assert(await L.locator('[data-i="0"] .me-m-more [data-rm]').isVisible(), "More shows the rest");
+    await L.locator('[data-i="0"] [data-sw="sold"]').tap(); await ph.waitForTimeout(300);
+    // the bottom bar: Save in reach at the foot of the screen
+    const bar = await ph.locator("#save").boundingBox();
+    assert(bar && bar.y > 664 - 80, `Save at the bottom: ${JSON.stringify(bar)}`);
+    await ph.locator("#save").tap(); await ph.waitForTimeout(2500);
+    const m = (await sb(`menus?id=eq.${menuId}&select=content`)).data[0];
+    assert((m.content.lists[key].entries[0].soldOut || "").length === 10, "sold out saved");
+    // See the board: the whole screen, the board inside it, upright and sideways
+    await ph.locator("#see-board").tap(); await ph.waitForTimeout(2500);
+    const sheet = async () => ph.evaluate(() => { const a = document.querySelector(".menu-preview").getBoundingClientRect(), b = document.getElementById("pv-box").getBoundingClientRect(); return { a: [a.top, a.height, a.width], b: [b.left, b.right, b.bottom], vw: innerWidth, vh: innerHeight }; });
+    let sh = await sheet();
+    assert(sh.a[0] === 0 && Math.abs(sh.a[1] - sh.vh) < 2 && sh.b[0] >= 0 && sh.b[1] <= sh.vw && sh.b[2] <= sh.vh, `upright: ${JSON.stringify(sh)}`);
+    await ph.setViewportSize({ width: 844, height: 390 }); await ph.waitForTimeout(1500);
+    sh = await sheet();
+    assert(sh.b[1] - sh.b[0] > 450 && sh.b[2] <= sh.vh && Math.abs(sh.a[1] - sh.vh) < 2, `sideways: ${JSON.stringify(sh)}`);
+    await ph.locator("#pv-close").tap(); await ph.waitForTimeout(300);
+    assert(!(await ph.evaluate(() => document.body.classList.contains("pv-sheet"))), "Close comes back");
+    await ctx.close();
+    // the desktop keeps its layout: no folds, the old item row, no bottom bar
+    await boss.goto(`${B}/menu-edit.html?m=${menuId}`); await boss.waitForTimeout(2500);
+    const dk = await boss.evaluate(() => ({ phone: document.body.classList.contains("phone"), folds: document.querySelectorAll("[data-fold]").length, see: getComputedStyle(document.getElementById("see-board")).display, rows: document.querySelectorAll(".me-row-m").length }));
+    assert(!dk.phone && dk.folds === 0 && dk.see === "none" && dk.rows === 0, JSON.stringify(dk));
+  });
+
   await sb(`screens?id=eq.${portrait.id}`, { method: "PATCH", body: JSON.stringify({ layout_id: lay.id, property_id: home.id }) });
 
   await owner.close(); await boss.close();

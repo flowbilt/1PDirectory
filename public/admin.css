@@ -468,3 +468,71 @@ dialog.wide #dlg-body { max-height: 72vh; overflow: auto; padding-right: 4px; }
 
 /* T1d (DP-13): a board's sizes (1Point only) */
 .me-sizes { margin-top: 10px; padding-top: 8px; border-top: 1px dashed var(--line); }
+
+/* ── M1 (DP-13): the menu editor on a phone (720 px or narrower; menu-edit.js sets body.phone). Lists fold to their name
+   and a summary, an item is one line (name, price, Sold out) with the rest behind More, boxes take 16 px text (so the
+   phone doesn't zoom in), buttons are at least 44 px, and Save and See the board sit in a bar at the bottom. ── */
+.phone-only { display: none; }
+body.phone .phone-only { display: inline-flex; align-items: center; justify-content: center; }
+body.phone input, body.phone select, body.phone textarea { font-size: 16px; }
+body.phone button, body.phone .file-btn, body.phone a.ghost { min-height: 44px; }
+body.phone .icon-btn { min-width: 44px; }
+body.phone .check.inline input, body.phone .me-tag input, body.phone .me-choice input { width: 22px; height: 22px; }
+body.phone .check.inline, body.phone .me-choice, body.phone .me-tag { min-height: 44px; }
+body.phone .me-day span { width: 40px; height: 40px; font-size: 15px; }
+body.phone .me-days { flex-wrap: wrap; gap: 4px; }
+body.phone .workspace { padding: 12px; gap: 12px; }
+body.phone .editor { display: grid; gap: 10px; }
+body.phone .panel { padding: 14px; gap: 10px; }
+/* the top bar: back and the menu's name; Save, Undo and See the board in a bar at the bottom */
+body.phone .topbar { padding: 8px 12px; }
+body.phone .topbar-left { flex-wrap: nowrap; min-width: 0; }
+body.phone .topbar-left .brand { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+body.phone .topbar-right { position: fixed; left: 0; right: 0; bottom: 0; z-index: 20; display: grid; grid-template-columns: 1fr 1fr 1.4fr;
+  gap: 8px; padding: 8px 12px calc(8px + env(safe-area-inset-bottom)); background: var(--navy); box-shadow: 0 -4px 16px rgba(0,0,0,0.2); }
+body.phone .topbar-right #saved-line { grid-column: 1 / -1; font-size: 13px; text-align: center; }
+body.phone .topbar-right button { padding: 8px 6px; white-space: normal; line-height: 1.15; }
+body.phone { padding-bottom: 130px; }
+/* a folded panel: its head only */
+.me-fold-h { margin: 0; width: 100%; }
+.me-fold { display: grid; grid-template-columns: 1fr auto; grid-template-rows: auto auto; align-items: center; gap: 2px 10px; width: 100%; text-align: left;
+  padding: 4px 0; border: 0; background: transparent; font: inherit; color: inherit; white-space: normal; }
+.me-fold::after { content: "▾"; grid-column: 2; grid-row: 1 / span 2; font-size: 20px; color: var(--muted); transition: transform 0.15s; }
+.me-fold[aria-expanded="false"]::after { transform: rotate(-90deg); }
+.me-fold-name { font-size: 1.15rem; font-weight: 700; }
+.me-fold-name .sub { display: block; font-size: 13px; font-weight: 400; }
+.me-fold-sum { grid-column: 1; font-size: 14px; font-weight: 400; color: var(--muted); }
+.panel.is-folded > :not(.panel-head) { display: none; }
+.panel.is-folded { padding-block: 10px; }
+/* an item on one line */
+.me-row-m { display: grid; grid-template-columns: 1fr; gap: 8px; padding: 10px; }
+.me-m-main { display: grid; grid-template-columns: minmax(0, 1fr) 104px; gap: 8px; }
+.me-m-main input.me-name { font-weight: 700; }
+.me-m-main > :only-child { grid-column: 1 / -1; }
+.me-m-bar { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.me-sold { display: inline-flex; align-items: center; gap: 8px; min-height: 44px; padding: 0 12px; border: 1px solid var(--line); border-radius: 999px; font-weight: 600; cursor: pointer; }
+.me-sold input { width: 22px; height: 22px; margin: 0; }
+.me-row.is-sold .me-sold { background: #fdecea; border-color: #e7a59f; color: var(--danger); }
+.me-more-btn { margin-left: auto; }
+.me-m-more { display: grid; gap: 10px; padding-top: 6px; border-top: 1px dashed var(--line); }
+.me-m-more .me-fields { display: grid; gap: 8px; }
+.me-m-more .me-move { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 6px; }
+.me-row-m.is-sold .me-name, .me-row-m.is-sold .me-price { text-decoration: line-through; }
+/* See the board: the preview full screen, with the board picker and Close */
+body.phone.pv-sheet { overflow: hidden; }
+body.phone.pv-sheet .menu-preview { position: fixed !important; inset: 0; z-index: 40; margin: 0; max-height: none; overflow: auto; align-self: stretch; height: 100vh; height: 100dvh; background: #1b2430; color: #fff;
+  padding: 10px 12px calc(10px + env(safe-area-inset-bottom)); display: grid; grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-areas: "head close" "box box" "note note"; align-content: start; justify-items: center; gap: 8px 10px; }
+body.phone.pv-sheet .menu-preview .preview-head { grid-area: head; justify-self: stretch; }
+body.phone.pv-sheet .menu-preview .preview-head .field-label { display: none; }
+body.phone.pv-sheet #pv-box { grid-area: box; }
+body.phone.pv-sheet #pv-close { grid-area: close; min-width: 96px; }
+body.phone.pv-sheet #pv-note { grid-area: note; }
+body.phone.pv-sheet .menu-preview > :not(.preview-head):not(#pv-box):not(#pv-close):not(#pv-note) { display: none !important; }
+body.phone.pv-sheet .menu-preview .field-label { color: #fff; }
+body.phone.pv-sheet .menu-preview select { color: var(--ink); }
+body.phone.pv-sheet .topbar-right { display: none; }
+body.phone.pv-sheet #pv-note { color: #dfe5ee; text-align: center; margin: 0; }
+body.phone:not(.pv-sheet) #pv-close { display: none; }
+body.phone .pic-dialog, body.phone dialog.wide { width: calc(100vw - 24px); max-width: none; }
+body.phone .toast { bottom: calc(130px + env(safe-area-inset-bottom)); z-index: 30; }

@@ -19,6 +19,7 @@
   <div class="topbar-right">
     <span id="saved-line" class="checkin"></span>
     <button type="button" id="undo" class="ghost" disabled>Undo changes</button>
+    <button type="button" id="see-board" class="ghost phone-only">See the board</button>
     <button type="button" id="save" class="primary" disabled>Save: goes live</button>
   </div>
 </header>
@@ -33,6 +34,7 @@
       <select id="board-pick" aria-label="Which board to preview"></select>
     </div>
     <div class="preview-box landscape" id="pv-box"><iframe id="pv" title="Board preview" src="about:blank"></iframe></div>
+    <button type="button" class="primary phone-only" id="pv-close">Close</button>
     <div class="me-pv-row"><button type="button" class="ghost" id="full">Preview full size</button>
     <label class="check inline"><input type="checkbox" id="show-room"> Show the empty room</label></div>
     <p class="hint" id="pv-note">As the board will show it, with your changes, before you save.</p>

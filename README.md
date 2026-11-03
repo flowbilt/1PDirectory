@@ -592,6 +592,26 @@ on a phone), the logo or shop's name sized to its spot, and the QR code open on 
 - **A rotator with no captions:** `"captions": false` on a `rotator` block, for pictures that carry their own words (a
   shop's flyers); each entry's name stays as the picture's description.
 
+### M1 (DP-13): the menu editor on a phone
+
+Scot: "optimize the console editing for mobile use". The menu editor (`menu-edit.html`) is what a shop uses day to day
+(Sold out, tonight's price), often from a phone behind the counter. On a screen 720 px wide or narrower, or a phone held
+sideways (500 px or less tall, up to 950 px wide), `menu-edit.js` sets `body.phone` and:
+- **each list folds** to its name, its count and a one-line summary ("8 items · 1 sold out", "11 items · 2 on now",
+  the bottom line's words); a tap opens it. The Brand and Board look panels fold too. A list that no longer fits opens
+  by itself so its message shows. Folding works on a read-only menu too;
+- **an item is one line:** its name and price, a **Sold out today** switch (red when on), its On now / Not on right now
+  label on a scheduled list, and **More**, which opens the rest (description, picture, tags, link, When, Hide, Up, Down,
+  Remove);
+- **boxes take 16 px text** (so an iPhone doesn't zoom in on each tap) and buttons, switches and day circles are at
+  least 44 px;
+- **Undo, See the board and Save** sit in a bar at the foot of the screen, with the saved line over them;
+- **See the board** shows the preview full screen (the board picker and Close above it), sized to the phone upright or
+  sideways; Close comes back to the same place.
+
+Wider screens draw exactly as before (no folds, the old item rows, no bottom bar). The console's other pages (M2) and
+the directory editor (M3) are next.
+
 ## Screens and cards (Raspberry Pi)
 
 Every Pi runs from a **prepared card**, and every card is the same. A card carries no identity until it's in a Pi:
