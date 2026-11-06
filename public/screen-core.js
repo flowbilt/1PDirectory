@@ -23,6 +23,8 @@
   const SITE = DEVICE ? `device-${DEVICE}` : CHOSEN || "preview";
   const SCREEN_URL = DEVICE ? `/api/screen?device=${encodeURIComponent(DEVICE)}` : `/api/screen?key=${encodeURIComponent(SITE)}`;
   const URL_ROTATE = ["90", "270"].includes(q.get("rotate")) ? Number(q.get("rotate")) : null;
+  // O1 (DP-13): how the Pi turned its output at this start (kiosk.sh adds &turned=; older cards don't: Update Pi)
+  const TURNED = ["0", "90", "180", "270"].includes(q.get("turned")) ? Number(q.get("turned")) : null;
   const CHECKS_IN = !PREVIEW && !VIEW && !MENU && !SAMPLE; // only a real screen records a check-in
 
   const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
@@ -64,10 +66,17 @@
     let rotate = URL_ROTATE;
     // The same direction the Pi turns its output (Wayland transform 90 is a quarter turn anticlockwise, which is
     // rotate(-90deg) here), so the picture doesn't flip between an Orientation change and the Pi's next restart.
+    // O1 (Scot: "the flip is not working" until a reboot): when the Pi says how it turned its output, the page turns by
+    // the difference between that and the Orientation now set, so a flip (the same shape) shows at once too. Pi turn T
+    // is page turn (360 - T), so the page's turn is (turned - wanted).
+    const DEG = { portrait: 90, "portrait-flipped": 270, "landscape-flipped": 180 };
+    if (rotate === null && TURNED !== null) rotate = (TURNED - (DEG[wanted] || 0) + 360) % 360;
     if (rotate === null) rotate = shape === "portrait" && !viewportPortrait ? (wanted === "portrait-flipped" ? 90 : 270) : shape === "landscape" && viewportPortrait ? 90 : 0;
-    const W = rotate ? vh : vw, H = rotate ? vw : vh;
+    const quarter = rotate === 90 || rotate === 270;
+    const W = quarter ? vh : vw, H = quarter ? vw : vh;
     return { rotate, W, H, landscape: W > H,
-      transform: rotate === 90 ? `translateX(${vw}px) rotate(90deg)` : rotate === 270 ? `translateY(${vh}px) rotate(-90deg)` : "" };
+      transform: rotate === 90 ? `translateX(${vw}px) rotate(90deg)` : rotate === 270 ? `translateY(${vh}px) rotate(-90deg)`
+        : rotate === 180 ? `translate(${vw}px, ${vh}px) rotate(180deg)` : "" };
   }
 
   // ── The two pages, and handing over between them ──
@@ -174,6 +183,6 @@
     return `<svg viewBox="0 0 ${n + 2 * Q} ${n + 2 * Q}" shape-rendering="crispEdges" role="img" aria-label="QR code"><rect width="100%" height="100%" fill="#fff"/><path d="${d}" fill="#0d1b2e"/></svg>`;
   }
 
-  window.ScreenCore = { DEVICE, CHOSEN, PREVIEW, VIEW, SITE, SCREEN_URL, URL_ROTATE, CHECKS_IN, PAGE, esc, cache, clock, now, timeParts,
+  window.ScreenCore = { DEVICE, CHOSEN, PREVIEW, VIEW, SITE, SCREEN_URL, URL_ROTATE, TURNED, CHECKS_IN, PAGE, esc, cache, clock, now, timeParts,
     rotation, route, fetchScreen, WX, reloadIfOutdated, scheduleNightlyReload, showIdentify, lockdown, registerOfflineCache, svgQR, MENU, SAMPLE };
 })();

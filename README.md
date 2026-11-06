@@ -634,6 +634,22 @@ implies and the audit trail").
 - **Boards check every 30 seconds** (`board.js`; Scot: "Let's go with 30 seconds"), so a change reaches them within half
   a minute. Directories stay at a minute. Each check is one database call (about double a board's checking cost).
 
+### O1 (DP-13): an Orientation change shows at once, the flip included
+
+Scot, on the bench Pi: landscape to portrait showed at once but a flip didn't, until he remembered the reboot. A change
+of shape always showed at once (the page turns itself while the Pi's output is the other shape); a flip keeps the shape,
+so nothing changed until the Pi's next start turned its output.
+- **The kiosk says how it turned the output** at this start: it opens the page with `&turned=<0|90|180|270>`
+  (`setup-kiosk.sh`, `PAGE_URL`; a fixed `--url` with no `?` gets `?turned=`). A Pi takes it with **Update Pi** (or a card
+  from a newly prepared master); until then it behaves as before.
+- **The page turns by the difference** (`screen-core.js` `rotation`): Pi turn T is page turn 360 − T, so the page's turn
+  is (turned − wanted) mod 360, with 180 now drawn too. A flip shows within a minute; and a Pi started as Portrait
+  (turned the other way) and switched to Landscape turns the right way (before, it came out upside down until the
+  restart). Without `turned`, as before.
+- **The console offers the reboot:** saving a changed Orientation on a screen whose Pi has enrolled asks "Reboot … Pi now
+  so it keeps this turn from now on?" and sends Reboot Pi (1Point; the Pi panel's Reboot as before). The Orientation help
+  says the screen turns within a minute and the Pi keeps it from its next start.
+
 ## Screens and cards (Raspberry Pi)
 
 Every Pi runs from a **prepared card**, and every card is the same. A card carries no identity until it's in a Pi:

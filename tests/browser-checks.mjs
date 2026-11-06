@@ -1430,6 +1430,49 @@ try {
     void ids;
   });
 
+  // O1 (DP-13; Scot: "the flip is not working" until he rebooted): the Pi says how it turned its output (&turned=), and
+  // the page turns by the difference, so a flip shows at once; without it (an older card), as before
+  await check("O1: an Orientation flip shows at once: a board turned 90 by its Pi and set to Portrait (turned the other way) turns itself upside down; a directory set to Landscape (upside down) on an upright Pi too; portrait-flipped to landscape turns the right way; an older card (no turned) as before", async () => {
+    const turn = async (key, q, w, h) => { const pg = await browser.newPage({ viewport: { width: w, height: h } }); await pg.goto(`${B}/?screen=${key}&view=1${q}`); await pg.waitForTimeout(3500);
+      const t = await pg.evaluate(() => [location.pathname, document.getElementById("stage").style.transform, getComputedStyle(document.getElementById("stage")).getPropertyValue("--W").trim()]); await pg.close(); return t; };
+    await sb(`screens?id=eq.${portrait.id}`, { method: "PATCH", body: JSON.stringify({ orientation: "portrait-flipped" }) });
+    let t = await turn(portrait.key, "&turned=90", 1080, 1920);
+    assert(t[0] === "/board.html" && /rotate\(180deg\)/.test(t[1]) && t[2] === "1080px", `board flipped: ${t}`);
+    t = await turn(portrait.key, "&turned=270", 1080, 1920);
+    assert(t[1] === "", `the Pi already turned it: ${t}`);
+    t = await turn(portrait.key, "", 1080, 1920);
+    assert(t[1] === "", `an older card: as before (waits for the restart): ${t}`);
+    await sb(`screens?id=eq.${portrait.id}`, { method: "PATCH", body: JSON.stringify({ orientation: "portrait" }) });
+    await sb(`screens?id=eq.${landscape.id}`, { method: "PATCH", body: JSON.stringify({ orientation: "landscape-flipped" }) });
+    t = await turn(landscape.key, "&turned=0", 1920, 1080);
+    assert(/rotate\(180deg\)/.test(t[1]) && t[2] === "1920px", `directory upside down: ${t}`);
+    // a Pi started as Portrait (turned the other way), now set to Landscape: a quarter turn the right way, not upside down
+    await sb(`screens?id=eq.${landscape.id}`, { method: "PATCH", body: JSON.stringify({ orientation: "landscape" }) });
+    t = await turn(landscape.key, "&turned=270", 1080, 1920);
+    assert(/rotate\(-90deg\)/.test(t[1]) && t[2] === "1920px", `portrait-flipped to landscape: ${t}`);
+    t = await turn(landscape.key, "&turned=90", 1080, 1920);
+    assert(/rotate\(90deg\)/.test(t[1]), `portrait to landscape, as before: ${t}`);
+    // the console: saving a changed Orientation on a screen with an enrolled Pi offers Reboot Pi, and sends it
+    let [dv] = (await sb(`devices?screen_id=eq.${landscape.id}&select=id`)).data;
+    if (!dv) { [dv] = (await sb("devices", { method: "POST", body: JSON.stringify({ serial: "10000000fee10101", screen_id: landscape.id }) })).data; }
+    await sb(`devices?id=eq.${dv.id}`, { method: "PATCH", body: JSON.stringify({ key_hash: "a".repeat(64) }) });
+    await boss.goto(`${B}/console.html`); await boss.waitForTimeout(2500);
+    await boss.click(`[data-screen="${landscape.id}"]`); await boss.waitForTimeout(400);
+    await boss.selectOption("#s-orient", "landscape-flipped");
+    let asked = "";
+    boss.once("dialog", (d) => { asked = d.message(); });   // the console page already accepts its confirm boxes
+    await boss.click("#dlg-ok"); await boss.waitForTimeout(2500);
+    assert(/Orientation saved[^]*Reboot[^]*Pi now/.test(asked), `asked: ${asked}`);
+    const cmds = (await sb(`device_commands?device_id=eq.${dv.id}&select=command&order=created_at.desc`)).data;
+    assert(cmds[0]?.command === "reboot", JSON.stringify(cmds));
+    // saving again without changing the Orientation asks nothing
+    await boss.click(`[data-screen="${landscape.id}"]`); await boss.waitForTimeout(400);
+    let again = false; const h = () => { again = true; }; boss.on("dialog", h);
+    await boss.click("#dlg-ok"); await boss.waitForTimeout(1500); boss.off("dialog", h);
+    assert(!again, "no reboot offer without a change");
+    await sb(`screens?id=eq.${landscape.id}`, { method: "PATCH", body: JSON.stringify({ orientation: "landscape" }) });
+  });
+
   await sb(`screens?id=eq.${portrait.id}`, { method: "PATCH", body: JSON.stringify({ layout_id: lay.id, property_id: home.id }) });
 
   await owner.close(); await boss.close();

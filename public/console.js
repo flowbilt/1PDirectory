@@ -131,7 +131,7 @@
         ${field("s-key", "Screen address", `<input id="s-key" required pattern="[a-z0-9][a-z0-9-]{0,47}" value="${esc(s?.key || "")}" ${isNew ? "" : "readonly"}>`, isNew ? "Lowercase letters, numbers and dashes. The Pi opens this address, so it can't change later." : `The Pi opens ${location.origin}/?screen=${esc(s.key)}`)}
         ${field("s-dir", "Shows", `<select id="s-dir">${showsOptions(s)}</select>`, "A directory, or a layout (Layouts tab). A layout's orientation must match this screen's Orientation.")}
         ${field("s-prop", "Building", `<select id="s-prop"></select>`, "The building this screen is in: a layout takes its time zone, weather and address from it.")}
-        ${field("s-orient", "Orientation", `<select id="s-orient">${Object.entries(ORIENTATIONS).map(([o, label]) => `<option value="${o}"${(s?.orientation || "auto") === o ? " selected" : ""}>${label}</option>`).join("")}</select>`, "A Pi turns its picture to match at its next start (Pi → Reboot Pi). A portrait TV that comes out upside down is mounted the other way round: choose Portrait (turned the other way).")}
+        ${field("s-orient", "Orientation", `<select id="s-orient">${Object.entries(ORIENTATIONS).map(([o, label]) => `<option value="${o}"${(s?.orientation || "auto") === o ? " selected" : ""}>${label}</option>`).join("")}</select>`, "The screen turns within a minute; the Pi keeps the turn from its next start (saving offers Reboot Pi). A portrait TV that comes out upside down is mounted the other way round: choose Portrait (turned the other way).")}
         <div class="field" id="f-s-nocec"><label class="check"><input type="checkbox" id="s-nocec"${s?.no_cec ? " checked" : ""}> This display has no HDMI-CEC</label>
           <span class="hint">Tick for a computer monitor or touch display the Pi can't switch on or ask over HDMI (e.g. the Beetronics). Health then stops counting "TV not answering" for this screen. Set the display's own power-on-after-power-loss instead.</span></div>
         <div class="field" id="f-s-nopowered"><label class="check"><input type="checkbox" id="s-nopowered"${s?.hide_powered_by ? " checked" : ""}> Hide "Powered by WayTuGo"</label>
@@ -185,6 +185,13 @@
           await Auth.db(`screens?id=eq.${s.id}`, { method: "PATCH", body, prefer: "return=minimal" });
         }
         toast(isNew ? `Screen added. Point its Pi at /?screen=${body.key || s.key}` : "Saved. The screen updates within a minute.");
+        // O1 (DP-13; Scot missed the reboot after a flip): a changed Orientation shows within a minute; the Pi itself
+        // turns its picture at its next start, so offer that now (1Point, an enrolled Pi on this screen)
+        const pi = !isNew && (s.orientation || "auto") !== body.orientation ? window.ConsoleDevices?.list?.().find((d) => d.screen_id === s.id && d.enrolled) : null;
+        if (pi && confirm(`Orientation saved. The screen turns within a minute.\n\nReboot ${s.name}'s Pi now so it keeps this turn from now on? The screen is blank for about a minute.`)) {
+          try { await Auth.api("/api/devices", { method: "POST", body: { action: "command", device_id: pi.id, command: "reboot" } }); toast("Saved. The Pi reboots within a minute and comes back turned."); }
+          catch (ex) { toast(`Saved, but the reboot wasn't sent: ${ex.message} Use Pi → Reboot Pi.`, true); }
+        }
         await refresh();
       },
     });

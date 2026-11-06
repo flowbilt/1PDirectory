@@ -1126,6 +1126,9 @@ end_setup() {
 }
 end_setup     # and over the field Wi-Fi setup page, if this start had one
 
+# O1 (DP-13): the page is told which way this start turned the output (&turned=), so a later Orientation change in the
+# console (a flip included) shows at once, the page turning itself by the difference until the next restart
+PAGE_URL="$URL$([[ "$URL" == *\?* ]] && echo "&" || echo "?")turned=$ROT"
 while true; do
   # After a power cut Chromium thinks it crashed and shows a "Restore pages?" bar. Clear that.
   PREFS="$PROFILE/Default/Preferences"
@@ -1133,7 +1136,7 @@ while true; do
     sed -i 's/"exited_cleanly":false/"exited_cleanly":true/; s/"exit_type":"[^"]*"/"exit_type":"Normal"/' "$PREFS"
   fi
   "$CHROME" \
-    --kiosk "$URL" \
+    --kiosk "$PAGE_URL" \
     --user-data-dir="$PROFILE" \
     --ozone-platform-hint=auto \
     --noerrdialogs --disable-infobars --disable-session-crashed-bubble \

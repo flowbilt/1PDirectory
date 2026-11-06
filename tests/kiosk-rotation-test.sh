@@ -62,14 +62,14 @@ OFF="http://localhost:1"   # a site that can't be reached
 
 H="$WORK/a"; run "$H" 100000008294ba46 "$BASE" "" auto
 ok "a landscape Yodeck Pi (PPI 2 South) stays upright" "$GOT_ROT" "$(T normal)"
-ok "and opens its own address, built from its serial" "$GOT_URL" "$BASE/?device=100000008294ba46"
+ok "and opens its own address, built from its serial (saying how it turned: O1)" "$GOT_URL" "$BASE/?device=100000008294ba46&turned=0"
 H="$WORK/b"; run "$H" 10000000a4ae272d "$BASE" "" auto
 ok "a portrait Yodeck Pi (Cadence Place) turns to portrait" "$GOT_ROT" "$(T 90)"
 H="$WORK/c"; run "$H" 10000000abcdef99 "$BASE" "" auto
 ok "a brand-new Pi, not assigned yet, stays landscape" "$GOT_ROT" "$(T normal)"
 H="$WORK/d"; run "$H" 10000000abcdef99 "$BASE" "$BASE/?site=landmark-center" auto
 ok "a fixed address works too (Landmark Center is portrait)" "$GOT_ROT" "$(T 90)"
-ok "and a fixed address wins over the serial" "$GOT_URL" "$BASE/?site=landmark-center"
+ok "and a fixed address wins over the serial" "$GOT_URL" "$BASE/?site=landmark-center&turned=90"
 H="$WORK/e"; run "$H" 10000000a4ae272d "$BASE" "" auto; run "$H" 10000000a4ae272d "$OFF" "" auto
 ok "no internet: keeps the last answer" "$GOT_ROT" "$(T 90)"
 H="$WORK/f"; run "$H" 10000000a4ae272d "$OFF" "" auto
@@ -78,7 +78,7 @@ H="$WORK/g"; run "$H" 100000008294ba46 "$BASE" "" 270
 ok "a fixed --rotate 270 overrides the site" "$GOT_ROT" "$(T 270)"
 # The same card, moved from Cadence Place's Pi to PPI 2 South's
 H="$WORK/h"; run "$H" 10000000a4ae272d "$BASE" "" auto; run "$H" 100000008294ba46 "$BASE" "" auto
-ok "a card moved to another Pi opens that Pi's address" "$GOT_URL" "$BASE/?device=100000008294ba46"
+ok "a card moved to another Pi opens that Pi's address" "$GOT_URL" "$BASE/?device=100000008294ba46&turned=0"
 ok "and turns the way that Pi's screen is set" "$GOT_ROT" "$(T normal)"
 H="$WORK/i"; run "$H" 10000000a4ae272d "$BASE" "" auto; run "$H" 100000008294ba46 "$OFF" "" auto
 ok "a moved card with no internet doesn't reuse the other Pi's answer" "$GOT_ROT" "$(T normal)"
@@ -87,8 +87,11 @@ layout() { curl -fsS -o /dev/null -X PATCH "$BASE/sb/rest/v1/screens?key=eq.$1" 
   -H "Content-Type: application/json" -d "{\"orientation\": \"$2\"}"; }
 layout ppi-3n portrait-flipped; H="$WORK/l"; run "$H" 10000000335b04b3 "$BASE" "" auto
 ok "Portrait (turned the other way) turns the picture 270 degrees" "$GOT_ROT" "$(T 270)"
+ok "and tells the page it did (O1: a later flip shows at once)" "$GOT_URL" "$BASE/?device=10000000335b04b3&turned=270"
 layout ppi-4n landscape-flipped; H="$WORK/m"; run "$H" 1000000025b7d4d6 "$BASE" "" auto
 ok "Landscape (upside down) turns it 180 degrees" "$GOT_ROT" "$(T 180)"
+H="$WORK/m2"; run "$H" 100000008294ba46 "$BASE" "$BASE/login.html" 90
+ok "a fixed address with no ? still gets the turn (O1)" "$GOT_URL" "$BASE/login.html?turned=90"
 
 # The watcher (every second here, 10 in real life) while the browser runs for 4 seconds
 H="$WORK/j"; EXTRA="CHROME_WAIT=4 KIOSK_WATCH_SECONDS=1" run "$H" 10000000a4ae272d "$BASE" "" auto
@@ -127,7 +130,7 @@ alive() {   # a killed process waiting to be reaped (state Z) counts as closed
 }
 H="$WORK/s1"; run "$H" 10000000a4ae272d "$BASE" "" auto; sleep 1
 ok "a portrait Pi new to this card: the animation opens (from the card) before anything else, then the screen turns once the site answers, then the directory" \
-  "$(tr '\n' '|' < "$H/events.log")" "turn normal|open file://$WORK/startup.html|turn 90|open $BASE/?device=10000000a4ae272d|"
+  "$(tr '\n' '|' < "$H/events.log")" "turn normal|open file://$WORK/startup.html|turn 90|open $BASE/?device=10000000a4ae272d&turned=90|"
 ok "and the animation's window is closed once the directory's is up" "$(alive "$H")" "closed"
 run "$H" 10000000a4ae272d "$BASE" "" auto; sleep 1
 ok "next start: turned to portrait straight away, before the network wait and the animation" "$(head -n 2 "$H/events.log" | tr '\n' '|')" "turn 90|open file://$WORK/startup.html|"
@@ -135,15 +138,15 @@ H="$WORK/s2"; run "$H" 100000008294ba46 "$BASE" "" 270
 ok "a fixed --rotate is used straight away too" "$(head -n 1 "$H/events.log")" "turn 270"
 H="$WORK/s3"; EXTRA="$FAST" run "$H" 10000000fee1face "$OFF" "" auto; sleep 1
 ok "a Pi going into field Wi-Fi setup: the animation first, then the setup page over it" \
-  "$(grep '^open' "$H/events.log" | tr '\n' '|')" "open file://$WORK/startup.html|open http://localhost/|open $OFF/?device=10000000fee1face|"
+  "$(grep '^open' "$H/events.log" | tr '\n' '|')" "open file://$WORK/startup.html|open http://localhost/|open $OFF/?device=10000000fee1face&turned=0|"
 ok "and the animation's window is closed" "$(alive "$H")" "closed"
 ok "the setup page stays up until the directory's window has opened over it, then closes (16c: no gap)" \
-  "$(grep -E '^(open http|close setup)' "$H/events.log" | tr '\n' '|')" "open http://localhost/|open $OFF/?device=10000000fee1face|close setup|"
+  "$(grep -E '^(open http|close setup)' "$H/events.log" | tr '\n' '|')" "open http://localhost/|open $OFF/?device=10000000fee1face&turned=0|close setup|"
 H="$WORK/s5"; t0=$SECONDS; MIN=3 run "$H" 100000008294ba46 "$BASE" "" auto; took=$(( SECONDS - t0 )); sleep 1
 ok "with a network that answers at once, the animation still gets its minimum time before the directory opens" \
-  "$(( took >= 3 ))|$(grep '^open' "$H/events.log" | tr '\n' '|')" "1|open file://$WORK/startup.html|open $BASE/?device=100000008294ba46|"
+  "$(( took >= 3 ))|$(grep '^open' "$H/events.log" | tr '\n' '|')" "1|open file://$WORK/startup.html|open $BASE/?device=100000008294ba46&turned=0|"
 ok "and is closed after" "$(alive "$H")" "closed"
 H="$WORK/s4"; PAGE="$WORK/none.html" run "$H" 100000008294ba46 "$BASE" "" auto
-ok "a card without the animation goes straight to the directory, as before" "$(grep -c 'file://' "$H/events.log")|$GOT_URL" "0|$BASE/?device=100000008294ba46"
+ok "a card without the animation goes straight to the directory, as before" "$(grep -c 'file://' "$H/events.log")|$GOT_URL" "0|$BASE/?device=100000008294ba46&turned=0"
 
 echo; echo "$pass/$((pass+fail)) passed"; [[ $fail -eq 0 ]]
