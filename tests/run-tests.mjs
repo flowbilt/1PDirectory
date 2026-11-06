@@ -3248,6 +3248,14 @@ test("G1: Gibbs Garden Center's sample: both boards clean; the board's switch sh
   // every picture the boards ask for is in the keyed pictures list
   const md = readFileSync(new URL("../layouts/gibbs-garden-pictures.md", import.meta.url), "utf8");
   for (const k of [...JSON.stringify([d55, d32]).matchAll(/img:([a-z0-9-]+)/g)].map((m) => m[1])) assert.ok(md.includes(`\`${k}\``), `${k} in the pictures list`);
+  // G1c (Scot): ticking the two maps in Add lists was refused ("The name is 46 characters; this list has room for 40"):
+  // a picture's list now has room for its own description
+  {
+    const d55 = JSON.parse(readFileSync(new URL("../layouts/gibbs-garden-55.json", import.meta.url), "utf8"));
+    const ex = MF.extractMenu(LF.checkLayout(d55).doc, ["map-entrance", "map-pottery"]);
+    assert.deepEqual(ex.made.sort(), ["map-entrance", "map-pottery"]);
+    assert.deepEqual(MF.checkMenuContent(MF.checkMenuSpec(ex.spec).spec, ex.content).errors, [], "the maps' lists are made");
+  }
 });
 
 test("T1b: the shop's brand: its rules; drawn on every board (name, logo, colours, fonts) and the phone menu; only 1Point changes it; a copy takes the name on the boards", async () => {

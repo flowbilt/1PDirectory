@@ -691,6 +691,15 @@ another on preview, the controls should follow the choice."
   Scot) with its white taken out and the name beside it in grey, as their flyers set it. Poppins stays a board font
   (unused by Gibbs now).
 
+### G1c (DP-13): a picture's list has room for its description; re-pasting a board onto its menu
+
+- **Found by Scot:** after re-pasting the Gibbs wayfinding board (G1b's steps said Check, Preview, Publish), its blocks
+  wrote their own content again, so the editor marked every list "Not on a board yet". Re-pasting a board needs **Check →
+  Make these lists** (the offer's "use it": the blocks point at the lists already on the menu) before Publish. Trying
+  the Menu tab's Add lists instead, with the two maps ticked, was refused: "The name is 46 characters; this list has room
+  for 40" (a lone photo's list had a fixed 40, below its own description). **Fixed:** `extractMenu` sizes a photo's
+  list name like the other kinds (`capFor`, at least 40, a third over the longest). Test in G1's.
+
 ## Screens and cards (Raspberry Pi)
 
 Every Pi runs from a **prepared card**, and every card is the same. A card carries no identity until it's in a Pi:

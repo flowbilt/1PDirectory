@@ -520,7 +520,7 @@ export function extractMenu(doc, ids) {
       for (const k of PROVIDES[b.type]) delete c[k];
     } else if (b.type === "photo") {
       entries = c.image || c.caption ? [{ id: newEntryId(), name: c.caption || c.alt || "Picture", ...(c.line ? { line: c.line } : {}), ...(c.price ? { price: c.price } : {}), ...(c.image ? { image: c.image } : {}), ...(c.link ? { link: c.link } : {}) }] : [];
-      L = { key, name: nameOf(b), kind: "items", room: 3, fields: ["name", "image", "line", "price"], caps: { name: 40, line: 120, price: 12 }, groupPrice: false, note: false, hint: "The first one shown is the picture on the board." };
+      L = { key, name: nameOf(b), kind: "items", room: 3, fields: ["name", "image", "line", "price"], caps: { name: capFor(entries.map((e) => e.name), "name", 40), line: 120, price: 12 }, groupPrice: false, note: false, hint: "The first one shown is the picture on the board." };   // G1c: room for a long description (a map's), so the list is made
       content.lists[key] = { entries };
       for (const k of PROVIDES.photo) delete c[k];
     } else if (b.type === "text") {
