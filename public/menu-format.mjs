@@ -55,7 +55,7 @@ const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
 export const BRAND_COLOURS = { bg: "Background", ink: "Text", accent: "Accent", panel: "Dark panel", highlight: "Highlight" };
 export const BRAND_FONT_ROLES = { display: "Headings", body: "Body text" };
 // = layout-format.mjs FONTS (a test keeps them the same; this file has no imports)
-export const BRAND_FONTS = ["Instrument Sans", "Lora", "Oswald", "Bebas Neue", "Alfa Slab One", "Fraunces", "Playfair Display", "Pacifico", "Crimson Pro", "Caveat Brush"];
+export const BRAND_FONTS = ["Instrument Sans", "Lora", "Oswald", "Bebas Neue", "Alfa Slab One", "Fraunces", "Playfair Display", "Pacifico", "Crimson Pro", "Caveat Brush", "Poppins"];
 export const BRAND_NAME_MAX = 60;
 const HEX6 = /^#[0-9a-fA-F]{6}$/;
 /** The brand's problem in plain words, or null. images: the account's picture keys (a Set), when known. */

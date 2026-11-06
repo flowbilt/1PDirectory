@@ -32,6 +32,8 @@ export const FONTS = {
   "Crimson Pro":      { css: '"Crimson Pro", Georgia, serif', files: [["CrimsonPro-SemiBold.ttf", 600]] },
   // E2d (DP-13): the chalkboard's hand-drawn lettering (Scot chose it from six, 2026-10-29)
   "Caveat Brush":     { css: '"Caveat Brush", "Comic Sans MS", cursive', files: [["CaveatBrush-Regular.ttf", 400]] },
+  // G1 (DP-13): Gibbs Garden Center's own font (their website and the wordmark on their bags)
+  "Poppins":          { css: '"Poppins", system-ui, sans-serif', files: [["Poppins-SemiBold.ttf", 600], ["Poppins-Bold.ttf", 700]] },
 };
 
 // ── Looks (E2d, DP-13): one layout drawn two ways ──

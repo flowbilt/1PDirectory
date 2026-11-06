@@ -2,7 +2,7 @@
 // Every server function, against a fake Supabase with the same access rules as the real one. No network needed.
 import assert from "node:assert/strict";
 import vm from "node:vm";
-import { readFileSync, readdirSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { createFake, SERVICE_KEY, ANON_KEY, SIZE_RANGES } from "./fake-supabase.mjs";
 import screen, { toPayload } from "../netlify/functions/screen.mjs";
 import traffic, { toTimes } from "../netlify/functions/traffic.mjs";
@@ -3225,6 +3225,29 @@ test("T2: the Italian-American template and The Filling Station sample: all four
   assert.equal(fs32.doc.blocks.find((b) => b.id === "events").content.captions, false);
   // the template is an invented shop; the sample is the real one
   for (const f of ["template-italian-55.json", "template-italian-32.json"]) assert.ok(!/Donut Joe|O'Henry|Salvatore|Filling Station|Our Place|Dowdle|Mi Barrio|Lorino/i.test(JSON.stringify(read(f).blocks)), `${f}: an invented shop`);
+});
+
+test("G1: Gibbs Garden Center's sample: both boards clean; the board's switch shows one map and its directions at a time; the seasons take turns by date; the gift shop board's lists; Poppins is a board font", async () => {
+  const { offerLists } = await import("../netlify/functions/layouts.mjs");
+  const read = (f) => JSON.parse(readFileSync(new URL(`../layouts/${f}`, import.meta.url), "utf8"));
+  assert.ok(LF.FONTS.Poppins && LF.FONTS.Poppins.files.every(([f]) => existsSync(new URL(`../public/fonts/${f}`, import.meta.url))), "Poppins and its files");
+  const d55 = read("gibbs-garden-55.json"), d32 = read("gibbs-garden-32.json");
+  const c55 = LF.checkLayout(d55);
+  assert.deepEqual(c55.errors, []);
+  const ex = MF.extractMenu(c55.doc);
+  const doc = LF.checkLayout(ex.doc, { lists: ex.spec.lists }).doc;
+  const on = (opts, date) => { const ids = new Set(); for (const b of doc.blocks) { const sw = b.showWhen; if (sw && ((opts[sw.option] ?? false) ? "on" : "off") !== sw.is) continue; const ds = (b.when || []).map((w) => w.dates).filter(Boolean); if (ds.length && !ds.some((x) => date >= x.from && date <= x.to)) continue; ids.add(b.id); } return ids; };
+  let ids = on({}, "2026-11-06");
+  assert.ok(ids.has("map-entrance") && ids.has("ways-entrance") && !ids.has("map-pottery") && !ids.has("ways-pottery") && ids.has("season-fall") && !ids.has("season-spring"), [...ids].join(" "));
+  ids = on({ "at-pottery": true }, "2027-04-10");
+  assert.ok(ids.has("map-pottery") && ids.has("ways-pottery") && !ids.has("map-entrance") && ids.has("season-spring") && !ids.has("season-fall"), [...ids].join(" "));
+  assert.deepEqual(doc.options.map((o) => [o.key, o.default]), [["at-pottery", false]]);
+  const off = offerLists(d32, { spec: ex.spec });
+  assert.deepEqual(off.offer.map((o) => [o.key, o.room]), [["shop-pics", 8], ["shop", 8], ["coming-up", 3]]);
+  assert.deepEqual(LF.checkLayout(d32, { lists: [...ex.spec.lists, ...off.spec.lists] }).errors, []);
+  // every picture the boards ask for is in the keyed pictures list
+  const md = readFileSync(new URL("../layouts/gibbs-garden-pictures.md", import.meta.url), "utf8");
+  for (const k of [...JSON.stringify([d55, d32]).matchAll(/img:([a-z0-9-]+)/g)].map((m) => m[1])) assert.ok(md.includes(`\`${k}\``), `${k} in the pictures list`);
 });
 
 test("T1b: the shop's brand: its rules; drawn on every board (name, logo, colours, fonts) and the phone menu; only 1Point changes it; a copy takes the name on the boards", async () => {

@@ -1,0 +1,245 @@
+{
+ "format": 1,
+ "orientation": "portrait",
+ "name": "Gibbs Garden Center: gift shop & checkout, 32\" portrait (DP-13 G1 sample)",
+ "notes": "Gibbs Garden Center's second board, in the Gift Shop by checkout, on the wayfinding board's menu (gibbs-garden-55.json), WayTuGo Samples only. On a portrait layout in the same account: Menu tab, Use this menu (the wayfinding board's), then paste this on the Design tab and Check: it offers the gift shop pictures, In the Gift Shop and Coming up as new lists; Make these lists, Preview and Publish. The hours are the wayfinding board's. Coming up's events are placeholders, each shown from Nov. 1 until its day is past.",
+ "grid": {
+  "cols": 12,
+  "rows": 24,
+  "gap": 14,
+  "margin": 48
+ },
+ "viewing": {
+  "inches": 32,
+  "metres": 2
+ },
+ "theme": {
+  "palette": {
+   "bg": "#f6f2e9",
+   "ink": "#1f3326",
+   "muted": "#566458",
+   "accent": "#ad3f66",
+   "onAccent": "#ffffff",
+   "panel": "#2f5d3a",
+   "onPanel": "#f6f2e9",
+   "highlight": "#b8643c",
+   "onHighlight": "#ffffff",
+   "line": "#e1d9c6"
+  },
+  "fonts": {
+   "display": "Poppins",
+   "body": "Instrument Sans"
+  },
+  "looks": [
+   "house"
+  ],
+  "look": "house"
+ },
+ "blocks": [
+  {
+   "id": "logo",
+   "type": "logo",
+   "at": {
+    "col": 1,
+    "row": 1,
+    "w": 12,
+    "h": 2
+   },
+   "style": {
+    "align": "center",
+    "size": "xl"
+   },
+   "content": {
+    "text": "Gibbs Garden Center"
+   }
+  },
+  {
+   "id": "shop-pics",
+   "label": "Gift shop pictures",
+   "type": "rotator",
+   "at": {
+    "col": 1,
+    "row": 3,
+    "w": 12,
+    "h": 9
+   },
+   "style": {
+    "radius": "l",
+    "size": "l",
+    "shadow": true
+   },
+   "content": {
+    "seconds": 7,
+    "items": [
+     {
+      "image": "img:gift-shop",
+      "alt": "Inside the gift shop",
+      "caption": "Welcome to the Gift Shop",
+      "line": "Come see all our new arrivals"
+     },
+     {
+      "image": "img:fountain",
+      "alt": "A garden fountain",
+      "caption": "Fountains",
+      "line": "For the porch, the patio & the garden"
+     },
+     {
+      "image": "img:local-honey",
+      "alt": "Local honey beside a Gibbs Garden Center bag",
+      "caption": "Local honey",
+      "line": "Sweet, local & right by the register"
+     },
+     {
+      "image": "img:wind-chimes",
+      "alt": "Wind chimes on display",
+      "caption": "Wind chimes",
+      "line": "Hear them before you buy"
+     },
+     {
+      "image": "img:house-plants",
+      "alt": "A hanging pothos",
+      "caption": "House plants",
+      "line": "Easy-care greens for every room"
+     },
+     {
+      "image": "img:fall-decor",
+      "alt": "Fall pumpkin décor",
+      "caption": "Fall décor",
+      "line": "Pumpkins, gourds & harvest gifts"
+     }
+    ]
+   }
+  },
+  {
+   "id": "shop",
+   "label": "In the Gift Shop",
+   "type": "items",
+   "at": {
+    "col": 1,
+    "row": 12,
+    "w": 12,
+    "h": 5
+   },
+   "style": {
+    "size": "m"
+   },
+   "content": {
+    "heading": "In the Gift Shop",
+    "room": 8,
+    "items": [
+     {
+      "name": "Amish kitchenware"
+     },
+     {
+      "name": "Pottery"
+     },
+     {
+      "name": "Fragrances & candles"
+     },
+     {
+      "name": "Home décor"
+     },
+     {
+      "name": "House plants"
+     },
+     {
+      "name": "Wind chimes"
+     },
+     {
+      "name": "Local honey"
+     }
+    ],
+    "columns": 2
+   }
+  },
+  {
+   "id": "coming-up",
+   "label": "Coming up",
+   "type": "items",
+   "at": {
+    "col": 1,
+    "row": 17,
+    "w": 12,
+    "h": 4
+   },
+   "style": {
+    "surface": "accent",
+    "radius": "m",
+    "size": "m",
+    "pad": "m"
+   },
+   "content": {
+    "heading": "Coming up",
+    "room": 3,
+    "schedule": true,
+    "items": [
+     {
+      "name": "Fall Open House",
+      "line": "Sat., Nov. 14 · 9 AM – 3 PM",
+      "when": {
+       "dates": {
+        "from": "2026-11-01",
+        "to": "2026-11-14"
+       }
+      }
+     },
+     {
+      "name": "Closed Thanksgiving Day",
+      "line": "Thurs., Nov. 26",
+      "when": {
+       "dates": {
+        "from": "2026-11-01",
+        "to": "2026-11-26"
+       }
+      }
+     },
+     {
+      "name": "Wreath-making class",
+      "line": "Sat., Dec. 5 · call to save a seat",
+      "when": {
+       "dates": {
+        "from": "2026-11-01",
+        "to": "2026-12-05"
+       }
+      }
+     }
+    ]
+   }
+  },
+  {
+   "id": "hours",
+   "type": "hours",
+   "at": {
+    "col": 1,
+    "row": 21,
+    "w": 7,
+    "h": 4
+   },
+   "style": {
+    "size": "m",
+    "valign": "middle"
+   },
+   "content": {
+    "heading": "Hours",
+    "list": "hours"
+   }
+  },
+  {
+   "id": "menu-qr",
+   "type": "qr",
+   "at": {
+    "col": 8,
+    "row": 21,
+    "w": 5,
+    "h": 4
+   },
+   "style": {
+    "align": "center",
+    "size": "m"
+   },
+   "content": {
+    "line": "Take it with you"
+   }
+  }
+ ]
+}

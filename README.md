@@ -650,6 +650,29 @@ so nothing changed until the Pi's next start turned its output.
   so it keeps this turn from now on?" and sends Reboot Pi (1Point; the Pi panel's Reboot as before). The Orientation help
   says the screen turns within a minute and the Pi keeps it from its next start.
 
+### G1 (DP-13): the Gibbs Garden Center sample, two "You are here" maps, Poppins
+
+For Scot's quote to Gibbs Garden Center (Hanceville): a directory board that stands on a rolling stand and moves between
+spots, and a second board in the gift shop by checkout. WayTuGo Samples only.
+- **`layouts/gibbs-garden-55.json`**, 55" landscape at 4 m: their name, eight department photos taking turns, a
+  **"You are here" map and its directions** (nine destinations with arrows), **In season now**, hours (Mon–Sat 7:30–5,
+  closed Sundays), clock, weather, "Happiness Grows Here!" with their phone, the QR code. Their green, pink and clay;
+  Poppins headings (their website and the wordmark on their bags), Instrument Sans text.
+- **Where the stand is, from the menu editor:** the layout's option **"This board is at the Pottery House"** (Board look
+  tick box) switches the map and the directions together: off is the front entrance, on is the Pottery House. The two
+  maps (`img:gibbs-map-entrance`, `img:gibbs-map-pottery`) and both sets of directions are **believable placeholders**,
+  marked "Sample map for demonstration"; real maps are drawn if Gibbs signs.
+- **In season now takes turns by date**: four blocks (fall, winter, spring, summer, September 2026 to August 2027), each
+  with block `when.dates`, one shown at a time.
+- **`layouts/gibbs-garden-32.json`**, 32" portrait gift shop board on the same menu: the name, six gift shop photos,
+  **In the Gift Shop** (two columns, names only), **Coming up** (three placeholder events, each shown from Nov. 1 until
+  its day), the wayfinding board's hours, the QR code.
+- **Pictures:** 15, keyed, `layouts/gibbs-garden-pictures.md` (their own photos from gibbsgardencenter.com, plus the two
+  sample maps). Their logo file is the open item: the GGC monogram on their bags, to ask them for.
+- **Poppins** joins the board fonts (`public/fonts/Poppins-SemiBold.ttf`, `Poppins-Bold.ttf`, OFL) and the Brand panel's
+  fonts (`menu-format.mjs` `BRAND_FONTS`); `supabase/43-poppins.sql` lets a saved brand say Poppins
+  (`menu_brand_problem`, 38's with one more font), checked by `check-poppins.sql`.
+
 ## Screens and cards (Raspberry Pi)
 
 Every Pi runs from a **prepared card**, and every card is the same. A card carries no identity until it's in a Pi:
