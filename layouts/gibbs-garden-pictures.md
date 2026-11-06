@@ -3,7 +3,7 @@
 Gibbs Garden Center's own photos from gibbsgardencenter.com (Scot downloaded all 134, November 2026), and two
 placeholder "You are here" maps drawn for the demo. For the pitch only: they stay in the **WayTuGo Samples** account and
 aren't shown to another prospect. The files in `gibbs-pictures.zip` already carry their keys, so upload them as they
-are, all fifteen, on the wayfinding board's **Pictures** tab.
+are, all sixteen, on the wayfinding board's **Pictures** tab.
 
 | Key (file name) | Their photo | Used for |
 |---|---|---|
@@ -20,6 +20,7 @@ are, all fifteen, on the wayfinding board's **Pictures** tab.
 | `wind-chimes` | gift-shop-11 | Gift shop: Wind chimes |
 | `house-plants` | gift-shop-14 | Gift shop: House plants |
 | `fall-decor` | gift-shop-04 | Gift shop: Fall décor |
+| `gibbs-logo` | their GGC monogram (Scot, from Gibbs) with the name set beside it in grey, as on their flyers | Both boards: the logo |
 | `gibbs-map-entrance` | drawn for the demo | Wayfinding: You are here, front entrance (the switch off) |
 | `gibbs-map-pottery` | drawn for the demo | Wayfinding: You are here, Pottery House (the switch on) |
 
@@ -27,8 +28,12 @@ The maps are believable placeholders ("Sample map for demonstration" at the foot
 known yet. If Gibbs signs, real maps are drawn from a walk of the grounds, one per spot the stand goes, and the
 directions lists are written to match.
 
-Their logo is an interlocking GGC monogram with leaves over "Gibbs Garden Center" (seen on their bags, gift-shop-15);
-ask them for the file. Until then the boards set the name in Poppins, the font of their website and wordmark.
+The logo: Scot has their GGC monogram (a JPEG on white). `gibbs-logo` is that monogram with its white taken out and
+"Gibbs Garden Center" set beside it in grey Instrument Sans, the way their flyers set the name under it. If they sign,
+ask for the logo as a vector or a large PNG with a see-through background, and their wordmark's font.
+
+The look follows their Facebook flyers (their designer's style, richer than the website): heavy slab-serif headings
+(Alfa Slab One), a bookish serif for the text (Lora), dark green panels, a gold band, cream paper.
 
 Other good ones for later: home-02 (mums close up), home-18 and home-19 (pumpkins), trees-shrubs-02 (topiaries),
 pottery-house-02 (cobalt pots), outdoor-furniture-06 (turquoise Adirondacks), gift-shop-10 (the shop cat).

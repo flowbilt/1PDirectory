@@ -2,18 +2,18 @@
   "format": 1,
   "orientation": "landscape",
   "name": "Gibbs Garden Center: wayfinding board, 55\" landscape (DP-13 G1 sample)",
-  "notes": "A sample for Gibbs Garden Center (Hanceville), for Scot's quote: their name, slogan, hours, departments and own photos (gibbsgardencenter.com, November 2026), in the WayTuGo Samples account only. The board stands on a rolling stand and moves between spots, so it has a 'You are here' map and directions for each: the menu editor's Board look tick box 'This board is at the Pottery House' switches between the front entrance (off) and the Pottery House (on). The maps and directions are believable placeholders until Gibbs signs and real maps are drawn. In season now changes by date, season by season (four lists, one shown at a time). Upload the pictures first (layouts/gibbs-garden-pictures.md, the keys already on the files), paste this on the Design tab and Check, Make lists from this layout, Preview and Publish.",
+  "notes": "A sample for Gibbs Garden Center (Hanceville), for Scot's quote: their name, slogan, hours, departments and own photos (gibbsgardencenter.com and their flyers, November 2026), in the WayTuGo Samples account only. The board stands on a rolling stand and moves between spots, so it has a 'You are here' map and directions for each: the menu editor's Board look tick box 'This board is at the Pottery House' switches between the front entrance (off) and the Pottery House (on). The maps and directions are believable placeholders until Gibbs signs and real maps are drawn. In season now changes by date, season by season (four lists, one shown at a time). Upload the pictures first (layouts/gibbs-garden-pictures.md, the keys already on the files), paste this on the Design tab and Check, Make lists from this layout, Preview and Publish.",
   "grid": { "cols": 24, "rows": 13, "gap": 16, "margin": 30 },
   "viewing": { "inches": 55, "metres": 4 },
   "theme": {
     "palette": {
-      "bg": "#f6f2e9", "ink": "#1f3326", "muted": "#566458",
-      "accent": "#ad3f66", "onAccent": "#ffffff",
-      "panel": "#2f5d3a", "onPanel": "#f6f2e9",
-      "highlight": "#b8643c", "onHighlight": "#ffffff",
-      "line": "#e1d9c6"
+      "bg": "#f4efe1", "ink": "#22361f", "muted": "#5b5f4c",
+      "accent": "#c9a33a", "onAccent": "#22361f",
+      "panel": "#2f4a2c", "onPanel": "#f4efe1",
+      "highlight": "#4f7a1f", "onHighlight": "#ffffff",
+      "line": "#ddd3b8"
     },
-    "fonts": { "display": "Poppins", "body": "Instrument Sans" },
+    "fonts": { "display": "Alfa Slab One", "body": "Lora" },
     "looks": ["house"],
     "look": "house"
   },
@@ -22,7 +22,7 @@
   ],
   "blocks": [
     { "id": "logo", "type": "logo", "at": { "col": 1, "row": 1, "w": 9, "h": 2 },
-      "style": { "align": "left", "size": "xl" }, "content": { "text": "Gibbs Garden Center" } },
+      "style": { "align": "left", "size": "xl" }, "content": { "image": "img:gibbs-logo", "text": "Gibbs Garden Center" } },
 
     { "id": "hero", "label": "Around the garden center", "type": "rotator", "at": { "col": 1, "row": 3, "w": 9, "h": 8 },
       "style": { "radius": "l", "size": "l", "shadow": true },

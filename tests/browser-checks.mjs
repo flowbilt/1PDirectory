@@ -1064,6 +1064,11 @@ try {
 
   await check("E2d: the owner's Board look in the menu editor: House, Chalkboard, chalk colours, lettering, frame, the coffee bar; the preview follows; Save goes live, in History", async () => {
     await owner.goto(`${B}/menu-edit.html?m=${menuId}`); await owner.waitForTimeout(3500);
+    // G1b: the controls follow the board in Preview; the counter board offers no choices, so no Board look for it
+    if (await owner.inputValue("#board-pick") !== chalkLay.id) {
+      assert(await owner.locator(".me-look").count() === 0, "no Board look while the counter board is in Preview");
+      await owner.selectOption("#board-pick", chalkLay.id); await owner.waitForTimeout(1200);
+    }
     const look = owner.locator(`.me-look[data-board="${chalkLay.id}"]`);
     assert(await look.isVisible(), "a Board look panel for the chalkboard");
     assert(await owner.locator(".me-look").count() === 1, "only for a board that offers choices (not the counter board)");
@@ -1432,6 +1437,72 @@ try {
 
   // O1 (DP-13; Scot: "the flip is not working" until he rebooted): the Pi says how it turned its output (&turned=), and
   // the page turns by the difference, so a flip shows at once; without it (an older card), as before
+  await check("G1b: the menu editor's controls follow the board in Preview: its Board look and lists; a list switched off by the stand's tick box or out of its dates folds into Not showing now with why; the other board's lists as one line with Show that board", async () => {
+    const today = new Intl.DateTimeFormat("en-CA", { timeZone: "America/Chicago" }).format(new Date());
+    const L = (key, name, kind = "items", room = 4) => ({ key, name, kind, room, ...(kind === "hours" ? {} : { fields: ["name", "line"] }) });
+    const spec = { lists: [L("ways-front", "From the entrance"), L("ways-barn", "From the Pottery House"), L("season-now", "In season now"), L("season-next", "Next season"),
+      L("hours", "Hours", "hours", 3), L("shop", "In the Gift Shop"), L("loose", "On no board")] };
+    const ent = (name) => ({ entries: [{ id: Math.random().toString(36).slice(2, 8), name }] });
+    const content = { lists: { "ways-front": ent("Gift Shop"), "ways-barn": ent("Trees"), "season-now": ent("Mums"), "season-next": ent("Pansies"),
+      hours: { entries: [{ id: "hh0001", days: [1, 2, 3, 4, 5, 6], open: "07:30", close: "17:00" }] }, shop: ent("Pottery"), loose: ent("Spare") } };
+    const made = await sb("menus", { method: "POST", body: JSON.stringify({ org_id: home.org_id, name: "G1b menu", spec, content, customer_edit: true }) });
+    assert(made.status < 300, JSON.stringify(made.data)); const [mn] = made.data;
+    const blk = (id, list, at, more = {}) => ({ id, type: list === "hours" ? "hours" : "items", at, style: {}, content: { heading: id, list }, ...more });
+    const wide = { format: 1, orientation: "landscape", name: "G1b wayfinding", grid: { cols: 12, rows: 6, gap: 10, margin: 30 },
+      theme: { palette: { bg: "#ffffff", ink: "#111111" }, fonts: { display: "Instrument Sans", body: "Instrument Sans" } },
+      options: [{ key: "barn", label: "This board is at the Pottery House (off: the front entrance)", default: false }],
+      blocks: [blk("ways-front", "ways-front", { col: 1, row: 1, w: 6, h: 3 }, { showWhen: { option: "barn", is: "off" } }),
+        blk("ways-barn", "ways-barn", { col: 1, row: 1, w: 6, h: 3 }, { showWhen: { option: "barn", is: "on" } }),
+        blk("season-now", "season-now", { col: 7, row: 1, w: 6, h: 3 }, { when: { dates: { from: "2020-01-01", to: "2099-12-31" } } }),
+        blk("season-next", "season-next", { col: 7, row: 1, w: 6, h: 3 }, { when: { dates: { from: "2100-03-01", to: "2100-05-31" } } }),
+        blk("hours", "hours", { col: 1, row: 4, w: 12, h: 3 })] };
+    const tall = { format: 1, orientation: "portrait", name: "G1b gift shop", grid: { cols: 6, rows: 12, gap: 10, margin: 30 },
+      theme: { palette: { bg: "#ffffff", ink: "#111111" }, fonts: { display: "Instrument Sans", body: "Instrument Sans" } },
+      blocks: [blk("shop", "shop", { col: 1, row: 1, w: 6, h: 6 }), blk("hours", "hours", { col: 1, row: 7, w: 6, h: 6 })] };
+    const lays = [];
+    for (const [name, doc] of [["A G1b wayfinding", wide], ["B G1b gift shop", tall]]) {
+      const [l] = (await sb("layouts", { method: "POST", body: JSON.stringify({ org_id: home.org_id, name, family: "menu", orientation: doc.orientation, menu_id: mn.id, published_version: 1, published_at: new Date().toISOString() }) })).data;
+      await sb("layout_versions", { method: "POST", body: JSON.stringify({ layout_id: l.id, version: 1, doc, checks: {}, overridden: false }) });
+      lays.push(l);
+    }
+    try {
+      await owner.goto(`${B}/menu-edit.html?m=${mn.id}`); await owner.waitForTimeout(3500);
+      const keys = () => owner.$$eval("#lists > .me-list", (xs) => xs.map((x) => x.dataset.key));
+      const later = () => owner.$$eval("#lists .me-later .me-list", (xs) => xs.map((x) => x.dataset.key));
+      assert(await owner.inputValue("#board-pick") === lays[0].id, "the wayfinding board first");
+      assert(await owner.locator(`.me-look[data-board="${lays[0].id}"]`).isVisible() && await owner.locator(".me-look").count() === 1, "its Board look only");
+      assert(JSON.stringify(await keys()) === JSON.stringify(["ways-front", "season-now", "hours", "loose"]), `on it now: ${await keys()}`);
+      assert(JSON.stringify((await later()).sort()) === JSON.stringify(["season-next", "ways-barn"]), `not showing now: ${await later()}`);
+      const why = await owner.textContent("#lists .me-later");
+      assert(why.includes('Shows when "This board is at the Pottery House" is ticked') && why.includes("Next season: Shows Mar 1 – May 31"), why.slice(0, 300));
+      assert(!(await owner.textContent("#lists .me-later")).includes("(off: the front entrance)"), "the label's note left off");
+      const other = await owner.textContent(".me-elsewhere");
+      assert(other.includes("B G1b gift shop") && other.includes("In the Gift Shop") && !other.includes("Hours"), other);
+      assert(await owner.locator('.me-list[data-key="loose"] .me-unshown').isVisible(), "a list on no board keeps its note, in view");
+      // the stand moves: the tick box swaps the directions
+      await owner.locator(`.me-look[data-board="${lays[0].id}"] input[data-opt="barn"]`).check(); await owner.waitForTimeout(800);
+      assert((await keys()).includes("ways-barn") && !(await keys()).includes("ways-front") && (await later()).includes("ways-front"), `after the tick: ${await keys()} / ${await later()}`);
+      // Show that board
+      await owner.click(`[data-board-go="${lays[1].id}"]`); await owner.waitForTimeout(1200);
+      assert(await owner.inputValue("#board-pick") === lays[1].id, "the preview turned to the gift shop board");
+      assert(JSON.stringify(await keys()) === JSON.stringify(["shop", "hours", "loose"]), `gift shop board: ${await keys()}`);
+      assert(await owner.locator(".me-look").count() === 0 && await owner.locator(".me-later").count() === 0, "no look panel, nothing folded");
+      assert((await owner.textContent(".me-elsewhere")).includes("From the Pottery House"), "the other board's lists in one line");
+      // what's typed on the hidden board's list is kept and saved with the menu
+      await owner.locator('.me-list[data-key="shop"] [data-f="name"]').first().fill("Pottery & planters");
+      await owner.selectOption("#board-pick", lays[0].id); await owner.waitForTimeout(1200);
+      assert((await keys()).includes("ways-barn"), "back on the wayfinding board");
+      await owner.click("#save"); await owner.waitForTimeout(2500);
+      const m = (await sb(`menus?id=eq.${mn.id}&select=content`)).data[0];
+      assert(m.content.lists.shop.entries[0].name === "Pottery & planters" && m.content.boards?.[lays[0].id]?.options?.barn === true, JSON.stringify(m.content).slice(0, 400));
+      await shot(owner, "g1b-editor");
+    } finally {
+      for (const l of lays) await sb(`layouts?id=eq.${l.id}`, { method: "DELETE" });
+      await sb(`menu_revisions?menu_id=eq.${mn.id}`, { method: "DELETE" });
+      await sb(`menus?id=eq.${mn.id}`, { method: "DELETE" });
+    }
+  });
+
   await check("O1: an Orientation flip shows at once: a board turned 90 by its Pi and set to Portrait (turned the other way) turns itself upside down; a directory set to Landscape (upside down) on an upright Pi too; portrait-flipped to landscape turns the right way; an older card (no turned) as before", async () => {
     const turn = async (key, q, w, h) => { const pg = await browser.newPage({ viewport: { width: w, height: h } }); await pg.goto(`${B}/?screen=${key}&view=1${q}`); await pg.waitForTimeout(3500);
       const t = await pg.evaluate(() => [location.pathname, document.getElementById("stage").style.transform, getComputedStyle(document.getElementById("stage")).getPropertyValue("--W").trim()]); await pg.close(); return t; };

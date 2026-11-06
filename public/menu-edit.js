@@ -19,7 +19,7 @@
 // shown in the preview at once, checked for fit like any change, and kept in History.
 import { checkMenuContent, menuChanges, newEntryId, capOf, shownEntries, describeWhen, entryStatus, menuPictureKeys, ITEM_TAGS, FIELD_LABEL, BRAND_COLOURS, BRAND_FONT_ROLES, BRAND_FONTS, BRAND_NAME_MAX } from "/menu-format.mjs";
 import { shrink, asDataUrl, niceName } from "/picture-shrink.mjs";
-import { zonedNow, checkLayout, boardChoice, offersChoice, applyBrand, contrast, LOOKS, CHALK, CHALK_NAMES, CHALK_ROLES, LETTERING } from "/layout-format.mjs";
+import { zonedNow, checkLayout, blockShows, readingOrder, boardChoice, offersChoice, applyBrand, contrast, LOOKS, CHALK, CHALK_NAMES, CHALK_ROLES, LETTERING } from "/layout-format.mjs";
 const nowHere = () => zonedNow(Date.now(), E.tz);
 
 const { esc, toast, since } = window.UI;
@@ -281,11 +281,54 @@ function brandHtml() {
     ${warn ? `<p class="warn" role="status">${esc(warn.trim())}</p>` : ""}
   </section>`;
 }
+// G1b (DP-13; Scot: "When the change is made from one board to another on preview, the controls should follow the
+// choice"): with a board picked in Preview, the editor shows that board's look and its lists, in the order they sit on
+// it. Its lists that aren't on the board right now (an option's other arrangement, a season outside its dates) fold into
+// "Not showing now", each saying when it shows. Lists only on the menu's other boards are one line each, with a button to
+// turn the preview to that board. A list no board shows (T1c) or one that doesn't fit is always drawn. Save still saves
+// the whole menu and checks every board.
+/** The picked board's lists: { now: [keys showing now], later: [{ key, why }], other: [{ board, keys }], rest: [keys on no board] } */
+function boardLists(b) {
+  const all = (E.spec.lists || []).map((L) => L.key);
+  if (!b?.checked) return { now: all, later: [], other: [], rest: [] };
+  const ch = boardChoice(b.checked, E.draft.boards?.[b.id]), now = nowHere();
+  const optLabel = (k) => String(b.checked.options?.find((o) => o.key === k)?.label || k).replace(/\s*\([^)]*\)\s*$/, "");
+  const shows = new Map(), why = new Map();
+  for (const x of readingOrder(b.checked.blocks)) {
+    const k = x.content?.list; if (!k || !all.includes(k)) continue;
+    let reason = "";
+    if (x.on === false) reason = "Switched off on this board by WayTuGo";
+    else if (x.showWhen?.option && (ch.options[x.showWhen.option] === true) !== (x.showWhen.is === "on"))
+      reason = `Shows when "${optLabel(x.showWhen.option)}" is ${x.showWhen.is === "on" ? "ticked" : "not ticked"} (Board look)`;
+    else if (!blockShows(x, now)) reason = `Shows ${x.when.map(describeWhen).join(", or ")}`;
+    if (!reason) shows.set(k, true);
+    else if (!shows.has(k)) { shows.set(k, false); why.set(k, reason); }
+  }
+  const mine = [...shows.keys()];
+  const other = E.boards.filter((o) => o.id !== b.id && o.checked).map((o) => ({ board: o,
+    keys: [...new Set(o.checked.blocks.map((x) => x.content?.list).filter((k) => k && all.includes(k) && !shows.has(k)))] })).filter((o) => o.keys.length);
+  const elsewhere = new Set(other.flatMap((o) => o.keys));
+  return { now: mine.filter((k) => shows.get(k)), later: mine.filter((k) => !shows.get(k)).map((key) => ({ key, why: why.get(key) })),
+    other, rest: all.filter((k) => !shows.has(k) && !elsewhere.has(k)) };
+}
+E.laterOpen = false;
 function drawLists() {
-  $("lists").innerHTML = `<p class="hint me-intro">Change what's on your boards here. The layout, headings, colours and sizes are set by WayTuGo; ask WayTuGo to change them, or for more room on a list.</p>`
+  const b = pickedBoard(), G = boardLists(b), L = (k) => E.spec.lists.find((x) => x.key === k);
+  const always = (k) => E.nofit.has(k) && !!L(k);   // a list that doesn't fit stays in view wherever it is
+  const otherKeys = new Set(G.other.flatMap((o) => o.keys));
+  const later = G.later.length ? `<details class="me-later"${E.laterOpen || G.later.some((x) => always(x.key)) ? " open" : ""}><summary>Not showing now on this board <span class="sub">(${G.later.length})</span></summary>
+      ${G.later.map((x) => `<p class="me-why">${esc(L(x.key).name)}: ${esc(x.why)}.</p>${listHtml(L(x.key))}`).join("")}</details>` : "";
+  const others = G.other.map((o) => `<p class="me-elsewhere" data-elsewhere="${esc(o.board.id)}">On ${esc(o.board.name)}: ${o.keys.map((k) => esc(L(k).name)).join(", ")}.
+      <button type="button" class="ghost" data-board-go="${esc(o.board.id)}">Show that board</button></p>`).join("");
+  $("lists").innerHTML = `<p class="hint me-intro">Change what's on your boards here. The layout, headings, colours and sizes are set by WayTuGo; ask WayTuGo to change them, or for more room on a list.${E.boards.length > 1 ? " These are the lists on the board in Preview; choose another board there to change its lists." : ""}</p>`
     + (E.admin ? brandHtml() : "")
-    + E.boards.filter((b) => b.checked && (offersChoice(b.checked) || E.admin)).map(lookHtml).join("")
-    + (E.spec.lists || []).map(listHtml).join("");
+    + E.boards.filter((x) => x.checked && (offersChoice(x.checked) || E.admin) && (!b || x.id === b.id)).map(lookHtml).join("")
+    + G.now.map((k) => listHtml(L(k))).join("")
+    + later
+    + G.rest.map((k) => listHtml(L(k))).join("")
+    + [...otherKeys].filter(always).map((k) => listHtml(L(k))).join("")
+    + (others ? `<div class="me-others">${others}</div>` : "");
+  $("lists").querySelector(".me-later")?.addEventListener("toggle", (ev) => { E.laterOpen = ev.target.open; });
   // M1: folding and More stay usable on a read-only menu, so its lists can still be read on a phone
   if (!canEdit()) $("lists").querySelectorAll("input, select, textarea, button:not([data-fold]):not([data-row-toggle])").forEach((x) => (x.disabled = true));
   dirty();
@@ -654,6 +697,7 @@ async function checkAll(content = tidy(E.draft)) {
 }
 const nofitText = (boards) => `Doesn't fit on ${[...new Set(boards)].join(" and ")}: shorten what's written here, or hide an item.`;
 function markNofit() {
+  if ([...E.nofit.keys()].some((k) => E.spec.lists.some((l) => l.key === k) && !$("lists").querySelector(`.me-list[data-key="${CSS.escape(k)}"]`))) { drawLists(); return; }   // G1b: bring it into view
   for (const sec of $("lists").querySelectorAll(".me-list")) {
     const b = E.nofit.get(sec.dataset.key), msg = sec.querySelector(".me-nofit");
     sec.classList.toggle("nofit", !!b);
@@ -664,7 +708,13 @@ function markNofit() {
 let checkTimer = null;
 function scheduleCheck() { clearTimeout(checkTimer); checkTimer = setTimeout(() => checkAll().catch(() => {}), 700); }
 
-$("board-pick").addEventListener("change", () => { const b = E.boards.find((x) => x.id === $("board-pick").value); if (b) { $("phone-line").innerHTML = phoneLine(b); previewNow(); } });
+$("board-pick").addEventListener("change", () => { const b = E.boards.find((x) => x.id === $("board-pick").value); if (b) { $("phone-line").innerHTML = phoneLine(b); drawLists(); previewNow(); } });
+// G1b: "Show that board" turns the preview (and so the lists) to another board on this menu
+$("lists").addEventListener("click", (ev) => {
+  const go = ev.target.closest("[data-board-go]"); if (!go) return;
+  showBoard(go.dataset.boardGo); drawLists(); previewNow();
+  $("lists").scrollIntoView({ block: "start" });
+});
 $("show-room").addEventListener("change", () => { $("pv").contentWindow?.postMessage({ type: "layout-room", on: $("show-room").checked }, location.origin); sendFull(); });
 window.addEventListener("resize", fitFrame);
 const phoneLine = (b) => { const url = E.menuBase + b.menu_code; return `The phone menu (Take this menu with you): <a href="${esc(url)}" target="_blank" rel="noopener">${esc(url.replace(/^https?:\/\//, ""))}</a> shows what's saved.`; };

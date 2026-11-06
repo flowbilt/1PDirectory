@@ -464,6 +464,13 @@ dialog.wide #dlg-body { max-height: 72vh; overflow: auto; padding-right: 4px; }
 /* T1c (DP-13): Publish's pop-up */
 .publish-list { margin: 8px 0 0; padding-left: 18px; display: grid; gap: 6px; max-height: 50vh; overflow: auto; }
 .me-unshown { margin: 2px 0 8px; padding: 6px 10px; border-radius: 6px; background: #fff4d6; color: #6b4a00; font-size: 14px; }
+/* G1b: the picked board's lists that aren't on it now, and the lists on the menu's other boards */
+.me-later { margin: 0 0 16px; border: 1px dashed var(--line, #d8dde3); border-radius: 10px; padding: 8px 12px; }
+.me-later > summary { cursor: pointer; font-weight: 600; padding: 4px 0; }
+.me-later[open] > summary { margin-bottom: 8px; }
+.me-why { margin: 10px 0 4px; font-size: 14px; color: #4b5563; }
+.me-others { margin: 4px 0 16px; display: grid; gap: 8px; }
+.me-elsewhere { margin: 0; padding: 8px 12px; border-radius: 8px; background: #f2f4f7; color: #374151; font-size: 14px; display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
 .me-republished { margin: 0 0 12px; padding: 8px 12px; border-radius: 8px; background: #e8f1ff; color: #123a6b; display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
 
 /* T1d (DP-13): a board's sizes (1Point only) */

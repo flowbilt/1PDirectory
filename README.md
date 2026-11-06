@@ -673,6 +673,24 @@ spots, and a second board in the gift shop by checkout. WayTuGo Samples only.
   fonts (`menu-format.mjs` `BRAND_FONTS`); `supabase/43-poppins.sql` lets a saved brand say Poppins
   (`menu_brand_problem`, 38's with one more font), checked by `check-poppins.sql`.
 
+### G1b (DP-13): the menu editor follows the board in Preview; Gibbs in their flyers' style
+
+Scot: "having the controls for two layouts on the same board" was confusing; "When the change is made from one board to
+another on preview, the controls should follow the choice."
+- **The editor shows the board picked in Preview** (`menu-edit.js` `boardLists`, `drawLists`): that board's Board look
+  only, and its lists in the order they sit on it (`readingOrder`). A list both boards show (Hours) is under each.
+- **Not showing now:** the picked board's lists that aren't on it right now fold into one group (`.me-later`), each with
+  why: an option's other arrangement ('Shows when "This board is at the Pottery House" is ticked (Board look)'; the
+  label's bracketed note left off), a block outside its dates or times (`blockShows`, `describeWhen`), or switched off.
+  Ticking the option moves the lists at once.
+- **The other boards' lists** are one line per board ("On Gibbs Garden Center · Gift shop 32: …") with **Show that
+  board**, which turns the preview and the lists to it. A list no board shows (T1c's note) and a list that doesn't fit
+  (on any board) are always drawn. Save still saves the whole menu and checks every board.
+- **Gibbs, from their flyer** (Scot: "their flyer designer does a good job"): Alfa Slab One headings, Lora text, dark
+  green `#2f4a2c` panels, a gold `#c9a33a` band, cream `#f4efe1`; the logo `img:gibbs-logo` is their GGC monogram (from
+  Scot) with its white taken out and the name beside it in grey, as their flyers set it. Poppins stays a board font
+  (unused by Gibbs now).
+
 ## Screens and cards (Raspberry Pi)
 
 Every Pi runs from a **prepared card**, and every card is the same. A card carries no identity until it's in a Pi:

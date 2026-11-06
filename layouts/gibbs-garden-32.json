@@ -15,20 +15,20 @@
  },
  "theme": {
   "palette": {
-   "bg": "#f6f2e9",
-   "ink": "#1f3326",
-   "muted": "#566458",
-   "accent": "#ad3f66",
-   "onAccent": "#ffffff",
-   "panel": "#2f5d3a",
-   "onPanel": "#f6f2e9",
-   "highlight": "#b8643c",
+   "bg": "#f4efe1",
+   "ink": "#22361f",
+   "muted": "#5b5f4c",
+   "accent": "#c9a33a",
+   "onAccent": "#22361f",
+   "panel": "#2f4a2c",
+   "onPanel": "#f4efe1",
+   "highlight": "#4f7a1f",
    "onHighlight": "#ffffff",
-   "line": "#e1d9c6"
+   "line": "#ddd3b8"
   },
   "fonts": {
-   "display": "Poppins",
-   "body": "Instrument Sans"
+   "display": "Alfa Slab One",
+   "body": "Lora"
   },
   "looks": [
    "house"
@@ -50,6 +50,7 @@
     "size": "xl"
    },
    "content": {
+    "image": "img:gibbs-logo",
     "text": "Gibbs Garden Center"
    }
   },
