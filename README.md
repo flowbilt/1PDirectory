@@ -732,6 +732,32 @@ Scot: "Font control of the logo would be good, and sizing. For instance this nam
 - **In the layout:** the logo block's `"line": "one" | "wrap"` and `"weight": "regular" | "bold"`. The board loads a
   chosen font with the layout's own (`board.js` `addFonts`). Gibbs's wayfinding board now sets `"line": "one"`.
 
+### L1 (DP-13): boards that turn: one layout, both shapes
+
+Scot: "the way that the directories reorient between landscape and portrait? What would be the possibility of doing the
+same with the menu boards... and all boards for that matter." A directory reflows by code; a board is a hand-placed
+grid, so it turns by a second, hand-placed arrangement.
+- **In the layout:** `"turned": { "grid": { … }, "viewing": { … }, "blocks": { "<id>": { "at": { … }, "style": { … },
+  "columns": 2 }, "<id>": "hide" } }`, the other shape. Same blocks, lists, pictures, looks and options; each block is
+  placed again (with style changes, and an items block's columns) or hidden there. Every block must be named, so nothing
+  goes missing unsaid. `checkLayout` checks it as a layout of its own (`checkTurned`: its errors under "turned
+  (portrait): …", its guardrails "In portrait: …" for its own screen and distance); `arrange(doc, shape)` gives the
+  layout in a shape (null when it has none), `shapesOf(doc)`.
+- **On a screen:** the screen's **Orientation** picks the shape (`board.js` `wantedShape`): Portrait (either way round)
+  the portrait arrangement, Landscape the landscape one; **Automatic** the window's shape, drawn again when the window
+  turns (a phone on a sample link or See the board). A layout without `turned` is as before. O1's instant turn and Reboot
+  offer apply: changing Orientation shows within a minute.
+- **The database** (`supabase/46-turning-boards.sql`): a screen may show a layout of the other shape when its published
+  version turns (29's `guard_screen_layout`, one condition more); a new version, published or rolled back, can't drop
+  `turned` while a screen shows it that way (29's `guard_layout_update`). `check-turning-boards.sql`.
+- **The console:** a layout that turns gets **as Landscape / Portrait** beside Preview; **Preview** and **Publish** draw
+  both shapes for the overflow check (each overflow named with its shape). The screen dialog's hint says a layout that
+  turns suits either Orientation. **The menu editor:** a board that turns gets **Landscape / Portrait** beside the board
+  picker; the fit check runs on both shapes ("Doesn't fit on Gibbs … (portrait)").
+- **Gibbs:** the wayfinding board turns: in portrait (55" at 3 m, 12 × 24) the logo across the top, the map, the
+  directions in two columns, the department photos (smaller captions) beside In season now, then hours, clock and
+  weather, and the QR code; the slogan is hidden.
+
 ## Screens and cards (Raspberry Pi)
 
 Every Pi runs from a **prepared card**, and every card is the same. A card carries no identity until it's in a Pi:

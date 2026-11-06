@@ -32,6 +32,8 @@
     <div class="preview-head">
       <label class="field-label" for="board-pick">Preview</label>
       <select id="board-pick" aria-label="Which board to preview"></select>
+      <!-- L1: a board that turns is previewed in either shape -->
+      <select id="pv-shape" aria-label="Which shape to preview" hidden><option value="landscape">Landscape</option><option value="portrait">Portrait</option></select>
     </div>
     <div class="preview-box landscape" id="pv-box"><iframe id="pv" title="Board preview" src="about:blank"></iframe></div>
     <button type="button" class="primary phone-only" id="pv-close">Close</button>

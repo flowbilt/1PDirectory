@@ -72,6 +72,7 @@ Do these once. The current site keeps running as it is until the new build is de
 44. For Poppins, the Gibbs Garden Center font (DP-13, round G1): **before uploading that code**, new query, paste all of `43-poppins.sql`, and click **Run**. Then new query, paste all of `check-poppins.sql`, and click **Run**; it should read **ALL 2 CHECKS PASSED** (red on purpose). A brand may then use Poppins.
 45. For the logo block (DP-13, round L2): **before uploading that code**, new query, paste all of `44-logo-block.sql`, and click **Run**. Then new query, paste all of `check-logo-block.sql`, and click **Run**; it should read **ALL 3 CHECKS PASSED** (red on purpose). A board's Board look can then say what its logo shows.
 46. For the logo's name (DP-13, round L2b): after 44, new query, paste all of `45-logo-name.sql`, and click **Run**. Then new query, paste all of `check-logo-name.sql`, and click **Run**; it should read **ALL 3 CHECKS PASSED** (red on purpose).
+47. For boards that turn (DP-13, round L1): **before uploading that code**, new query, paste all of `46-turning-boards.sql`, and click **Run**. Then new query, paste all of `check-turning-boards.sql`, and click **Run**; it should read **ALL 4 CHECKS PASSED** (red on purpose).
 
 If any of them shows an error (other than the expected red messages from the `check-…sql` files), copy the message (it includes a line number) and send it to Claude.
 

@@ -1245,6 +1245,97 @@ try {
     await p.close();
   });
 
+  await check("L1: a board that turns: the screen's Orientation picks the arrangement (portrait on a portrait screen, the layout's own on a landscape one); Automatic follows the window, turning again when it turns; a layout that doesn't turn as before", async () => {
+    const doc = { format: 1, orientation: "landscape", viewing: { inches: 55, metres: 4 }, grid: { cols: 24, rows: 13, gap: 16, margin: 30 },
+      theme: { fonts: { display: "Instrument Sans", body: "Instrument Sans" } },
+      blocks: [{ id: "name", type: "text", at: { col: 1, row: 1, w: 12, h: 2 }, content: { title: "Turning board" } },
+        { id: "list", type: "items", at: { col: 13, row: 1, w: 12, h: 8 }, content: { heading: "Things", items: [{ name: "One" }, { name: "Two" }] } },
+        { id: "wide-only", type: "text", at: { col: 1, row: 10, w: 24, h: 3 }, content: { title: "Only when wide" } }],
+      turned: { grid: { cols: 12, rows: 24, gap: 14, margin: 40 }, blocks: { name: { at: { col: 1, row: 1, w: 12, h: 2 }, style: { align: "center" } }, list: { at: { col: 1, row: 3, w: 12, h: 10 }, columns: 2 }, "wide-only": "hide" } } };
+    const look = async (p) => p.evaluate(() => ({ w: document.getElementById("board").style.width, ids: [...document.querySelectorAll("#blocks > .b:not([hidden])")].map((x) => x.dataset.id),
+      align: getComputedStyle(document.querySelector('[data-id="name"]')).getPropertyValue("--align").trim(), over: window.LayoutBoard.fitAll().overflow }));
+    const send = (p, orientation, d = doc) => p.evaluate(([dd, o]) => window.postMessage({ type: "layout-draft", data: { kind: "layout", orientation: o, layout: { id: null, name: "x", doc: dd }, images: {}, lists: null } }, location.origin), [d, orientation]);
+    // a Portrait screen (the Pi turns its output: the window is tall)
+    const p = await browser.newPage({ viewport: { width: 540, height: 960 } });
+    await p.goto(`${B}/board.html?preview=1`); await p.waitForTimeout(500);
+    await send(p, "portrait"); await p.waitForTimeout(2000);
+    let r = await look(p);
+    assert(r.w === "1080px" && r.ids.join() === "name,list" && r.align === "center" && !r.over.length, `portrait: ${JSON.stringify(r)}`);
+    // a Landscape screen: the layout's own
+    await send(p, "landscape"); await p.waitForTimeout(2000);
+    r = await look(p);
+    assert(r.w === "1920px" && r.ids.includes("wide-only"), `landscape: ${JSON.stringify(r)}`);
+    // Automatic: the window's shape, and again when the window turns (a phone, a sample link)
+    await send(p, "auto"); await p.waitForTimeout(2000);
+    assert((await look(p)).w === "1080px", "Automatic in a tall window: portrait");
+    await p.setViewportSize({ width: 960, height: 540 }); await p.waitForTimeout(1500);
+    assert((await look(p)).w === "1920px", "the window turned: landscape");
+    // a layout that doesn't turn keeps its own shape on a portrait screen (turned on its side, as before)
+    const { turned, ...flat } = doc;
+    await send(p, "portrait", flat); await p.waitForTimeout(2000);
+    assert((await look(p)).w === "1920px", "no turned: its own shape");
+    await p.close();
+  });
+
+  await check("L1: the menu editor previews a board that turns in either shape (Landscape · Portrait beside the board), and checks both for fit", async () => {
+    const L = (key, name) => ({ key, name, kind: "items", room: 4, fields: ["name"] });
+    const made = await sb("menus", { method: "POST", body: JSON.stringify({ org_id: home.org_id, name: "L1 menu", spec: { lists: [L("things", "Things")] }, content: { lists: { things: { entries: [{ id: "ab12cd", name: "One" }] } } }, customer_edit: true }) });
+    assert(made.status < 300, JSON.stringify(made.data)); const [mn] = made.data;
+    const doc = { format: 1, orientation: "landscape", grid: { cols: 24, rows: 13 }, theme: { fonts: { display: "Instrument Sans", body: "Instrument Sans" } },
+      blocks: [{ id: "things", type: "items", at: { col: 1, row: 1, w: 12, h: 6 }, content: { heading: "Things", list: "things" } }],
+      turned: { grid: { cols: 12, rows: 24 }, blocks: { things: { at: { col: 1, row: 1, w: 12, h: 8 } } } } };
+    const [l] = (await sb("layouts", { method: "POST", body: JSON.stringify({ org_id: home.org_id, name: "L1 board", family: "menu", orientation: "landscape", menu_id: mn.id, published_version: 1, published_at: new Date().toISOString() }) })).data;
+    await sb("layout_versions", { method: "POST", body: JSON.stringify({ layout_id: l.id, version: 1, doc, checks: {}, overridden: false }) });
+    try {
+      await owner.goto(`${B}/menu-edit.html?m=${mn.id}`); await owner.waitForTimeout(3500);
+      assert(await owner.locator("#pv-shape").isVisible(), "the shape picker for a board that turns");
+      assert(await owner.locator("#checkers iframe").count() === 2, "a fit check for each shape");
+      assert(await owner.locator("#pv-box").evaluate((x) => x.classList.contains("landscape")), "landscape first (its own)");
+      await owner.selectOption("#pv-shape", "portrait"); await owner.waitForTimeout(2000);
+      assert(!(await owner.locator("#pv-box").evaluate((x) => x.classList.contains("landscape"))), "the preview turned portrait");
+      const w = await owner.frameLocator("#pv").locator("#board").evaluate((x) => x.style.width);
+      assert(w === "1080px", `the portrait arrangement drawn (${w})`);
+    } finally {
+      await sb(`layouts?id=eq.${l.id}`, { method: "DELETE" });
+      await sb(`menus?id=eq.${mn.id}`, { method: "DELETE" });
+    }
+  });
+
+  await check("L1: the console: a layout that turns gets 'as Landscape / Portrait' beside Preview; Preview and Publish draw both shapes; a portrait screen takes it; a version without the arrangement is refused while the screen shows it that way", async () => {
+    const TURNS = { format: 1, orientation: "landscape", grid: { cols: 24, rows: 13 }, theme: { fonts: { display: "Instrument Sans", body: "Instrument Sans" } },
+      blocks: [{ id: "name", type: "text", at: { col: 1, row: 1, w: 24, h: 3 }, content: { title: "A board that turns" } }],
+      turned: { grid: { cols: 12, rows: 24 }, blocks: { name: { at: { col: 1, row: 1, w: 12, h: 3 } } } } };
+    const [lay] = (await sb("layouts", { method: "POST", body: JSON.stringify({ org_id: home.org_id, name: "L1 turning board", family: "menu", orientation: "landscape" }) })).data;
+    let scr = null;
+    try {
+      await boss.goto(`${B}/console.html?fresh=${Date.now()}#layouts`); await boss.waitForTimeout(1500);
+      await boss.click(`[data-open-layout="${lay.id}"]`); await boss.waitForTimeout(900);
+      await design(boss); await boss.fill("#layout-json", JSON.stringify(TURNS, null, 2));
+      assert(await boss.locator("#layout-shape-wrap").isVisible(), "the shape picker shows for a layout that turns");
+      await boss.selectOption("#layout-shape", "portrait"); await boss.waitForTimeout(3000);
+      assert(await boss.locator("#layout-frame").evaluate((x) => x.classList.contains("portrait")), "the preview frame is portrait");
+      assert(await boss.frameLocator("#layout-iframe").locator("#board").evaluate((x) => x.style.width) === "1080px", "the portrait arrangement drawn");
+      await boss.click("#layout-publish"); await boss.waitForTimeout(6000);
+      if (await boss.isVisible("#layout-anyway")) { await boss.click("#dlg-ok"); await boss.waitForTimeout(1500); }
+      assert((await sb(`layouts?id=eq.${lay.id}&select=published_version`)).data[0].published_version === 1, "published");
+      // a Portrait screen takes the landscape layout that turns; one without the arrangement can't drop it
+      const made = await sb("screens", { method: "POST", body: JSON.stringify({ key: "l1-turning-screen", name: "L1 turning screen", layout_id: lay.id, property_id: home.id, orientation: "portrait" }) });
+      assert(made.status < 300, JSON.stringify(made.data)); scr = made.data[0];
+      const { turned, ...flat } = TURNS;
+      await design(boss); await boss.fill("#layout-json", JSON.stringify(flat, null, 2));
+      assert(!(await boss.locator("#layout-shape-wrap").isVisible()), "no picker without the arrangement");
+      await boss.click("#layout-publish"); await boss.waitForTimeout(4000);
+      if (await boss.isVisible("#layout-anyway")) { await boss.click("#dlg-ok"); await boss.waitForTimeout(1500); }
+      const said = await boss.textContent("#layout-results");
+      await boss.keyboard.press("Escape");
+      assert(/has no portrait arrangement/.test(said), said.slice(0, 400));
+      assert((await sb(`layouts?id=eq.${lay.id}&select=published_version`)).data[0].published_version === 1, "still version 1");
+    } finally {
+      if (scr) await sb(`screens?id=eq.${scr.id}`, { method: "DELETE" });
+      await sb(`layouts?id=eq.${lay.id}`, { method: "DELETE" });
+    }
+  });
+
   // ── T0 (DP-13): Copy a shop, and a sample link ──
   let copied = null;
   await check("T0: Copy to an account (1Point): Donut Joe's menu and its boards into a new account with a building; the copy's own pictures, boards published, the template untouched", async () => {

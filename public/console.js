@@ -129,7 +129,7 @@
       body: `
         ${field("s-name", "Name", `<input id="s-name" required maxlength="80" value="${esc(s?.name || "")}">`)}
         ${field("s-key", "Screen address", `<input id="s-key" required pattern="[a-z0-9][a-z0-9-]{0,47}" value="${esc(s?.key || "")}" ${isNew ? "" : "readonly"}>`, isNew ? "Lowercase letters, numbers and dashes. The Pi opens this address, so it can't change later." : `The Pi opens ${location.origin}/?screen=${esc(s.key)}`)}
-        ${field("s-dir", "Shows", `<select id="s-dir">${showsOptions(s)}</select>`, "A directory, or a layout (Layouts tab). A layout's orientation must match this screen's Orientation.")}
+        ${field("s-dir", "Shows", `<select id="s-dir">${showsOptions(s)}</select>`, "A directory, or a layout (Layouts tab). A layout's orientation must match this screen's Orientation, unless it turns (its JSON has the other shape, \"turned\").")}
         ${field("s-prop", "Building", `<select id="s-prop"></select>`, "The building this screen is in: a layout takes its time zone, weather and address from it.")}
         ${field("s-orient", "Orientation", `<select id="s-orient">${Object.entries(ORIENTATIONS).map(([o, label]) => `<option value="${o}"${(s?.orientation || "auto") === o ? " selected" : ""}>${label}</option>`).join("")}</select>`, "The screen turns within a minute; the Pi keeps the turn from its next start (saving offers Reboot Pi). A portrait TV that comes out upside down is mounted the other way round: choose Portrait (turned the other way).")}
         <div class="field" id="f-s-nocec"><label class="check"><input type="checkbox" id="s-nocec"${s?.no_cec ? " checked" : ""}> This display has no HDMI-CEC</label>

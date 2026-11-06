@@ -67,7 +67,7 @@
     frame.className = `layout-frame ${l.orientation}`;
     $("layout-iframe").src = "about:blank"; L.frameReady = false;
     showLTab("design"); $("layout-offer").hidden = true;
-    meta(); await loadVersions(); await loadPictures(); await menuLine(); menuBox();
+    meta(); await loadVersions(); await loadPictures(); await menuLine(); menuBox(); showShapes();
     history.replaceState(null, "", `#layouts`);
   }
   // ── E2e (DP-13): the layout page's tabs: Design (the JSON, Check, Preview, Publish), Menu (its lists, List settings,
@@ -271,21 +271,48 @@
       L.reportWaiter?.(); L.reportWaiter = null;
     }
   });
+  // L1: the shape being previewed: the layout's own, or (a layout that turns) the one chosen beside Preview
+  const turnsIn = (doc) => !!(doc && typeof doc.turned === "object" && doc.turned);
+  const shapeNow = () => (!$("layout-shape-wrap").hidden && $("layout-shape").value) || L.current?.orientation || "landscape";
+  function showShapes() {
+    const p = parse(), l = L.current;
+    $("layout-shape-wrap").hidden = !(l && !p.error && turnsIn(p.doc));
+    if ($("layout-shape-wrap").hidden && l) $("layout-shape").value = l.orientation;
+  }
+  $("layout-json").addEventListener("input", showShapes);
+  $("layout-shape").addEventListener("change", () => preview($("layout-shape").value));
   function fitFrame() {
     const l = L.current; if (!l) return;
-    const cw = l.orientation === "portrait" ? 1080 : 1920, ch = l.orientation === "portrait" ? 1920 : 1080;
+    const shape = shapeNow();
+    $("layout-frame").className = `layout-frame ${shape}`;
+    const cw = shape === "portrait" ? 1080 : 1920, ch = shape === "portrait" ? 1920 : 1080;
     const f = $("layout-iframe"), box = $("layout-frame");
     f.style.width = `${cw}px`; f.style.height = `${ch}px`;
     f.style.transform = `scale(${box.clientWidth / cw})`;
   }
   window.addEventListener("resize", fitFrame);
-  async function preview() {
+  async function preview(only = null) {
     const p = parse(); if (p.error) { showResults({ errors: [{ where: "layout", msg: p.error }] }); return null; }
+    showShapes();
+    // L1: a layout that turns is drawn in both shapes for the overflow check (Publish needs both), the chosen one last
+    const shape = only || shapeNow();
+    if (!only && turnsIn(p.doc)) {
+      const otherShape = shape === "portrait" ? "landscape" : "portrait";
+      const first = await preview(otherShape); if (!first) return null;
+      const second = await preview(shape); if (!second) return null;
+      const tag = (w, s) => ({ ...w, where: `${s}: ${w.where}` });
+      const ovs = [...first.overflow.map((w) => tag(w, otherShape)), ...second.overflow.map((w) => tag(w, shape))];
+      L.lastPreview.overflow = [...new Set([...(first.ids || []), ...(second.ids || [])])];
+      showResults({ errors: [], warnings: [...second.warnings.filter((w) => !second.overflow.includes(w)), ...ovs] });
+      L.lastPreview.text = $("layout-json").value;
+      return { warnings: [...second.warnings.filter((w) => !second.overflow.includes(w)), ...ovs] };
+    }
     const text = $("layout-json").value;
     let r;
-    try { r = await Auth.api("/api/layouts", { method: "POST", body: { action: "preview", layout_id: L.current.id, doc: p.doc, property_id: $("layout-prop").value || null } }); }
+    try { r = await Auth.api("/api/layouts", { method: "POST", body: { action: "preview", layout_id: L.current.id, doc: p.doc, property_id: $("layout-prop").value || null, shape } }); }
     catch (ex) { showResults({ errors: ex.data?.errors || [{ where: "layout", msg: ex.message }] }); return null; }
     if (r.errors.length) { showResults(r); return null; }
+    if (only) $("layout-shape").value = shape;
     fitFrame();
     if (!L.frameReady) {
       await new Promise((res) => { L.waiters.push(res); $("layout-iframe").src = `/board.html?preview=1&o=${L.current.orientation}`; setTimeout(res, 8000); });
@@ -293,14 +320,14 @@
     const reported = new Promise((res) => { L.reportWaiter = res; setTimeout(res, 6000); });
     $("layout-iframe").contentWindow.postMessage({ type: "layout-draft", data: r.payload }, location.origin);
     await reported;
-    L.lastPreview.text = text;
+    L.lastPreview.text = only && turnsIn(p.doc) ? null : text;   // L1: one shape of a turning layout isn't enough for Publish
     const overflow = (L.lastPreview.overflow || []).map((id) => ({ where: `block "${id}"`, msg: "Its text doesn't fit its box even at the smallest size allowed (marked in red in the preview). Make the box bigger or the text shorter." }));
     const shrunk = (L.lastPreview.shrunk || []).filter((x) => x.scale < 0.8);
     showResults({ errors: [], warnings: [...r.warnings, ...overflow], note: shrunk.length ? `(${shrunk.map((x) => `"${x.id}" shrunk to ${Math.round(x.scale * 100)}%`).join(", ")} to fit.)` : "" });
-    $("layout-frame-note").textContent = `Preview: as a screen in ${$("layout-prop").selectedOptions[0]?.textContent || "no building"} draws it now (schedules follow the building's time).`;
-    return { warnings: [...r.warnings, ...overflow] };
+    $("layout-frame-note").textContent = `Preview${turnsIn(p.doc) ? ` (${shape})` : ""}: as a screen in ${$("layout-prop").selectedOptions[0]?.textContent || "no building"} draws it now (schedules follow the building's time).`;
+    return { warnings: [...r.warnings, ...overflow], overflow, ids: L.lastPreview.overflow };
   }
-  $("layout-preview").addEventListener("click", preview);
+  $("layout-preview").addEventListener("click", () => preview());
 
   async function publish(override) {
     const p = parse(); if (p.error) { showResults({ errors: [{ where: "layout", msg: p.error }] }); return; }

@@ -215,8 +215,15 @@ export function createFake() {
     if (!c) { c = { ...defaults.companies(), property_id: prop, name: String(row.name).trim() }; T.companies.push(c); }
     row.company_id = c.id;
   }
+  const isObj = (v) => !!v && typeof v === "object" && !Array.isArray(v);
   const shapeOf = (o) => (o === "portrait" || o === "portrait-flipped" ? "portrait" : "landscape");
   const LABEL = { auto: "Automatic", portrait: "Portrait", "portrait-flipped": "Portrait (turned the other way)", landscape: "Landscape", "landscape-flipped": "Landscape (upside down)" };
+  /** L1: 46's guard_layout_update: a new version keeps the arrangement a screen shows it in */
+  function keepsShapes(l, doc) {
+    const other = l.orientation === "portrait" ? "landscape" : "portrait";
+    const n = T.screens.filter((s) => s.layout_id === l.id && shapeOf(s.orientation) !== l.orientation).length;
+    if (n && !isObj(doc?.turned)) throw Object.assign(new Error(`The layout "${l.name}" is shown on ${n} screen(s) set to ${other === "portrait" ? "Portrait" : "Landscape"}, and this version has no ${other} arrangement ("turned"). Keep the arrangement, or change those screens' Orientation first.`), { status: 400 });
+  }
   /** guard_screen_layout and the one-content check (29-layout-engine.sql), in its words */
   function layoutRule(row, before) {
     if (row.directory_id && row.layout_id) return "new row for relation \"screens\" violates check constraint \"screens_one_content\"";
@@ -226,9 +233,11 @@ export function createFake() {
     if (l.published_version == null && (!before || before.layout_id !== row.layout_id)) return `The layout "${l.name}" hasn't been published yet. Publish it on the Layouts tab first.`;
     if (!row.property_id) return "Choose the building this screen is in. A layout takes its time zone, weather and address from the screen's building.";
     if (propOrg(row.property_id) !== l.org_id) return `That building belongs to a different account from the layout "${l.name}". Choose one of the layout's account's buildings.`;
-    if (shapeOf(row.orientation) !== l.orientation) {
+    // L1 (46-turning-boards.sql): a layout whose published version turns suits either shape
+    const turns = isObj(T.layout_versions.find((v) => v.layout_id === l.id && v.version === l.published_version)?.doc?.turned);
+    if (shapeOf(row.orientation) !== l.orientation && !turns) {
       const other = shapeOf(row.orientation);
-      return `The layout "${l.name}" is ${l.orientation}, and this screen's Orientation is ${LABEL[row.orientation] || "Automatic"}. Change the screen's Orientation to ${l.orientation === "portrait" ? "Portrait" : "Landscape"} first, or choose a ${other} layout.`;
+      return `The layout "${l.name}" is ${l.orientation}, and this screen's Orientation is ${LABEL[row.orientation] || "Automatic"}. Change the screen's Orientation to ${l.orientation === "portrait" ? "Portrait" : "Landscape"} first, choose a ${other} layout, or give this one a ${other} arrangement ("turned").`;
     }
     return null;
   }
@@ -734,6 +743,7 @@ export function createFake() {
       if ((p_doc?.orientation || "") !== l.orientation) throw Object.assign(new Error(`This layout is ${l.orientation}, so the layout's "orientation" must be "${l.orientation}".`), { status: 400 });
       const v = Math.max(0, ...T.layout_versions.filter((x) => x.layout_id === l.id).map((x) => x.version)) + 1;
       T.layout_versions.push({ layout_id: l.id, version: v, doc: p_doc, checks: p_checks || {}, overridden: !!p_overridden, note: String(p_note || "").slice(0, 200), rolled_back_from: null, published_at: now(), published_by: p_by || null });
+      keepsShapes(l, p_doc);
       Object.assign(l, { draft: p_doc, published_version: v, published_at: now(), updated_at: now(), updated_by: p_by || null });
       T.audit_log.push({ id: T.audit_log.length + 1, at: now(), user_id: p_by, action: "publish layout", entity: "layout", entity_id: l.id, detail: { version: v } });
       return v;
@@ -744,6 +754,7 @@ export function createFake() {
       const old = T.layout_versions.find((x) => x.layout_id === l.id && x.version === p_version);
       if (!old) throw Object.assign(new Error(`This layout has no version ${p_version}.`), { status: 404 });
       const v = Math.max(...T.layout_versions.filter((x) => x.layout_id === l.id).map((x) => x.version)) + 1;
+      keepsShapes(l, old.doc);
       T.layout_versions.push({ ...old, version: v, note: `Rolled back to version ${p_version}`, rolled_back_from: p_version, published_at: now(), published_by: p_by || null });
       Object.assign(l, { draft: old.doc, published_version: v, published_at: now(), updated_at: now(), updated_by: p_by || null });
       return v;

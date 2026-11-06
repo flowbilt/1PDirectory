@@ -2,7 +2,7 @@
   "format": 1,
   "orientation": "landscape",
   "name": "Gibbs Garden Center: wayfinding board, 55\" landscape (DP-13 G1 sample)",
-  "notes": "A sample for Gibbs Garden Center (Hanceville), for Scot's quote: their name, slogan, hours, departments and own photos (gibbsgardencenter.com and their flyers, November 2026), in the WayTuGo Samples account only. The board stands on a rolling stand and moves between spots, so it has a 'You are here' map and directions for each: the menu editor's Board look tick box 'This board is at the Pottery House' switches between the front entrance (off) and the Pottery House (on). The maps and directions are believable placeholders until Gibbs signs and real maps are drawn. In season now changes by date, season by season (four lists, one shown at a time). Upload the pictures first (layouts/gibbs-garden-pictures.md, the keys already on the files), paste this on the Design tab and Check, Make lists from this layout, Preview and Publish.",
+  "notes": "Turns: a 55\" portrait arrangement for the rolling stand (\"turned\"), chosen by the screen's Orientation. A sample for Gibbs Garden Center (Hanceville), for Scot's quote: their name, slogan, hours, departments and own photos (gibbsgardencenter.com and their flyers, November 2026), in the WayTuGo Samples account only. The board stands on a rolling stand and moves between spots, so it has a 'You are here' map and directions for each: the menu editor's Board look tick box 'This board is at the Pottery House' switches between the front entrance (off) and the Pottery House (on). The maps and directions are believable placeholders until Gibbs signs and real maps are drawn. In season now changes by date, season by season (four lists, one shown at a time). Upload the pictures first (layouts/gibbs-garden-pictures.md, the keys already on the files), paste this on the Design tab and Check, Make lists from this layout, Preview and Publish.",
   "grid": { "cols": 24, "rows": 13, "gap": 16, "margin": 30 },
   "viewing": { "inches": 55, "metres": 4 },
   "theme": {
@@ -16,6 +16,27 @@
     "fonts": { "display": "Alfa Slab One", "body": "Lora", "accent": "Instrument Sans" },
     "looks": ["house"],
     "look": "house"
+  },
+  "turned": {
+    "grid": { "cols": 12, "rows": 24, "gap": 14, "margin": 40 },
+    "viewing": { "inches": 55, "metres": 3 },
+    "blocks": {
+      "logo":          { "at": { "col": 1, "row": 1, "w": 12, "h": 2 }, "style": { "align": "center" } },
+      "map-entrance":  { "at": { "col": 1, "row": 3, "w": 12, "h": 9 } },
+      "map-pottery":   { "at": { "col": 1, "row": 3, "w": 12, "h": 9 } },
+      "ways-entrance": { "at": { "col": 1, "row": 12, "w": 12, "h": 6 }, "columns": 2 },
+      "ways-pottery":  { "at": { "col": 1, "row": 12, "w": 12, "h": 6 }, "columns": 2 },
+      "hero":          { "at": { "col": 1, "row": 18, "w": 7, "h": 4 }, "style": { "size": "s" } },
+      "season-fall":   { "at": { "col": 8, "row": 18, "w": 5, "h": 4 }, "columns": 1 },
+      "season-winter": { "at": { "col": 8, "row": 18, "w": 5, "h": 4 }, "columns": 1 },
+      "season-spring": { "at": { "col": 8, "row": 18, "w": 5, "h": 4 }, "columns": 1 },
+      "season-summer": { "at": { "col": 8, "row": 18, "w": 5, "h": 4 }, "columns": 1 },
+      "hours":         { "at": { "col": 1, "row": 22, "w": 5, "h": 3 } },
+      "now":           { "at": { "col": 6, "row": 22, "w": 3, "h": 1 } },
+      "weather":       { "at": { "col": 6, "row": 23, "w": 3, "h": 2 } },
+      "slogan":        "hide",
+      "menu-qr":       { "at": { "col": 9, "row": 22, "w": 4, "h": 3 } }
+    }
   },
   "options": [
     { "key": "at-pottery", "label": "This board is at the Pottery House (off: the front entrance)", "default": false }

@@ -138,7 +138,7 @@ export function checkLayout(input, ctx = {}) {
   const warn = (where, msg, kind) => warnings.push({ where, msg, kind });
   if (!isObj(input)) { err("layout", "A layout is a JSON object: { \"format\": 1, \"orientation\": …, \"grid\": …, \"theme\": …, \"blocks\": [ … ] }."); return { errors, warnings, doc: null }; }
   const known = (obj, keys, where) => { for (const k of Object.keys(obj)) if (!keys.includes(k)) err(where, `"${k}" isn't something a layout can say here (allowed: ${keys.join(", ")}).`); };
-  known(input, ["format", "orientation", "grid", "viewing", "theme", "blocks", "name", "notes", "options"], "layout");
+  known(input, ["format", "orientation", "grid", "viewing", "theme", "blocks", "name", "notes", "options", "turned"], "layout");
   if (input.format !== FORMAT) err("format", `"format" must be ${FORMAT}.`);
   const orientation = input.orientation;
   if (!["portrait", "landscape"].includes(orientation)) err("orientation", "\"orientation\" must be \"portrait\" or \"landscape\".");
@@ -295,8 +295,54 @@ export function checkLayout(input, ctx = {}) {
     // only speaks when a layout's own palette is used on it somewhere)
     if (looks.includes("chalkboard") && look !== "chalkboard") guardrails(applyLook(doc, { look: "chalkboard" }), (w, m, k) => warn(w, `On the chalkboard: ${m}`, k), ctx);
   }
+  if (input.turned !== undefined && ["portrait", "landscape"].includes(orientation)) checkTurned(input, ctx, doc, err, warn);
   return { errors, warnings, doc };
 }
+
+// ── L1 (DP-13; Scot: "the way that the directories reorient between landscape and portrait ... the same with the menu
+// boards ... and all boards"): a layout may carry its other shape, "turned": the same blocks, lists, looks and options,
+// each block placed again on the other shape's grid (or "hide" there), with its own style changes and, for items, its
+// columns. Every block is named, so nothing goes missing without saying so. It's checked as a layout of its own (the
+// guardrails for its screen and distance too); the screen's Orientation then picks the shape (arrange). ──
+const OTHER = { portrait: "landscape", landscape: "portrait" };
+function checkTurned(input, ctx, doc, err, warn) {
+  const t = input.turned, other = OTHER[input.orientation], where = `turned (${other})`;
+  if (!isObj(t)) { err("turned", `"turned" is the ${other} arrangement: { "grid": { … }, "viewing": { … }, "blocks": { "<block id>": { "at": { … } } or "hide" } }.`); return; }
+  for (const k of Object.keys(t)) if (!["grid", "viewing", "blocks"].includes(k)) err(where, `"${k}" isn't something the ${other} arrangement can say (allowed: grid, viewing, blocks).`);
+  if (!isObj(t.blocks)) { err(where, `Its "blocks" places each block: { "<block id>": { "at": { "col": 1, "row": 1, "w": 6, "h": 2 } }, "<block id>": "hide" }.`); return; }
+  const ids = (Array.isArray(input.blocks) ? input.blocks : []).map((b) => b?.id);
+  for (const k of Object.keys(t.blocks)) if (!ids.includes(k)) err(where, `It places a block "${k}", which isn't on the layout.`);
+  const missing = ids.filter((id) => typeof id === "string" && !(id in t.blocks));
+  if (missing.length) err(where, `Say where each block goes in ${other}, or "hide": ${missing.map((x) => `"${x}"`).join(", ")} ${missing.length === 1 ? "isn't" : "aren't"} placed.`);
+  const blocks = [];
+  for (const b of Array.isArray(input.blocks) ? input.blocks : []) {
+    const e = t.blocks[b?.id];
+    if (e === "hide") continue;
+    if (!isObj(e)) { if (e !== undefined) err(`${where} block "${b?.id}"`, `Each block is { "at": { … }, "style": { … } } or "hide".`); continue; }
+    for (const k of Object.keys(e)) if (!["at", "style", "columns"].includes(k)) err(`${where} block "${b.id}"`, `"${k}" isn't something a block can change in ${other} (allowed: at, style, columns).`);
+    blocks.push({ ...b, at: e.at, style: { ...(isObj(b.style) ? b.style : {}), ...(isObj(e.style) ? e.style : {}) }, ...(e.columns !== undefined ? { content: { ...b.content, columns: e.columns } } : {}) });
+  }
+  const { turned, ...rest } = input;
+  const r = checkLayout({ ...rest, orientation: other, grid: t.grid, viewing: t.viewing === undefined ? input.viewing : t.viewing, blocks }, ctx);
+  for (const x of r.errors) err(`${where}: ${x.where}`, x.msg);
+  for (const x of r.warnings) warn(`${where}: ${x.where}`, `In ${other}: ${x.msg}`, x.kind);
+  if (!r.doc || r.errors.length) return;
+  doc.turned = { orientation: other, grid: r.doc.grid, viewing: r.doc.viewing,
+    blocks: Object.fromEntries(ids.map((id) => { const x = r.doc.blocks.find((y) => y.id === id); return [id, x ? { at: x.at, style: x.style, ...(x.type === "items" && x.content.columns !== undefined ? { columns: x.content.columns } : {}) } : "hide"]; })) };
+}
+/** L1: the layout in a shape: as it is, its turned arrangement, or null when it has none for that shape. */
+export function arrange(doc, shape) {
+  if (!doc || !shape || doc.orientation === shape) return doc;
+  const t = doc.turned;
+  if (!t || t.orientation !== shape) return null;
+  return { ...doc, orientation: shape, grid: t.grid, viewing: t.viewing, turnedFrom: doc.orientation,
+    blocks: doc.blocks.filter((b) => t.blocks[b.id] && t.blocks[b.id] !== "hide").map((b) => {
+      const e = t.blocks[b.id];
+      return { ...b, at: e.at, style: e.style, ...(e.columns !== undefined ? { content: { ...b.content, columns: e.columns } } : {}) };
+    }) };
+}
+/** L1: the shapes a layout can be shown in */
+export const shapesOf = (doc) => (doc?.turned ? [doc.orientation, doc.turned.orientation] : doc ? [doc.orientation] : []);
 
 /** E2d: the board's look and options as drawn: the layout's defaults, with the customer's choice (menu content.boards
  *  [layout id]) where it's one the layout offers. Returns { look, chalk: { titles, prices, accents, lettering, frame },

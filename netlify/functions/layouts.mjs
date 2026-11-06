@@ -145,7 +145,9 @@ export default async (req) => {
           [prop] = await db(`properties?id=eq.${enc(body.property_id)}&select=id,name,address,timezone,lat,lon`);
         }
         const payload = errors.length ? null : toLayoutPayload(
-          { key: "preview", name: "Preview", orientation: clean.orientation, hide_powered_by: false, touch: false, screen_inches: clean.viewing.inches, touch_idle_s: 45 },
+          // L1: a layout that turns is previewed in the shape asked for (the board page arranges it)
+          { key: "preview", name: "Preview", orientation: clean.turned && body.shape === clean.turned.orientation ? body.shape : clean.orientation, hide_powered_by: false, touch: false,
+            screen_inches: (clean.turned && body.shape === clean.turned.orientation ? clean.turned.viewing : clean.viewing).inches, touch_idle_s: 45 },
           // E2e: lists still to be made are drawn as they will be once made
           { id: layout?.id || null, name: layout?.name || "Preview", version: null, doc: pending?.offer.length ? pending.doc : doc, menu_code: layout?.menu_code,
             lists: menu ? { id: menu.id, spec: { ...menu.spec, lists: [...(menu.spec?.lists || []), ...(pending?.spec.lists || [])] },

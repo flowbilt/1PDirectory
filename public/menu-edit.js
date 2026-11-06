@@ -608,9 +608,19 @@ window.addEventListener("message", (ev) => {
   if (ev.data?.type === "layout-ready") { E.frameReady = true; E.waiters.splice(0).forEach((f) => f()); }
   if (ev.data?.type === "layout-report") { E.lastReport = ev.data; E.reportWaiter?.(); E.reportWaiter = null; }
 });
-function payload(board, content) {
+// L1 (DP-13): a board that turns (its layout has the other shape) is previewed, and checked for fit, in both shapes
+E.shapes = {};
+const turns = (b) => !!b?.checked?.turned;
+const shapeOf = (b) => (turns(b) && E.shapes[b.id]) || b?.orientation;
+function showShapePick() {
+  const b = pickedBoard(), on = turns(b);
+  $("pv-shape").hidden = !on;
+  if (on) $("pv-shape").value = shapeOf(b);
+}
+$("pv-shape").addEventListener("change", () => { const b = pickedBoard(); if (!b) return; E.shapes[b.id] = $("pv-shape").value; previewNow(); });
+function payload(board, content, shape = shapeOf(board)) {
   const images = Object.fromEntries(E.pics.map((p) => [p.key, { url: `/img/${p.path}`, w: 0, h: 0 }]));
-  return { kind: "layout", key: "preview", orientation: board.orientation, layout: { id: board.id, name: board.name, version: board.published_version, doc: board.doc },
+  return { kind: "layout", key: "preview", orientation: shape, layout: { id: board.id, name: board.name, version: board.published_version, doc: board.doc },
     images, menu: { url: E.menuBase + board.menu_code }, lists: { id: E.menu.id, spec: E.spec, content }, look: content.boards?.[board.id] || null, brand: content.brand || null,
     propertyName: board.prop?.name || "", timezone: board.prop?.timezone || E.tz, weather: { enabled: false }, poweredBy: true };
 }
@@ -618,7 +628,7 @@ function payload(board, content) {
 // window, so its foot was cut off), leaving room under it for the buttons and the first lines of the tabs below
 function fitFrame() {
   const b = E.board; if (!b) return;
-  const land = b.orientation === "landscape", cw = land ? 1920 : 1080, ch = land ? 1080 : 1920;
+  const land = shapeOf(b) === "landscape", cw = land ? 1920 : 1080, ch = land ? 1080 : 1920;
   const box = $("pv-box"); box.classList.toggle("landscape", land);
   const col = box.parentElement.clientWidth, border = 20;
   // everything else in the column (its picker, buttons, lines and the tabs' bar), measured, plus room for a few lines
@@ -665,6 +675,7 @@ function schedulePreview() { clearTimeout(pvTimer); pvTimer = setTimeout(preview
 async function previewNow() {
   const b = E.boards.find((x) => x.id === $("board-pick").value) || E.boards[0];
   if (!b) return;
+  showShapePick();
   sendFull(); scheduleCheck();
   const over = await draw(b, tidy(E.draft));
   $("pv-note").innerHTML = over.length
@@ -693,18 +704,18 @@ $("full").addEventListener("click", () => {
 // ── Fit while typing (E2b): each board on the menu drawn in a hidden frame of its own, checked after each change ──
 function makeCheckers() {
   const box = $("checkers");
-  E.checkers = E.boards.map((b) => {
+  E.checkers = E.boards.flatMap((b) => (turns(b) ? [b.orientation, b.checked.turned.orientation] : [b.orientation]).map((shape) => {
     const frame = document.createElement("iframe");
-    frame.title = `Fit check: ${b.name}`; frame.tabIndex = -1; frame.src = "/board.html?preview=1";
+    frame.title = `Fit check: ${b.name} (${shape})`; frame.tabIndex = -1; frame.src = "/board.html?preview=1";
     box.appendChild(frame);
-    return { board: b, frame, ready: false, waiters: [], report: null, reportWaiter: null };
-  });
+    return { board: b, shape, frame, ready: false, waiters: [], report: null, reportWaiter: null };
+  }));
 }
 async function checkOne(ck, content) {
   if (!ck.ready) await new Promise((res) => { ck.waiters.push(res); setTimeout(res, 8000); });
   const got = new Promise((res) => { ck.reportWaiter = res; setTimeout(res, 6000); });
   ck.report = null;
-  ck.frame.contentWindow.postMessage({ type: "layout-draft", data: payload(ck.board, content) }, location.origin);
+  ck.frame.contentWindow.postMessage({ type: "layout-draft", data: payload(ck.board, content, ck.shape) }, location.origin);
   await got;
   const bound = new Map((ck.board.doc.blocks || []).filter((b) => b.content?.list).map((b) => [b.id, b.content.list]));
   return (ck.report?.overflow || []).filter((id) => bound.has(id)).map((id) => bound.get(id));
@@ -714,7 +725,7 @@ async function checkAll(content = tidy(E.draft)) {
   const gen = ++E.checkGen;
   const results = await Promise.all(E.checkers.map((ck) => checkOne(ck, content).then((keys) => ({ ck, keys }))));
   const map = new Map();
-  for (const { ck, keys } of results) for (const k of keys) map.set(k, [...(map.get(k) || []), ck.board.name]);
+  for (const { ck, keys } of results) for (const k of keys) map.set(k, [...(map.get(k) || []), turns(ck.board) ? `${ck.board.name} (${ck.shape})` : ck.board.name]);
   if (gen === E.checkGen) { E.nofit = map; markNofit(); }
   return map;
 }

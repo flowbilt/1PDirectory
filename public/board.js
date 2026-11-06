@@ -10,7 +10,7 @@
 // applyMenu (public/menu-format.mjs): only the entries shown, sold out today marked, and an items or chips list keeping
 // the room for its full length (invisible rows), so the text stays the size it was designed at however much is filled.
 import { applyMenu, menuMoment } from "/menu-format.mjs";
-import { checkLayout, applyLook, applyBrand, canvas, blockBox, blockShows, zonedNow, hoursNow, nowNext, niceTime, niceDays, FONTS, SIZES, SURFACES, STYLE_PX, TAGS, QR_LINE, qrSide } from "/layout-format.mjs";
+import { checkLayout, arrange, applyLook, applyBrand, canvas, blockBox, blockShows, zonedNow, hoursNow, nowNext, niceTime, niceDays, FONTS, SIZES, SURFACES, STYLE_PX, TAGS, QR_LINE, qrSide } from "/layout-format.mjs";
 
 const VERSION = "2.22.1";   // = netlify/lib/version.mjs and display.js (a test keeps them equal)
 const C = window.ScreenCore;
@@ -189,6 +189,14 @@ function logoShow(b, src, text) {
   return want;
 }
 
+/** L1: the shape this screen wants: its Orientation's, or with Automatic the window's */
+let drawnShape = "";
+function wantedShape() {
+  const o = data?.orientation || "auto";
+  if (o !== "auto") return o.split("-")[0];
+  return window.innerWidth >= window.innerHeight ? "landscape" : "portrait";
+}
+
 function render() {
   const note = $("note");
   if (!data) return;
@@ -207,6 +215,10 @@ function render() {
   drawnDate = nowHere.date; drawnMoment = menuMoment(data.lists, nowHere);
   // E2d: in the look and with the options chosen for this board in the menu editor (else the layout's own)
   // T1b: in the shop's brand first (its name, logo, colours and fonts; kept with the menu)
+  // L1: in the shape the screen's Orientation asks for: the layout's own, or its turned arrangement (Automatic: the
+  // window's shape, so a phone held upright gets the portrait arrangement); a layout with no arrangement for it as before
+  drawnShape = wantedShape();
+  checked.doc = arrange(checked.doc, drawnShape) || checked.doc;
   doc = applyMenu(applyLook(applyBrand(checked.doc, data.brand), data.look), data.lists, nowHere, { room: true });
   drawStart = performance.now();
   const p = doc.theme.palette, f = doc.theme.fonts;
@@ -459,7 +471,12 @@ if (!C.DEVICE && !C.CHOSEN && !PREVIEW && !READ_ONLY) location.replace("/");
 if (!READ_ONLY) C.lockdown();
 C.clock.onTrusted = () => { live(false); refitSoon(); };
 sizeStage();
-window.addEventListener("resize", () => { sizeStage(); });
+window.addEventListener("resize", () => {
+  // L1: Automatic and the window turned (a phone, a sample link): the other arrangement, if the layout has one
+  if (doc?.turnedFrom || checkedTurns()) { if (wantedShape() !== drawnShape) { render(); return; } }
+  sizeStage();
+});
+const checkedTurns = () => !!data?.layout?.doc?.turned;
 if (PREVIEW) {
   window.addEventListener("message", (e) => {
     if (e.origin !== location.origin) return;

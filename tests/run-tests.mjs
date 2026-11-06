@@ -2140,7 +2140,7 @@ test("choosing a layout for a screen: the database's rules, in its words, as the
   const land = fake.T.screens.find((x) => x.orientation === "landscape");
   const prop = fake.T.properties.find((p) => p.org_id === l.org_id);
   let r = await rest(`screens?id=eq.${land.id}`, "PATCH", { directory_id: null, layout_id: l.id, property_id: prop.id });
-  assert.match(r.data.message, /is portrait, and this screen's Orientation is Landscape\. Change the screen's Orientation to Portrait first, or choose a landscape layout\./);
+  assert.match(r.data.message, /is portrait, and this screen's Orientation is Landscape\. Change the screen's Orientation to Portrait first, choose a landscape layout, or give this one a landscape arrangement \("turned"\)\./);
   r = await rest(`screens?id=eq.${land.id}`, "PATCH", { directory_id: land.directory_id, layout_id: l.id, property_id: prop.id, orientation: "portrait" });
   assert.match(r.data.message, /screens_one_content/);
   const other = fake.T.properties.find((p) => p.org_id !== l.org_id);
@@ -3225,6 +3225,45 @@ test("T2: the Italian-American template and The Filling Station sample: all four
   assert.equal(fs32.doc.blocks.find((b) => b.id === "events").content.captions, false);
   // the template is an invented shop; the sample is the real one
   for (const f of ["template-italian-55.json", "template-italian-32.json"]) assert.ok(!/Donut Joe|O'Henry|Salvatore|Filling Station|Our Place|Dowdle|Mi Barrio|Lorino/i.test(JSON.stringify(read(f).blocks)), `${f}: an invented shop`);
+});
+
+test("L1: a layout that turns: its other shape (\"turned\") checked as a layout of its own, every block placed or hidden; arrange gives the shape asked for; Gibbs in portrait", async () => {
+  const LF = await import("../public/layout-format.mjs");
+  const base = () => ({ format: 1, orientation: "landscape", grid: { cols: 24, rows: 13 }, viewing: { inches: 55, metres: 4 },
+    blocks: [{ id: "a", type: "text", at: { col: 1, row: 1, w: 12, h: 2 }, content: { title: "One" } },
+      { id: "b", type: "items", at: { col: 13, row: 1, w: 12, h: 6 }, content: { heading: "Two", items: [{ name: "X" }] } }] });
+  const d = base(); d.turned = { grid: { cols: 12, rows: 24 }, blocks: { a: { at: { col: 1, row: 1, w: 12, h: 2 }, style: { align: "center" } }, b: { at: { col: 1, row: 3, w: 12, h: 8 }, columns: 2 } } };
+  const r = LF.checkLayout(d);
+  assert.deepEqual(r.errors, []);
+  assert.equal(r.doc.turned.orientation, "portrait");
+  const p = LF.arrange(r.doc, "portrait");
+  assert.equal(p.orientation, "portrait"); assert.equal(p.grid.cols, 12); assert.equal(p.turnedFrom, "landscape");
+  assert.deepEqual(p.blocks.find((x) => x.id === "a").at, { col: 1, row: 1, w: 12, h: 2 }); assert.equal(p.blocks.find((x) => x.id === "a").style.align, "center");
+  assert.equal(p.blocks.find((x) => x.id === "b").content.columns, 2);
+  assert.equal(LF.arrange(r.doc, "landscape"), r.doc);
+  assert.equal(LF.arrange(LF.checkLayout(base()).doc, "portrait"), null, "a layout that doesn't turn has no portrait");
+  assert.deepEqual(LF.shapesOf(r.doc), ["landscape", "portrait"]);
+  // "hide" leaves a block out of that shape
+  const h = base(); h.turned = { grid: { cols: 12, rows: 24 }, blocks: { a: { at: { col: 1, row: 1, w: 12, h: 2 } }, b: "hide" } };
+  assert.deepEqual(LF.arrange(LF.checkLayout(h).doc, "portrait").blocks.map((x) => x.id), ["a"]);
+  // every block named; none that isn't on the layout; only at, style and columns; placed inside the other grid
+  const miss = base(); miss.turned = { grid: { cols: 12, rows: 24 }, blocks: { a: { at: { col: 1, row: 1, w: 12, h: 2 } } } };
+  assert.match(LF.checkLayout(miss).errors.map((e) => e.msg).join(" "), /"b" isn't placed/);
+  const extra = base(); extra.turned = { grid: { cols: 12, rows: 24 }, blocks: { a: "hide", b: "hide", z: "hide" } };
+  assert.match(LF.checkLayout(extra).errors.map((e) => e.msg).join(" "), /a block "z", which isn't on the layout/);
+  const bad = base(); bad.turned = { grid: { cols: 12, rows: 24 }, blocks: { a: { at: { col: 1, row: 1, w: 12, h: 2 }, content: {} }, b: { at: { col: 1, row: 3, w: 30, h: 2 } } } };
+  const be = LF.checkLayout(bad).errors;
+  assert.ok(be.some((e) => /"content" isn't something a block can change in portrait/.test(e.msg)) && be.some((e) => /turned \(portrait\)/.test(e.where)), JSON.stringify(be));
+  // its guardrails speak for that shape
+  const small = base(); small.turned = { grid: { cols: 12, rows: 24 }, viewing: { inches: 32, metres: 6 }, blocks: { a: { at: { col: 1, row: 1, w: 12, h: 2 } }, b: { at: { col: 1, row: 3, w: 12, h: 8 } } } };
+  assert.ok(LF.checkLayout(small).warnings.some((w) => /^In portrait: /.test(w.msg)), "the portrait's own text-size warning");
+  // Gibbs: the wayfinding board turns; in portrait the stand's switch still shows one map and its directions
+  const g = LF.checkLayout(JSON.parse(readFileSync(new URL("../layouts/gibbs-garden-55.json", import.meta.url), "utf8")));
+  assert.deepEqual(g.errors, []);
+  const gp = LF.applyLook(LF.arrange(g.doc, "portrait"), { options: { "at-pottery": true } });
+  const shown = gp.blocks.filter((b) => b.on !== false).map((b) => b.id);
+  assert.ok(shown.includes("map-pottery") && !shown.includes("map-entrance") && shown.includes("ways-pottery") && !shown.includes("slogan"), shown.join(","));
+  assert.equal(gp.blocks.find((b) => b.id === "ways-pottery").content.columns, 2);
 });
 
 test("L2: the logo block: the picture, the name or both; the name right, left or below; left, centre or right; per board (1Point's), kept in History's words", async () => {
