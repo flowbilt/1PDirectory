@@ -3227,6 +3227,31 @@ test("T2: the Italian-American template and The Filling Station sample: all four
   for (const f of ["template-italian-55.json", "template-italian-32.json"]) assert.ok(!/Donut Joe|O'Henry|Salvatore|Filling Station|Our Place|Dowdle|Mi Barrio|Lorino/i.test(JSON.stringify(read(f).blocks)), `${f}: an invented shop`);
 });
 
+test("L2: the logo block: the picture, the name or both; the name right, left or below; left, centre or right; per board (1Point's), kept in History's words", async () => {
+  const LF = await import("../public/layout-format.mjs"), MF = await import("../public/menu-format.mjs");
+  const doc = (content, style = {}) => ({ format: 1, orientation: "landscape", name: "L2", grid: { cols: 12, rows: 6, gap: 10, margin: 30 },
+    theme: { palette: { bg: "#ffffff", ink: "#111111" }, fonts: { display: "Instrument Sans", body: "Instrument Sans" } },
+    blocks: [{ id: "logo", type: "logo", at: { col: 1, row: 1, w: 6, h: 2 }, style, content }] });
+  const ok = LF.checkLayout(doc({ image: "img:mark", text: "Gibbs Garden Center", show: "both", place: "below", tone: "muted" }, { align: "center" }));
+  assert.deepEqual(ok.errors, []);
+  assert.equal(ok.doc.blocks[0].content.show, "both"); assert.equal(ok.doc.blocks[0].content.place, "below"); assert.equal(ok.doc.blocks[0].content.tone, "muted");
+  for (const bad of [{ show: "all" }, { place: "above" }, { tone: "pink" }]) assert.ok(LF.checkLayout(doc({ text: "X", ...bad })).errors.length, JSON.stringify(bad));
+  // a board's choice overrides the design: show, place and align
+  const d = ok.doc;
+  const drawn = LF.applyLook(d, { sizes: { logoShow: "name", logoPlace: "left", logoAlign: "right" } }).blocks[0];
+  assert.equal(drawn.content.show, "name"); assert.equal(drawn.content.place, "left"); assert.equal(drawn.style.align, "right");
+  const as = LF.applyLook(d, {}).blocks[0];
+  assert.equal(as.content.show, "both"); assert.equal(as.style.align, "center");
+  assert.deepEqual(LF.boardChoice(d, { sizes: { logoShow: "everything", logoAlign: "middle" } }).sizes.logoShow, null);
+  // the rules (as 44-logo-block.sql) and History's lines
+  assert.equal(MF.boardProblem({ sizes: { logoShow: "both", logoPlace: "below", logoAlign: "center" } }), "");
+  assert.match(MF.boardProblem({ sizes: { logoShow: "all" } }), /picture, the name or both/);
+  assert.match(MF.boardProblem({ sizes: { logoPlace: "above" } }), /right of the picture/);
+  assert.match(MF.boardProblem({ sizes: { logoAlign: "middle" } }), /left, centre or right/);
+  const lines = MF.menuChanges({ lists: [] }, { lists: {}, boards: {} }, { lists: {}, boards: { b1: { sizes: { logoShow: "both", logoPlace: "below" } } } }, 40, { b1: "Wayfinding" });
+  assert.ok(lines.some((l) => l === "Board look (Wayfinding): logo shows (as designed) → picture and name") && lines.some((l) => l === "Board look (Wayfinding): logo (as designed) → name below"), lines.join(" | "));
+});
+
 test("G1: Gibbs Garden Center's sample: both boards clean; the board's switch shows one map and its directions at a time; the seasons take turns by date; the gift shop board's lists; Poppins is a board font", async () => {
   const { offerLists } = await import("../netlify/functions/layouts.mjs");
   const read = (f) => JSON.parse(readFileSync(new URL(`../layouts/${f}`, import.meta.url), "utf8"));
@@ -3339,10 +3364,10 @@ test("T1d: a board's sizes: the QR code the same size on the glass on any screen
   assert.ok(s55 < s32, "the same 7 cm takes fewer of a 55-inch board's pixels than a 32-inch's");
   assert.ok(Math.abs(s55 * LF.mmPerPx(55) - 70) < 1, `${s55 * LF.mmPerPx(55)} mm`);
   assert.equal(LF.qrSide(d55, qr, { size: "l", inches: 32 }), fill, "never past its spot");
-  assert.deepEqual(LF.boardChoice(d55, { sizes: { qr: "m", logo: 70 } }).sizes, { qr: "m", logo: 70, headings: 100, body: 100, qrcode: "white" });
-  assert.deepEqual(LF.boardChoice(d55, {}).sizes, { qr: null, logo: 100, headings: 100, body: 100, qrcode: "white" });
+  assert.deepEqual(LF.boardChoice(d55, { sizes: { qr: "m", logo: 70 } }).sizes, { qr: "m", logo: 70, headings: 100, body: 100, qrcode: "white", logoShow: null, logoPlace: null, logoAlign: null });
+  assert.deepEqual(LF.boardChoice(d55, {}).sizes, { qr: null, logo: 100, headings: 100, body: 100, qrcode: "white", logoShow: null, logoPlace: null, logoAlign: null });
   // T1e: the headings' and body text's sizes
-  assert.deepEqual(LF.boardChoice(d55, { sizes: { headings: 120, body: 90 } }).sizes, { qr: null, logo: 100, headings: 120, body: 90, qrcode: "white" });
+  assert.deepEqual(LF.boardChoice(d55, { sizes: { headings: 120, body: 90 } }).sizes, { qr: null, logo: 100, headings: 120, body: 90, qrcode: "white", logoShow: null, logoPlace: null, logoAlign: null });
   assert.equal(MF.boardProblem({ sizes: { headings: 130, body: 80 } }), "");
   assert.match(MF.boardProblem({ sizes: { headings: 140 } }), /80% to 130%, in steps of 10/);
   // T1f: the QR code on its white square, or drawn on the board

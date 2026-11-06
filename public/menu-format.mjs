@@ -113,6 +113,10 @@ export function boardProblem(b) {
       else if (k === "headings" || k === "body") { if (!BOARD_TEXT_SIZES.includes(v)) return "Text sizes are 80% to 130%, in steps of 10."; }
       // T1f: the QR code on its white square, or drawn on the board (41-qr-on-board.sql)
       else if (k === "qrcode") { if (v !== "white" && v !== "board") return "The QR code is on a white square or drawn on the board."; }
+      // L2: the logo block: picture, name or both; the name's place; left, centre or right (44-logo-block.sql)
+      else if (k === "logoShow") { if (!["picture", "name", "both"].includes(v)) return "The logo shows the picture, the name or both."; }
+      else if (k === "logoPlace") { if (!["right", "left", "below"].includes(v)) return "The name sits right of the picture, left of it or below it."; }
+      else if (k === "logoAlign") { if (!["left", "center", "right"].includes(v)) return "The logo sits left, centre or right."; }
       else return "A board's sizes are for the QR code, the logo, the headings and the body text.";
     }
   }
@@ -470,6 +474,9 @@ export function menuChanges(spec, before, after, max = 40, boardNames = null) {
     for (const [k, w] of [["headings", "headings"], ["body", "body text"]]) if (o.sizes?.[k] !== n.sizes?.[k]) lines.push(`Board look (${name}): ${w} ${o.sizes?.[k] || 100}% → ${n.sizes?.[k] || 100}%`);
     const QD = { white: "on a white square", board: "drawn on the board" };   // T1f
     if ((o.sizes?.qrcode || "white") !== (n.sizes?.qrcode || "white")) lines.push(`Board look (${name}): QR code ${QD[o.sizes?.qrcode || "white"]} → ${QD[n.sizes?.qrcode || "white"]}`);
+    // L2: the logo block
+    const LW = { picture: "the picture", name: "the name", both: "picture and name", right: "name on the right", left: "name on the left", below: "name below", center: "centre" };
+    for (const [k, w] of [["logoShow", "logo shows"], ["logoPlace", "logo"], ["logoAlign", "logo sits"]]) if (o.sizes?.[k] !== n.sizes?.[k]) lines.push(`Board look (${name}): ${w} ${o.sizes?.[k] ? LW[o.sizes[k]] || o.sizes[k] : "(as designed)"} → ${n.sizes?.[k] ? LW[n.sizes[k]] || n.sizes[k] : "(as designed)"}`);
   }
   // T1b: the shop's brand
   const ob = before?.brand || {}, nb = after?.brand || {}, said = (v) => (v === undefined ? "(the template's)" : v);

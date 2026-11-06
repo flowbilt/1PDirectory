@@ -238,7 +238,20 @@ function sizesHtml(b, ch) {
     ${hasQr ? `<div class="me-look-row"><span class="me-look-label">QR drawn</span>${qd("white", "On a white square (every phone reads it)")}${qd("board", "On the board, in its lettering colour")}</div>` : ""}
     ${pct("headings", "Headings")}${pct("body", "Body text")}
     ${hasLogo ? `<div class="me-look-row"><span class="me-look-label">Logo</span><select data-look-f="logo" aria-label="Logo size">${[100, 90, 80, 70, 60].map((n) => `<option value="${n}"${ch.sizes.logo === n ? " selected" : ""}>${n}% of its spot</option>`).join("")}</select></div>` : ""}
+    ${hasLogo ? logoRows(doc, ch) : ""}
   </div>`;
+}
+// L2 (DP-13; Scot): the logo block: the picture, the name or both; with both, the name right of, left of or under the
+// picture; the whole of it left, centre or right. "As designed" keeps the layout's choice.
+function logoRows(doc, ch) {
+  const lb = doc.blocks.find((x) => x.type === "logo"), dShow = lb.content.show || (lb.content.image ? "picture" : "name");
+  const W = { picture: "Picture", name: "Name", both: "Picture and name", right: "Name on the right", left: "Name on the left", below: "Name below", center: "Centre" };
+  const sel = (f, vals, dflt, label) => `<div class="me-look-row"><span class="me-look-label">${label}</span><select data-look-f="${f}" aria-label="${label}">`
+    + `<option value=""${ch.sizes[f] ? "" : " selected"}>As designed (${esc((W[dflt] || dflt.replace(/^./, (x) => x.toUpperCase())))})</option>`
+    + vals.map((v) => `<option value="${v}"${ch.sizes[f] === v ? " selected" : ""}>${esc(W[v] || v.replace(/^./, (x) => x.toUpperCase()))}</option>`).join("") + `</select></div>`;
+  return sel("logoShow", ["picture", "name", "both"], dShow, "Logo shows")
+    + sel("logoPlace", ["right", "left", "below"], lb.content.place || "right", "With both")
+    + sel("logoAlign", ["left", "center", "right"], lb.style.align || "left", "Logo sits");
 }
 function lookHtml(b) {
   const doc = b.checked, ch = boardChoice(doc, E.draft.boards?.[b.id]), mine = E.draft.boards?.[b.id] && Object.keys(E.draft.boards[b.id]).some((k) => k !== "sizes");
@@ -488,6 +501,7 @@ $("lists").addEventListener("change", (ev) => {
   else if (f === "qr") { c.sizes = { ...(c.sizes || {}) }; if (t.value) c.sizes.qr = t.value; else delete c.sizes.qr; }
   else if (f === "logo") { c.sizes = { ...(c.sizes || {}) }; if (Number(t.value) < 100) c.sizes.logo = Number(t.value); else delete c.sizes.logo; }
   else if (f === "qrcode") { c.sizes = { ...(c.sizes || {}) }; if (t.value === "board") c.sizes.qrcode = "board"; else delete c.sizes.qrcode; }   // T1f
+  else if (f === "logoShow" || f === "logoPlace" || f === "logoAlign") { c.sizes = { ...(c.sizes || {}) }; if (t.value) c.sizes[f] = t.value; else delete c.sizes[f]; }   // L2
   else if (f === "headings" || f === "body") { c.sizes = { ...(c.sizes || {}) }; if (Number(t.value) !== 100) c.sizes[f] = Number(t.value); else delete c.sizes[f]; }   // T1e
   showBoard(id); drawLists(); schedulePreview();
 });

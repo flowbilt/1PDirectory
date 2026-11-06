@@ -75,6 +75,7 @@ const FOCUS = ["center", "top", "bottom", "left", "right"];
 // "schedule": true (the board shows a list's entries by their own times once the menu holds them)
 const ITEM = { name: ["text", 80], line: ["text", 160], price: ["text", 16], tags: ["tags"], link: ["link"], when: ["entrywhen"] };
 const SESSION = { days: ["days"], from: ["time"], to: ["time"], name: ["text", 60], line: ["text", 120] };
+export const LOGO_SHOW = ["picture", "name", "both"], LOGO_PLACE = ["right", "left", "below"], LOGO_ALIGN = ["left", "center", "right"];
 export const TYPES = {
   text:      { kicker: ["text", 60], title: ["text", 120], body: ["text", 400], note: ["text", 120], link: ["link"], list: ["listkey"], schedule: ["bool"] },
   // E2e (DP-13): "room" on a block that writes its own items: the room its list gets when Make these lists turns it
@@ -84,7 +85,11 @@ export const TYPES = {
   chips:     { heading: ["text", 60], price: ["text", 24], items: ["list", 60, { name: ["text", 80], tags: ["tags"] }], list: ["listkey"], room: ["int", 1, 60] },
   price:     { label: ["text", 20], price: ["text", 16], note: ["text", 30] },
   photo:     { image: ["image"], alt: ["text", 120], caption: ["text", 80], line: ["text", 120], price: ["text", 16], fit: ["enum", ["cover", "contain"]], focus: ["enum", FOCUS], link: ["link"], list: ["listkey"] },
-  logo:      { image: ["image"], text: ["text", 60], chalkImage: ["image"] },   // E2d: a light logo for the chalkboard (else the name in chalk)
+  // E2d: a light logo for the chalkboard (else the name in chalk). L2 (DP-13; Scot: "a logo or text, or a logo and text"):
+  // "show" the picture, the name or both (default: the picture if there is one, else the name); with both, the name sits
+  // to the "place" of the picture (right, left or below); "tone": the name's colour (ink, muted or accent). The block's
+  // style.align puts the whole of it left, centre or right.
+  logo:      { image: ["image"], text: ["text", 60], chalkImage: ["image"], show: ["enum", LOGO_SHOW], place: ["enum", LOGO_PLACE], tone: ["enum", ["ink", "muted", "accent"]] },
   // E1b: several pictures taking turns, each with its own caption, line and price
   rotator:   { seconds: ["int", 4, 60], fit: ["enum", ["cover", "contain"]], focus: ["enum", FOCUS], captions: ["bool"],
                items: ["list", 12, { image: ["image"], alt: ["text", 120], caption: ["text", 80], line: ["text", 120], price: ["text", 16], link: ["link"] }], list: ["listkey"] },
@@ -308,7 +313,10 @@ export function boardChoice(doc, choice) {
   const pct = (v) => ([80, 90, 100, 110, 120, 130].includes(v) ? v : 100);   // T1e: headings and body text
   const sizes = { qr: ["s", "m", "l"].includes(c.sizes?.qr) ? c.sizes.qr : null, logo: Number.isInteger(c.sizes?.logo) && c.sizes.logo >= 60 && c.sizes.logo <= 100 ? c.sizes.logo : 100,
     headings: pct(c.sizes?.headings), body: pct(c.sizes?.body),
-    qrcode: c.sizes?.qrcode === "board" ? "board" : "white" };   // T1f: the code on its white square, or drawn on the board
+    qrcode: c.sizes?.qrcode === "board" ? "board" : "white",   // T1f: the code on its white square, or drawn on the board
+    // L2: the logo block as this board shows it (1Point's): picture, name or both; the name's place; left, centre or right
+    logoShow: LOGO_SHOW.includes(c.sizes?.logoShow) ? c.sizes.logoShow : null, logoPlace: LOGO_PLACE.includes(c.sizes?.logoPlace) ? c.sizes.logoPlace : null,
+    logoAlign: LOGO_ALIGN.includes(c.sizes?.logoAlign) ? c.sizes.logoAlign : null };
   return { look, chalk, options, sizes };
 }
 
@@ -357,7 +365,11 @@ export function applyBrand(doc, brand) {
 export function applyLook(doc, choice) {
   if (!doc) return doc;
   const ch = boardChoice(doc, choice);
-  const blocks = doc.blocks.map((b) => (b.showWhen?.option ? { ...b, on: b.on !== false && (ch.options[b.showWhen.option] === true) === (b.showWhen.is === "on") } : b));
+  const sz = ch.sizes, logoBy = sz.logoShow || sz.logoPlace || sz.logoAlign;
+  const blocks = doc.blocks.map((b) => (b.showWhen?.option ? { ...b, on: b.on !== false && (ch.options[b.showWhen.option] === true) === (b.showWhen.is === "on") } : b))
+    // L2: this board's choice for its logo block (picture, name or both; the name's place; the alignment)
+    .map((b) => (b.type === "logo" && logoBy ? { ...b, content: { ...b.content, ...(sz.logoShow ? { show: sz.logoShow } : {}), ...(sz.logoPlace ? { place: sz.logoPlace } : {}) },
+      style: { ...b.style, ...(sz.logoAlign ? { align: sz.logoAlign } : {}) } } : b));
   if (ch.look !== "chalkboard") return { ...doc, blocks, look: { ...ch, item: null } };
   const t = CHALK[ch.chalk.titles], pr = CHALK[ch.chalk.prices], ac = CHALK[ch.chalk.accents], lf = LETTER_FONTS[ch.chalk.lettering];
   const palette = { bg: SLATE, ink: CHALK.white, muted: "#c9cbc2", accent: "#343e3b", onAccent: CHALK.white, panel: "#343e3b", onPanel: CHALK.white,

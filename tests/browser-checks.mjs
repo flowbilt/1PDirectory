@@ -1202,6 +1202,44 @@ try {
     assert(r.fit < 0.95 && r.lines.every(([sw, cw]) => sw <= cw + 1), JSON.stringify(r));
   });
 
+  await check("L2: the logo block shows the picture, the name or both; the name right, left or below the picture; the whole of it left, centre or right; a board's choice overrides the design; no picture gives the name", async () => {
+    const p = await browser.newPage({ viewport: { width: 1920, height: 1080 } });
+    await p.goto(`${B}/board.html?preview=1`); await p.waitForTimeout(500);
+    const mark = `data:image/svg+xml;base64,${Buffer.from('<svg xmlns="http://www.w3.org/2000/svg" width="200" height="160"><circle cx="100" cy="80" r="75" fill="#6b9a1e"/></svg>').toString("base64")}`;
+    const lb = (id, row, content, style = {}) => ({ id, type: "logo", at: { col: 1, row, w: 12, h: 2 }, style: { size: "xl", ...style }, content: { text: "Gibbs Garden Center", ...content } });
+    const doc = { format: 1, orientation: "landscape", viewing: { inches: 55, metres: 4 }, grid: { cols: 24, rows: 13, gap: 16, margin: 30 },
+      theme: { palette: { bg: "#f4efe1", ink: "#22361f", muted: "#5b5f4c" }, fonts: { display: "Instrument Sans", body: "Instrument Sans" } },
+      blocks: [lb("right", 1, { image: "img:mark", show: "both" }), lb("below", 3, { image: "img:mark", show: "both", place: "below", tone: "muted" }, { align: "center" }),
+        lb("left", 5, { image: "img:mark", show: "both", place: "left" }, { align: "right" }), lb("name", 7, { image: "img:mark", show: "name" }),
+        lb("pic", 9, { image: "img:mark" }), lb("nopic", 11, { show: "both" })] };
+    const send = (look) => p.evaluate(([d, img, lk]) => window.postMessage({ type: "layout-draft", data: { kind: "layout", orientation: "landscape", layout: { id: null, name: "x", doc: d }, images: { mark: { url: img, w: 200, h: 160 } }, lists: null, look: lk } }, location.origin), [doc, mark, look]);
+    const read = () => p.evaluate(() => {
+      const out = {};
+      for (const el of document.querySelectorAll(".b.logo")) {
+        const box = el.getBoundingClientRect(), img = el.querySelector("img")?.getBoundingClientRect(), name = el.querySelector(".logo-name, .b-logo")?.getBoundingClientRect();
+        out[el.dataset.id] = { box: [box.left, box.right, box.top, box.bottom], img: img ? [img.left, img.right, img.top, img.bottom] : null, name: name ? [name.left, name.right, name.top, name.bottom] : null,
+          nameColour: el.querySelector(".b-logo") ? getComputedStyle(el.querySelector(".b-logo")).color : null, text: el.querySelector(".logo-name, .b-logo")?.textContent || "" };
+      }
+      return { out, over: window.LayoutBoard.fitAll().overflow };
+    });
+    await send(null); await p.waitForTimeout(2500);
+    let { out: o, over } = await read();
+    assert(over.length === 0, `overflow ${over}`);
+    assert(o.right.img && o.right.name && o.right.img[1] <= o.right.name[0] && o.right.img[0] - o.right.box[0] < 40, `right: ${JSON.stringify(o.right)}`);
+    const mid = (r) => (r[0] + r[1]) / 2, bmid = mid(o.below.box);
+    assert(o.below.img[3] <= o.below.name[2] + 1 && Math.abs(mid(o.below.img) - bmid) < 12 && o.below.nameColour === "rgb(91, 95, 76)", `below: ${JSON.stringify(o.below)}`);
+    assert(o.left.name[1] <= o.left.img[0] && o.left.box[1] - o.left.img[1] < 40, `left, aligned right: ${JSON.stringify(o.left)}`);
+    assert(!o.name.img && o.name.text === "Gibbs Garden Center", `name only: ${JSON.stringify(o.name)}`);
+    assert(o.pic.img && !o.pic.name, `picture only (the default with a picture): ${JSON.stringify(o.pic)}`);
+    assert(!o.nopic.img && o.nopic.text === "Gibbs Garden Center", `no picture gives the name: ${JSON.stringify(o.nopic)}`);
+    // the board's choice (the menu editor's Board look, 1Point's) overrides each logo block
+    await send({ sizes: { logoShow: "both", logoPlace: "below", logoAlign: "right" } }); await p.waitForTimeout(2000);
+    ({ out: o } = await read());
+    assert(o.pic.img && o.pic.name && o.pic.img[3] <= o.pic.name[2] + 1 && o.pic.box[1] - o.pic.img[1] < 40, `override: ${JSON.stringify(o.pic)}`);
+    assert(o.name.img, "the override shows the picture on the name-only block too");
+    await p.close();
+  });
+
   // ── T0 (DP-13): Copy a shop, and a sample link ──
   let copied = null;
   await check("T0: Copy to an account (1Point): Donut Joe's menu and its boards into a new account with a building; the copy's own pictures, boards published, the template untouched", async () => {

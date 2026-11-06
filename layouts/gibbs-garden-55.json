@@ -13,7 +13,7 @@
       "highlight": "#4f7a1f", "onHighlight": "#ffffff",
       "line": "#ddd3b8"
     },
-    "fonts": { "display": "Alfa Slab One", "body": "Lora" },
+    "fonts": { "display": "Alfa Slab One", "body": "Lora", "accent": "Instrument Sans" },
     "looks": ["house"],
     "look": "house"
   },
@@ -22,7 +22,7 @@
   ],
   "blocks": [
     { "id": "logo", "type": "logo", "at": { "col": 1, "row": 1, "w": 9, "h": 2 },
-      "style": { "align": "left", "size": "xl" }, "content": { "image": "img:gibbs-logo", "text": "Gibbs Garden Center" } },
+      "style": { "align": "left", "size": "xl", "font": "accent" }, "content": { "image": "img:gibbs-monogram", "text": "Gibbs Garden Center", "show": "both", "place": "right", "tone": "muted" } },
 
     { "id": "hero", "label": "Around the garden center", "type": "rotator", "at": { "col": 1, "row": 3, "w": 9, "h": 8 },
       "style": { "radius": "l", "size": "l", "shadow": true },

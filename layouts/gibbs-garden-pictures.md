@@ -3,7 +3,7 @@
 Gibbs Garden Center's own photos from gibbsgardencenter.com (Scot downloaded all 134, November 2026), and two
 placeholder "You are here" maps drawn for the demo. For the pitch only: they stay in the **WayTuGo Samples** account and
 aren't shown to another prospect. The files in `gibbs-pictures.zip` already carry their keys, so upload them as they
-are, all sixteen, on the wayfinding board's **Pictures** tab.
+are, all seventeen, on the wayfinding board's **Pictures** tab.
 
 | Key (file name) | Their photo | Used for |
 |---|---|---|
@@ -20,7 +20,8 @@ are, all sixteen, on the wayfinding board's **Pictures** tab.
 | `wind-chimes` | gift-shop-11 | Gift shop: Wind chimes |
 | `house-plants` | gift-shop-14 | Gift shop: House plants |
 | `fall-decor` | gift-shop-04 | Gift shop: Fall décor |
-| `gibbs-logo` | their GGC monogram (Scot, from Gibbs) with the name set beside it in grey, as on their flyers | Both boards: the logo |
+| `gibbs-monogram` | their GGC monogram (Scot, from Gibbs), the white taken out | Both boards: the logo's picture (L2: the name is live text beside it) |
+| `gibbs-logo` | the monogram with the name baked in beside it (G1b) | Not used since L2; fine for the Brand panel's logo on a block showing only the picture |
 | `gibbs-map-entrance` | drawn for the demo | Wayfinding: You are here, front entrance (the switch off) |
 | `gibbs-map-pottery` | drawn for the demo | Wayfinding: You are here, Pottery House (the switch on) |
 

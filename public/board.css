@@ -147,6 +147,17 @@ body { font-family: "Instrument Sans", "Segoe UI", Arial, sans-serif; -webkit-fo
 .b.logo.has-img { padding: var(--pad, 0); }
 .logo-img { width: 100%; height: 100%; object-fit: contain; object-position: var(--logo-pos, left center); display: block; }
 .b.logo.has-img .b-in { height: 100%; }
+/* L2: the picture and the name together: the name beside the picture (right or left) or under it, the whole of it
+   left, centre or right (the block's align); the picture as tall as the spot (or about 60% of it, with the name under) */
+.logo-lock { display: flex; align-items: center; gap: 0.4em; height: 100%; justify-content: var(--chip-justify, flex-start); transform-origin: var(--logo-pos, left center); }
+.logo-lock.place-left .logo-name { order: -1; }
+.logo-lock.place-below { flex-direction: column; justify-content: center; align-items: var(--chip-justify, flex-start); gap: 0.15em; }
+.logo-mark { height: 100%; width: auto; max-width: 45%; object-fit: contain; flex: none; display: block; }
+.logo-lock.place-below .logo-mark { height: 62%; max-width: 100%; }
+.logo-lock .logo-name { min-width: 0; text-align: var(--align, left); }
+.logo-lock.place-below .logo-name { text-align: var(--align, left); }
+.b-logo.tone-muted { color: var(--p-muted, inherit); }
+.b-logo.tone-accent { color: var(--p-accent, inherit); }
 .bgpic { position: absolute; inset: 0; z-index: 0; }
 .bgpic img { width: 100%; height: 100%; object-fit: cover; display: block; }
 .bgpic .bg-dim { position: absolute; inset: 0; background: var(--p-bg); }

@@ -119,7 +119,12 @@ const BODY = {
     const src = chalk ? picture(b.content.chalkImage) : picture(b.content.image), text = b.content.text || data?.propertyName || "";
     // T1d: the logo's share of its spot (1Point's, per board), from the side it's aligned to
     const k = (doc.look?.sizes?.logo || 100) / 100, sc = k < 1 ? ` style="transform:scale(${k});transform-origin:var(--logo-pos, left center)"` : "";
-    return src ? `<img class="logo-img" src="${esc(src)}" alt="${esc(text)}"${sc}>` : `<div class="b-logo ${titleClass(b)}"${k < 1 ? ` style="font-size:${k}em"` : ""}>${esc(text)}</div>`;
+    // L2: the picture, the name, or both (the name beside or under the picture); a picture that isn't there gives the name
+    const show = logoShow(b, src, text);
+    if (show === "picture") return `<img class="logo-img" src="${esc(src)}" alt="${esc(text)}"${sc}>`;
+    const name = `<div class="b-logo logo-name ${titleClass(b)} tone-${b.content.tone || "ink"}"${k < 1 && show === "name" ? ` style="font-size:${k}em"` : ""}>${esc(text)}</div>`;
+    if (show === "name") return name;
+    return `<div class="logo-lock place-${b.content.place || "right"}"${sc}><img class="logo-mark" src="${esc(src)}" alt="">${name}</div>`;
   },
   clock(b) { return `<div class="b-clock" data-live="clock" data-show="${b.content.show || "both"}"></div>`; },
   weather(b) { return `<div data-live="weather">${b.content.label ? `<span class="wlabel">${esc(b.content.label)}</span>` : ""}<div class="b-weather"></div></div>`; },
@@ -167,9 +172,18 @@ function blockHtml(b) {
     `--valign:${{ top: "flex-start", middle: "center", bottom: "flex-end" }[b.style.valign || "top"]}`, `--fs:${SIZES[b.style.size || "m"]}px`];
   if (b.style.border) styles.push(`--border:${p[b.style.border]}`);
   if (b.style.tilt) styles.push(`transform:rotate(${b.style.tilt}deg)`);
-  const logoImg = b.type === "logo" && picture(doc.look?.look === "chalkboard" ? b.content.chalkImage : b.content.image);
+  const logoSrc = b.type === "logo" && picture(doc.look?.look === "chalkboard" ? b.content.chalkImage : b.content.image);
+  const logoImg = logoSrc && logoShow(b, logoSrc, b.content.text || data?.propertyName || "") !== "name";
   const cls = ["b", b.type, logoImg ? "has-img" : "", surf !== "none" ? "surfaced" : "", b.style.border ? "bordered" : "", b.style.shadow ? "shadow" : "", b.style.case === "upper" ? "upper" : ""].filter(Boolean).join(" ");
   return `<div class="${cls}" data-id="${esc(b.id)}" style="${styles.join(";")}"><div class="b-in">${BODY[b.type](b)}</div></div>`;
+}
+
+/** L2: what a logo block shows: its "show" (picture, name or both), as far as there's a picture and a name for it */
+function logoShow(b, src, text) {
+  const want = b.content.show || (src ? "picture" : "name");
+  if (!src) return "name";
+  if (!String(text).trim()) return "picture";
+  return want;
 }
 
 function render() {

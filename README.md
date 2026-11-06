@@ -700,6 +700,27 @@ another on preview, the controls should follow the choice."
   for 40" (a lone photo's list had a fixed 40, below its own description). **Fixed:** `extractMenu` sizes a photo's
   list name like the other kinds (`capFor`, at least 40, a third over the longest). Test in G1's.
 
+### L2 (DP-13): the logo block: the picture, the name or both
+
+Scot: "a block where I could include or exclude either [the logo or the text] and they would orient to the left or the
+right or if I wanted to use one or the other I could justify center, right, left."
+- **In the layout** (`layout-format.mjs` `TYPES.logo`): `"show": "picture" | "name" | "both"` (default: the picture if
+  there is one, else the name), `"place": "right" | "left" | "below"` (where the name sits with both), `"tone": "ink" |
+  "muted" | "accent"` (the name's colour). The block's `style.align` puts the whole of it left, centre or right, and
+  `style.font` picks the heading, body or accent font for the name. A picture that isn't there gives the name; no name
+  gives the picture alone.
+- **Per board, 1Point's** (menu editor → Board look → the WayTuGo-only sizes): **Logo shows**, **With both** and **Logo
+  sits**, each "As designed (…)" or a choice. Kept as the board's `sizes.logoShow`, `logoPlace`, `logoAlign`
+  (`boardChoice`, applied by `applyLook`), checked by `menu-format.mjs` `boardProblem` and `supabase/44-logo-block.sql`
+  (41's `menu_board_problem` with three parts more; `check-logo-block.sql`), written in History. The logo's size (T1d)
+  scales the picture and name together.
+- **Drawn** (`board.js` `logo`, `logoShow`; `board.css` `.logo-lock`): with both, the picture as tall as the spot (about
+  60% of it with the name below), at most 45% of its width beside the name; the name fits the rest, shrinking like any
+  text. The Brand panel's name and logo fill the same block; the Chalkboard's light logo too.
+- **Gibbs** now use it: their monogram (`img:gibbs-monogram`, the white taken out) with "Gibbs Garden Center" as live
+  text beside it, in Instrument Sans (the theme's accent font) and the muted grey, as on their flyers. `gibbs-logo` (the
+  baked-in lockup) is no longer used by the layouts.
+
 ## Screens and cards (Raspberry Pi)
 
 Every Pi runs from a **prepared card**, and every card is the same. A card carries no identity until it's in a Pi:

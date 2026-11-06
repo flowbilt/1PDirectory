@@ -28,7 +28,8 @@
   },
   "fonts": {
    "display": "Alfa Slab One",
-   "body": "Lora"
+   "body": "Lora",
+   "accent": "Instrument Sans"
   },
   "looks": [
    "house"
@@ -47,11 +48,15 @@
    },
    "style": {
     "align": "center",
-    "size": "xl"
+    "size": "xl",
+    "font": "accent"
    },
    "content": {
-    "image": "img:gibbs-logo",
-    "text": "Gibbs Garden Center"
+    "image": "img:gibbs-monogram",
+    "text": "Gibbs Garden Center",
+    "show": "both",
+    "place": "right",
+    "tone": "muted"
    }
   },
   {
