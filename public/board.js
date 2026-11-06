@@ -122,7 +122,10 @@ const BODY = {
     // L2: the picture, the name, or both (the name beside or under the picture); a picture that isn't there gives the name
     const show = logoShow(b, src, text);
     if (show === "picture") return `<img class="logo-img" src="${esc(src)}" alt="${esc(text)}"${sc}>`;
-    const name = `<div class="b-logo logo-name ${titleClass(b)} tone-${b.content.tone || "ink"}"${k < 1 && show === "name" ? ` style="font-size:${k}em"` : ""}>${esc(text)}</div>`;
+    // L2b: the name's own font, size, one line or wrapping, and weight (the board's choice, else the layout's)
+    const c = b.content, nk = (c.nameSize || 100) / 100 * (k < 1 && show === "name" ? k : 1);
+    const ns = [nk !== 1 ? `font-size:${nk}em` : "", c.nameFont && FONTS[c.nameFont] ? `font-family:${FONTS[c.nameFont].css}` : "", c.weight ? `font-weight:${c.weight === "bold" ? 800 : 400}` : ""].filter(Boolean).join(";");
+    const name = `<div class="b-logo logo-name ${titleClass(b)} tone-${c.tone || "ink"}${c.line === "one" ? " one-line" : ""}"${ns ? ` style="${esc(ns)}"` : ""}>${esc(text)}</div>`;
     if (show === "name") return name;
     return `<div class="logo-lock place-${b.content.place || "right"}"${sc}><img class="logo-mark" src="${esc(src)}" alt="">${name}</div>`;
   },
@@ -220,7 +223,7 @@ function render() {
   drawn = sig;
   $("powered").hidden = data.poweredBy === false;           // "Powered by WayTuGo"; 1Point can hide it per screen
   live(true);
-  addFonts([...new Set([...Object.values(f), ...(doc.look?.item ? [doc.look.item] : [])])]).then(() => document.fonts.ready).then(() => {
+  addFonts([...new Set([...Object.values(f), ...(doc.look?.item ? [doc.look.item] : []), ...doc.blocks.map((b) => b.type === "logo" && b.content.nameFont).filter(Boolean)])]).then(() => document.fonts.ready).then(() => {
     if (drawn !== sig) return;
     fitAll();
     stage.classList.remove("is-loading");

@@ -71,6 +71,7 @@ Do these once. The current site keeps running as it is until the new build is de
 43. For Sold out and Hide saving on a tap (DP-13, round M1b): **before uploading that code**, new query, paste all of `42-quick-switch.sql`, and click **Run**. Then new query, paste all of `check-quick-switch.sql`, and click **Run**; it should read **ALL 5 CHECKS PASSED** (red on purpose). A tap on Sold out or Hide then changes just that item, as a save of its own in History.
 44. For Poppins, the Gibbs Garden Center font (DP-13, round G1): **before uploading that code**, new query, paste all of `43-poppins.sql`, and click **Run**. Then new query, paste all of `check-poppins.sql`, and click **Run**; it should read **ALL 2 CHECKS PASSED** (red on purpose). A brand may then use Poppins.
 45. For the logo block (DP-13, round L2): **before uploading that code**, new query, paste all of `44-logo-block.sql`, and click **Run**. Then new query, paste all of `check-logo-block.sql`, and click **Run**; it should read **ALL 3 CHECKS PASSED** (red on purpose). A board's Board look can then say what its logo shows.
+46. For the logo's name (DP-13, round L2b): after 44, new query, paste all of `45-logo-name.sql`, and click **Run**. Then new query, paste all of `check-logo-name.sql`, and click **Run**; it should read **ALL 3 CHECKS PASSED** (red on purpose).
 
 If any of them shows an error (other than the expected red messages from the `check-…sql` files), copy the message (it includes a line number) and send it to Claude.
 

@@ -1202,7 +1202,7 @@ try {
     assert(r.fit < 0.95 && r.lines.every(([sw, cw]) => sw <= cw + 1), JSON.stringify(r));
   });
 
-  await check("L2: the logo block shows the picture, the name or both; the name right, left or below the picture; the whole of it left, centre or right; a board's choice overrides the design; no picture gives the name", async () => {
+  await check("L2: the logo block shows the picture, the name or both; the name right, left or below the picture; the whole of it left, centre or right; a board's choice overrides the design; no picture gives the name; L2b: the name on one line, in its own font and weight", async () => {
     const p = await browser.newPage({ viewport: { width: 1920, height: 1080 } });
     await p.goto(`${B}/board.html?preview=1`); await p.waitForTimeout(500);
     const mark = `data:image/svg+xml;base64,${Buffer.from('<svg xmlns="http://www.w3.org/2000/svg" width="200" height="160"><circle cx="100" cy="80" r="75" fill="#6b9a1e"/></svg>').toString("base64")}`;
@@ -1237,6 +1237,11 @@ try {
     ({ out: o } = await read());
     assert(o.pic.img && o.pic.name && o.pic.img[3] <= o.pic.name[2] + 1 && o.pic.box[1] - o.pic.img[1] < 40, `override: ${JSON.stringify(o.pic)}`);
     assert(o.name.img, "the override shows the picture on the name-only block too");
+    // L2b: the name on one line (it shrinks to fit rather than wrapping), in another font, regular
+    await send({ sizes: { logoShow: "both", logoLine: "one", logoFont: "Alfa Slab One", logoWeight: "regular", logoSize: 140 } }); await p.waitForTimeout(2500);
+    const one = await p.evaluate(() => { const el = document.querySelector('[data-id="right"] .logo-name'), r = document.createRange(); r.selectNodeContents(el);
+      return { lines: new Set([...r.getClientRects()].map((x) => Math.round(x.top))).size, font: getComputedStyle(el).fontFamily, weight: getComputedStyle(el).fontWeight, over: window.LayoutBoard.fitAll().overflow, loaded: document.fonts.check('40px "Alfa Slab One"') }; });
+    assert(one.lines === 1 && /Alfa Slab One/.test(one.font) && one.weight === "400" && !one.over.includes("right") && one.loaded, JSON.stringify(one));
     await p.close();
   });
 

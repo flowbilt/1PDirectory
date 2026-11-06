@@ -249,9 +249,17 @@ function logoRows(doc, ch) {
   const sel = (f, vals, dflt, label) => `<div class="me-look-row"><span class="me-look-label">${label}</span><select data-look-f="${f}" aria-label="${label}">`
     + `<option value=""${ch.sizes[f] ? "" : " selected"}>As designed (${esc((W[dflt] || dflt.replace(/^./, (x) => x.toUpperCase())))})</option>`
     + vals.map((v) => `<option value="${v}"${ch.sizes[f] === v ? " selected" : ""}>${esc(W[v] || v.replace(/^./, (x) => x.toUpperCase()))}</option>`).join("") + `</select></div>`;
+  // L2b (Scot: "Font control of the logo would be good, and sizing"): the name's font, size, lines and weight
+  const role = lb.style.font || "display", dFont = doc.theme.fonts?.[role] || doc.theme.fonts?.display || "Instrument Sans";
+  Object.assign(W, { one: "One line (shrinks to fit)", wrap: "Wraps onto more lines", regular: "Regular", bold: "Bold" });
+  for (const f of BRAND_FONTS) W[f] = f;
   return sel("logoShow", ["picture", "name", "both"], dShow, "Logo shows")
     + sel("logoPlace", ["right", "left", "below"], lb.content.place || "right", "With both")
-    + sel("logoAlign", ["left", "center", "right"], lb.style.align || "left", "Logo sits");
+    + sel("logoAlign", ["left", "center", "right"], lb.style.align || "left", "Logo sits")
+    + sel("logoFont", BRAND_FONTS, dFont, "Name's font")
+    + `<div class="me-look-row"><span class="me-look-label">Name's size</span><select data-look-f="logoSize" aria-label="Name's size">${[60, 70, 80, 90, 100, 110, 120, 130, 140].map((n) => `<option value="${n}"${ch.sizes.logoSize === n ? " selected" : ""}>${n}%${n === 100 ? " (as designed)" : ""}</option>`).join("")}</select></div>`
+    + sel("logoLine", ["one", "wrap"], lb.content.line || "wrap", "Name's lines")
+    + sel("logoWeight", ["regular", "bold"], lb.content.weight || "bold", "Name's weight");
 }
 function lookHtml(b) {
   const doc = b.checked, ch = boardChoice(doc, E.draft.boards?.[b.id]), mine = E.draft.boards?.[b.id] && Object.keys(E.draft.boards[b.id]).some((k) => k !== "sizes");
@@ -501,7 +509,8 @@ $("lists").addEventListener("change", (ev) => {
   else if (f === "qr") { c.sizes = { ...(c.sizes || {}) }; if (t.value) c.sizes.qr = t.value; else delete c.sizes.qr; }
   else if (f === "logo") { c.sizes = { ...(c.sizes || {}) }; if (Number(t.value) < 100) c.sizes.logo = Number(t.value); else delete c.sizes.logo; }
   else if (f === "qrcode") { c.sizes = { ...(c.sizes || {}) }; if (t.value === "board") c.sizes.qrcode = "board"; else delete c.sizes.qrcode; }   // T1f
-  else if (f === "logoShow" || f === "logoPlace" || f === "logoAlign") { c.sizes = { ...(c.sizes || {}) }; if (t.value) c.sizes[f] = t.value; else delete c.sizes[f]; }   // L2
+  else if (["logoShow", "logoPlace", "logoAlign", "logoFont", "logoLine", "logoWeight"].includes(f)) { c.sizes = { ...(c.sizes || {}) }; if (t.value) c.sizes[f] = t.value; else delete c.sizes[f]; }   // L2, L2b
+  else if (f === "logoSize") { c.sizes = { ...(c.sizes || {}) }; if (Number(t.value) !== 100) c.sizes.logoSize = Number(t.value); else delete c.sizes.logoSize; }   // L2b
   else if (f === "headings" || f === "body") { c.sizes = { ...(c.sizes || {}) }; if (Number(t.value) !== 100) c.sizes[f] = Number(t.value); else delete c.sizes[f]; }   // T1e
   showBoard(id); drawLists(); schedulePreview();
 });

@@ -157,6 +157,8 @@ body { font-family: "Instrument Sans", "Segoe UI", Arial, sans-serif; -webkit-fo
 .logo-lock .logo-name { min-width: 0; text-align: var(--align, left); }
 .logo-lock.place-below .logo-name { text-align: var(--align, left); }
 .b-logo.tone-muted { color: var(--p-muted, inherit); }
+/* L2b: the name on one line: it shrinks to fit the spot's width instead of wrapping */
+.b-logo.one-line { white-space: nowrap; }
 .b-logo.tone-accent { color: var(--p-accent, inherit); }
 .bgpic { position: absolute; inset: 0; z-index: 0; }
 .bgpic img { width: 100%; height: 100%; object-fit: cover; display: block; }

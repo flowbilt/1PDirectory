@@ -117,6 +117,11 @@ export function boardProblem(b) {
       else if (k === "logoShow") { if (!["picture", "name", "both"].includes(v)) return "The logo shows the picture, the name or both."; }
       else if (k === "logoPlace") { if (!["right", "left", "below"].includes(v)) return "The name sits right of the picture, left of it or below it."; }
       else if (k === "logoAlign") { if (!["left", "center", "right"].includes(v)) return "The logo sits left, centre or right."; }
+      // L2b: the name's font, size, lines and weight (45-logo-name.sql)
+      else if (k === "logoFont") { if (!BRAND_FONTS.includes(v)) return `"${String(v).slice(0, 40)}" isn't one of WayTuGo's fonts.`; }
+      else if (k === "logoSize") { if (![60, 70, 80, 90, 100, 110, 120, 130, 140].includes(v)) return "The logo's name is 60% to 140%, in steps of 10."; }
+      else if (k === "logoLine") { if (v !== "one" && v !== "wrap") return "The logo's name is on one line or wraps."; }
+      else if (k === "logoWeight") { if (v !== "regular" && v !== "bold") return "The logo's name is regular or bold."; }
       else return "A board's sizes are for the QR code, the logo, the headings and the body text.";
     }
   }
@@ -476,7 +481,9 @@ export function menuChanges(spec, before, after, max = 40, boardNames = null) {
     if ((o.sizes?.qrcode || "white") !== (n.sizes?.qrcode || "white")) lines.push(`Board look (${name}): QR code ${QD[o.sizes?.qrcode || "white"]} → ${QD[n.sizes?.qrcode || "white"]}`);
     // L2: the logo block
     const LW = { picture: "the picture", name: "the name", both: "picture and name", right: "name on the right", left: "name on the left", below: "name below", center: "centre" };
-    for (const [k, w] of [["logoShow", "logo shows"], ["logoPlace", "logo"], ["logoAlign", "logo sits"]]) if (o.sizes?.[k] !== n.sizes?.[k]) lines.push(`Board look (${name}): ${w} ${o.sizes?.[k] ? LW[o.sizes[k]] || o.sizes[k] : "(as designed)"} → ${n.sizes?.[k] ? LW[n.sizes[k]] || n.sizes[k] : "(as designed)"}`);
+    Object.assign(LW, { one: "one line", wrap: "wraps", regular: "regular", bold: "bold" });
+    if (o.sizes?.logoSize !== n.sizes?.logoSize) lines.push(`Board look (${name}): logo's name ${o.sizes?.logoSize || 100}% → ${n.sizes?.logoSize || 100}%`);
+    for (const [k, w] of [["logoShow", "logo shows"], ["logoPlace", "logo"], ["logoAlign", "logo sits"], ["logoFont", "logo's name in"], ["logoLine", "logo's name"], ["logoWeight", "logo's name"]]) if (o.sizes?.[k] !== n.sizes?.[k]) lines.push(`Board look (${name}): ${w} ${o.sizes?.[k] ? LW[o.sizes[k]] || o.sizes[k] : "(as designed)"} → ${n.sizes?.[k] ? LW[n.sizes[k]] || n.sizes[k] : "(as designed)"}`);
   }
   // T1b: the shop's brand
   const ob = before?.brand || {}, nb = after?.brand || {}, said = (v) => (v === undefined ? "(the template's)" : v);

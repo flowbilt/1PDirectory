@@ -3250,6 +3250,18 @@ test("L2: the logo block: the picture, the name or both; the name right, left or
   assert.match(MF.boardProblem({ sizes: { logoAlign: "middle" } }), /left, centre or right/);
   const lines = MF.menuChanges({ lists: [] }, { lists: {}, boards: {} }, { lists: {}, boards: { b1: { sizes: { logoShow: "both", logoPlace: "below" } } } }, 40, { b1: "Wayfinding" });
   assert.ok(lines.some((l) => l === "Board look (Wayfinding): logo shows (as designed) → picture and name") && lines.some((l) => l === "Board look (Wayfinding): logo (as designed) → name below"), lines.join(" | "));
+  // L2b: the name's font, size, lines and weight
+  const nm = LF.applyLook(d, { sizes: { logoFont: "Poppins", logoSize: 80, logoLine: "one", logoWeight: "regular" } }).blocks[0].content;
+  assert.deepEqual([nm.nameFont, nm.nameSize, nm.line, nm.weight], ["Poppins", 80, "one", "regular"]);
+  assert.equal(LF.boardChoice(d, { sizes: { logoFont: "Comic Sans MS", logoSize: 150 } }).sizes.logoFont, null);
+  assert.equal(LF.boardChoice(d, { sizes: { logoSize: 150 } }).sizes.logoSize, 100);
+  assert.deepEqual(LF.checkLayout(doc({ text: "X", line: "one", weight: "regular" })).errors, []);
+  assert.ok(LF.checkLayout(doc({ text: "X", line: "two" })).errors.length);
+  assert.equal(MF.boardProblem({ sizes: { logoFont: "Poppins", logoSize: 140, logoLine: "wrap", logoWeight: "bold" } }), "");
+  assert.match(MF.boardProblem({ sizes: { logoFont: "Comic Sans MS" } }), /isn't one of WayTuGo's fonts/);
+  assert.match(MF.boardProblem({ sizes: { logoSize: 65 } }), /60% to 140%/);
+  const l2 = MF.menuChanges({ lists: [] }, { lists: {}, boards: {} }, { lists: {}, boards: { b1: { sizes: { logoFont: "Poppins", logoSize: 80, logoLine: "one" } } } }, 40, { b1: "Wayfinding" });
+  assert.ok(["Board look (Wayfinding): logo's name in (as designed) → Poppins", "Board look (Wayfinding): logo's name 100% → 80%", "Board look (Wayfinding): logo's name (as designed) → one line"].every((x) => l2.includes(x)), l2.join(" | "));
 });
 
 test("G1: Gibbs Garden Center's sample: both boards clean; the board's switch shows one map and its directions at a time; the seasons take turns by date; the gift shop board's lists; Poppins is a board font", async () => {
@@ -3364,10 +3376,10 @@ test("T1d: a board's sizes: the QR code the same size on the glass on any screen
   assert.ok(s55 < s32, "the same 7 cm takes fewer of a 55-inch board's pixels than a 32-inch's");
   assert.ok(Math.abs(s55 * LF.mmPerPx(55) - 70) < 1, `${s55 * LF.mmPerPx(55)} mm`);
   assert.equal(LF.qrSide(d55, qr, { size: "l", inches: 32 }), fill, "never past its spot");
-  assert.deepEqual(LF.boardChoice(d55, { sizes: { qr: "m", logo: 70 } }).sizes, { qr: "m", logo: 70, headings: 100, body: 100, qrcode: "white", logoShow: null, logoPlace: null, logoAlign: null });
-  assert.deepEqual(LF.boardChoice(d55, {}).sizes, { qr: null, logo: 100, headings: 100, body: 100, qrcode: "white", logoShow: null, logoPlace: null, logoAlign: null });
+  assert.deepEqual(LF.boardChoice(d55, { sizes: { qr: "m", logo: 70 } }).sizes, { qr: "m", logo: 70, headings: 100, body: 100, qrcode: "white", logoShow: null, logoPlace: null, logoAlign: null, logoFont: null, logoSize: 100, logoLine: null, logoWeight: null });
+  assert.deepEqual(LF.boardChoice(d55, {}).sizes, { qr: null, logo: 100, headings: 100, body: 100, qrcode: "white", logoShow: null, logoPlace: null, logoAlign: null, logoFont: null, logoSize: 100, logoLine: null, logoWeight: null });
   // T1e: the headings' and body text's sizes
-  assert.deepEqual(LF.boardChoice(d55, { sizes: { headings: 120, body: 90 } }).sizes, { qr: null, logo: 100, headings: 120, body: 90, qrcode: "white", logoShow: null, logoPlace: null, logoAlign: null });
+  assert.deepEqual(LF.boardChoice(d55, { sizes: { headings: 120, body: 90 } }).sizes, { qr: null, logo: 100, headings: 120, body: 90, qrcode: "white", logoShow: null, logoPlace: null, logoAlign: null, logoFont: null, logoSize: 100, logoLine: null, logoWeight: null });
   assert.equal(MF.boardProblem({ sizes: { headings: 130, body: 80 } }), "");
   assert.match(MF.boardProblem({ sizes: { headings: 140 } }), /80% to 130%, in steps of 10/);
   // T1f: the QR code on its white square, or drawn on the board

@@ -721,6 +721,17 @@ right or if I wanted to use one or the other I could justify center, right, left
   text beside it, in Instrument Sans (the theme's accent font) and the muted grey, as on their flyers. `gibbs-logo` (the
   baked-in lockup) is no longer used by the layouts.
 
+### L2b (DP-13): the logo's name: font, size, one line or wrapping, weight
+
+Scot: "Font control of the logo would be good, and sizing. For instance this name stacks no matter the font."
+- **Per board, 1Point's** (Board look's WayTuGo-only sizes, under the L2 rows): **Name's font** (any of WayTuGo's
+  fonts; as designed, the font of the block's `style.font` role), **Name's size** (60–140%, the name only; the Logo % still
+  scales picture and name together), **Name's lines** (One line, shrinking to fit; or Wraps), **Name's weight** (Regular
+  or Bold). Kept as `sizes.logoFont`, `logoSize`, `logoLine`, `logoWeight`; checked by `boardProblem` and
+  `supabase/45-logo-name.sql` (44's `menu_board_problem` with four parts more; `check-logo-name.sql`); written in History.
+- **In the layout:** the logo block's `"line": "one" | "wrap"` and `"weight": "regular" | "bold"`. The board loads a
+  chosen font with the layout's own (`board.js` `addFonts`). Gibbs's wayfinding board now sets `"line": "one"`.
+
 ## Screens and cards (Raspberry Pi)
 
 Every Pi runs from a **prepared card**, and every card is the same. A card carries no identity until it's in a Pi:
