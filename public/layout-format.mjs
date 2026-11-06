@@ -319,8 +319,11 @@ function checkTurned(input, ctx, doc, err, warn) {
     const e = t.blocks[b?.id];
     if (e === "hide") continue;
     if (!isObj(e)) { if (e !== undefined) err(`${where} block "${b?.id}"`, `Each block is { "at": { … }, "style": { … } } or "hide".`); continue; }
-    for (const k of Object.keys(e)) if (!["at", "style", "columns"].includes(k)) err(`${where} block "${b.id}"`, `"${k}" isn't something a block can change in ${other} (allowed: at, style, columns).`);
-    blocks.push({ ...b, at: e.at, style: { ...(isObj(b.style) ? b.style : {}), ...(isObj(e.style) ? e.style : {}) }, ...(e.columns !== undefined ? { content: { ...b.content, columns: e.columns } } : {}) });
+    for (const k of Object.keys(e)) if (!["at", "style", "columns", "image"].includes(k)) err(`${where} block "${b.id}"`, `"${k}" isn't something a block can change in ${other} (allowed: at, style, columns, and a photo's image).`);
+    if (e.image !== undefined && b.type !== "photo") err(`${where} block "${b.id}"`, `Only a photo can show another picture in ${other}.`);
+    // L1b (Scot: "Make the map rectangle"): a photo may show its own picture in this shape (a wide map for a wide spot)
+    const content = { ...(isObj(b.content) ? b.content : {}), ...(e.columns !== undefined ? { columns: e.columns } : {}), ...(e.image !== undefined && b.type === "photo" ? { image: e.image } : {}) };
+    blocks.push({ ...b, at: e.at, style: { ...(isObj(b.style) ? b.style : {}), ...(isObj(e.style) ? e.style : {}) }, ...(e.columns !== undefined || e.image !== undefined ? { content } : {}) });
   }
   const { turned, ...rest } = input;
   const r = checkLayout({ ...rest, orientation: other, grid: t.grid, viewing: t.viewing === undefined ? input.viewing : t.viewing, blocks }, ctx);
@@ -328,7 +331,8 @@ function checkTurned(input, ctx, doc, err, warn) {
   for (const x of r.warnings) warn(`${where}: ${x.where}`, `In ${other}: ${x.msg}`, x.kind);
   if (!r.doc || r.errors.length) return;
   doc.turned = { orientation: other, grid: r.doc.grid, viewing: r.doc.viewing,
-    blocks: Object.fromEntries(ids.map((id) => { const x = r.doc.blocks.find((y) => y.id === id); return [id, x ? { at: x.at, style: x.style, ...(x.type === "items" && x.content.columns !== undefined ? { columns: x.content.columns } : {}) } : "hide"]; })) };
+    blocks: Object.fromEntries(ids.map((id) => { const x = r.doc.blocks.find((y) => y.id === id); return [id, x ? { at: x.at, style: x.style, ...(x.type === "items" && x.content.columns !== undefined ? { columns: x.content.columns } : {}),
+      ...(x.type === "photo" && isObj(t.blocks[id]) && t.blocks[id].image !== undefined ? { image: x.content.image } : {}) } : "hide"]; })) };
 }
 /** L1: the layout in a shape: as it is, its turned arrangement, or null when it has none for that shape. */
 export function arrange(doc, shape) {
@@ -338,7 +342,7 @@ export function arrange(doc, shape) {
   return { ...doc, orientation: shape, grid: t.grid, viewing: t.viewing, turnedFrom: doc.orientation,
     blocks: doc.blocks.filter((b) => t.blocks[b.id] && t.blocks[b.id] !== "hide").map((b) => {
       const e = t.blocks[b.id];
-      return { ...b, at: e.at, style: e.style, ...(e.columns !== undefined ? { content: { ...b.content, columns: e.columns } } : {}) };
+      return { ...b, at: e.at, style: e.style, ...(e.columns !== undefined || e.image !== undefined ? { content: { ...b.content, ...(e.columns !== undefined ? { columns: e.columns } : {}), ...(e.image !== undefined ? { image: e.image } : {}) } } : {}) };
     }) };
 }
 /** L1: the shapes a layout can be shown in */

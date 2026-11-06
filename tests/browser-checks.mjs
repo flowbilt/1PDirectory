@@ -1251,7 +1251,7 @@ try {
       blocks: [{ id: "name", type: "text", at: { col: 1, row: 1, w: 12, h: 2 }, content: { title: "Turning board" } },
         { id: "list", type: "items", at: { col: 13, row: 1, w: 12, h: 8 }, content: { heading: "Things", items: [{ name: "One" }, { name: "Two" }] } },
         { id: "wide-only", type: "text", at: { col: 1, row: 10, w: 24, h: 3 }, content: { title: "Only when wide" } }],
-      turned: { grid: { cols: 12, rows: 24, gap: 14, margin: 40 }, blocks: { name: { at: { col: 1, row: 1, w: 12, h: 2 }, style: { align: "center" } }, list: { at: { col: 1, row: 3, w: 12, h: 10 }, columns: 2 }, "wide-only": "hide" } } };
+      turned: { grid: { cols: 12, rows: 24, gap: 14, margin: 40 }, blocks: { name: { at: { col: 1, row: 1, w: 12, h: 2 }, style: { align: "center" } }, list: { at: { col: 1, row: 3, w: 12, h: 10 }, columns: 2, style: { align: "center" } }, "wide-only": "hide" } } };
     const look = async (p) => p.evaluate(() => ({ w: document.getElementById("board").style.width, ids: [...document.querySelectorAll("#blocks > .b:not([hidden])")].map((x) => x.dataset.id),
       align: getComputedStyle(document.querySelector('[data-id="name"]')).getPropertyValue("--align").trim(), over: window.LayoutBoard.fitAll().overflow }));
     const send = (p, orientation, d = doc) => p.evaluate(([dd, o]) => window.postMessage({ type: "layout-draft", data: { kind: "layout", orientation: o, layout: { id: null, name: "x", doc: dd }, images: {}, lists: null } }, location.origin), [d, orientation]);
@@ -1261,6 +1261,9 @@ try {
     await send(p, "portrait"); await p.waitForTimeout(2000);
     let r = await look(p);
     assert(r.w === "1080px" && r.ids.join() === "name,list" && r.align === "center" && !r.over.length, `portrait: ${JSON.stringify(r)}`);
+    // L1b: a list aligned centre keeps its heading and names centred (the rows are flex)
+    const jc = await p.evaluate(() => [".items-head", ".item-row"].map((s) => getComputedStyle(document.querySelector(`[data-id="list"] ${s}`)).justifyContent));
+    assert(jc.every((x) => x === "center"), `centred list: ${jc}`);
     // a Landscape screen: the layout's own
     await send(p, "landscape"); await p.waitForTimeout(2000);
     r = await look(p);

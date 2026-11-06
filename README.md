@@ -758,6 +758,23 @@ grid, so it turns by a second, hand-placed arrangement.
   directions in two columns, the department photos (smaller captions) beside In season now, then hours, clock and
   weather, and the QR code; the slogan is hidden.
 
+### L1b (DP-13): Gibbs in portrait, rearranged; a photo's own picture per shape; centred lists
+
+Scot, on the portrait board: "The gallery shows prominently on landscape and on the bottom in portrait. Let's move the
+map and directions down bottom, center Where to Find it and increase the map size ... Make the map rectangle. It fits
+the customer site layout better. Leave the bottom items where they are."
+- **Gibbs portrait** (`turned`): the logo; the department photos (w8 h7) beside In season now (w4); the map, full width
+  (h8); Where to find it centred in three columns, smaller text (size s); hours, clock, weather and the QR code where
+  they were.
+- **Wide maps:** `img:gibbs-map-entrance-wide`, `img:gibbs-map-pottery-wide` (1760 × 1100, the grounds laid out wide; still
+  "Sample map for demonstration"). The landscape board keeps its tall maps, redrawn with the porch label centred (Scot)
+  under new keys, `img:gibbs-map-entrance-tall` and `img:gibbs-map-pottery-tall` (a picture's key is fixed: an upload of the
+  same name would become "-2").
+- **A photo's picture per shape:** a turned block may say `"image"` (photos only), so a wide spot shows a wide picture
+  (`checkTurned`, `arrange`).
+- **Centred lists:** an items block aligned centre (or right) now centres its heading and each name with its price
+  (`board.js` `align-center` / `align-right` on the block; `board.css`); before, only the lines under the names moved.
+
 ## Screens and cards (Raspberry Pi)
 
 Every Pi runs from a **prepared card**, and every card is the same. A card carries no identity until it's in a Pi:

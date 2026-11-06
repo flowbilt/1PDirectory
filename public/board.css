@@ -43,6 +43,11 @@ body { font-family: "Instrument Sans", "Segoe UI", Arial, sans-serif; -webkit-fo
 .item { break-inside: avoid; padding: 0.12em 0; }
 .item-row { display: flex; align-items: baseline; gap: 0.4em; font-weight: 600; }
 .item-name { min-width: 0; }
+/* L1b (Scot: "center Where to Find it"): a list aligned centre or right keeps its heading and each name with its price
+   together there (no dotted leader or spacer pushing the price to the edge) */
+.b.align-center .items-head, .b.align-center .item-row { justify-content: center; }
+.b.align-right .items-head, .b.align-right .item-row { justify-content: flex-end; }
+.b.align-center .item-row .leader, .b.align-center .item-row .spacer, .b.align-right .item-row .leader, .b.align-right .item-row .spacer { display: none; }
 .item-row .leader { flex: 1 1 auto; border-bottom: 0.08em dotted currentColor; opacity: 0.45; transform: translateY(-0.2em); min-width: 0.6em; }
 .item-row .spacer { flex: 1 1 auto; }
 .item-price { font-weight: 700; white-space: nowrap; }

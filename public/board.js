@@ -177,7 +177,7 @@ function blockHtml(b) {
   if (b.style.tilt) styles.push(`transform:rotate(${b.style.tilt}deg)`);
   const logoSrc = b.type === "logo" && picture(doc.look?.look === "chalkboard" ? b.content.chalkImage : b.content.image);
   const logoImg = logoSrc && logoShow(b, logoSrc, b.content.text || data?.propertyName || "") !== "name";
-  const cls = ["b", b.type, logoImg ? "has-img" : "", surf !== "none" ? "surfaced" : "", b.style.border ? "bordered" : "", b.style.shadow ? "shadow" : "", b.style.case === "upper" ? "upper" : ""].filter(Boolean).join(" ");
+  const cls = ["b", b.type, b.style.align && b.style.align !== "left" ? `align-${b.style.align}` : "", logoImg ? "has-img" : "", surf !== "none" ? "surfaced" : "", b.style.border ? "bordered" : "", b.style.shadow ? "shadow" : "", b.style.case === "upper" ? "upper" : ""].filter(Boolean).join(" ");
   return `<div class="${cls}" data-id="${esc(b.id)}" style="${styles.join(";")}"><div class="b-in">${BODY[b.type](b)}</div></div>`;
 }
 

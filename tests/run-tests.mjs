@@ -3263,7 +3263,12 @@ test("L1: a layout that turns: its other shape (\"turned\") checked as a layout 
   const gp = LF.applyLook(LF.arrange(g.doc, "portrait"), { options: { "at-pottery": true } });
   const shown = gp.blocks.filter((b) => b.on !== false).map((b) => b.id);
   assert.ok(shown.includes("map-pottery") && !shown.includes("map-entrance") && shown.includes("ways-pottery") && !shown.includes("slogan"), shown.join(","));
-  assert.equal(gp.blocks.find((b) => b.id === "ways-pottery").content.columns, 2);
+  assert.equal(gp.blocks.find((b) => b.id === "ways-pottery").content.columns, 3);
+  // L1b: in portrait the maps are their wide versions (a photo may show its own picture in the other shape); only a photo can
+  assert.equal(gp.blocks.find((b) => b.id === "map-pottery").content.image, "img:gibbs-map-pottery-wide");
+  assert.equal(LF.arrange(g.doc, "landscape").blocks.find((b) => b.id === "map-pottery").content.image, "img:gibbs-map-pottery-tall");
+  const img = base(); img.turned = { grid: { cols: 12, rows: 24 }, blocks: { a: { at: { col: 1, row: 1, w: 12, h: 2 }, image: "img:x" }, b: "hide" } };
+  assert.ok(LF.checkLayout(img).errors.some((e) => /Only a photo can show another picture/.test(e.msg)));
 });
 
 test("L2: the logo block: the picture, the name or both; the name right, left or below; left, centre or right; per board (1Point's), kept in History's words", async () => {

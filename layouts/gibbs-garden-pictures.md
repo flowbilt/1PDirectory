@@ -3,7 +3,7 @@
 Gibbs Garden Center's own photos from gibbsgardencenter.com (Scot downloaded all 134, November 2026), and two
 placeholder "You are here" maps drawn for the demo. For the pitch only: they stay in the **WayTuGo Samples** account and
 aren't shown to another prospect. The files in `gibbs-pictures.zip` already carry their keys, so upload them as they
-are, all seventeen, on the wayfinding board's **Pictures** tab.
+are, all nineteen, on the wayfinding board's **Pictures** tab.
 
 | Key (file name) | Their photo | Used for |
 |---|---|---|
@@ -22,8 +22,10 @@ are, all seventeen, on the wayfinding board's **Pictures** tab.
 | `fall-decor` | gift-shop-04 | Gift shop: Fall décor |
 | `gibbs-monogram` | their GGC monogram (Scot, from Gibbs), the white taken out | Both boards: the logo's picture (L2: the name is live text beside it) |
 | `gibbs-logo` | the monogram with the name baked in beside it (G1b) | Not used since L2; fine for the Brand panel's logo on a block showing only the picture |
-| `gibbs-map-entrance` | drawn for the demo | Wayfinding: You are here, front entrance (the switch off) |
-| `gibbs-map-pottery` | drawn for the demo | Wayfinding: You are here, Pottery House (the switch on) |
+| `gibbs-map-entrance-tall` | drawn for the demo | Wayfinding: You are here, front entrance (the switch off). L1b: the porch label centred, so a new key (the first `gibbs-map-entrance` can be removed once nothing shows it) |
+| `gibbs-map-pottery-tall` | drawn for the demo | Wayfinding: You are here, Pottery House (the switch on). L1b: as above (`gibbs-map-pottery` before) |
+| `gibbs-map-entrance-wide` | drawn for the demo, wide | Wayfinding in portrait (L1b): the front entrance map, a wide rectangle |
+| `gibbs-map-pottery-wide` | drawn for the demo, wide | Wayfinding in portrait (L1b): the Pottery House map, a wide rectangle |
 
 The maps are believable placeholders ("Sample map for demonstration" at the foot): the layout of the grounds isn't
 known yet. If Gibbs signs, real maps are drawn from a walk of the grounds, one per spot the stand goes, and the
