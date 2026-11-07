@@ -1683,6 +1683,123 @@ try {
 
   await sb(`screens?id=eq.${portrait.id}`, { method: "PATCH", body: JSON.stringify({ layout_id: lay.id, property_id: home.id }) });
 
+  // ── DP-14: Light and Dark, a look by the time of day, and the building's location in the menu editor ──
+  const LFm = await import("../public/layout-format.mjs"), MFm = await import("../public/menu-format.mjs");
+  const BURGER = JSON.parse(readFileSync(new URL("../layouts/template-burger-55.json", import.meta.url), "utf8"));
+  const bx = MFm.extractMenu(BURGER);
+  const LIGHT_BG = "rgb(246, 239, 226)", DARK_BG = "rgb(23, 24, 26)";
+  const boardBg = (p) => p.evaluate(() => getComputedStyle(document.querySelector(".board")).backgroundColor);
+  const sunny = { day: "light", evening: "dark", dayAt: "06:00", eveningAt: "17:00", sun: true };
+
+  await check("D1: a look by the time of day on the board: Light by day, Dark from sunset (4:51 pm in Birmingham on Nov 6, before the 5:00 pm time), with no reload; with no location, at the 5:00 pm time; every shape in both looks, nothing overflowing", async () => {
+    const lid = "22222222-2222-4222-8222-222222222222";
+    const send = (p, place, o = "landscape") => p.evaluate((d) => window.postMessage({ type: "layout-draft", data: d }, location.origin),
+      { kind: "layout", key: "preview", orientation: o, layout: { id: lid, name: "x", version: null, doc: bx.doc }, images: {}, menu: { url: "" },
+        lists: { spec: bx.spec, content: { ...bx.content, boards: { [lid]: { when: sunny } } } }, look: { when: sunny }, timezone: "America/Chicago", weather: { enabled: false }, place, poweredBy: true });
+    const p = await browser.newPage({ viewport: { width: 1920, height: 1080 } });
+    await p.clock.install({ time: new Date("2026-11-06T16:49:00-06:00") });
+    await p.goto(`${B}/board.html?preview=1`); await p.waitForTimeout(500);
+    await send(p, { lat: 33.4663, lon: -86.808 }); await p.clock.runFor(2500);
+    assert(await boardBg(p) === LIGHT_BG, `Light at 4:49 pm: ${await boardBg(p)}`);
+    assert(/Alfa Slab One/.test(await p.evaluate(() => getComputedStyle(document.querySelector('[data-id="burgers"] .items-head')).fontFamily)), "Light's slab headings");
+    await p.evaluate(() => { window.__same = 1; });
+    await p.clock.fastForward("03:00"); await p.clock.runFor(2000);
+    assert(await boardBg(p) === DARK_BG, `Dark after sunset: ${await boardBg(p)}`);
+    assert(await p.evaluate(() => window.__same === 1), "no reload");
+    assert(/Bebas Neue/.test(await p.evaluate(() => getComputedStyle(document.querySelector('[data-id="burgers"] .items-head')).fontFamily)), "Dark's condensed headings");
+    assert((await p.evaluate(() => window.LayoutBoard.fitAll().overflow)).length === 0, "nothing overflowing");
+    await p.close();
+    // no location: the set times
+    const q = await browser.newPage({ viewport: { width: 1920, height: 1080 } });
+    await q.clock.install({ time: new Date("2026-11-06T16:55:00-06:00") });
+    await q.goto(`${B}/board.html?preview=1`); await q.waitForTimeout(500);
+    await send(q, { lat: null, lon: null }); await q.clock.runFor(2500);
+    assert(await boardBg(q) === LIGHT_BG, "no location: still Light at 4:55 pm");
+    await q.clock.fastForward("06:00"); await q.clock.runFor(2000);
+    assert(await boardBg(q) === DARK_BG, "Dark from 5:00 pm");
+    await q.close();
+    // both looks, both shapes: nothing overflowing
+    for (const [o, w, h] of [["landscape", 1920, 1080], ["portrait", 1080, 1920]]) for (const look of ["dark", "light"]) {
+      const r = await browser.newPage({ viewport: { width: w, height: h } });
+      await r.goto(`${B}/board.html?preview=1`); await r.waitForTimeout(500);
+      await r.evaluate((d) => window.postMessage({ type: "layout-draft", data: d }, location.origin),
+        { kind: "layout", key: "preview", orientation: o, layout: { id: lid, name: "x", version: null, doc: bx.doc }, images: {}, menu: { url: "" }, lists: { spec: bx.spec, content: bx.content }, look: { look }, timezone: "America/Chicago", weather: { enabled: false }, poweredBy: true });
+      await r.waitForTimeout(2500);
+      const over = await r.evaluate(() => window.LayoutBoard.fitAll().overflow);
+      const portraitArr = await r.evaluate(() => document.querySelector('[data-id="drinks-pic"]')?.hidden !== false);
+      assert(over.length === 0, `${o} ${look}: overflow ${over}`);
+      if (o === "portrait") assert(portraitArr, "the portrait arrangement (the drink photo steps aside)");
+      assert(await boardBg(r) === (look === "dark" ? DARK_BG : LIGHT_BG), `${o} ${look} colours`);
+      await shot(r, `meet-market-${o}-${look}`); await r.close();
+    }
+  });
+
+  // The Meet Market on the owner's account: a building with no location yet, its menu and its board on a screen
+  for (const k of ["double-smash", "pimento-bacon", "burger-bowl", "cheese-chips", "wings", "keto-shake"])
+    await sb("layout_images", { method: "POST", body: JSON.stringify({ org_id: home.org_id, key: k, name: k.replace(/-/g, " "), path: `${home.org_id}/${k}-1a2b3c4d.webp`, mime: "image/webp", width: 800, height: 600, bytes: 50000 }) });
+  const [mmProp] = (await sb("properties", { method: "POST", body: JSON.stringify({ org_id: home.org_id, name: "The Meet Market test", address: "123 Main Street", timezone: "America/Chicago", lat: null, lon: null }) })).data;
+  const [mmMenu] = (await sb("menus", { method: "POST", body: JSON.stringify({ org_id: home.org_id, name: "The Meet Market", customer_edit: true, spec: bx.spec, content: bx.content, rev: 1 }) })).data;
+  await sb("menu_revisions", { method: "POST", body: JSON.stringify({ menu_id: mmMenu.id, rev: 1, content: bx.content, saved_at: new Date().toISOString(), saved_by: null, by_name: "Scot", by_1point: true, restored_from: null }) });
+  const [mmLay] = (await sb("layouts", { method: "POST", body: JSON.stringify({ org_id: home.org_id, name: "Meet Market counter", orientation: "landscape", menu_id: mmMenu.id, published_version: 1 }) })).data;
+  await sb("layout_versions", { method: "POST", body: JSON.stringify({ layout_id: mmLay.id, version: 1, doc: bx.doc }) });
+  await sb(`screens?id=eq.${landscape.id}`, { method: "PATCH", body: JSON.stringify({ directory_id: null, layout_id: mmLay.id, property_id: mmProp.id }) });
+
+  await check("D1: the owner's Board look (signed in): Dark, Light or By time of day; the day and evening looks and times; the sunset tick box (no location yet: says so); the building's location and time zone saved from the menu editor (a bad one refused); Save keeps it, in History", async () => {
+    await owner.goto(`${B}/menu-edit.html?m=${mmMenu.id}`); await owner.waitForTimeout(3500);
+    const look = owner.locator(`.me-look[data-board="${mmLay.id}"]`);
+    assert(await look.isVisible(), "a Board look panel");
+    const radios = await look.locator('input[data-look-f="look"]').evaluateAll((xs) => xs.map((x) => x.value));
+    assert(radios.join() === "dark,light,time", radios.join());
+    const pvBg = () => owner.frameLocator("#pv").locator(".board").evaluate((e) => getComputedStyle(e).backgroundColor);
+    assert(await pvBg() === DARK_BG, "Dark by default in the preview");
+    await look.locator('input[data-look-f="look"][value="light"]').check(); await owner.waitForTimeout(1800);
+    assert(await pvBg() === LIGHT_BG, "Light in the preview");
+    await look.locator('input[data-look-f="look"][value="time"]').check(); await owner.waitForTimeout(800);
+    const L2 = owner.locator(`.me-look[data-board="${mmLay.id}"]`);
+    assert(await L2.locator('[data-look-f="whenDay"]').inputValue() === "light" && await L2.locator('[data-look-f="whenEvening"]').inputValue() === "dark", "Light by day, Dark in the evening");
+    assert(await L2.locator('[data-look-f="whenDayAt"]').inputValue() === "06:00" && await L2.locator('[data-look-f="whenEveningAt"]').inputValue() === "17:00", "6:00 and 17:00 to start");
+    await L2.locator('[data-look-f="whenEveningAt"]').fill("18:30"); await L2.locator('[data-look-f="whenEveningAt"]').dispatchEvent("change"); await owner.waitForTimeout(600);
+    await owner.locator(`.me-look[data-board="${mmLay.id}"] [data-look-f="whenEvening"]`).selectOption("light"); await owner.waitForTimeout(600);
+    const L3 = owner.locator(`.me-look[data-board="${mmLay.id}"]`);
+    assert(await L3.locator('[data-look-f="whenDay"]').inputValue() === "dark", "the two swap rather than becoming the same");
+    await L3.locator('[data-look-f="whenDay"]').selectOption("light"); await owner.waitForTimeout(600);
+    await owner.locator(`.me-look[data-board="${mmLay.id}"] [data-look-f="whenSun"]`).check(); await owner.waitForTimeout(800);
+    const L4 = owner.locator(`.me-look[data-board="${mmLay.id}"]`);
+    assert(await L4.locator('[data-look-f="whenDayAt"]').isDisabled(), "the times step aside");
+    assert((await L4.textContent()).includes("has no location yet, so the times above are used"), await L4.textContent());
+    // the building's location and time zone, as in the directory editor
+    const place = owner.locator(".me-place");
+    assert(await place.isVisible() && (await place.textContent()).includes("shared by The Meet Market test"), "the location panel for the board's building");
+    await place.locator('[data-place="lat"]').fill("north"); await place.locator('[data-place="lon"]').fill("-86.808");
+    await place.locator("[data-place-save]").click(); await owner.waitForTimeout(1200);
+    assert((await sb(`properties?id=eq.${mmProp.id}&select=lat`)).data[0].lat === null, "a bad location refused");
+    await owner.locator('.me-place [data-place="lat"]').fill("33.4663");
+    await owner.locator(".me-place [data-place-save]").click(); await owner.waitForTimeout(2000);
+    const [pr] = (await sb(`properties?id=eq.${mmProp.id}&select=lat,lon,timezone`)).data;
+    assert(pr.lat === 33.4663 && pr.lon === -86.808 && pr.timezone === "America/Chicago", JSON.stringify(pr));
+    const sunLine = await owner.locator(`.me-look[data-board="${mmLay.id}"] .me-when-sun`).textContent();
+    assert(/Today at The Meet Market test: sunrise \d{1,2}:\d{2} (am|AM|a\.m\.)?/i.test(sunLine) && /sunset/.test(sunLine), sunLine);
+    await shot(owner, "board-look-by-time");
+    await owner.click("#save"); await owner.waitForTimeout(3500);
+    const [m] = (await sb(`menus?id=eq.${mmMenu.id}&select=*`)).data;
+    assert(JSON.stringify(m.content.boards?.[mmLay.id]) === JSON.stringify({ when: { day: "light", evening: "dark", dayAt: "06:00", eveningAt: "18:30", sun: true } }), JSON.stringify(m.content.boards));
+    const hist = await owner.textContent("#history");
+    assert(hist.includes("Board look (Meet Market counter): one look all day → Light by day, Dark in the evening, at sunrise and sunset"), hist.slice(0, 400));
+  });
+
+  await check("D1: the screen draws the saved schedule from its building (location and time zone from the building record), by the site's clock: the look it should have right now", async () => {
+    // A real screen sets its clock from the site's time (so a Pi with a wrong clock still shows the right time), so this
+    // checks the look for the real time now; the switching itself is checked on the clock above
+    const p = await browser.newPage({ viewport: { width: 1920, height: 1080 } });
+    await p.goto(`${B}/board.html?screen=${landscape.key}&view=1`); await p.waitForTimeout(3500);
+    const d = await p.evaluate(async (k) => (await (await fetch(`/api/screen?key=${k}`)).json()), landscape.key);
+    assert(d.place && d.place.lat === 33.4663 && d.place.lon === -86.808 && d.timezone === "America/Chicago", `the building's location and time zone in the screen's answer: ${JSON.stringify([d.place, d.timezone])}`);
+    const now = LFm.zonedNow(Date.now(), d.timezone), sun = LFm.sunTimes(now.date, d.place.lat, d.place.lon, d.timezone);
+    const want = LFm.lookByTime(LFm.lookWhen(d.look.when, ["dark", "light"]), now, sun) === "light" ? LIGHT_BG : DARK_BG;
+    assert(await boardBg(p) === want, `at ${now.hm} (sunrise ${sun.rise}, sunset ${sun.set}): ${await boardBg(p)}, wanted ${want}`);
+    await p.close();
+  });
+
   await owner.close(); await boss.close();
   await sb(`screens?id=eq.${landscape.id}`, { method: "PATCH", body: JSON.stringify({ layout_id: null, property_id: null, directory_id: landscape.directory_id }) });
   void otherOrg;

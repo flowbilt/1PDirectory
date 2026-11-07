@@ -775,6 +775,39 @@ the customer site layout better. Leave the bottom items where they are."
 - **Centred lists:** an items block aligned centre (or right) now centres its heading and each name with its price
   (`board.js` `align-center` / `align-right` on the block; `board.css`); before, only the lines under the names moved.
 
+### D1 (DP-14): Light and Dark, a look by the time of day, the building's location in the menu editor, The Meet Market
+
+Scot (2026-11-06): "The idea at one point was to go with a light and dark choice ... I like dark for the default"; "The
+dark and light menus should be able to be scheduled as well"; "Sunset option is great, and it needs to be a tick box
+that overrides scheduling. Every day for now"; "This needs to be a set it and forget it"; and, on the directory editor's
+weather location and time zone, "If this isn't in the code for the menu style boards it needs to be added."
+- **Light and Dark** (`layout-format.mjs`): two looks a layout can offer, each with its own palette and fonts in
+  `theme.palettes` (`{ "dark": { "palette": { … }, "fonts": { … } }, "light": { … } }`); `theme.looks` lists them
+  (`["dark", "light"]`) and `theme.look` is the default. A layout offering them has no House; Chalkboard goes with
+  either. Each look is checked for reading (warnings say "In Light: …"). Boards on House or Chalkboard are unchanged.
+- **The brand on Light and Dark:** its fonts, accent, dark panel and highlight go on both; its background and text go on
+  the look they suit (a light background on Light, a dark one on Dark; text alone by its own shade).
+- **A look by the time of day** (the menu editor's Board look → **By time of day**): a day look from one time and an
+  evening look from another, every day, by the building's clock; **Change at sunrise and sunset instead** (a tick box)
+  overrides the two times with the building's sunrise and sunset, worked out each day from the building's location
+  (`sunTimes`, the almanac method, to a minute or two). Kept with the menu as the board's `"when": { "day", "evening",
+  "dayAt", "eveningAt", "sun" }` (customer's, like the look; `47-light-dark.sql`). The board changes look at the time
+  without reloading; the phone menu shows the look of the moment. A building with no location uses the times.
+- **Nothing about a place is in a layout:** the location and time zone are the building's (`properties.lat`, `lon`,
+  `timezone`), the same record the directory editor, the console's Buildings and the weather use; each screen uses its
+  own building (`/api/screen` sends `place` beside `timezone`).
+- **The building's location and time zone in the menu editor:** a **Location and time zone** panel (shared by the
+  board's building: the building of a screen showing it, else the account's first), with latitude, longitude and time
+  zone and its own **Save location and time zone**, saved straight to the building as the directory editor does.
+- **The Meet Market** (invented; Scot's name), the burger-joint template: a downtown keto burger bar.
+  `layouts/template-burger-55.json` (55" landscape counter board that **turns to portrait**: featured pictures, hours with
+  happy hour, burgers (room 9), off the bun (6), starters & sides with the fried cheese chips and four keto dips (9),
+  Have it your way, shakes & drinks (5), Trivia Tuesday, QR) and `layouts/template-burger-32.json` (32" portrait board on
+  the same menu: its own Today's specials by day and time, room 4). Dark by default (charcoal, amber and brick, Bebas Neue
+  and Poppins), Light offered (cream, butcher red, Alfa Slab One and Instrument Sans). Pictures: six Unsplash photos,
+  `layouts/template-burger-pictures.md`.
+- Display **2.23.0** (screens reload themselves). No Pi change.
+
 ## Screens and cards (Raspberry Pi)
 
 Every Pi runs from a **prepared card**, and every card is the same. A card carries no identity until it's in a Pi:

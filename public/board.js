@@ -10,15 +10,23 @@
 // applyMenu (public/menu-format.mjs): only the entries shown, sold out today marked, and an items or chips list keeping
 // the room for its full length (invisible rows), so the text stays the size it was designed at however much is filled.
 import { applyMenu, menuMoment } from "/menu-format.mjs";
-import { checkLayout, arrange, applyLook, applyBrand, canvas, blockBox, blockShows, zonedNow, hoursNow, nowNext, niceTime, niceDays, FONTS, SIZES, SURFACES, STYLE_PX, TAGS, QR_LINE, qrSide } from "/layout-format.mjs";
+import { checkLayout, arrange, applyLook, applyBrand, lookWhen, lookByTime, sunTimes, canvas, blockBox, blockShows, zonedNow, hoursNow, nowNext, niceTime, niceDays, FONTS, SIZES, SURFACES, STYLE_PX, TAGS, QR_LINE, qrSide } from "/layout-format.mjs";
 
-const VERSION = "2.22.1";   // = netlify/lib/version.mjs and display.js (a test keeps them equal)
+const VERSION = "2.23.0";   // = netlify/lib/version.mjs and display.js (a test keeps them equal)
 const C = window.ScreenCore;
 const { PREVIEW, CHECKS_IN, MENU, SAMPLE, cache, esc } = C;
 const READ_ONLY = MENU || SAMPLE;   // drawn for a visitor (the phone menu's See the board, or a sample link): no check-in, never turned
 const $ = (id) => document.getElementById(id);
 const stage = $("stage"), boardEl = $("board"), blocksEl = $("blocks");
-let data = null, sig = "", doc = null, drawn = null, drawnDate = "", drawnMoment = "";
+let data = null, sig = "", doc = null, drawn = null, drawnDate = "", drawnMoment = "", drawnLook = "";
+// DP-14: what decides a look that follows the clock: the building's time now, and its sunrise and sunset (from its
+// location; worked out once a day)
+let sunFor = "", sun = null;
+function lookAt(now) {
+  const pl = data?.place || data?.weather || {}, key = `${now.date}|${pl.lat}|${pl.lon}`;
+  if (key !== sunFor) { sunFor = key; sun = pl.lat != null && pl.lon != null ? sunTimes(now.date, pl.lat, pl.lon, data?.timezone || "America/Chicago") : null; }
+  return { now, sun };
+}
 // The page that's previewing this one: the console or menu editor around it, or (E2b, "Preview full size") the menu
 // editor that opened it in its own window
 const HOST = window.parent !== window ? window.parent : window.opener || null;
@@ -219,7 +227,8 @@ function render() {
   // window's shape, so a phone held upright gets the portrait arrangement); a layout with no arrangement for it as before
   drawnShape = wantedShape();
   checked.doc = arrange(checked.doc, drawnShape) || checked.doc;
-  doc = applyMenu(applyLook(applyBrand(checked.doc, data.brand), data.look), data.lists, nowHere, { room: true });
+  doc = applyMenu(applyLook(applyBrand(checked.doc, data.brand), data.look, lookAt(nowHere)), data.lists, nowHere, { room: true });
+  drawnLook = doc.look?.look || "";
   drawStart = performance.now();
   const p = doc.theme.palette, f = doc.theme.fonts;
   for (const [k, v] of Object.entries(p)) stage.style.setProperty(`--p-${k}`, v);
@@ -363,6 +372,9 @@ function live(force) {
   // E2a: at the building's midnight, "sold out today" clears: draw the lists again for the new day
   // E2b: and when a special's time comes or goes, by the building's clock (no save needed)
   if (data?.lists && drawnDate && (now.date !== drawnDate || menuMoment(data.lists, now) !== drawnMoment)) { render(); return; }
+  // DP-14: a look that follows the clock changes at its time (or at sunrise or sunset)
+  const w = data?.look?.when && lookWhen(data.look.when, doc.theme.looks || []);
+  if (w) { const a = lookAt(now); if (lookByTime(w, a.now, a.sun) !== drawnLook) { render(); return; } }
   // Which blocks show now (their schedules, in the building's time zone)
   const shown = doc.blocks.map((b) => (blockShows(b, now) ? 1 : 0)).join("");
   if (force || shown !== lastShown) {

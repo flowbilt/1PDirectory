@@ -1,0 +1,640 @@
+{
+ "format": 1,
+ "orientation": "landscape",
+ "name": "Template · Burger joint: counter board, 55\" landscape, turns to portrait (DP-14)",
+ "notes": "WayTuGo's burger-joint template: an invented downtown keto burger bar, The Meet Market (prices typical of the Birmingham area in 2026). Looks: Dark (the default) and Light, which the shop can choose or set by the time of day in the menu editor's Board look. It turns: the portrait arrangement is used when the screen's Orientation is portrait. In the WayTuGo Templates account: upload the pictures first (Pictures tab, named as in layouts/template-burger-pictures.md), paste this on the Design tab and Check, then on the Menu tab Make lists from this layout (burgers room 9, off the bun 6, starters & sides 9, shakes & drinks 5), Preview and Publish. The 32\" portrait board (template-burger-32.json) goes on the same menu.",
+ "grid": {
+  "cols": 24,
+  "rows": 13,
+  "gap": 16,
+  "margin": 30
+ },
+ "viewing": {
+  "inches": 55,
+  "metres": 4
+ },
+ "theme": {
+  "looks": [
+   "dark",
+   "light"
+  ],
+  "look": "dark",
+  "palettes": {
+   "dark": {
+    "palette": {
+     "bg": "#17181a",
+     "ink": "#f3efe6",
+     "muted": "#a49d92",
+     "accent": "#f2a516",
+     "onAccent": "#17181a",
+     "panel": "#26282c",
+     "onPanel": "#f3efe6",
+     "highlight": "#b93a16",
+     "onHighlight": "#ffffff",
+     "line": "#33363b"
+    },
+    "fonts": {
+     "display": "Bebas Neue",
+     "body": "Poppins"
+    }
+   },
+   "light": {
+    "palette": {
+     "bg": "#f6efe2",
+     "ink": "#1f1a17",
+     "muted": "#6b5d52",
+     "accent": "#b3261e",
+     "onAccent": "#ffffff",
+     "panel": "#1f1a17",
+     "onPanel": "#f6efe2",
+     "highlight": "#2f5d50",
+     "onHighlight": "#ffffff",
+     "line": "#e4d5bf"
+    },
+    "fonts": {
+     "display": "Alfa Slab One",
+     "body": "Instrument Sans"
+    }
+   }
+  }
+ },
+ "blocks": [
+  {
+   "id": "logo",
+   "type": "logo",
+   "at": {
+    "col": 1,
+    "row": 1,
+    "w": 7,
+    "h": 2
+   },
+   "style": {
+    "align": "left",
+    "size": "xl"
+   },
+   "content": {
+    "text": "The Meet Market"
+   }
+  },
+  {
+   "id": "hero",
+   "label": "Featured pictures",
+   "type": "rotator",
+   "at": {
+    "col": 1,
+    "row": 3,
+    "w": 7,
+    "h": 7
+   },
+   "style": {
+    "radius": "l",
+    "size": "l",
+    "shadow": true
+   },
+   "content": {
+    "seconds": 7,
+    "items": [
+     {
+      "image": "img:double-smash",
+      "alt": "A double smash burger in a lettuce wrap",
+      "caption": "The Double Smash",
+      "line": "Two smashed patties, American, grilled onions",
+      "price": "$12.99"
+     },
+     {
+      "image": "img:pimento-bacon",
+      "alt": "A burger with pimento cheese and bacon",
+      "caption": "The Southern Belle",
+      "line": "Pimento cheese, bacon & candied jalapeños",
+      "price": "$13.49"
+     },
+     {
+      "image": "img:burger-bowl",
+      "alt": "A bunless burger bowl",
+      "caption": "Burger Bowl",
+      "line": "Everything but the bun, over greens",
+      "price": "$12.49"
+     },
+     {
+      "image": "img:cheese-chips",
+      "alt": "Fried cheese chips with dips",
+      "caption": "Fried Cheese Chips",
+      "line": "With your pick of four keto dips",
+      "price": "$7.99"
+     },
+     {
+      "image": "img:wings",
+      "alt": "Smoked wings",
+      "caption": "Smoked Wings",
+      "line": "Dry rub or Alabama white sauce",
+      "price": "$10.99"
+     },
+     {
+      "image": "img:keto-shake",
+      "alt": "A chocolate shake",
+      "caption": "Keto Chocolate Shake",
+      "line": "Thick, rich & 6g net carbs",
+      "price": "$6.49"
+     }
+    ]
+   }
+  },
+  {
+   "id": "hours",
+   "type": "hours",
+   "at": {
+    "col": 1,
+    "row": 10,
+    "w": 7,
+    "h": 3
+   },
+   "style": {
+    "surface": "panel",
+    "radius": "m",
+    "size": "l",
+    "pad": "m",
+    "valign": "middle"
+   },
+   "content": {
+    "heading": "Hours",
+    "hours": [
+     {
+      "days": [
+       1,
+       2,
+       3,
+       4
+      ],
+      "open": "11:00",
+      "close": "21:00"
+     },
+     {
+      "days": [
+       5,
+       6
+      ],
+      "open": "11:00",
+      "close": "23:00"
+     },
+     {
+      "days": [
+       7
+      ],
+      "open": "11:00",
+      "close": "16:00"
+     }
+    ],
+    "note": "Happy hour 4–6 every weekday"
+   }
+  },
+  {
+   "id": "burgers",
+   "type": "items",
+   "at": {
+    "col": 8,
+    "row": 1,
+    "w": 9,
+    "h": 6
+   },
+   "style": {
+    "size": "m"
+   },
+   "content": {
+    "heading": "Burgers",
+    "price": "Single · Double",
+    "leaders": true,
+    "room": 9,
+    "items": [
+     {
+      "name": "The Meet & Greet",
+      "line": "Cheddar, pickles, onion, house sauce",
+      "price": "$10.99 · $13.99"
+     },
+     {
+      "name": "Bacon Bash",
+      "line": "Bacon, pepper jack, chipotle mayo",
+      "price": "$12.49 · $15.49"
+     },
+     {
+      "name": "Black & Bleu",
+      "line": "Blackened, bleu cheese, bacon",
+      "price": "$12.99 · $15.99"
+     },
+     {
+      "name": "Mushroom Swiss",
+      "line": "Sautéed mushrooms, Swiss, garlic aioli",
+      "price": "$11.99 · $14.99"
+     },
+     {
+      "name": "The Southern Belle",
+      "line": "Pimento cheese, bacon, candied jalapeños",
+      "price": "$13.49 · $16.49"
+     },
+     {
+      "name": "The Butcher's Block",
+      "line": "Half pound, chopped brisket, smoked gouda",
+      "price": "$15.99"
+     },
+     {
+      "name": "The Double Smash",
+      "line": "Two thin patties, American, grilled onions",
+      "price": "$12.99"
+     }
+    ]
+   }
+  },
+  {
+   "id": "offbun",
+   "type": "items",
+   "at": {
+    "col": 8,
+    "row": 7,
+    "w": 9,
+    "h": 4
+   },
+   "style": {
+    "size": "m"
+   },
+   "content": {
+    "heading": "Off the bun",
+    "leaders": true,
+    "room": 6,
+    "items": [
+     {
+      "name": "Burger Bowl",
+      "line": "Any burger over greens",
+      "price": "$12.49"
+     },
+     {
+      "name": "Smoked Wings",
+      "line": "6 or 12 · dry rub or white sauce",
+      "price": "$10.99 · $18.99"
+     },
+     {
+      "name": "Steak Bites",
+      "line": "Sirloin, garlic butter, peppers",
+      "price": "$15.99"
+     },
+     {
+      "name": "Grilled Chicken Wrap",
+      "line": "Bacon, avocado, ranch, in lettuce",
+      "price": "$11.99"
+     }
+    ]
+   }
+  },
+  {
+   "id": "social",
+   "label": "Announcement",
+   "type": "text",
+   "at": {
+    "col": 8,
+    "row": 11,
+    "w": 9,
+    "h": 2
+   },
+   "style": {
+    "surface": "highlight",
+    "radius": "m",
+    "size": "m",
+    "pad": "m",
+    "valign": "middle"
+   },
+   "content": {
+    "title": "Trivia Tuesday · 7 pm · bring your crew",
+    "body": "Book the back room for parties of 12 or more: (205) 555-0173"
+   }
+  },
+  {
+   "id": "sides",
+   "type": "items",
+   "at": {
+    "col": 17,
+    "row": 1,
+    "w": 8,
+    "h": 5
+   },
+   "style": {
+    "size": "m"
+   },
+   "content": {
+    "heading": "Starters & sides",
+    "leaders": true,
+    "room": 9,
+    "items": [
+     {
+      "name": "Fried Cheese Chips",
+      "line": "Dips: buffalo chicken, white sauce, chipotle ranch, jalapeño pimento",
+      "price": "$7.99"
+     },
+     {
+      "name": "Cauliflower Mac & Cheese",
+      "price": "$4.49"
+     },
+     {
+      "name": "Fried Pickles",
+      "line": "Almond crust",
+      "price": "$5.49"
+     },
+     {
+      "name": "Zucchini Fries",
+      "price": "$4.99"
+     },
+     {
+      "name": "Roasted Broccoli",
+      "price": "$3.99"
+     },
+     {
+      "name": "Pork Rinds & Pimento Dip",
+      "price": "$5.99"
+     },
+     {
+      "name": "Side Salad",
+      "price": "$3.99"
+     }
+    ]
+   }
+  },
+  {
+   "id": "wrap",
+   "label": "Your way",
+   "type": "chips",
+   "at": {
+    "col": 17,
+    "row": 6,
+    "w": 5,
+    "h": 3
+   },
+   "style": {
+    "size": "m"
+   },
+   "content": {
+    "heading": "Have it your way",
+    "price": "free",
+    "items": [
+     {
+      "name": "Lettuce wrap"
+     },
+     {
+      "name": "Keto bun"
+     },
+     {
+      "name": "Bowl"
+     },
+     {
+      "name": "Add egg +$1.50"
+     },
+     {
+      "name": "Add avocado +$2"
+     }
+    ]
+   }
+  },
+  {
+   "id": "menu-qr",
+   "type": "qr",
+   "at": {
+    "col": 22,
+    "row": 6,
+    "w": 3,
+    "h": 3
+   },
+   "style": {
+    "align": "center",
+    "size": "m"
+   },
+   "content": {
+    "line": "Scan for the menu"
+   }
+  },
+  {
+   "id": "drinks",
+   "type": "items",
+   "at": {
+    "col": 17,
+    "row": 9,
+    "w": 5,
+    "h": 4
+   },
+   "style": {
+    "surface": "accent",
+    "radius": "m",
+    "size": "m",
+    "pad": "m"
+   },
+   "content": {
+    "heading": "Shakes & drinks",
+    "leaders": true,
+    "room": 5,
+    "items": [
+     {
+      "name": "Keto Shake",
+      "line": "Chocolate · vanilla · strawberry",
+      "price": "$6.49"
+     },
+     {
+      "name": "Sugar-Free Tea",
+      "price": "$2.79"
+     },
+     {
+      "name": "Low-Carb Seltzers",
+      "price": "$5.00"
+     },
+     {
+      "name": "Draft Beer",
+      "price": "$6.00"
+     }
+    ]
+   }
+  },
+  {
+   "id": "drinks-pic",
+   "type": "photo",
+   "at": {
+    "col": 22,
+    "row": 9,
+    "w": 3,
+    "h": 4
+   },
+   "style": {
+    "radius": "m"
+   },
+   "content": {
+    "image": "img:keto-shake",
+    "alt": "A chocolate shake"
+   }
+  },
+  {
+   "id": "foot",
+   "label": "Bottom line",
+   "type": "text",
+   "at": {
+    "col": 1,
+    "row": 13,
+    "w": 18,
+    "h": 1
+   },
+   "style": {
+    "size": "s",
+    "valign": "middle",
+    "ink": "muted"
+   },
+   "content": {
+    "body": "Every burger on a lettuce wrap, keto bun or bowl · Net carbs on the phone menu · 123 Main Street, Downtown"
+   }
+  },
+  {
+   "id": "now",
+   "type": "clock",
+   "at": {
+    "col": 19,
+    "row": 13,
+    "w": 3,
+    "h": 1
+   },
+   "style": {
+    "size": "l",
+    "align": "right",
+    "valign": "middle"
+   },
+   "content": {
+    "show": "time"
+   }
+  },
+  {
+   "id": "weather",
+   "type": "weather",
+   "at": {
+    "col": 22,
+    "row": 13,
+    "w": 3,
+    "h": 1
+   },
+   "style": {
+    "size": "l",
+    "align": "right",
+    "valign": "middle"
+   },
+   "content": {}
+  }
+ ],
+ "turned": {
+  "grid": {
+   "cols": 12,
+   "rows": 27,
+   "gap": 14,
+   "margin": 40
+  },
+  "viewing": {
+   "inches": 55,
+   "metres": 3
+  },
+  "blocks": {
+   "logo": {
+    "at": {
+     "col": 1,
+     "row": 1,
+     "w": 8,
+     "h": 2
+    }
+   },
+   "now": {
+    "at": {
+     "col": 9,
+     "row": 1,
+     "w": 4,
+     "h": 1
+    }
+   },
+   "weather": {
+    "at": {
+     "col": 9,
+     "row": 2,
+     "w": 4,
+     "h": 1
+    }
+   },
+   "hero": {
+    "at": {
+     "col": 1,
+     "row": 3,
+     "w": 7,
+     "h": 7
+    }
+   },
+   "hours": {
+    "at": {
+     "col": 8,
+     "row": 3,
+     "w": 5,
+     "h": 4
+    }
+   },
+   "wrap": {
+    "at": {
+     "col": 8,
+     "row": 7,
+     "w": 5,
+     "h": 3
+    }
+   },
+   "burgers": {
+    "at": {
+     "col": 1,
+     "row": 10,
+     "w": 12,
+     "h": 7
+    }
+   },
+   "sides": {
+    "at": {
+     "col": 1,
+     "row": 17,
+     "w": 6,
+     "h": 6
+    }
+   },
+   "offbun": {
+    "at": {
+     "col": 7,
+     "row": 17,
+     "w": 6,
+     "h": 6
+    }
+   },
+   "drinks": {
+    "at": {
+     "col": 1,
+     "row": 23,
+     "w": 5,
+     "h": 4
+    }
+   },
+   "social": {
+    "at": {
+     "col": 6,
+     "row": 23,
+     "w": 4,
+     "h": 4
+    }
+   },
+   "menu-qr": {
+    "at": {
+     "col": 10,
+     "row": 23,
+     "w": 3,
+     "h": 4
+    }
+   },
+   "drinks-pic": "hide",
+   "foot": {
+    "at": {
+     "col": 1,
+     "row": 27,
+     "w": 12,
+     "h": 1
+    }
+   }
+  }
+ }
+}

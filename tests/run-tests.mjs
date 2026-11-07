@@ -2641,7 +2641,7 @@ test("menus: the editor, the console's Menus tab and the board's room are in pla
   const con = readFileSync(new URL("../public/console.html", import.meta.url), "utf8"), cjs = readFileSync(new URL("../public/console.js", import.meta.url), "utf8");
   assert.ok(con.includes('id="tab-menus"') && con.includes('id="panel-menus"') && cjs.includes("menu-edit.html?m="));
   const board = readFileSync(new URL("../public/board.js", import.meta.url), "utf8");
-  assert.ok(board.includes("applyMenu(applyLook(applyBrand(checked.doc, data.brand), data.look), data.lists, nowHere, { room: true })") && board.includes('class="item ghost"'));
+  assert.ok(board.includes("applyMenu(applyLook(applyBrand(checked.doc, data.brand), data.look, lookAt(nowHere)), data.lists, nowHere, { room: true })") && board.includes('class="item ghost"'));
 });
 
 // ── Specials with dates and times, showWhen, more lists, WayTuGo (DP-12, round E2b; supabase/33-menu-specials.sql) ──
@@ -2888,7 +2888,7 @@ test("chalkboard: a board's look kept with the menu: only the presets, in Histor
   const id = "11111111-2222-3333-4444-555555555555";
   const ok = MF.checkMenuContent(spec, { lists: {}, boards: { [id]: { look: "chalkboard", chalk: { titles: "green" }, lettering: "hand", frame: false, options: { "coffee-bar": true } } } });
   assert.deepEqual(ok.errors, []); assert.equal(ok.content.boards[id].look, "chalkboard");
-  for (const [b, w] of [[{ chalk: { titles: "#f00" } }, /white, yellow, pink, blue, green or orange/], [{ look: "neon" }, /House or Chalkboard/], [{ lettering: "comic" }, /Sign-writer or Chalk hand/],
+  for (const [b, w] of [[{ chalk: { titles: "#f00" } }, /white, yellow, pink, blue, green or orange/], [{ look: "neon" }, /House, Chalkboard, Light or Dark/], [{ lettering: "comic" }, /Sign-writer or Chalk hand/],
     [{ frame: "yes" }, /on or off/], [{ background: "x" }, /isn't part of a board's look/], [{ options: { "Coffee Bar": true } }, /ticked or not/]])
     assert.match(MF.checkMenuContent(spec, { lists: {}, boards: { [id]: b } }).errors.map((e) => e.msg).join(), w);
   assert.match(MF.checkMenuContent(spec, { lists: {}, boards: { chalkboard: {} } }).errors.map((e) => e.msg).join(), /named by its layout's id/);
@@ -2988,7 +2988,7 @@ test("chalkboard: on the counter board's menu: Add lists (specials, chalk note),
 
 test("chalkboard: the screen's files: the look drawn by the board page, the grain and its speed check, the frame, the Caveat Brush font and licence, the editor's Board look", () => {
   const board = readFileSync(new URL("../public/board.js", import.meta.url), "utf8"), css = readFileSync(new URL("../public/board.css", import.meta.url), "utf8");
-  for (const w of ["applyLook(applyBrand(checked.doc, data.brand), data.look)", "function grain()", "function measure()", '"X-Board"', "lastReport.fps < 25", "chalkImage"]) assert.ok(board.includes(w), w);
+  for (const w of ["applyLook(applyBrand(checked.doc, data.brand), data.look, lookAt(nowHere))", "function grain()", "function measure()", '"X-Board"', "lastReport.fps < 25", "chalkImage"]) assert.ok(board.includes(w), w);
   for (const w of ["#stage.look-chalk .board", "mask-image: var(--grain)", ".look-chalk.framed .board::after", "--chalk-titles", "--chalk-prices", "--chalk-accents", "bottom: var(--sold-bottom, 0.19em)"]) assert.ok(css.includes(w), w);
   assert.ok(!/sold-mark \{[^}]*top: 50%/.test(css), "the sold-out mark no longer centred across a wrapped name");
   assert.ok(readFileSync(new URL("../public/fonts/CaveatBrush-Regular.ttf", import.meta.url)).length > 10000);
@@ -3452,6 +3452,148 @@ test("T1d: a board's sizes: the QR code the same size on the glass on any screen
   assert.ok(ed.includes("function sizesHtml(") && ed.includes("${E.admin ? sizesHtml(b, ch) : \"\"}"));
   assert.ok(bj.includes("qrSide(doc, b, { size: doc.look?.sizes?.qr, inches: data?.screenInches })") && bj.includes("transform:scale(${k})"));
   assert.ok(bj.includes('for (const cap of el.querySelectorAll(".photo-cap"))') && bj.includes("for (const line of cap.children) if (line.scrollWidth > line.clientWidth + 1) return false;"), "a picture's caption is fitted too");
+});
+
+test("D1: Light and Dark: a board's two colour schemes, each with its fonts; checked; the brand on both (accent, panel and highlight on both, a background and text on the one they suit, fonts on both); the database's words", async () => {
+  const LF = await import("../public/layout-format.mjs"), MF = await import("../public/menu-format.mjs");
+  const pal = (bg, ink) => ({ bg, ink, muted: "#777777", accent: "#b3261e", onAccent: "#ffffff", panel: "#222222", onPanel: "#ffffff", highlight: "#2f5d50", onHighlight: "#ffffff", line: "#cccccc" });
+  const base = { format: 1, orientation: "landscape", grid: { cols: 12, rows: 6 }, blocks: [{ id: "t", type: "text", at: { col: 1, row: 1, w: 6, h: 2 }, content: { title: "Hello" } }] };
+  const both = { looks: ["dark", "light"], look: "dark", palettes: { dark: { palette: pal("#111111", "#f5f5f5"), fonts: { display: "Bebas Neue", body: "Poppins" } }, light: { palette: pal("#f6efe2", "#1f1a17"), fonts: { display: "Alfa Slab One", body: "Instrument Sans" } } } };
+  const c = LF.checkLayout({ ...base, theme: both });
+  assert.deepEqual(c.errors, []);
+  assert.equal(c.doc.theme.palette.bg, "#111111", "drawn by default in its default look");
+  assert.equal(c.doc.theme.fonts.display, "Bebas Neue");
+  const lt = LF.applyLook(c.doc, { look: "light" });
+  assert.equal(lt.theme.palette.bg, "#f6efe2"); assert.equal(lt.theme.fonts.display, "Alfa Slab One"); assert.equal(lt.look.look, "light");
+  assert.equal(LF.applyLook(c.doc, null).theme.palette.bg, "#111111");
+  assert.equal(LF.applyLook(c.doc, { look: "chalkboard" }).theme.palette.bg, "#111111", "a look it doesn't offer: its own default");
+  // the rules
+  const msg = (theme) => LF.checkLayout({ ...base, theme }).errors.map((e) => e.msg).join(" ");
+  assert.match(msg({ looks: ["dark", "light"] }), /"palettes"/);
+  assert.match(msg({ looks: ["dark", "light"], palettes: { dark: both.palettes.dark } }), /offers Light, so "palettes" needs "light"/);
+  assert.match(msg({ ...both, looks: ["house", "dark", "light"], look: "dark" }), /doesn't offer House as well/);
+  assert.match(msg({ looks: ["dark"], palettes: { dark: both.palettes.dark, light: both.palettes.light } }), /"light" isn't among the board's "looks"/);
+  assert.match(msg({ ...both, palettes: { ...both.palettes, dusk: both.palettes.dark } }), /isn't Light or Dark/);
+  assert.match(msg({ ...both, palettes: { ...both.palettes, dark: { palette: { bg: "black" } } } }), /must be a colour/);
+  assert.deepEqual(LF.checkLayout({ ...base, theme: { ...both, looks: ["dark", "light", "chalkboard"] } }).errors, [], "Chalkboard goes with them");
+  assert.ok(LF.checkLayout({ ...base, theme: { ...both, palette: pal("#ffffff", "#000000") } }).warnings.some((w) => /aren't used/.test(w.msg)), "a palette beside them: a warning, not a refusal");
+  assert.deepEqual(LF.checkLayout(c.doc).errors.filter((e) => /^theme/.test(e.where)), [], "a checked copy's colours check again");
+  // each look is checked for reading: a hard-to-read Light is caught even though Dark is drawn by default
+  const poor = { ...both, palettes: { ...both.palettes, light: { palette: { ...pal("#f6efe2", "#e9e0d0") }, fonts: {} } } };
+  assert.ok(LF.checkLayout({ ...base, theme: poor }).warnings.some((w) => /^In Light: /.test(w.msg)));
+  // the brand: accent on both; a dark background and light text on Dark only; fonts on both
+  const br = LF.applyBrand(c.doc, { colours: { accent: "#123456", bg: "#0a0a2a", ink: "#fafafa" }, fonts: { display: "Lora" } });
+  assert.equal(br.theme.palettes.dark.palette.bg, "#0a0a2a"); assert.equal(br.theme.palettes.light.palette.bg, "#f6efe2");
+  assert.equal(br.theme.palettes.dark.palette.accent, "#123456"); assert.equal(br.theme.palettes.light.palette.accent, "#123456");
+  assert.equal(br.theme.palettes.light.fonts.display, "Lora"); assert.equal(br.theme.palettes.dark.fonts.display, "Lora");
+  assert.equal(br.theme.palette.bg, "#0a0a2a", "the default look drawn with it");
+  assert.equal(LF.applyLook(br, { look: "light" }).theme.palette.accent, "#123456");
+  const brL = LF.applyBrand(c.doc, { colours: { bg: "#fff8ee" } });
+  assert.equal(brL.theme.palettes.light.palette.bg, "#fff8ee"); assert.equal(brL.theme.palettes.dark.palette.bg, "#111111");
+  // a House board's brand as before
+  const h = LF.checkLayout({ ...base, theme: { palette: pal("#ffffff", "#000000") } }).doc;
+  assert.equal(LF.applyBrand(h, { colours: { bg: "#0a0a2a" } }).theme.palette.bg, "#0a0a2a");
+  assert.equal(LF.applyBrand(h, { colours: { bg: "#0a0a2a" } }).theme.palettes, undefined);
+  // the menu's rules and History
+  assert.equal(MF.boardProblem({ look: "light" }), ""); assert.equal(MF.boardProblem({ look: "dark" }), "");
+  assert.match(MF.boardProblem({ look: "dusk" }), /House, Chalkboard, Light or Dark/);
+  assert.deepEqual(MF.menuChanges({ lists: [] }, { lists: {} }, { lists: {}, boards: { [crypto.randomUUID()]: { look: "light" } } }), ["Board look (a board): (as designed) → Light"]);
+});
+
+test("D1: a look by the time of day: the day look from its time and the evening look from its, every day, by the building's clock; the sunrise-and-sunset tick box overrides the times (from the building's location; none: the times); the board, the phone menu and the editor follow it", async () => {
+  const LF = await import("../public/layout-format.mjs"), MF = await import("../public/menu-format.mjs");
+  // sunrise and sunset: Birmingham (the Perimeter Park building's location), within 3 minutes of the almanac
+  const mins = (hm) => Number(hm.slice(0, 2)) * 60 + Number(hm.slice(3));
+  const near = (got, want) => Math.abs(mins(got) - mins(want)) <= 3;
+  const nov = LF.sunTimes("2026-11-06", 33.4663, -86.808, "America/Chicago"), jun = LF.sunTimes("2026-06-21", 33.4663, -86.808, "America/Chicago");
+  assert.ok(near(nov.rise, "06:11") && near(nov.set, "16:51"), JSON.stringify(nov));
+  assert.ok(near(jun.rise, "05:37") && near(jun.set, "20:00"), JSON.stringify(jun), "summer time");
+  const den = LF.sunTimes("2026-11-06", 39.74, -104.99, "America/Denver");
+  assert.ok(near(den.rise, "06:34") && near(den.set, "16:52"), JSON.stringify(den), "another time zone");
+  assert.equal(LF.sunTimes("2026-12-21", 78.2, 15.6, "Arctic/Longyearbyen"), null, "polar night");
+  assert.equal(LF.sunTimes("2026-11-06", null, null, "America/Chicago"), null, "no location");
+  // the schedule
+  const looks = ["dark", "light"];
+  const w = LF.lookWhen({ day: "light", evening: "dark", dayAt: "06:00", eveningAt: "17:00" }, looks);
+  assert.deepEqual(w, { day: "light", evening: "dark", dayAt: "06:00", eveningAt: "17:00", sun: false });
+  for (const [hm, want] of [["05:59", "dark"], ["06:00", "light"], ["16:59", "light"], ["17:00", "dark"], ["23:59", "dark"]]) assert.equal(LF.lookByTime(w, { hm }, null), want, hm);
+  const night = LF.lookWhen({ day: "dark", evening: "light", dayAt: "20:00", eveningAt: "04:00" }, looks);
+  assert.equal(LF.lookByTime(night, { hm: "23:00" }, null), "dark"); assert.equal(LF.lookByTime(night, { hm: "12:00" }, null), "light", "times across midnight");
+  const sunny = LF.lookWhen({ day: "light", evening: "dark", dayAt: "06:00", eveningAt: "17:00", sun: true }, looks);
+  assert.equal(LF.lookByTime(sunny, { hm: "16:55" }, { rise: "06:11", set: "16:51" }), "dark", "the tick box overrides 17:00");
+  assert.equal(LF.lookByTime(sunny, { hm: "06:05" }, { rise: "06:11", set: "16:51" }), "dark");
+  assert.equal(LF.lookByTime(sunny, { hm: "16:55" }, null), "light", "no location: the times");
+  assert.equal(LF.lookWhen({ day: "light", evening: "light", dayAt: "06:00", eveningAt: "17:00" }, looks), null);
+  assert.equal(LF.lookWhen({ day: "light", evening: "chalkboard", dayAt: "06:00", eveningAt: "17:00" }, looks), null, "a look the board doesn't offer");
+  // boardChoice and applyLook follow it
+  const doc = LF.checkLayout(JSON.parse(readFileSync(new URL("../layouts/template-burger-55.json", import.meta.url), "utf8"))).doc;
+  const choice = { when: { day: "light", evening: "dark", dayAt: "06:00", eveningAt: "17:00", sun: true } };
+  const at = (hm) => ({ now: { hm, date: "2026-11-06", dow: 5 }, sun: { rise: "06:11", set: "16:51" } });
+  assert.equal(LF.boardChoice(doc, choice, at("12:00")).look, "light");
+  assert.equal(LF.boardChoice(doc, choice, at("18:00")).look, "dark");
+  assert.equal(LF.applyLook(doc, choice, at("12:00")).theme.fonts.display, "Alfa Slab One");
+  assert.equal(LF.applyLook(doc, choice, at("18:00")).theme.fonts.display, "Bebas Neue");
+  assert.equal(LF.boardChoice(doc, choice).look, "light", "no clock: the day look");
+  assert.deepEqual(LF.boardChoice(doc, choice).when, { day: "light", evening: "dark", dayAt: "06:00", eveningAt: "17:00", sun: true });
+  // the menu's rules (= 47-light-dark.sql) and History
+  assert.equal(MF.boardProblem(choice), "");
+  assert.equal(MF.boardProblem({ when: { day: "house", evening: "chalkboard", dayAt: "07:00", eveningAt: "18:30" } }), "");
+  assert.match(MF.boardProblem({ when: { day: "dark", evening: "dark", dayAt: "06:00", eveningAt: "17:00" } }), /different looks/);
+  assert.match(MF.boardProblem({ when: { day: "light", evening: "dark", dayAt: "6 am", eveningAt: "17:00" } }), /times of day/);
+  assert.match(MF.boardProblem({ when: { day: "light", evening: "dark", dayAt: "17:00", eveningAt: "17:00" } }), /different times/);
+  assert.match(MF.boardProblem({ when: { day: "light", evening: "dark", dayAt: "06:00", eveningAt: "17:00", days: [1] } }), /day look, an evening look/);
+  assert.match(MF.boardProblem({ when: { day: "light", evening: "dark", dayAt: "06:00", eveningAt: "17:00", sun: "yes" } }), /ticked or not/);
+  assert.deepEqual(MF.menuChanges({ lists: [] }, { lists: {} }, { lists: {}, boards: { [crypto.randomUUID()]: choice } }), ["Board look (a board): one look all day → Light by day, Dark in the evening, at sunrise and sunset"]);
+  // the phone menu: as it is now in the building (its location from the building record, never from the layout)
+  const { renderMenu } = await import("../netlify/functions/menu.mjs");
+  const lid = crypto.randomUUID();
+  const r = { layout: { id: lid, doc: JSON.parse(readFileSync(new URL("../layouts/template-burger-55.json", import.meta.url), "utf8")) }, images: {},
+    lists: { id: "m", spec: { lists: [] }, content: { lists: {}, boards: { [lid]: choice } } }, prop: { name: "B", timezone: "America/Chicago", lat: 33.4663, lon: -86.808 } };
+  const noon = Date.parse("2026-11-06T12:00:00-06:00"), evening = Date.parse("2026-11-06T16:55:00-06:00");
+  assert.ok(renderMenu(r, "https://x", "ABCDEF", noon).includes("#f6efe2"), "Light at noon");
+  assert.ok(renderMenu(r, "https://x", "ABCDEF", evening).includes("#17181a"), "Dark after sunset (4:51 pm), before the 5:00 pm time");
+  assert.ok(renderMenu({ ...r, prop: { ...r.prop, lat: null, lon: null } }, "https://x", "ABCDEF", evening).includes("#f6efe2"), "no location: the 5:00 pm time");
+  // the screen's answer carries the building's location (for sunrise and sunset) beside its time zone
+  const { toLayoutPayload } = await import("../netlify/functions/screen.mjs");
+  const pl = toLayoutPayload({ key: "x", name: "x", orientation: "landscape" }, { id: lid, name: "B", doc: r.layout.doc, lists: null }, { timezone: "America/Denver", lat: 39.74, lon: -104.99 }, {});
+  assert.deepEqual(pl.place, { lat: 39.74, lon: -104.99 }); assert.equal(pl.timezone, "America/Denver");
+  // the board page and the editor
+  const bj = readFileSync(new URL("../public/board.js", import.meta.url), "utf8"), ed = readFileSync(new URL("../public/menu-edit.js", import.meta.url), "utf8");
+  assert.ok(bj.includes("sunTimes(now.date, pl.lat, pl.lon, data?.timezone") && bj.includes("if (lookByTime(w, a.now, a.sun) !== drawnLook) { render(); return; }"));
+  assert.ok(ed.includes('radio(`look:${b.id}`, "time", "By time of day", !!ch.when)') && ed.includes("Change at sunrise and sunset instead") && ed.includes("properties?org_id=eq.${m.org_id}&select=id,name,timezone,lat,lon"));
+  // DP-14: the building's location and time zone in the menu editor, saved to the building (as the directory editor does)
+  assert.ok(ed.includes("function placeHtml(b)") && ed.includes('Auth.db(`properties?id=eq.${id}`, { method: "PATCH", prefer: "return=minimal", body: { lat, lon, timezone: v("tz") } })'));
+  // nothing about a place is in a template
+  for (const f of ["template-burger-55.json", "template-burger-32.json"]) assert.ok(!/"(lat|lon|timezone|dayAt|eveningAt|sun)"\s*:/.test(readFileSync(new URL(`../layouts/${f}`, import.meta.url), "utf8")), `${f}: no place, time zone or look schedule in the template`);
+});
+
+test("D1: the burger-joint template (The Meet Market): Dark by default and Light; the counter board turns to portrait; its lists and rooms; the 32\" board offers Today's specials by day and time; six pictures; an invented shop", async () => {
+  const LF = await import("../public/layout-format.mjs"), MF = await import("../public/menu-format.mjs");
+  const { offerLists } = await import("../netlify/functions/layouts.mjs");
+  const read = (f) => JSON.parse(readFileSync(new URL(`../layouts/${f}`, import.meta.url), "utf8"));
+  const d55 = read("template-burger-55.json"), d32 = read("template-burger-32.json");
+  const c55 = LF.checkLayout(d55);
+  assert.deepEqual(c55.errors, []); assert.deepEqual(c55.warnings, []);
+  assert.deepEqual(c55.doc.theme.looks, ["dark", "light"]); assert.equal(c55.doc.theme.look, "dark");
+  assert.deepEqual(LF.shapesOf(c55.doc), ["landscape", "portrait"]);
+  const port = LF.arrange(c55.doc, "portrait");
+  assert.equal(port.orientation, "portrait"); assert.ok(!port.blocks.some((b) => b.id === "drinks-pic" && b.on !== false), "the drink photo steps aside in portrait");
+  const ex = MF.extractMenu(d55);
+  assert.deepEqual(Object.fromEntries(ex.spec.lists.filter((l) => ["burgers", "offbun", "sides", "drinks"].includes(l.key)).map((l) => [l.key, l.room])), { burgers: 9, offbun: 6, sides: 9, drinks: 5 });
+  assert.equal(ex.content.lists.sides.entries[0].name, "Fried Cheese Chips");
+  assert.deepEqual(MF.checkMenuContent(ex.spec, ex.content).errors, []);
+  const off = offerLists(d32, { spec: ex.spec });
+  assert.deepEqual(off.offer.map((o) => [o.key, o.room]), [["specials", 4]]);
+  assert.deepEqual(LF.checkLayout(d32, { lists: [...ex.spec.lists, ...off.spec.lists] }).errors, []);
+  const L = off.spec.lists[0], C = off.content.lists.specials;
+  const on = (date, dow, hm) => MF.shownEntries(L, C, { date, dow, hm }).map((e) => e.name);
+  assert.deepEqual(on("2026-11-04", 3, "12:30"), ["Burger of the Month: The Firecracker", "Weekday Lunch", "Wing Wednesday"]);
+  assert.deepEqual(on("2026-11-07", 6, "11:00"), ["Burger of the Month: The Firecracker", "Weekend Brunch Burger"]);
+  const pics = new Set(JSON.stringify([d55, d32]).match(/img:[a-z0-9-]+/g));
+  assert.deepEqual([...pics].sort(), ["img:burger-bowl", "img:cheese-chips", "img:double-smash", "img:keto-shake", "img:pimento-bacon", "img:wings"]);
+  const md = readFileSync(new URL("../layouts/template-burger-pictures.md", import.meta.url), "utf8");
+  for (const p of pics) assert.ok(md.includes("`" + p.slice(4) + "`"), `${p} in the pictures list`);
+  for (const d of [d55, d32]) assert.ok(!/Donut Joe|O'Henry|Salvatore|Filling Station|Our Place|Dowdle|Mi Barrio|Maker|Santos/i.test(JSON.stringify(d.blocks)), "an invented shop");
 });
 
 let passed = 0;

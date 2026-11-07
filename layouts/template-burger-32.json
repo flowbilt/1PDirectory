@@ -1,0 +1,263 @@
+{
+ "format": 1,
+ "orientation": "portrait",
+ "name": "Template · Burger joint: menu board, 32\" portrait (DP-14)",
+ "notes": "WayTuGo's burger-joint template, the portrait board beside the counter board (template-burger-55.json). On a portrait layout in the same account: Menu tab, Use this menu (the counter board's), then paste this on the Design tab and Check: it offers Today's specials (room 4, dates, days and times) as a new list on that menu; Make these lists, Preview and Publish. The other blocks show the counter board's lists. Looks: Dark (the default) and Light.",
+ "grid": {
+  "cols": 12,
+  "rows": 26,
+  "gap": 14,
+  "margin": 48
+ },
+ "viewing": {
+  "inches": 32,
+  "metres": 2
+ },
+ "theme": {
+  "looks": [
+   "dark",
+   "light"
+  ],
+  "look": "dark",
+  "palettes": {
+   "dark": {
+    "palette": {
+     "bg": "#17181a",
+     "ink": "#f3efe6",
+     "muted": "#a49d92",
+     "accent": "#f2a516",
+     "onAccent": "#17181a",
+     "panel": "#26282c",
+     "onPanel": "#f3efe6",
+     "highlight": "#b93a16",
+     "onHighlight": "#ffffff",
+     "line": "#33363b"
+    },
+    "fonts": {
+     "display": "Bebas Neue",
+     "body": "Poppins"
+    }
+   },
+   "light": {
+    "palette": {
+     "bg": "#f6efe2",
+     "ink": "#1f1a17",
+     "muted": "#6b5d52",
+     "accent": "#b3261e",
+     "onAccent": "#ffffff",
+     "panel": "#1f1a17",
+     "onPanel": "#f6efe2",
+     "highlight": "#2f5d50",
+     "onHighlight": "#ffffff",
+     "line": "#e4d5bf"
+    },
+    "fonts": {
+     "display": "Alfa Slab One",
+     "body": "Instrument Sans"
+    }
+   }
+  }
+ },
+ "blocks": [
+  {
+   "id": "logo",
+   "type": "logo",
+   "at": {
+    "col": 1,
+    "row": 1,
+    "w": 12,
+    "h": 2
+   },
+   "style": {
+    "align": "center",
+    "size": "xl"
+   },
+   "content": {
+    "text": "The Meet Market"
+   }
+  },
+  {
+   "id": "hero",
+   "label": "Featured pictures",
+   "type": "rotator",
+   "at": {
+    "col": 1,
+    "row": 3,
+    "w": 12,
+    "h": 4
+   },
+   "style": {
+    "radius": "l",
+    "size": "l",
+    "shadow": true
+   },
+   "content": {
+    "seconds": 7,
+    "list": "hero"
+   }
+  },
+  {
+   "id": "specials",
+   "label": "Today's specials",
+   "type": "items",
+   "at": {
+    "col": 1,
+    "row": 7,
+    "w": 12,
+    "h": 4
+   },
+   "style": {
+    "surface": "accent",
+    "radius": "m",
+    "size": "m",
+    "pad": "m"
+   },
+   "content": {
+    "heading": "Today's specials",
+    "leaders": true,
+    "room": 4,
+    "schedule": true,
+    "items": [
+     {
+      "name": "Burger of the Month: The Firecracker",
+      "line": "Ghost pepper jack, jalapeños, sriracha mayo",
+      "price": "$13.99"
+     },
+     {
+      "name": "Weekday Lunch",
+      "line": "Any single, a side & tea · 11 to 2",
+      "price": "$13.49",
+      "when": {
+       "days": [
+        1,
+        2,
+        3,
+        4,
+        5
+       ],
+       "from": "11:00",
+       "to": "14:00"
+      }
+     },
+     {
+      "name": "Wing Wednesday",
+      "line": "50¢ off every wing order",
+      "when": {
+       "days": [
+        3
+       ]
+      }
+     },
+     {
+      "name": "Weekend Brunch Burger",
+      "line": "Fried egg, bacon, hollandaise, on greens",
+      "price": "$14.49",
+      "when": {
+       "days": [
+        6,
+        7
+       ],
+       "from": "10:00",
+       "to": "14:00"
+      }
+     }
+    ]
+   }
+  },
+  {
+   "id": "burgers",
+   "type": "items",
+   "at": {
+    "col": 1,
+    "row": 11,
+    "w": 12,
+    "h": 7
+   },
+   "style": {
+    "size": "m"
+   },
+   "content": {
+    "heading": "Burgers",
+    "leaders": true,
+    "list": "burgers"
+   }
+  },
+  {
+   "id": "sides",
+   "type": "items",
+   "at": {
+    "col": 1,
+    "row": 18,
+    "w": 7,
+    "h": 6
+   },
+   "style": {
+    "size": "m"
+   },
+   "content": {
+    "heading": "Starters & sides",
+    "leaders": true,
+    "list": "sides"
+   }
+  },
+  {
+   "id": "drinks",
+   "type": "items",
+   "at": {
+    "col": 8,
+    "row": 18,
+    "w": 5,
+    "h": 4
+   },
+   "style": {
+    "surface": "accent",
+    "radius": "m",
+    "size": "m",
+    "pad": "m"
+   },
+   "content": {
+    "heading": "Shakes & drinks",
+    "leaders": true,
+    "list": "drinks"
+   }
+  },
+  {
+   "id": "social",
+   "label": "Announcement",
+   "type": "text",
+   "at": {
+    "col": 1,
+    "row": 24,
+    "w": 7,
+    "h": 3
+   },
+   "style": {
+    "surface": "highlight",
+    "radius": "m",
+    "size": "m",
+    "pad": "m",
+    "valign": "middle"
+   },
+   "content": {
+    "list": "social"
+   }
+  },
+  {
+   "id": "menu-qr",
+   "type": "qr",
+   "at": {
+    "col": 8,
+    "row": 22,
+    "w": 5,
+    "h": 5
+   },
+   "style": {
+    "align": "center",
+    "size": "m"
+   },
+   "content": {
+    "line": "Scan for the menu"
+   }
+  }
+ ]
+}

@@ -19,7 +19,7 @@
 // shown in the preview at once, checked for fit like any change, and kept in History.
 import { checkMenuContent, menuChanges, newEntryId, capOf, shownEntries, describeWhen, entryStatus, menuPictureKeys, ITEM_TAGS, FIELD_LABEL, BRAND_COLOURS, BRAND_FONT_ROLES, BRAND_FONTS, BRAND_NAME_MAX } from "/menu-format.mjs";
 import { shrink, asDataUrl, niceName } from "/picture-shrink.mjs";
-import { zonedNow, checkLayout, blockShows, readingOrder, boardChoice, offersChoice, applyBrand, contrast, LOOKS, CHALK, CHALK_NAMES, CHALK_ROLES, LETTERING } from "/layout-format.mjs";
+import { zonedNow, checkLayout, blockShows, readingOrder, boardChoice, offersChoice, applyBrand, contrast, sunTimes, niceTime, WHEN_DEFAULT, LOOKS, CHALK, CHALK_NAMES, CHALK_ROLES, LETTERING } from "/layout-format.mjs";
 const nowHere = () => zonedNow(Date.now(), E.tz);
 
 const { esc, toast, since } = window.UI;
@@ -48,7 +48,7 @@ async function load() {
   try { const c = await Auth.config(); if (c.menuBase) E.menuBase = c.menuBase; } catch { /* the default */ }
   const [layouts, props] = await Promise.all([
     Auth.db(`layouts?menu_id=eq.${MENU_ID}&select=id,name,orientation,published_version,menu_code&order=name.asc`),
-    Auth.db(`properties?org_id=eq.${m.org_id}&select=id,name,timezone&order=name.asc`).catch(() => []),
+    Auth.db(`properties?org_id=eq.${m.org_id}&select=id,name,timezone,lat,lon&order=name.asc`).catch(() => []),
     loadPics(),
   ]);
   const live = layouts.filter((l) => l.published_version);
@@ -261,6 +261,19 @@ function logoRows(doc, ch) {
     + sel("logoLine", ["one", "wrap"], lb.content.line || "wrap", "Name's lines")
     + sel("logoWeight", ["regular", "bold"], lb.content.weight || "bold", "Name's weight");
 }
+// DP-14 (Scot): the look by the time of day: a day look and an evening look, every day, by the building's clock; the
+// sunrise-and-sunset tick box overrides the two times
+function lookTimesHtml(b, w, looks) {
+  const pick = (f, v) => `<select data-look-f="${f}" aria-label="${f === "whenDay" ? "Day look" : "Evening look"}">${looks.map((l) => `<option value="${esc(l)}"${l === v ? " selected" : ""}>${esc(LOOKS[l])}</option>`).join("")}</select>`;
+  const time = (f, v, label) => `<input type="time" step="300" data-look-f="${f}" value="${esc(v)}" aria-label="${label}"${w.sun ? " disabled" : ""}>`;
+  const pl = b.prop, tz = pl?.timezone || E.tz, sun = pl?.lat != null && pl?.lon != null ? sunTimes(zonedNow(Date.now(), tz).date, pl.lat, pl.lon, tz) : null;
+  const sunLine = !pl ? "" : sun ? `Today at ${esc(pl.name)}: sunrise ${esc(niceTime(sun.rise))}, sunset ${esc(niceTime(sun.set))}.`
+    : `${esc(pl.name)} has no location yet, so the times above are used. Set the building's location in the console.`;
+  return `<div class="me-look-row"><span class="me-look-label">By day</span>${pick("whenDay", w.day)}<span class="me-when-from">from</span>${time("whenDayAt", w.dayAt, "Day look starts")}</div>
+    <div class="me-look-row"><span class="me-look-label">Evening</span>${pick("whenEvening", w.evening)}<span class="me-when-from">from</span>${time("whenEveningAt", w.eveningAt, "Evening look starts")}</div>
+    <div class="me-look-row"><span class="me-look-label"></span><label class="check inline"><input type="checkbox" data-look-f="whenSun"${w.sun ? " checked" : ""}> Change at sunrise and sunset instead</label></div>
+    ${w.sun && sunLine ? `<p class="hint me-when-sun">${sunLine}</p>` : ""}`;
+}
 function lookHtml(b) {
   const doc = b.checked, ch = boardChoice(doc, E.draft.boards?.[b.id]), mine = E.draft.boards?.[b.id] && Object.keys(E.draft.boards[b.id]).some((k) => k !== "sizes");
   const looks = doc.theme.looks || ["house"], chalk = ch.look === "chalkboard";
@@ -270,9 +283,10 @@ function lookHtml(b) {
     + `<span style="background:${hex}"></span><em>${esc(CHALK_NAMES[k])}</em></label>`).join("")}</div>`;
   const fk = `look:${b.id}`;
   return `<section class="panel me-look${folded(fk) ? " is-folded" : ""}" data-board="${esc(b.id)}" data-fold-key="${esc(fk)}">
-    <div class="panel-head">${foldHead(fk, `Board look <span class="sub">· ${esc(b.name)}</span>`, LOOKS[ch.look] || "")}</div>
+    <div class="panel-head">${foldHead(fk, `Board look <span class="sub">· ${esc(b.name)}</span>`, ch.when ? `${LOOKS[ch.when.day]} by day · ${LOOKS[ch.when.evening]} in the evening` : LOOKS[ch.look] || "")}</div>
     <p class="hint">Choose how this board looks. Every choice here is made to read well on the board; the preview shows it before you save.</p>
-    ${looks.length > 1 ? `<div class="me-look-row"><span class="me-look-label">Look</span>${looks.map((l) => radio(`look:${b.id}`, l, LOOKS[l], ch.look === l)).join("")}</div>` : ""}
+    ${looks.length > 1 ? `<div class="me-look-row"><span class="me-look-label">Look</span>${looks.map((l) => radio(`look:${b.id}`, l, LOOKS[l], !ch.when && ch.look === l)).join("")}${radio(`look:${b.id}`, "time", "By time of day", !!ch.when)}</div>` : ""}
+    ${ch.when ? lookTimesHtml(b, ch.when, looks) : ""}
     ${chalk ? Object.keys(CHALK_ROLES).map((r) => `<div class="me-look-row"><span class="me-look-label">${esc(CHALK_ROLES[r])}</span>${swatches(r)}</div>`).join("")
       + `<div class="me-look-row"><span class="me-look-label">Lettering</span>${Object.entries(LETTERING).map(([k, lbl]) => radio(`lettering:${b.id}`, k, lbl, ch.chalk.lettering === k)).join("")}</div>`
       + `<div class="me-look-row"><span class="me-look-label">Frame</span><label class="check inline"><input type="checkbox" data-look-f="frame"${ch.chalk.frame ? " checked" : ""}> Wooden frame around the board</label></div>` : ""}
@@ -333,6 +347,28 @@ function boardLists(b) {
     other, rest: all.filter((k) => !shows.has(k) && !elsewhere.has(k)) };
 }
 E.laterOpen = false;
+// DP-14 (Scot: the directory editor's "Weather location and time zone" ... "If this isn't in the code for the menu style
+// boards it needs to be added"): the board's building's latitude, longitude and time zone, the same building record the
+// directory editor and the console's Buildings change (anyone on the account can save it, as in the directory editor).
+// Its time zone runs the boards' clocks, hours and specials; its location gives the weather and sunrise and sunset.
+const TZS = [["America/Chicago", "Central"], ["America/New_York", "Eastern"], ["America/Denver", "Mountain"], ["America/Phoenix", "Arizona"], ["America/Los_Angeles", "Pacific"]];
+function placeHtml(b) {
+  const p = b?.prop, fk = "place";
+  if (!b) return "";
+  if (!p) return `<section class="panel me-place"><div class="panel-head"><h2>Location and time zone</h2></div>
+    <p class="hint">This account has no building yet, so its boards keep Central time and can't change looks at sunrise and sunset. WayTuGo adds the building in the console.</p></section>`;
+  const tz = p.timezone || "America/Chicago", tzName = (TZS.find(([v]) => v === tz) || [tz, tz])[1];
+  return `<section class="panel me-place${folded(fk) ? " is-folded" : ""}" data-fold-key="${fk}" data-prop="${esc(p.id)}">
+    <div class="panel-head">${foldHead(fk, `Location and time zone <span class="sub">· shared by ${esc(p.name)}</span>`, `${p.lat != null && p.lon != null ? "Location set" : "No location yet"} · ${tzName}`)}</div>
+    <div class="me-place-row">
+      <label><span>Latitude</span><input data-place="lat" inputmode="decimal" placeholder="e.g. 33.4663" value="${p.lat ?? ""}"></label>
+      <label><span>Longitude</span><input data-place="lon" inputmode="decimal" placeholder="e.g. -86.808" value="${p.lon ?? ""}"></label>
+      <label><span>Time zone</span><select data-place="tz">${TZS.map(([v, n]) => `<option value="${v}"${tz === v ? " selected" : ""}>${n}</option>`).join("")}${TZS.some(([v]) => v === tz) ? "" : `<option value="${esc(tz)}" selected>${esc(tz)}</option>`}</select></label>
+    </div>
+    <p class="hint">The time zone runs the boards' clock, hours and specials. The location gives the weather and, for a look by the time of day, sunrise and sunset. Both are the building's, shared with its directories. Tip: in Google Maps, right-click the building and click the numbers at the top of the menu to copy its latitude and longitude.</p>
+    <button type="button" class="ghost" data-place-save>Save location and time zone</button>
+  </section>`;
+}
 function drawLists() {
   const b = pickedBoard(), G = boardLists(b), L = (k) => E.spec.lists.find((x) => x.key === k);
   const always = (k) => E.nofit.has(k) && !!L(k);   // a list that doesn't fit stays in view wherever it is
@@ -344,6 +380,7 @@ function drawLists() {
   $("lists").innerHTML = `<p class="hint me-intro">Change what's on your boards here. The layout, headings, colours and sizes are set by WayTuGo; ask WayTuGo to change them, or for more room on a list.${E.boards.length > 1 ? " These are the lists on the board in Preview; choose another board there to change its lists." : ""}</p>`
     + (E.admin ? brandHtml() : "")
     + E.boards.filter((x) => x.checked && (offersChoice(x.checked) || E.admin) && (!b || x.id === b.id)).map(lookHtml).join("")
+    + placeHtml(b)
     + G.now.map((k) => listHtml(L(k))).join("")
     + later
     + G.rest.map((k) => listHtml(L(k))).join("")
@@ -501,7 +538,17 @@ $("lists").addEventListener("change", (ev) => {
   E.draft.boards ||= {};
   const c = E.draft.boards[id] = { ...(E.draft.boards[id] || {}) };
   const f = t.dataset.lookF;
-  if (f === "look") c.look = t.value;
+  if (f === "look" && t.value === "time") {   // DP-14: by the time of day: Light by day and Dark in the evening when it offers them
+    const looks = b.checked.theme.looks || ["house"], now = boardChoice(b.checked, c).look;
+    const day = looks.includes("light") ? "light" : now, evening = looks.includes("dark") && day !== "dark" ? "dark" : looks.find((l) => l !== day);
+    c.when = { day, evening, ...WHEN_DEFAULT }; delete c.look;
+  } else if (f === "look") { c.look = t.value; delete c.when; }
+  else if (f === "whenDay" || f === "whenEvening") {
+    const w = { ...c.when }, k = f === "whenDay" ? "day" : "evening", other = k === "day" ? "evening" : "day";
+    if (w[other] === t.value) w[other] = w[k];   // the two swap rather than becoming the same look
+    w[k] = t.value; c.when = w;
+  } else if (f === "whenDayAt" || f === "whenEveningAt") { if (/^\d{2}:\d{2}$/.test(t.value)) c.when = { ...c.when, [f === "whenDayAt" ? "dayAt" : "eveningAt"]: t.value }; }
+  else if (f === "whenSun") { c.when = { ...c.when }; if (t.checked) c.when.sun = true; else delete c.when.sun; }
   else if (f === "chalk") c.chalk = { ...(c.chalk || {}), [t.dataset.role]: t.value };
   else if (f === "lettering") c.lettering = t.value;
   else if (f === "frame") c.frame = t.checked;
@@ -520,6 +567,23 @@ $("lists").addEventListener("click", (ev) => {
   const sizes = E.draft.boards[id]?.sizes;   // T1d: the sizes are WayTuGo's, not part of the customer's choices
   delete E.draft.boards[id]; if (sizes) E.draft.boards[id] = { sizes };
   showBoard(id); drawLists(); schedulePreview();
+});
+// DP-14: saving the building's location and time zone (straight to the building, apart from the menu's own Save)
+$("lists").addEventListener("click", async (ev) => {
+  const btn = ev.target.closest("[data-place-save]"); if (!btn) return;
+  const sec = btn.closest(".me-place"), id = sec.dataset.prop, v = (k) => sec.querySelector(`[data-place="${k}"]`).value.trim();
+  const lat = v("lat") === "" ? null : Number(v("lat")), lon = v("lon") === "" ? null : Number(v("lon"));
+  if ((lat === null) !== (lon === null) || (lat !== null && !(lat >= -90 && lat <= 90 && lon >= -180 && lon <= 180))) {
+    toast("The location is a latitude and a longitude, like 33.4663 and -86.808 (or leave both blank).", true); return;
+  }
+  btn.disabled = true;
+  try {
+    await Auth.db(`properties?id=eq.${id}`, { method: "PATCH", prefer: "return=minimal", body: { lat, lon, timezone: v("tz") } });
+    for (const b of E.boards) if (b.prop?.id === id) Object.assign(b.prop, { lat, lon, timezone: v("tz") });
+    E.tz = E.boards[0]?.prop?.timezone || E.tz;
+    drawLists(); schedulePreview();
+    toast("Saved. The building's directories and boards use it within a minute.");
+  } catch (e) { btn.disabled = false; toast(`Not saved: ${e.message}`, true); }
 });
 /** The preview turns to the board being changed */
 function showBoard(id) { if ($("board-pick").value !== id && E.boards.some((b) => b.id === id)) { $("board-pick").value = id; $("phone-line").innerHTML = phoneLine(E.boards.find((b) => b.id === id)); } }
@@ -549,6 +613,7 @@ function tidy(content) {
   for (const [id, b] of Object.entries(content.boards || {})) {
     const x = {};
     if (b?.look) x.look = b.look;
+    if (b?.when) x.when = { ...b.when };   // DP-14
     if (b?.chalk && Object.keys(b.chalk).length) x.chalk = { ...b.chalk };
     if (b?.lettering) x.lettering = b.lettering;
     if (typeof b?.frame === "boolean") x.frame = b.frame;
@@ -622,7 +687,7 @@ function payload(board, content, shape = shapeOf(board)) {
   const images = Object.fromEntries(E.pics.map((p) => [p.key, { url: `/img/${p.path}`, w: 0, h: 0 }]));
   return { kind: "layout", key: "preview", orientation: shape, layout: { id: board.id, name: board.name, version: board.published_version, doc: board.doc },
     images, menu: { url: E.menuBase + board.menu_code }, lists: { id: E.menu.id, spec: E.spec, content }, look: content.boards?.[board.id] || null, brand: content.brand || null,
-    propertyName: board.prop?.name || "", timezone: board.prop?.timezone || E.tz, weather: { enabled: false }, poweredBy: true };
+    propertyName: board.prop?.name || "", timezone: board.prop?.timezone || E.tz, weather: { enabled: false }, place: { lat: board.prop?.lat ?? null, lon: board.prop?.lon ?? null }, poweredBy: true };
 }
 // E2e (DP-13): the board fits the column's width and the window's height (a portrait board was taller than a laptop's
 // window, so its foot was cut off), leaving room under it for the buttons and the first lines of the tabs below

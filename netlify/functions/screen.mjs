@@ -237,6 +237,7 @@ export function toLayoutPayload(screen, layout, prop, images) {
     address: prop?.address || "",
     timezone: prop?.timezone || "America/Chicago",
     weather: { enabled: prop?.lat != null && prop?.lon != null, lat: prop?.lat ?? null, lon: prop?.lon ?? null },
+    place: { lat: prop?.lat ?? null, lon: prop?.lon ?? null },   // DP-14: for sunrise and sunset (a look that follows the clock)
     poweredBy: !screen.hide_powered_by,                    // "Powered by WayTuGo"; 1Point can hide it per screen
     touch: !!screen.touch,
     screenInches: Number.isFinite(Number(screen.screen_inches)) && screen.screen_inches !== null ? Number(screen.screen_inches) : null,

@@ -407,6 +407,15 @@ dialog.wide #dlg-body { max-height: 72vh; overflow: auto; padding-right: 4px; }
 /* ── E2d (DP-13): Board look in the menu editor ── */
 .me-look .me-look-row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; margin: 10px 0; }
 .me-look .me-look-label { width: 84px; font-weight: 600; font-size: 14px; }
+/* DP-14: the look by the time of day */
+.me-look .me-when-from { font-size: 14px; color: var(--muted, #5b6470); }
+.me-look input[type="time"] { font: inherit; padding: 4px 6px; }
+.me-look input[type="time"]:disabled { opacity: .45; }
+.me-look .me-when-sun { margin: -4px 0 8px 96px; }
+/* DP-14: the building's location and time zone in the menu editor */
+.me-place .me-place-row { display: flex; flex-wrap: wrap; gap: 10px 14px; margin: 10px 0; }
+.me-place .me-place-row label { display: flex; flex-direction: column; gap: 4px; font-size: 14px; font-weight: 600; flex: 1 1 140px; }
+.me-place .me-place-row input, .me-place .me-place-row select { font: inherit; font-weight: 400; padding: 6px 8px; }
 .me-choice { display: inline-flex; align-items: center; gap: 6px; border: 1px solid var(--line); border-radius: 999px; padding: 5px 12px; cursor: pointer; font-size: 14px; }
 .me-choice input { width: auto; margin: 0; }
 .me-choice.is-on { border-color: var(--accent, #0d3b66); box-shadow: inset 0 0 0 1px var(--accent, #0d3b66); }

@@ -45,7 +45,7 @@ export const MAX_LISTS = 20, GROUP_PRICE_MAX = 24, NOTE_MAX = 80, MAX_BYTES = 25
 export const BOARD_QR_SIZES = { s: 70, m: 100, l: 130 };
 // T1e (DP-13; Scot): a board's headings and body text, as a share of the layout's sizes
 export const BOARD_TEXT_SIZES = [80, 90, 100, 110, 120, 130];
-export const BOARD_LOOKS = ["house", "chalkboard"], BOARD_CHALK = ["white", "yellow", "pink", "blue", "green", "orange"], BOARD_LETTERING = ["sign", "hand"];
+export const BOARD_LOOKS = ["house", "chalkboard", "light", "dark"], BOARD_CHALK = ["white", "yellow", "pink", "blue", "green", "orange"], BOARD_LETTERING = ["sign", "hand"];
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 
 // ── T1b (DP-13): the shop's brand, kept with the menu (content.brand) and drawn on every board on it, the phone menu and
@@ -88,8 +88,18 @@ export function brandProblem(b, { images } = {}) {
 /** E2d: checks one board's choice. Returns an error in plain words, or "". */
 export function boardProblem(b) {
   if (!isObj(b)) return "Each board's look is { \"look\", \"chalk\", \"lettering\", \"frame\", \"options\" }.";
-  for (const k of Object.keys(b)) if (!["look", "chalk", "lettering", "frame", "options", "sizes"].includes(k)) return `"${k}" isn't part of a board's look.`;
-  if (b.look !== undefined && !BOARD_LOOKS.includes(b.look)) return "The look is House or Chalkboard.";
+  for (const k of Object.keys(b)) if (!["look", "chalk", "lettering", "frame", "options", "sizes", "when"].includes(k)) return `"${k}" isn't part of a board's look.`;
+  if (b.look !== undefined && !BOARD_LOOKS.includes(b.look)) return "The look is House, Chalkboard, Light or Dark.";
+  // DP-14: the look by the time of day: a day look and an evening look, their times, or sunrise and sunset (47-light-dark.sql)
+  if (b.when !== undefined) {
+    const w = b.when, hm = (v) => str(v) && /^([01]\d|2[0-3]):[0-5]\d$/.test(v);
+    if (!isObj(w) || Object.keys(w).some((k) => !["day", "evening", "dayAt", "eveningAt", "sun"].includes(k))) return "The look by the time of day is a day look, an evening look, their times and the sunset tick box.";
+    if (!BOARD_LOOKS.includes(w.day) || !BOARD_LOOKS.includes(w.evening)) return "The day and evening looks are House, Chalkboard, Light or Dark.";
+    if (w.day === w.evening) return "The day look and the evening look are different looks.";
+    if (!hm(w.dayAt) || !hm(w.eveningAt)) return "The day and evening times are times of day, like 06:00 and 17:00.";
+    if (w.dayAt === w.eveningAt) return "The day look and the evening look start at different times.";
+    if (w.sun !== undefined && typeof w.sun !== "boolean") return "Sunrise and sunset is ticked or not.";
+  }
   if (b.chalk !== undefined) {
     if (!isObj(b.chalk)) return "The chalk colours are for titles, prices and accents.";
     for (const [k, v] of Object.entries(b.chalk)) {
@@ -464,11 +474,14 @@ export function menuChanges(spec, before, after, max = 40, boardNames = null) {
   }
   // E2d: the boards' looks and options
   const bb = before?.boards || {}, ab = after?.boards || {};
-  const LB = { house: "House", chalkboard: "Chalkboard", sign: "Sign-writer", hand: "Chalk hand" };
+  const LB = { house: "House", chalkboard: "Chalkboard", light: "Light", dark: "Dark", sign: "Sign-writer", hand: "Chalk hand" };
   for (const id of new Set([...Object.keys(bb), ...Object.keys(ab)])) {
     const o = bb[id] || {}, n = ab[id] || {}, name = boardNames?.[id] || "a board";
     const word = (v) => (v === undefined ? "(as designed)" : typeof v === "boolean" ? (v ? "on" : "off") : LB[v] || v);
     if (o.look !== n.look) lines.push(`Board look (${name}): ${word(o.look)} → ${word(n.look)}`);
+    // DP-14: the look by the time of day
+    const sayWhen = (w) => (!w ? "one look all day" : `${LB[w.day] || w.day} by day, ${LB[w.evening] || w.evening} in the evening, ${w.sun ? "at sunrise and sunset" : `from ${w.dayAt} and ${w.eveningAt}`}`);
+    if (sayWhen(o.when) !== sayWhen(n.when)) lines.push(`Board look (${name}): ${sayWhen(o.when)} → ${sayWhen(n.when)}`);
     for (const r of ["titles", "prices", "accents"]) if (o.chalk?.[r] !== n.chalk?.[r]) lines.push(`Board look (${name}): ${r} chalk ${word(o.chalk?.[r])} → ${word(n.chalk?.[r])}`);
     if (o.lettering !== n.lettering) lines.push(`Board look (${name}): lettering ${word(o.lettering)} → ${word(n.lettering)}`);
     if (o.frame !== n.frame) lines.push(`Board look (${name}): wooden frame ${word(o.frame)} → ${word(n.frame)}`);

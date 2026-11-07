@@ -42,7 +42,11 @@ export const FONTS = {
 // white chalk, a chalk grain on the lettering, and an optional wooden frame. The layout says which looks it offers
 // (theme.looks) and its defaults (theme.look, theme.chalk); the customer's choice is kept with the menu
 // (menu-format.mjs, content.boards) and drawn by applyLook below.
-export const LOOKS = { house: "House", chalkboard: "Chalkboard" };
+// DP-14 (Scot, 2026-11-06: "a light and dark choice ... I like dark for the default"): "light" and "dark", two colour
+// schemes a layout can offer, each with its own palette and fonts (theme.palettes); a layout offering them has no
+// "house". Chalkboard goes with either. The customer's choice can also follow the clock (boardChoice's "when").
+export const LOOKS = { house: "House", chalkboard: "Chalkboard", light: "Light", dark: "Dark" };
+export const SCHEMES = ["light", "dark"];
 export const SLATE = "#2a3230";
 export const CHALK = { white: "#f3f1e8", yellow: "#f6dd6b", pink: "#f4a7c1", blue: "#9fd3f0", green: "#a9df9c", orange: "#f6b46a" };
 export const CHALK_NAMES = { white: "White", yellow: "Yellow", pink: "Pink", blue: "Blue", green: "Green", orange: "Orange" };
@@ -163,26 +167,32 @@ export function checkLayout(input, ctx = {}) {
   // Theme
   const th = isObj(input.theme) ? input.theme : {};
   if (input.theme !== undefined && !isObj(input.theme)) err("theme", "\"theme\" is { \"palette\": { … }, \"fonts\": { … } }.");
-  else if (isObj(input.theme)) known(th, ["palette", "fonts", "background", "looks", "look", "chalk"], "theme");
-  const palette = { ...DEFAULT_PALETTE };
-  if (th.palette !== undefined) {
-    if (!isObj(th.palette)) err("theme.palette", "The palette is { \"bg\": \"#ffffff\", \"ink\": \"#1b1f24\", … }.");
-    else for (const [k, v] of Object.entries(th.palette)) {
-      if (!PALETTE_KEYS.includes(k)) err(`theme.palette.${k}`, `"${k}" isn't a palette colour (allowed: ${PALETTE_KEYS.join(", ")}).`);
-      else if (typeof v !== "string" || !HEX_RE.test(v)) err(`theme.palette.${k}`, `${k} must be a colour like "#c0392b".`);
-      else palette[k] = v.length === 4 ? `#${v[1]}${v[1]}${v[2]}${v[2]}${v[3]}${v[3]}` : v.toLowerCase();
+  else if (isObj(input.theme)) known(th, ["palette", "fonts", "palettes", "background", "looks", "look", "chalk"], "theme");
+  const readPalette = (src, at) => {
+    const out = { ...DEFAULT_PALETTE };
+    if (src === undefined) return out;
+    if (!isObj(src)) { err(at, "The palette is { \"bg\": \"#ffffff\", \"ink\": \"#1b1f24\", … }."); return out; }
+    for (const [k, v] of Object.entries(src)) {
+      if (!PALETTE_KEYS.includes(k)) err(`${at}.${k}`, `"${k}" isn't a palette colour (allowed: ${PALETTE_KEYS.join(", ")}).`);
+      else if (typeof v !== "string" || !HEX_RE.test(v)) err(`${at}.${k}`, `${k} must be a colour like "#c0392b".`);
+      else out[k] = v.length === 4 ? `#${v[1]}${v[1]}${v[2]}${v[2]}${v[3]}${v[3]}` : v.toLowerCase();
     }
-  }
-  const fonts = { display: "Instrument Sans", body: "Instrument Sans", accent: "Instrument Sans" };
-  if (th.fonts !== undefined) {
-    if (!isObj(th.fonts)) err("theme.fonts", "The fonts are { \"display\": \"Fraunces\", \"body\": \"Instrument Sans\", \"accent\": \"Pacifico\" }.");
-    else for (const [k, v] of Object.entries(th.fonts)) {
-      if (!["display", "body", "accent"].includes(k)) err(`theme.fonts.${k}`, `"${k}" isn't a font role (display, body, accent).`);
-      else if (!FONTS[v]) err(`theme.fonts.${k}`, `"${v}" isn't on the font list (${Object.keys(FONTS).join(", ")}).`);
-      else fonts[k] = v;
+    return out;
+  };
+  const readFonts = (src, at) => {
+    const out = { display: "Instrument Sans", body: "Instrument Sans", accent: "Instrument Sans" };
+    if (src === undefined) return out;
+    if (!isObj(src)) { err(at, "The fonts are { \"display\": \"Fraunces\", \"body\": \"Instrument Sans\", \"accent\": \"Pacifico\" }."); return out; }
+    for (const [k, v] of Object.entries(src)) {
+      if (!["display", "body", "accent"].includes(k)) err(`${at}.${k}`, `"${k}" isn't a font role (display, body, accent).`);
+      else if (!FONTS[v]) err(`${at}.${k}`, `"${v}" isn't on the font list (${Object.keys(FONTS).join(", ")}).`);
+      else out[k] = v;
     }
-  }
-  if (th.fonts && fonts.accent === "Instrument Sans" && !th.fonts.accent) fonts.accent = fonts.display;
+    if (out.accent === "Instrument Sans" && !src.accent) out.accent = out.display;
+    return out;
+  };
+  let palette = readPalette(th.palette, "theme.palette");
+  let fonts = readFonts(th.fonts, "theme.fonts");
 
   // E2d: the looks the layout offers, and its defaults (1Point's); the customer picks among them in the menu editor
   let looks = ["house"], look = "house";
@@ -195,6 +205,29 @@ export function checkLayout(input, ctx = {}) {
     else if (!looks.includes(th.look)) err("theme.look", `"look" is "${th.look}", which isn't among its "looks".`);
     else look = th.look;
   } else if (!looks.includes(look)) look = looks[0];
+  // DP-14: Light and Dark, each { "palette": { … }, "fonts": { … } }; the board as drawn by default is its default look's
+  let palettes = null;
+  const schemes = looks.filter((l) => SCHEMES.includes(l));
+  if (th.palettes !== undefined || schemes.length) {
+    const P = th.palettes;
+    if (!isObj(P)) err("theme.palettes", "\"palettes\" is { \"dark\": { \"palette\": { … }, \"fonts\": { … } }, \"light\": { … } }, one for each of Light and Dark the board offers.");
+    else {
+      palettes = {};
+      for (const k of Object.keys(P)) if (!SCHEMES.includes(k)) err(`theme.palettes.${k}`, `"${k}" isn't Light or Dark ("light", "dark").`);
+      else if (!schemes.includes(k)) err(`theme.palettes.${k}`, `There's a "${k}" palette, but "${k}" isn't among the board's "looks".`);
+      for (const k of schemes) {
+        const e = P[k];
+        if (!isObj(e)) { err(`theme.palettes.${k}`, `The board offers ${LOOKS[k]}, so "palettes" needs "${k}": { "palette": { … }, "fonts": { … } }.`); continue; }
+        known(e, ["palette", "fonts"], `theme.palettes.${k}`);
+        palettes[k] = { palette: readPalette(e.palette, `theme.palettes.${k}.palette`), fonts: readFonts(e.fonts, `theme.palettes.${k}.fonts`) };
+      }
+    }
+    if (looks.includes("house") && schemes.length) err("theme.looks", "A board offering Light and Dark doesn't offer House as well (House is a board's one colour scheme).");
+    // (a warning, not a refusal: the colours and fonts in "palettes" are the ones drawn, and a checked copy says both)
+    if (schemes.length && (th.palette !== undefined || th.fonts !== undefined)) warn("theme", "This board offers Light and Dark, so its colours and fonts come from \"palettes\"; \"palette\" and \"fonts\" aren't used.", "theme");
+    const base = palettes?.[SCHEMES.includes(look) ? look : schemes[0]];
+    if (base) { palette = { ...base.palette }; fonts = { ...base.fonts }; }
+  }
   const chalk = { ...CHALK_DEFAULT };
   if (th.chalk !== undefined) {
     if (!isObj(th.chalk)) err("theme.chalk", "\"chalk\" is { \"titles\": \"yellow\", \"prices\": \"pink\", \"accents\": \"blue\", \"lettering\": \"sign\", \"frame\": false }.");
@@ -288,12 +321,14 @@ export function checkLayout(input, ctx = {}) {
       if (image) background = { image, dim: dim ?? 60 };
     }
   }
-  const doc = { format: FORMAT, orientation, grid, viewing, theme: { palette, fonts, ...(background ? { background } : {}), looks, look, chalk }, options, blocks };
+  const doc = { format: FORMAT, orientation, grid, viewing, theme: { palette, fonts, ...(palettes ? { palettes } : {}), ...(background ? { background } : {}), looks, look, chalk }, options, blocks };
   if (!errors.length) {
     guardrails(doc, warn, ctx);
     // E2d: the chalkboard drawn with its default colours is checked too (every chalk colour passes on slate, so this
     // only speaks when a layout's own palette is used on it somewhere)
     if (looks.includes("chalkboard") && look !== "chalkboard") guardrails(applyLook(doc, { look: "chalkboard" }), (w, m, k) => warn(w, `On the chalkboard: ${m}`, k), ctx);
+    // DP-14: and each of Light and Dark it offers besides the one drawn by default
+    for (const l of schemes) if (l !== look && palettes?.[l]) guardrails(applyLook(doc, { look: l }), (w, m, k) => warn(w, `In ${LOOKS[l]}: ${m}`, k), ctx);
   }
   if (input.turned !== undefined && ["portrait", "landscape"].includes(orientation)) checkTurned(input, ctx, doc, err, warn);
   return { errors, warnings, doc };
@@ -348,12 +383,61 @@ export function arrange(doc, shape) {
 /** L1: the shapes a layout can be shown in */
 export const shapesOf = (doc) => (doc?.turned ? [doc.orientation, doc.turned.orientation] : doc ? [doc.orientation] : []);
 
+// ── DP-14 (Scot: "The dark and light menus should be able to be scheduled ... Sunset option is great, and it needs to be
+// a tick box that overrides scheduling. Every day for now."): a board's look by the time of day. The choice's "when":
+// { "day": "<look>", "evening": "<look>", "dayAt": "HH:MM", "eveningAt": "HH:MM", "sun": true|false }: the day look
+// from dayAt, the evening look from eveningAt, every day, by the building's clock; ticked, "sun" uses the building's
+// sunrise and sunset instead (worked out from its location; a building with no location keeps the times). ──
+export const WHEN_DEFAULT = { dayAt: "06:00", eveningAt: "17:00" };
+const HM_RE = /^([01]\d|2[0-3]):[0-5]\d$/;
+/** A "when" that can be used with these looks, or null. */
+export function lookWhen(when, looks) {
+  if (!isObj(when) || !looks.includes(when.day) || !looks.includes(when.evening) || when.day === when.evening) return null;
+  const dayAt = HM_RE.test(when.dayAt || "") ? when.dayAt : WHEN_DEFAULT.dayAt, eveningAt = HM_RE.test(when.eveningAt || "") ? when.eveningAt : WHEN_DEFAULT.eveningAt;
+  if (dayAt === eveningAt) return null;
+  return { day: when.day, evening: when.evening, dayAt, eveningAt, sun: when.sun === true };
+}
+const deg = Math.PI / 180;
+/** Sunrise and sunset ("HH:MM", the building's clock) on a date ("YYYY-MM-DD") at a place; null in polar day or night,
+ *  or with no place. The almanac method (zenith 90.833°: the sun's top edge, with the air's bending), to a minute or two. */
+export function sunTimes(date, lat, lon, tz) {
+  if (lat === null || lon === null || lat === undefined || lon === undefined || lat === "" || lon === "") return null;   // no location (not 0, 0)
+  lat = Number(lat); lon = Number(lon);
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(date || "");
+  if (!m || !Number.isFinite(lat) || !Number.isFinite(lon) || Math.abs(lat) > 90 || Math.abs(lon) > 180) return null;
+  const y = +m[1], mo = +m[2], d = +m[3];
+  const N = Math.round((Date.UTC(y, mo - 1, d) - Date.UTC(y, 0, 0)) / 864e5), lngHour = lon / 15;
+  const at = (rise) => {
+    const t = N + ((rise ? 6 : 18) - lngHour) / 24, M = 0.9856 * t - 3.289;
+    const L = (((M + 1.916 * Math.sin(M * deg) + 0.020 * Math.sin(2 * M * deg) + 282.634) % 360) + 360) % 360;
+    let RA = (((Math.atan(0.91764 * Math.tan(L * deg)) / deg) % 360) + 360) % 360;
+    RA = (RA + Math.floor(L / 90) * 90 - Math.floor(RA / 90) * 90) / 15;
+    const sinDec = 0.39782 * Math.sin(L * deg), cosDec = Math.cos(Math.asin(sinDec));
+    const cosH = (Math.cos(90.833 * deg) - sinDec * Math.sin(lat * deg)) / (cosDec * Math.cos(lat * deg));
+    if (cosH > 1 || cosH < -1) return null;
+    const H = (rise ? 360 - Math.acos(cosH) / deg : Math.acos(cosH) / deg) / 15;
+    const UT = ((H + RA - 0.06571 * t - 6.622 - lngHour) % 24 + 24) % 24;
+    return zonedNow(Date.UTC(y, mo - 1, d) + UT * 3600e3, tz).hm;
+  };
+  const rise = at(true), set = at(false);
+  return rise && set ? { rise, set } : null;
+}
+/** The look a "when" gives now (now: zonedNow's answer; sun: sunTimes' answer or null) */
+export function lookByTime(w, now, sun) {
+  if (!w || !now?.hm) return null;
+  const [from, to] = w.sun && sun ? [sun.rise, sun.set] : [w.dayAt, w.eveningAt];
+  const day = from < to ? now.hm >= from && now.hm < to : now.hm >= from || now.hm < to;
+  return day ? w.day : w.evening;
+}
+
 /** E2d: the board's look and options as drawn: the layout's defaults, with the customer's choice (menu content.boards
  *  [layout id]) where it's one the layout offers. Returns { look, chalk: { titles, prices, accents, lettering, frame },
- *  options: { key: true|false } }. */
-export function boardChoice(doc, choice) {
+ *  options: { key: true|false } }. DP-14: at = { now, sun } decides a look that follows the clock (without it, the
+ *  day look); "when" in the answer is that schedule as used, or null. */
+export function boardChoice(doc, choice, at = null) {
   const th = doc?.theme || {}, looks = th.looks || ["house"], c = isObj(choice) ? choice : {};
-  const look = LOOKS[c.look] && looks.includes(c.look) ? c.look : th.look || looks[0];
+  const when = lookWhen(c.when, looks);
+  const look = when ? (lookByTime(when, at?.now, at?.sun) || when.day) : LOOKS[c.look] && looks.includes(c.look) ? c.look : th.look || looks[0];
   const chalk = { ...CHALK_DEFAULT, ...(th.chalk || {}) };
   const cc = isObj(c.chalk) ? c.chalk : {};
   for (const k of Object.keys(CHALK_ROLES)) if (CHALK[cc[k]]) chalk[k] = cc[k];
@@ -373,7 +457,7 @@ export function boardChoice(doc, choice) {
     // one line or wrapping, regular or bold
     logoFont: FONTS[c.sizes?.logoFont] ? c.sizes.logoFont : null, logoSize: LOGO_NAME_SIZES.includes(c.sizes?.logoSize) ? c.sizes.logoSize : 100,
     logoLine: LOGO_LINE.includes(c.sizes?.logoLine) ? c.sizes.logoLine : null, logoWeight: LOGO_WEIGHT.includes(c.sizes?.logoWeight) ? c.sizes.logoWeight : null };
-  return { look, chalk, options, sizes };
+  return { look, chalk, options, sizes, when };
 }
 
 /** E2d: whether a layout offers the customer anything to choose (a second look, or an option). */
@@ -389,11 +473,13 @@ export const offersChoice = (doc) => (doc?.theme?.looks || []).length > 1 || (do
 const mixHex = (a, b, t) => `#${hexRgb(a).map((v, i) => Math.round(v * (1 - t) + hexRgb(b)[i] * t).toString(16).padStart(2, "0")).join("")}`;
 /** White or the darkest of two inks, whichever reads better on a colour */
 const onColour = (c, dark) => (contrast("#ffffff", c) >= contrast(dark, c) ? "#ffffff" : dark);
-export function applyBrand(doc, brand) {
-  if (!doc || !brand || typeof brand !== "object") return doc;
-  const c = brand.colours && typeof brand.colours === "object" ? brand.colours : {};
-  const hex = (v) => typeof v === "string" && /^#[0-9a-fA-F]{6}$/.test(v);
-  const p0 = doc.theme.palette, p = { ...p0 };
+const isHex6 = (v) => typeof v === "string" && /^#[0-9a-fA-F]{6}$/.test(v);
+/** A light colour (dark text reads better on it than white) */
+const isLight = (c) => contrast(c, "#000000") > contrast(c, "#ffffff");
+/** The brand's colours on one palette (the colours on them and the quieter ones worked out to suit) */
+function brandPalette(p0, c) {
+  const hex = isHex6;
+  const p = { ...p0 };
   for (const k of ["bg", "ink", "accent", "panel", "highlight"]) if (hex(c[k])) p[k] = c[k];
   if (Object.keys(c).some((k) => hex(c[k]))) {
     const dark = contrast(p.ink, "#ffffff") > contrast(p.bg, "#ffffff") ? p.ink : p.bg;
@@ -403,9 +489,29 @@ export function applyBrand(doc, brand) {
     if (hex(c.highlight)) p.onHighlight = onColour(p.highlight, dark);
     if (hex(c.ink) || hex(c.bg)) { p.muted = mixHex(p.ink, p.bg, 0.35); p.line = mixHex(p.ink, p.bg, 0.82); }
   }
+  return p;
+}
+export function applyBrand(doc, brand) {
+  if (!doc || !brand || typeof brand !== "object") return doc;
+  const c = brand.colours && typeof brand.colours === "object" ? brand.colours : {};
+  let p = brandPalette(doc.theme.palette, c), palettes = doc.theme.palettes;
+  // DP-14: on a board with Light and Dark, the accent, dark panel and highlight go on both; the background and text go
+  // on the one they suit (a light background on Light, a dark one on Dark; text alone by its own shade)
+  if (palettes) {
+    const fits = isHex6(c.bg) ? (isLight(c.bg) ? "light" : "dark") : isHex6(c.ink) ? (isLight(c.ink) ? "dark" : "light") : null;
+    const shared = Object.fromEntries(["accent", "panel", "highlight"].filter((k) => isHex6(c[k])).map((k) => [k, c[k]]));
+    const forLook = (l) => (l === fits ? { ...shared, ...(isHex6(c.bg) ? { bg: c.bg } : {}), ...(isHex6(c.ink) ? { ink: c.ink } : {}) } : shared);
+    palettes = Object.fromEntries(Object.entries(palettes).map(([l, e]) => [l, { ...e, palette: brandPalette(e.palette, forLook(l)) }]));
+    const base = SCHEMES.includes(doc.theme.look) ? doc.theme.look : Object.keys(palettes)[0];
+    if (palettes[base]) p = { ...palettes[base].palette };
+  }
   const f = brand.fonts && typeof brand.fonts === "object" ? brand.fonts : {};
   const fonts = { ...doc.theme.fonts };
   for (const k of ["display", "body"]) if (FONTS[f[k]]) fonts[k] = f[k];
+  // DP-14: the brand's fonts on Light and Dark both
+  if (palettes) palettes = Object.fromEntries(Object.entries(palettes).map(([l, e]) => {
+    const ff = { ...e.fonts }; for (const k of ["display", "body"]) if (FONTS[f[k]]) ff[k] = f[k]; return [l, { ...e, fonts: ff }];
+  }));
   const name = typeof brand.name === "string" && brand.name.trim() ? brand.name.trim().slice(0, 60) : null;
   const logo = typeof brand.logo === "string" && /^img:[a-z0-9][a-z0-9-]{0,59}$/.test(brand.logo) ? brand.logo : null;
   const blocks = (name || logo) ? doc.blocks.map((b) => {
@@ -415,18 +521,21 @@ export function applyBrand(doc, brand) {
     if (logo) content.image = logo; else if (name) delete content.image;
     return { ...b, content };
   }) : doc.blocks;
-  return { ...doc, blocks, theme: { ...doc.theme, palette: p, fonts } };
+  return { ...doc, blocks, theme: { ...doc.theme, palette: p, fonts, ...(palettes ? { palettes } : {}) } };
 }
 
-export function applyLook(doc, choice) {
+export function applyLook(doc, choice, at = null) {
   if (!doc) return doc;
-  const ch = boardChoice(doc, choice);
+  const ch = boardChoice(doc, choice, at);
   const sz = ch.sizes, logoBy = sz.logoShow || sz.logoPlace || sz.logoAlign || sz.logoFont || sz.logoSize !== 100 || sz.logoLine || sz.logoWeight;
   const blocks = doc.blocks.map((b) => (b.showWhen?.option ? { ...b, on: b.on !== false && (ch.options[b.showWhen.option] === true) === (b.showWhen.is === "on") } : b))
     // L2: this board's choice for its logo block (picture, name or both; the name's place; the alignment)
     .map((b) => (b.type === "logo" && logoBy ? { ...b, content: { ...b.content, ...(sz.logoShow ? { show: sz.logoShow } : {}), ...(sz.logoPlace ? { place: sz.logoPlace } : {}),
       ...(sz.logoFont ? { nameFont: sz.logoFont } : {}), ...(sz.logoSize !== 100 ? { nameSize: sz.logoSize } : {}), ...(sz.logoLine ? { line: sz.logoLine } : {}), ...(sz.logoWeight ? { weight: sz.logoWeight } : {}) },
       style: { ...b.style, ...(sz.logoAlign ? { align: sz.logoAlign } : {}) } } : b));
+  // DP-14: Light or Dark: that look's palette and fonts
+  const sc = SCHEMES.includes(ch.look) && doc.theme.palettes?.[ch.look];
+  if (sc) return { ...doc, blocks, theme: { ...doc.theme, palette: { ...sc.palette }, fonts: { ...sc.fonts } }, look: { ...ch, item: null } };
   if (ch.look !== "chalkboard") return { ...doc, blocks, look: { ...ch, item: null } };
   const t = CHALK[ch.chalk.titles], pr = CHALK[ch.chalk.prices], ac = CHALK[ch.chalk.accents], lf = LETTER_FONTS[ch.chalk.lettering];
   const palette = { bg: SLATE, ink: CHALK.white, muted: "#c9cbc2", accent: "#343e3b", onAccent: CHALK.white, panel: "#343e3b", onPanel: CHALK.white,
