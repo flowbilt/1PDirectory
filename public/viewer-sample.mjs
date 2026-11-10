@@ -9,7 +9,8 @@ export const LIMITS = { name: 60, subtitle: 60 };
 
 const clean = (v, n) => String(v ?? "").replace(/[\u0000-\u001f\u007f<>]/g, "").replace(/\s+/g, " ").trim().slice(0, n);
 
-/** The viewer's choices, as kept: { v, kind, name, subtitle, tenants, shape, weather, qr, places, contacts } */
+/** The viewer's choices, as kept: { v, kind, name, subtitle, tenants, shape, weather, qr, places, contacts, news }
+ *  (V1b, DP-14: "news", sample headlines in the information box; older visits have no "news", which is off) */
 export function normalizeConfig(c) {
   const x = c && typeof c === "object" ? c : {};
   const n = Math.round(Number(x.tenants));
@@ -18,19 +19,20 @@ export function normalizeConfig(c) {
     kind: KINDS[x.kind] ? x.kind : "directory",
     name: clean(x.name, LIMITS.name),
     subtitle: clean(x.subtitle, LIMITS.subtitle),
-    tenants: Number.isFinite(n) ? Math.min(MAX_TENANTS, Math.max(MIN_TENANTS, n)) : 12,
+    tenants: Number.isFinite(n) ? Math.min(MAX_TENANTS, Math.max(MIN_TENANTS, n)) : 10,   // V1b: 10 to start (Scot)
     shape: x.shape === "portrait" ? "portrait" : "landscape",
     weather: x.weather !== false,
     qr: x.qr === true,
     places: x.places === true,
     contacts: x.contacts !== false,
+    news: x.news === true,
   };
 }
 
 /** Problems with choices sent to be kept (the same rules as supabase/48-viewer.sql's viewer_config_problem) */
 export function configProblem(c) {
   if (!c || typeof c !== "object" || Array.isArray(c)) return "The choices are an object.";
-  const keys = ["v", "kind", "name", "subtitle", "tenants", "shape", "weather", "qr", "places", "contacts"];
+  const keys = ["v", "kind", "name", "subtitle", "tenants", "shape", "weather", "qr", "places", "contacts", "news"];
   for (const k of Object.keys(c)) if (!keys.includes(k)) return `"${k}" isn't one of the viewer's choices.`;
   if (c.v !== 1) return "The choices are version 1.";
   if (!KINDS[c.kind]) return "The display is a building directory or a touch directory.";
@@ -38,13 +40,14 @@ export function configProblem(c) {
   if (!Number.isInteger(c.tenants) || c.tenants < MIN_TENANTS || c.tenants > MAX_TENANTS) return `The tenants are ${MIN_TENANTS} to ${MAX_TENANTS}.`;
   if (!["landscape", "portrait"].includes(c.shape)) return "The screen is landscape or portrait.";
   for (const k of ["weather", "qr", "places", "contacts"]) if (typeof c[k] !== "boolean") return `${k} is on or off.`;
+  if (c.news !== undefined && typeof c.news !== "boolean") return "news is on or off.";
   return "";
 }
 
 /** One line for an inquiry or the console, e.g. "Touch directory · Landmark Business Center · 12 tenants · portrait · weather, QR" */
 export function summary(c) {
   c = normalizeConfig(c);
-  const extras = [c.weather && "weather", c.qr && "QR", c.places && "places", c.contacts && "contacts"].filter(Boolean);
+  const extras = [c.weather && "weather", c.news && "news", c.qr && "QR", c.places && "places", c.contacts && "contacts"].filter(Boolean);
   return [KINDS[c.kind], c.name || "(no name)", `${c.tenants} tenants`, c.shape, extras.length ? extras.join(", ") : "no extras"].join(" · ");
 }
 
@@ -69,6 +72,16 @@ const PLACES = [
   { name: "Main Street Deli", line: "Sandwiches and salads to go", distance: "3 min walk" },
   { name: "Riverside Bank ATM", line: "In the lobby, by the elevators", distance: "Lobby" },
   { name: "Greenway Fitness", line: "Day passes for visitors", distance: "5 min walk" },
+];
+// Sample headlines for the information box (V1b): plainly samples, so a live feed's news never sits in a sales demo.
+// A real screen shows live headlines from a news feed.
+const HEADLINES = [
+  "Sample headline: City breaks ground on a new riverfront park",
+  "Sample headline: Downtown farmers market returns this Saturday",
+  "Sample headline: Local high school robotics team heads to state finals",
+  "Sample headline: New bike lanes open along First Avenue",
+  "Sample headline: Library extends weekend hours for the holidays",
+  "Sample headline: Regional airport adds two new nonstop routes",
 ];
 function hash(s) { let h = 2166136261; for (const ch of String(s)) h = Math.imul(h ^ ch.codePointAt(0), 16777619); return h >>> 0; }
 function rand(seed) { let a = seed || 1; return () => { a = (a + 0x6d2b79f5) | 0; let t = Math.imul(a ^ (a >>> 15), 1 | a); t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t; return ((t ^ (t >>> 14)) >>> 0) / 4294967296; }; }
@@ -101,7 +114,10 @@ export function sampleDirectory(c, { togoUrl = "https://waytugo.com/" } = {}) {
     // Weather for 1Point's home (Birmingham, Alabama): real weather, so the sample looks alive
     weather: { enabled: c.weather, lat: 33.5186, lon: -86.8104 },
     timezone: "America/Chicago",
-    news: { enabled: false, rotateSeconds: 12 },
+    // V1b: sample headlines when news is on. Ticked, news or places keeps its box (Scot: "Viewer keeps it"): a real
+    // landscape screen gives the box up when the names would be clearly bigger without it
+    news: { enabled: c.news, rotateSeconds: 8, items: c.news ? HEADLINES.map((title) => ({ title, source: "Sample news", published: null, image: "" })) : [] },
+    keepInfo: c.news || c.places,
     traffic: { map: false, times: false, lat: null, lon: null, mapsKey: "", destinations: [] },
     amenities: [],
     placeLists: c.places ? [{ heading: "Nearby", items: PLACES.map((p) => ({ ...p })) }] : [],

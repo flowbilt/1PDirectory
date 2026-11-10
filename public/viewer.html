@@ -36,8 +36,8 @@
           <input name="name" maxlength="60" placeholder="e.g. Landmark Business Center"></label>
         <label class="vw-field"><span>Subtitle <em>optional</em></span>
           <input name="subtitle" maxlength="60" placeholder="e.g. 2100 First Avenue North"></label>
-        <label class="vw-field"><span>About how many tenants? <output id="tenants-out">12</output></span>
-          <input name="tenants" type="range" min="4" max="60" step="1" value="12"></label>
+        <label class="vw-field"><span>About how many tenants? <output id="tenants-out">10</output></span>
+          <input name="tenants" type="range" min="4" max="60" step="1" value="10"></label>
         <div class="vw-field"><span>Screen</span>
           <div class="vw-seg" role="radiogroup" aria-label="Screen">
             <label><input type="radio" name="shape" value="landscape" checked><span>Landscape</span></label>
@@ -50,7 +50,9 @@
         <label class="vw-check"><input type="checkbox" name="weather" checked><span>Weather beside the clock</span></label>
         <label class="vw-check"><input type="checkbox" name="contacts" checked><span>Building contacts (managed by, leasing)</span></label>
         <label class="vw-check"><input type="checkbox" name="qr"><span>Directory to Go: a QR code visitors scan to take the directory with them</span></label>
+        <label class="vw-check"><input type="checkbox" name="news"><span>News headlines (samples here; a real screen shows live news)</span></label>
         <label class="vw-check"><input type="checkbox" name="places"><span>Places and promotions nearby</span></label>
+        <p class="vw-note">News and places take turns in the same box. With a very long tenant list, the screen gives that room to the names.</p>
       </fieldset>
 
       <div class="vw-cta">

@@ -1858,6 +1858,28 @@ try {
     await p.close();
   });
 
+  await check("V1b: the viewer starts as a landscape building directory with 10 tenants, even after a reload; News headlines (samples) and places take turns in the screen's information box, which shows at 10 tenants", async () => {
+    const p = await browser.newPage({ viewport: { width: 1360, height: 900 } });
+    await p.goto(`${B}/viewer.html`); await p.waitForTimeout(1500);
+    await p.check('input[name="shape"][value="portrait"]'); await p.fill('input[name="tenants"]', "30"); await p.waitForTimeout(500);
+    await p.reload(); await p.waitForTimeout(1800);
+    assert(await p.isChecked('input[name="shape"][value="landscape"]') && await p.isChecked('input[name="kind"][value="directory"]'), "landscape building directory after a reload");
+    assert(await p.inputValue('input[name="tenants"]') === "10" && (await p.textContent("#tenants-out")).trim() === "10", "10 tenants");
+    const scr = p.frameLocator("#pv");
+    assert(await scr.locator("#news").isHidden(), "no box until news or places is ticked");
+    await p.check('input[name="news"]'); await p.waitForTimeout(3000);
+    assert(await scr.locator("#news").isVisible(), "the box at 10 tenants");
+    const seen = new Set();
+    for (let i = 0; i < 8; i++) { seen.add((await scr.locator("#news-slides .slide.on").textContent().catch(() => "")).trim()); await p.waitForTimeout(1200); }
+    assert([...seen].some((t) => t.startsWith("Sample headline:") && t.includes("Sample news")), `sample headlines: ${[...seen].join(" | ")}`);
+    await p.check('input[name="places"]'); await p.waitForTimeout(2000);
+    const both = new Set();
+    for (let i = 0; i < 26; i++) { both.add((await scr.locator("#news-slides .slide.on").textContent().catch(() => "")).trim()); await p.waitForTimeout(1000); }
+    assert([...both].some((t) => t.includes("Corner Bakery")) && [...both].some((t) => t.startsWith("Sample headline:")), `news and places take turns: ${[...both].join(" | ").slice(0, 400)}`);
+    await shot(p, "viewer-news-places");
+    await p.close();
+  });
+
   await check("V1: the viewer on its own (not embedded): Request a Quote shows the phone, the email and the configuration's code; nothing told to any page; on a phone the preview sits above the choices", async () => {
     const p = await browser.newPage({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true });
     await p.goto(`${B}/viewer.html`); await p.waitForTimeout(1800);
@@ -1891,7 +1913,7 @@ try {
     assert(await boss.locator("#tab-viewer").isVisible(), "1Point's Viewer tab");
     const rowsText = await boss.textContent("#viewer-rows");
     assert(rowsText.includes("Landmark Business Center") && rowsText.includes("google / cpc / directory-fall") && rowsText.includes("Sent") && rowsText.includes("Phone Test Plaza") && rowsText.includes("Started"), rowsText.slice(0, 500));
-    assert(/3 visits · 2 asked for a quote \(1 sent the form\)/.test(await boss.textContent("#viewer-summary")), await boss.textContent("#viewer-summary"));
+    assert(/^\d+ visits · 2 asked for a quote \(1 sent the form\)$/.test((await boss.textContent("#viewer-summary")).trim()), await boss.textContent("#viewer-summary"));
     await boss.locator("#viewer-rows tr", { hasText: "Landmark Business Center" }).locator("[data-view]").click(); await boss.waitForTimeout(2500);
     const fr = boss.frameLocator("#viewer-dlg-frame");
     const names = await fr.locator(".tenant-name").allTextContents();

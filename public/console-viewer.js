@@ -13,7 +13,7 @@ const from = (src) => {
   const s = src || {}, ad = [s.utm_source, s.utm_medium, s.utm_campaign].filter(Boolean).join(" / ");
   return ad || s.page || "";
 };
-const extras = (c) => [c.weather && "Weather", c.contacts && "Contacts", c.qr && "QR", c.places && "Places"].filter(Boolean).join(", ") || "None";
+const extras = (c) => [c.weather && "Weather", c.news && "News", c.contacts && "Contacts", c.qr && "QR", c.places && "Places"].filter(Boolean).join(", ") || "None";
 
 async function load() {
   const days = Number($("viewer-days").value);

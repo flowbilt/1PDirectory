@@ -10,7 +10,7 @@
 */
 (() => {
   "use strict";
-  const VERSION = "2.23.1";   // = netlify/lib/version.mjs (a test keeps them equal)
+  const VERSION = "2.23.2";   // = netlify/lib/version.mjs (a test keeps them equal)
   // What every screen does (which screen, check-in, clock, rotation, Identify, lockdown, reloads, offline cache) is in
   // screen-core.js, shared with the layout page (DP-11, round E1a).
   const C = window.ScreenCore;
@@ -106,12 +106,15 @@
     const size = () => parseFloat($("tenants").style.getPropertyValue("--tf")) || 0;
     if (newsWanted() && attempt(u * 2.5, false, true)) {
       // In landscape the news takes a whole column. Move it aside only if that makes names clearly bigger.
-      if (!stage.classList.contains("landscape")) return;
+      // DP-14 (V1b): the viewer on waytugo.com keeps the box when the visitor ticks news or places, to show its room
+      if (!stage.classList.contains("landscape") || (PREVIEW && data?.keepInfo)) return;
       const withNews = size();
       if (attempt(u * 2.3, false, false) && size() > withNews * 1.15) return;
       attempt(u * 2.5, false, true);
       return;
     }
+    // DP-14 (V1b): the viewer keeps the box if the names fit beside it at all (smaller, or in two columns)
+    if (PREVIEW && data?.keepInfo && newsWanted() && (attempt(u * 1.9, false, true) || attempt(u * 1.9, true, true))) return;
     if (attempt(u * 2.3, false, false)) return;
     if (attempt(u * 1.9, true, false)) return;
     attempt(u * 1.9, true, false); // over capacity: smallest two-column size, overflow clipped
@@ -510,6 +513,7 @@
   }
 
   async function loadNews() {
+    if (news.sample) return;   // DP-14 (V1b): a preview sent its own sample headlines
     let items = [];
     try {
       const n = await getJSON("/api/news", { cache: "default" });
@@ -808,7 +812,8 @@
   window.addEventListener("resize", () => { sizeStage(); fitTenants(); if (data) placeBackground(); });
   const cached = cache.get("directory");
   if (cached) apply(cached);
-  loadDirectory().then(() => { loadNews(); loadTimes(); if (!data) setTimeout(() => location.reload(), 30000); });
+  // (a preview gets its data from the page that holds it, so it never reloads for want of it: DP-14, V1b)
+  loadDirectory().then(() => { loadNews(); loadTimes(); if (!data && !PREVIEW) setTimeout(() => location.reload(), 30000); });
   setInterval(loadDirectory, POLL_DIRECTORY_MS);
   setInterval(loadWeather, POLL_WEATHER_MS);
   setInterval(loadNews, POLL_NEWS_MS);
@@ -832,7 +837,11 @@
     window.addEventListener("message", (e) => {
       if (e.origin !== location.origin || e.data?.type !== "draft" || !e.data.data) return;
       draftMode = true;
+      // DP-14 (V1b): a preview may bring its own sample headlines (the viewer on waytugo.com) in place of the live news
+      const sample = e.data.data.news?.items;
+      if (Array.isArray(sample)) { news.sample = true; news.items = sample.filter((n) => n && typeof n.title === "string").slice(0, 12); }
       apply({ site: SITE, ...e.data.data });
+      fitTenants(); ensureRotation();   // V1b: the news box turns as soon as a preview turns it on (a screen's starts with its news)
     });
   }
 

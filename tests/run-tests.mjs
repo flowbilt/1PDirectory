@@ -3599,7 +3599,7 @@ test("D1: the burger-joint template (The Meet Market): Dark by default and Light
 test("V1: the viewer's choices and its sample directory: kept within limits; the same choices always draw the same invented tenants; the extras, touch and shape reach the screen; one-line summary; the site's rules (= 48-viewer.sql)", async () => {
   const V = await import("../public/viewer-sample.mjs");
   const c = V.normalizeConfig({ kind: "touch", name: "  Landmark <b>Business</b>   Center ", tenants: 99, shape: "portrait", qr: true });
-  assert.deepEqual(c, { v: 1, kind: "touch", name: "Landmark bBusiness/b Center", subtitle: "", tenants: 60, shape: "portrait", weather: true, qr: true, places: false, contacts: true });
+  assert.deepEqual(c, { v: 1, kind: "touch", name: "Landmark bBusiness/b Center", subtitle: "", tenants: 60, shape: "portrait", weather: true, qr: true, places: false, contacts: true, news: false });
   assert.equal(V.normalizeConfig({ tenants: 1 }).tenants, 4); assert.equal(V.normalizeConfig({ kind: "wayfinding" }).kind, "directory");
   assert.equal(V.configProblem(c), "");
   for (const [bad, re] of [[{ ...c, kind: "wayfinding" }, /building directory or a touch/], [{ ...c, tenants: 61 }, /4 to 60/], [{ ...c, tenants: 12.5 }, /4 to 60/],
@@ -3618,7 +3618,19 @@ test("V1: the viewer's choices and its sample directory: kept within limits; the
   assert.deepEqual(V.sampleDirectory({ contacts: false }).managedBy, {});
   assert.match(d.welcome, /demonstration content/);
   assert.equal(V.summary(c), "Touch directory · Landmark bBusiness/b Center · 60 tenants · portrait · weather, QR, contacts");
-  assert.equal(V.summary({ weather: false, contacts: false }), "Building directory · (no name) · 12 tenants · landscape · no extras");
+  assert.equal(V.summary({ weather: false, contacts: false }), "Building directory · (no name) · 10 tenants · landscape · no extras");
+  // V1b: 10 tenants to start; News headlines, sample ones, in the box news and places share (the screen decides its room)
+  assert.equal(V.normalizeConfig({}).tenants, 10);
+  const withNews = V.sampleDirectory({ news: true, places: true });
+  assert.equal(withNews.news.enabled, true); assert.equal(withNews.news.items.length, 6);
+  assert.ok(withNews.news.items.every((n) => /^Sample headline: /.test(n.title) && n.source === "Sample news"), "plainly samples");
+  assert.equal(withNews.keepInfo, true, "ticked, the box is kept (the viewer only)"); assert.equal(V.sampleDirectory({}).keepInfo, false);
+  assert.deepEqual(V.sampleDirectory({}).news.items, []);
+  assert.equal(V.configProblem({ ...V.normalizeConfig({}), news: "yes" }), "news is on or off.");
+  const { news: _n, ...old } = V.normalizeConfig({}); assert.equal(V.configProblem(old), "", "a visit kept before V1b (no news) is fine");
+  assert.equal(V.summary({ news: true, weather: false, contacts: false }), "Building directory · (no name) · 10 tenants · landscape · news");
+  const sql49 = readFileSync(new URL("../supabase/49-viewer-news.sql", import.meta.url), "utf8");
+  assert.ok(sql49.includes("'places', 'contacts', 'news')) then") && sql49.includes("if c ? 'news' and jsonb_typeof(c -> 'news') is distinct from 'boolean'"));
   // the database's rules say the same (48-viewer.sql)
   const sql = readFileSync(new URL("../supabase/48-viewer.sql", import.meta.url), "utf8");
   for (const w of ["'directory', 'touch'", "between 4 and 60", "> 60", "'landscape', 'portrait'", "'page', 'utm_source', 'utm_medium', 'utm_campaign', 'utm_content', 'utm_term'", ">= 120", ">= 5000", "interval '400 days'", "grant execute on function public.viewer_record(uuid, jsonb, integer, integer, text, jsonb) to service_role"]) assert.ok(sql.includes(w), w);
@@ -3642,6 +3654,11 @@ test("V1: /api/viewer keeps a visit only as it should be: POST, a code, real cho
   assert.ok(!/localStorage|document\.cookie|navigator\.userAgent/.test(vj), "no cookies, no stored ids, nothing about the device");
   const dj = readFileSync(new URL("../public/display.js", import.meta.url), "utf8");
   assert.ok(dj.includes("if (draftMode || PREVIEW) return;"));
+  assert.ok(dj.includes("if (news.sample) return;") && dj.includes("if (Array.isArray(sample)) { news.sample = true;"), "V1b: a preview's sample headlines, never replaced by the live feed");
+  assert.ok(dj.includes('if (!stage.classList.contains("landscape") || (PREVIEW && data?.keepInfo)) return;'), "kept only in a preview; real screens unchanged");
+  assert.ok(vj.includes("form.reset();"), "each visit starts from the defaults");
+  assert.ok(dj.includes("if (PREVIEW && data?.keepInfo && newsWanted() && (attempt(u * 1.9, false, true) || attempt(u * 1.9, true, true))) return;"), "the viewer fits the names beside the box");
+  assert.ok(dj.includes("fitTenants(); ensureRotation();   // V1b") && dj.includes("if (!data && !PREVIEW) setTimeout(() => location.reload(), 30000);"), "a preview's box turns at once, and a preview never reloads itself");
   const ch = readFileSync(new URL("../public/console.html", import.meta.url), "utf8"), cj = readFileSync(new URL("../public/console.js", import.meta.url), "utf8");
   assert.ok(ch.includes('id="tab-viewer" hidden>Viewer</button>') && cj.includes('$("tab-viewer").hidden = !S.admin;'), "the Viewer tab is 1Point's");
 });

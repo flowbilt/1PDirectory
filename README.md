@@ -837,6 +837,16 @@ through waytugo.com's own inquiry form.
   line; **View** redraws one exactly (same choices, same invented tenants); **Remove** for test visits.
 - Display **2.23.1**: a preview (`index.html?preview=1`) no longer fetches a screen first (it used to leave
   "Showing saved information. Reconnecting…" on the bottom line). No Pi change.
+- **V1b** (Scot, 2026-11-10: "the default for the directory should be landscape, and there should be a news
+  placeholder so when they turn it on they can see the space it takes. Same for places"): the viewer starts as a
+  landscape building directory with **10 tenants** every time (`form.reset()`; browsers had brought back a reload's
+  choices); a **News headlines** extra with six plainly-labelled sample headlines ("Sample headline: …", source
+  "Sample news"), never the live feed (`49-viewer-news.sql` lets a kept visit say `news`); news and places take turns
+  in the information box. **In the viewer only** (Scot: "Viewer keeps it"), a ticked News or Places keeps its box,
+  fitting the names beside it (smaller, or in two columns) up to about 30 tenants; a real screen still gives the box
+  up when the names would be clearly bigger without it, or don't fit beside it. Display **2.23.2**: a preview takes
+  sample headlines (`news.items`) and `keepInfo`; its box starts turning as soon as its data arrives (a screen's starts
+  with its news); a preview never schedules the 30-second reload a screen with no data does.
 
 ## Screens and cards (Raspberry Pi)
 

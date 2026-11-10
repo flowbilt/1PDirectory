@@ -30,7 +30,7 @@ const seconds = () => Math.min(7200, Math.round(V.seconds + (V.shownSince ? (Dat
 function choices() {
   const f = new FormData(form);
   return normalizeConfig({ kind: f.get("kind"), name: f.get("name"), subtitle: f.get("subtitle"), tenants: Number(f.get("tenants")), shape: f.get("shape"),
-    weather: f.has("weather"), qr: f.has("qr"), places: f.has("places"), contacts: f.has("contacts") });
+    weather: f.has("weather"), qr: f.has("qr"), places: f.has("places"), contacts: f.has("contacts"), news: f.has("news") });
 }
 
 // ── the preview: the screen at its real size (1920 × 1080 or 1080 × 1920), scaled to fit
@@ -101,6 +101,9 @@ if (parentOrigin) {
   let last = 0;
   new ResizeObserver(() => { const px = Math.ceil(document.documentElement.scrollHeight); if (px !== last) { last = px; tell({ type: "height", px }); } }).observe(document.body);
 }
+// Each visit starts from the defaults (a building directory, landscape): browsers otherwise bring back a reload's choices
+form.reset();
+window.addEventListener("pageshow", (e) => { if (e.persisted) { form.reset(); V.changes = 0; draw(); } });
 tell({ type: "event", name: "viewer_start", kind: choices().kind });
 fit();
 window.Viewer = { visit: V, choices, KINDS };   // for the browser checks
