@@ -553,3 +553,13 @@ body.phone:not(.pv-sheet) #pv-close { display: none; }
 body.phone .pic-dialog, body.phone dialog.wide { width: calc(100vw - 24px); max-width: none; }
 body.phone .toast { bottom: calc(130px + env(safe-area-inset-bottom)); z-index: 30; }
 body .me-offline { color: #ffd27a; font-weight: 700; }
+
+/* DP-14 (V1): the console's Viewer tab */
+.viewer-dlg { width: min(1100px, 96vw); }
+.viewer-dlg-screen { position: relative; overflow: hidden; border-radius: 10px; background: #000; margin: 8px auto 4px; box-shadow: 0 0 0 8px #111; }
+.viewer-dlg-screen iframe { position: absolute; top: 0; left: 0; border: 0; transform-origin: 0 0; }
+.viewer-quote { display: inline-block; padding: 2px 8px; border-radius: 999px; font-size: 12px; font-weight: 700; }
+.viewer-quote.sent { background: #1f7a3d; color: #fff; }
+.viewer-quote.started { background: #f1c25b; color: #2b1d00; }
+a.button-link { display: inline-flex; align-items: center; padding: 8px 12px; border-radius: 8px; text-decoration: none; }
+.muted { color: var(--muted); }

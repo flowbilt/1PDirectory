@@ -10,7 +10,7 @@
 */
 (() => {
   "use strict";
-  const VERSION = "2.23.0";   // = netlify/lib/version.mjs (a test keeps them equal)
+  const VERSION = "2.23.1";   // = netlify/lib/version.mjs (a test keeps them equal)
   // What every screen does (which screen, check-in, clock, rotation, Identify, lockdown, reloads, offline cache) is in
   // screen-core.js, shared with the layout page (DP-11, round E1a).
   const C = window.ScreenCore;
@@ -253,7 +253,7 @@
   }
 
   async function loadDirectory() {
-    if (draftMode) return;
+    if (draftMode || PREVIEW) return;   // DP-14 (V1): a preview draws only what it's sent (it once showed "Reconnecting…" first)
     try {
       // Round 15c: the drive times' status for the console (never Google's minutes or labels: its terms forbid keeping them)
       const extra = CHECKS_IN && traffic.status ? { "X-Traffic": JSON.stringify({ ...traffic.status, shown: infoSlides().some((x) => x.kind === "times") }) } : {};

@@ -3596,6 +3596,56 @@ test("D1: the burger-joint template (The Meet Market): Dark by default and Light
   for (const d of [d55, d32]) assert.ok(!/Donut Joe|O'Henry|Salvatore|Filling Station|Our Place|Dowdle|Mi Barrio|Maker|Santos/i.test(JSON.stringify(d.blocks)), "an invented shop");
 });
 
+test("V1: the viewer's choices and its sample directory: kept within limits; the same choices always draw the same invented tenants; the extras, touch and shape reach the screen; one-line summary; the site's rules (= 48-viewer.sql)", async () => {
+  const V = await import("../public/viewer-sample.mjs");
+  const c = V.normalizeConfig({ kind: "touch", name: "  Landmark <b>Business</b>   Center ", tenants: 99, shape: "portrait", qr: true });
+  assert.deepEqual(c, { v: 1, kind: "touch", name: "Landmark bBusiness/b Center", subtitle: "", tenants: 60, shape: "portrait", weather: true, qr: true, places: false, contacts: true });
+  assert.equal(V.normalizeConfig({ tenants: 1 }).tenants, 4); assert.equal(V.normalizeConfig({ kind: "wayfinding" }).kind, "directory");
+  assert.equal(V.configProblem(c), "");
+  for (const [bad, re] of [[{ ...c, kind: "wayfinding" }, /building directory or a touch/], [{ ...c, tenants: 61 }, /4 to 60/], [{ ...c, tenants: 12.5 }, /4 to 60/],
+    [{ ...c, name: "x".repeat(61) }, /up to 60/], [{ ...c, email: "a@b.c" }, /isn't one of/], [{ ...c, qr: "yes" }, /on or off/], [{ ...c, v: 2 }, /version 1/]]) assert.match(V.configProblem(bad), re);
+  const a = V.sampleTenants({ name: "Landmark", tenants: 12 }), b = V.sampleTenants({ name: "Landmark", tenants: 12 });
+  assert.deepEqual(a, b, "the same choices, the same tenants (the console's redraw matches)");
+  assert.notDeepEqual(a.map((t) => t.name), V.sampleTenants({ name: "Perimeter Park", tenants: 12 }).map((t) => t.name), "another building, another list");
+  assert.equal(a.length, 12); assert.equal(new Set(a.map((t) => t.name)).size, 12);
+  assert.deepEqual(a.map((t) => t.name), [...a.map((t) => t.name)].sort((x, y) => x.localeCompare(y)), "A to Z");
+  const sixty = V.sampleTenants({ name: "Big", tenants: 60 });
+  assert.equal(new Set(sixty.map((t) => t.name)).size, 60); assert.ok(sixty.some((t) => t.suite.startsWith("5")), "five floors");
+  const d = V.sampleDirectory(c);
+  assert.equal(d.propertyName, "Landmark bBusiness/b Center"); assert.equal(d.orientation, "portrait"); assert.equal(d.touch, true); assert.equal(d.tenants.length, 60);
+  assert.equal(d.togo.enabled, true); assert.deepEqual(d.placeLists, []); assert.equal(d.weather.enabled, true); assert.equal(d.news.enabled, false);
+  assert.equal(V.sampleDirectory({}).propertyName, "Your Building Name");
+  assert.deepEqual(V.sampleDirectory({ contacts: false }).managedBy, {});
+  assert.match(d.welcome, /demonstration content/);
+  assert.equal(V.summary(c), "Touch directory · Landmark bBusiness/b Center · 60 tenants · portrait · weather, QR, contacts");
+  assert.equal(V.summary({ weather: false, contacts: false }), "Building directory · (no name) · 12 tenants · landscape · no extras");
+  // the database's rules say the same (48-viewer.sql)
+  const sql = readFileSync(new URL("../supabase/48-viewer.sql", import.meta.url), "utf8");
+  for (const w of ["'directory', 'touch'", "between 4 and 60", "> 60", "'landscape', 'portrait'", "'page', 'utm_source', 'utm_medium', 'utm_campaign', 'utm_content', 'utm_term'", ">= 120", ">= 5000", "interval '400 days'", "grant execute on function public.viewer_record(uuid, jsonb, integer, integer, text, jsonb) to service_role"]) assert.ok(sql.includes(w), w);
+});
+
+test("V1: /api/viewer keeps a visit only as it should be: POST, a code, real choices, a small body; only the page and utm_ words from the source; the page is framed only by WayTuGo's and 1Point's sites; a preview draws only what it's sent", async () => {
+  const fn = (await import("../netlify/functions/viewer.mjs")).default, { cleanSource } = await import("../netlify/functions/viewer.mjs");
+  const V = await import("../public/viewer-sample.mjs");
+  const post = (b) => fn(new Request("https://x/api/viewer", { method: "POST", body: typeof b === "string" ? b : JSON.stringify(b) }));
+  const id = crypto.randomUUID(), config = V.normalizeConfig({ name: "Test" });
+  assert.equal((await fn(new Request("https://x/api/viewer"))).status, 405);
+  assert.equal((await post("not json")).status, 400);
+  assert.equal((await post({ id: "nope", config })).status, 400);
+  assert.equal((await post({ id, config: { ...config, kind: "wayfinding" } })).status, 400);
+  assert.equal((await post({ id, config, source: { page: "x".repeat(5000) } })).status, 413);
+  assert.deepEqual(cleanSource({ page: " /waytugo-viewer ", utm_source: "google", ip: "203.0.113.9", email: "a@b.c", utm_term: 5 }), { page: "/waytugo-viewer", utm_source: "google" });
+  const toml = readFileSync(new URL("../netlify.toml", import.meta.url), "utf8");
+  assert.ok(toml.includes(`for = "/viewer.html"`) && toml.includes("frame-ancestors 'self' https://waytugo.com https://www.waytugo.com https://1pointusa.com https://www.1pointusa.com https://*.netlify.app"));
+  const vj = readFileSync(new URL("../public/viewer.js", import.meta.url), "utf8");
+  assert.ok(vj.includes('window.parent.postMessage({ source: "waytugo-viewer", ...msg }, parentOrigin)') && vj.includes("ALLOWED.some((re) => re.test(o))"), "messages only to an allowed page");
+  assert.ok(!/localStorage|document\.cookie|navigator\.userAgent/.test(vj), "no cookies, no stored ids, nothing about the device");
+  const dj = readFileSync(new URL("../public/display.js", import.meta.url), "utf8");
+  assert.ok(dj.includes("if (draftMode || PREVIEW) return;"));
+  const ch = readFileSync(new URL("../public/console.html", import.meta.url), "utf8"), cj = readFileSync(new URL("../public/console.js", import.meta.url), "utf8");
+  assert.ok(ch.includes('id="tab-viewer" hidden>Viewer</button>') && cj.includes('$("tab-viewer").hidden = !S.admin;'), "the Viewer tab is 1Point's");
+});
+
 let passed = 0;
 for (const [name, fn] of tests) {
   try { await fn(); passed++; console.log(`  ok  ${name}`); }

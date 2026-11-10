@@ -61,6 +61,7 @@
     if (name === "setup") window.ConsoleSetup?.load();
     if (name === "layouts") window.ConsoleLayouts?.show();
     if (name === "menus") renderMenus();
+    if (name === "viewer") window.ConsoleViewer?.show();   // DP-14 (V1)
   }
 
   // ── Screens ──
@@ -525,12 +526,13 @@
       $("tab-health").hidden = !S.admin;
       $("tab-setup").hidden = !S.admin;
       $("tab-layouts").hidden = !S.admin;   // DP-11 E1a: 1Point makes and publishes layouts
+      $("tab-viewer").hidden = !S.admin;    // DP-14 (V1): visits to the viewer on waytugo.com
       $("tab-people").hidden = S.me.role === "org_editor";
       await refresh();
       $("who").textContent = `${S.me.full_name || S.me.email} · ${S.admin ? "1Point" : org(S.me.org_id)?.name || ""} · ${roleName(S.me.role)}`;
       if (S.admin) { $("screen-owner").hidden = false; $("screen-owner").innerHTML = `<option value="">All accounts</option>` + orgOptions(); }
       const tab = location.hash.slice(1);
-      showTab(["screens", "buildings", "people", "health", "setup", "layouts", "menus", "accounts"].includes(tab) && !document.querySelector(`[data-tab=${tab}]`).hidden ? tab : "screens");
+      showTab(["screens", "buildings", "people", "health", "setup", "layouts", "menus", "accounts", "viewer"].includes(tab) && !document.querySelector(`[data-tab=${tab}]`).hidden ? tab : "screens");
       // Once a minute, but only while this tab is on screen (a console left open in a background tab costs nothing),
       // and at once when it comes back. An open Pi panel refreshes itself instead (console-devices.js).
       const minuteRefresh = async () => {

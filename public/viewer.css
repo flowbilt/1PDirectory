@@ -1,0 +1,53 @@
+/* "See Your WayTuGo in Action" (DP-14, V1). WayTuGo's colours: a deep teal-navy with the logo's blue and orange. */
+@font-face { font-family: "Instrument Sans"; src: url("/fonts/InstrumentSans-Regular.ttf") format("truetype"); font-weight: 400; font-display: swap; }
+@font-face { font-family: "Instrument Sans"; src: url("/fonts/InstrumentSans-Bold.ttf") format("truetype"); font-weight: 700; font-display: swap; }
+:root { --bg: #0e2021; --panel: #15302f; --line: rgba(255,255,255,.14); --ink: #fff; --muted: #a9bcbc; --blue: #2f8cff; --orange: #ff7a1a; --orange-ink: #1b1206; }
+* { box-sizing: border-box; }
+html, body { margin: 0; background: var(--bg); color: var(--ink); font: 16px/1.45 "Instrument Sans", system-ui, -apple-system, "Segoe UI", Roboto, Arial, sans-serif; }
+.vw { max-width: 1280px; margin: 0 auto; padding: 28px 22px 32px; }
+.vw-head { max-width: 760px; margin-bottom: 22px; }
+.vw-logo { height: 54px; width: auto; display: block; margin-bottom: 10px; }
+.vw-head h1 { font-size: clamp(28px, 4vw, 44px); line-height: 1.08; letter-spacing: -.02em; margin: 0 0 8px; }
+.vw-head p { color: var(--muted); margin: 0; font-size: 17px; }
+.vw-body { display: grid; grid-template-columns: minmax(300px, 380px) 1fr; gap: 26px; align-items: start; }
+.vw-controls { display: flex; flex-direction: column; gap: 14px; }
+.vw-step { border: 1px solid var(--line); border-radius: 12px; background: var(--panel); padding: 14px 16px 16px; margin: 0; min-width: 0; }
+.vw-step legend { font-weight: 700; font-size: 15px; padding: 0 6px; display: flex; align-items: center; gap: 8px; }
+.vw-num { display: inline-grid; place-items: center; width: 24px; height: 24px; border-radius: 50%; background: var(--blue); color: #fff; font-size: 13px; }
+.vw-kinds { display: grid; gap: 8px; }
+.vw-kind { display: grid; grid-template-columns: auto 1fr; column-gap: 10px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; cursor: pointer; }
+.vw-kind input { grid-row: span 2; margin: 3px 0 0; accent-color: var(--orange); width: 18px; height: 18px; }
+.vw-kind-name { font-weight: 700; }
+.vw-kind-line { color: var(--muted); font-size: 14px; }
+.vw-kind:has(input:checked) { border-color: var(--orange); background: rgba(255,122,26,.08); }
+.vw-field { display: flex; flex-direction: column; gap: 6px; margin-top: 10px; font-size: 14px; font-weight: 700; }
+.vw-field > span { display: flex; justify-content: space-between; gap: 8px; }
+.vw-field em { font-style: normal; font-weight: 400; color: var(--muted); }
+.vw-field output { color: var(--orange); font-size: 16px; }
+.vw-field input:not([type]), .vw-field input[maxlength] { font: inherit; font-weight: 400; font-size: 16px; color: var(--ink); background: rgba(0,0,0,.25); border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px; }
+.vw-field input:focus-visible, .vw-kind:has(input:focus-visible), .vw-seg label:has(input:focus-visible), .vw-check:has(input:focus-visible), .vw-quote:focus-visible { outline: 3px solid var(--blue); outline-offset: 2px; }
+.vw-field input[type="range"] { accent-color: var(--orange); width: 100%; }
+.vw-seg { display: grid; grid-template-columns: 1fr 1fr; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }
+.vw-seg label { position: relative; text-align: center; padding: 9px 6px; cursor: pointer; font-weight: 400; }
+.vw-seg input { position: absolute; opacity: 0; inset: 0; cursor: pointer; }
+.vw-seg label:has(input:checked) { background: var(--blue); font-weight: 700; }
+.vw-check { display: flex; gap: 10px; align-items: flex-start; margin-top: 8px; font-size: 15px; cursor: pointer; }
+.vw-check input { accent-color: var(--orange); width: 18px; height: 18px; margin: 2px 0 0; flex: none; }
+.vw-cta { padding: 4px 2px 0; }
+.vw-quote { width: 100%; min-height: 52px; border: 0; border-radius: 10px; background: var(--orange); color: var(--orange-ink); font: inherit; font-weight: 700; font-size: 17px; cursor: pointer; padding: 12px 16px; }
+.vw-quote:hover { filter: brightness(1.06); }
+.vw-fine { color: var(--muted); font-size: 13px; margin: 8px 2px 0; }
+.vw-direct { margin-top: 10px; padding: 12px 14px; border: 1px solid var(--line); border-radius: 10px; background: var(--panel); }
+.vw-direct p { margin: 0; }
+.vw-direct a { color: #8cc2ff; }
+.vw-preview { position: sticky; top: 16px; }
+.vw-screen { position: relative; width: 100%; border-radius: 14px; overflow: hidden; background: #000; box-shadow: 0 0 0 10px #050b0c, 0 18px 40px rgba(0,0,0,.45); margin: 10px; width: calc(100% - 20px); }
+.vw-screen iframe { position: absolute; top: 0; left: 0; border: 0; transform-origin: 0 0; background: #0d1b2e; }
+.vw-tag { width: fit-content; margin: 0 auto 4px; background: var(--orange); color: var(--orange-ink); font-weight: 700; font-size: 12px; letter-spacing: .06em; text-transform: uppercase; padding: 4px 12px; border-radius: 999px; }
+.vw-hint { color: var(--muted); font-size: 14px; margin: 18px 2px 0; text-align: center; }
+@media (max-width: 860px) {
+  .vw { padding: 18px 14px 24px; }
+  .vw-body { grid-template-columns: 1fr; }
+  .vw-preview { position: static; order: -1; }
+  .vw-logo { height: 42px; }
+}

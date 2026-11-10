@@ -37,6 +37,13 @@
     # E1c: the phone menu is shown on waytugo.com and uses these fonts from here
     Access-Control-Allow-Origin = "*"
 
+# DP-14 (V1): the viewer, framed only by WayTuGo's and 1Point's sites (and Netlify's preview addresses of them)
+[[headers]]
+  for = "/viewer.html"
+  [headers.values]
+    Content-Security-Policy = "frame-ancestors 'self' https://waytugo.com https://www.waytugo.com https://1pointusa.com https://www.1pointusa.com https://*.netlify.app"
+    Cache-Control = "public, max-age=0, must-revalidate"
+
 # Signed-in pages: never framed by other sites, never cached.
 [[headers]]
   for = "/console.html"

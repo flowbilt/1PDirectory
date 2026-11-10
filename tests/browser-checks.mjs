@@ -1800,6 +1800,115 @@ try {
     await p.close();
   });
 
+  // ── DP-14 (V1): "See Your WayTuGo in Action", the viewer waytugo.com embeds, and the console's Viewer tab ──
+  const VS = await import("../public/viewer-sample.mjs");
+  const PARENT = `<!DOCTYPE html><meta charset="utf-8"><title>waytugo.com (test)</title><body style="margin:0">
+    <iframe id="wv" src="/viewer.html?page=/waytugo-viewer&utm_source=google&utm_medium=cpc&utm_campaign=directory-fall" style="width:100%;border:0;height:800px"></iframe>
+    <script>window.__msgs = []; addEventListener("message", (e) => { if (e.data?.source !== "waytugo-viewer") return; window.__msgs.push(e.data);
+      if (e.data.type === "height") document.getElementById("wv").style.height = e.data.px + "px";
+      if (e.data.type === "quote") setTimeout(() => e.source.postMessage({ source: "waytugo-site", type: "quote-sent", visit: e.data.visit }, e.origin), 300); });</script>`;
+
+  await check("V1: the viewer embedded in a page: the real directory drawn with the visitor's name and invented tenants as they type; touch, portrait and the extras; the visit kept without a name (with the page and the ad's utm_ words); Request a Quote hands the configuration to the page, which says its form was sent", async () => {
+    const p = await browser.newPage({ viewport: { width: 1360, height: 900 } });
+    const errs = []; p.on("pageerror", (e) => errs.push(String(e)));
+    await p.route(`${B}/parent-test.html`, (r) => r.fulfill({ status: 200, contentType: "text/html", body: PARENT }));
+    await p.goto(`${B}/parent-test.html`); await p.waitForTimeout(2500);
+    const v = p.frameLocator("#wv"), scr = v.frameLocator("#pv");
+    const msgs = () => p.evaluate(() => window.__msgs);
+    assert((await msgs()).some((m) => m.type === "event" && m.name === "viewer_start"), "viewer_start told");
+    assert((await msgs()).some((m) => m.type === "height" && m.px > 600), "its height told");
+    assert(await sb("viewer_visits?select=id").then((r) => r.data.length) === 0, "nothing kept before anything is built");
+    await v.locator('input[name="name"]').fill("Landmark Business Center");
+    await v.locator('input[name="tenants"]').fill("20"); await p.waitForTimeout(1500);
+    assert(await scr.locator("#property").textContent().then((t) => t.includes("Landmark Business Center")), "the name on the screen");
+    assert(await scr.locator(".tenant").count() === 20, `20 tenants: ${await scr.locator(".tenant").count()}`);
+    const names = await scr.locator(".tenant-name").allTextContents();
+    assert(JSON.stringify(names) === JSON.stringify(VS.sampleTenants({ name: "Landmark Business Center", tenants: 20 }).map((t) => t.name)), "the invented tenants, as the console will redraw them");
+    assert((await msgs()).some((m) => m.name === "viewer_preview_shown"), "viewer_preview_shown told");
+    // touch and portrait: the visitor taps a company for its card
+    await v.locator('input[name="kind"][value="touch"]').check(); await v.locator('input[name="shape"][value="portrait"]').check(); await v.locator('input[name="qr"]').check();
+    await p.waitForTimeout(1500);
+    assert((await msgs()).some((m) => m.name === "viewer_type_selected" && m.kind === "touch"), "viewer_type_selected told");
+    const box = await v.locator("#screen").boundingBox();
+    assert(box.height > box.width && box.height <= 900, `a portrait screen, within 900 px: ${box.height}`);
+    const h1 = await p.evaluate(() => document.getElementById("wv").offsetHeight); await p.waitForTimeout(1500);
+    const h2 = await p.evaluate(() => document.getElementById("wv").offsetHeight);
+    assert(h1 === h2 && h2 < 2400, `the frame's height settles: ${h1} then ${h2}`);
+    assert(await scr.locator("#togo").isVisible(), "the Directory to Go QR code");
+    await scr.locator(".tenant").first().click(); await p.waitForTimeout(800);
+    assert(await scr.locator("#card").isVisible(), "a tenant's card opens on a tap");
+    await shot(p, "viewer-embedded");
+    // the visit is kept a few seconds after the last change
+    await p.waitForTimeout(6000);
+    let [row] = (await sb("viewer_visits?select=*")).data;
+    assert(row && row.config.kind === "touch" && row.config.name === "Landmark Business Center" && row.config.tenants === 20 && row.config.shape === "portrait" && row.config.qr === true, JSON.stringify(row?.config));
+    assert(JSON.stringify(row.source) === JSON.stringify({ page: "/waytugo-viewer", utm_source: "google", utm_medium: "cpc", utm_campaign: "directory-fall" }), JSON.stringify(row.source));
+    assert(row.changes >= 5 && row.quote === null, `${row.changes} changes, quote ${row.quote}`);
+    assert(!JSON.stringify(row).match(/127\.0\.0\.1|::1|HeadlessChrome|Mozilla/), "nothing about the visitor's device or address");
+    // Request a Quote: the configuration to the page; the page says its form was sent
+    await v.locator("#quote").click(); await p.waitForTimeout(2000);
+    const quote = (await msgs()).find((m) => m.type === "quote");
+    assert(quote && quote.visit === row.id && quote.code === row.id.slice(0, 8).toUpperCase(), JSON.stringify(quote));
+    assert(quote.summary === "Touch directory · Landmark Business Center · 20 tenants · portrait · weather, QR, contacts", quote.summary);
+    assert((await msgs()).some((m) => m.name === "viewer_quote_started"), "viewer_quote_started told");
+    [row] = (await sb(`viewer_visits?id=eq.${quote.visit}&select=quote`)).data;
+    assert(row.quote === "sent", `the page's form sent: ${row.quote}`);
+    assert(await v.locator("#direct").isHidden(), "embedded: the page's own form, not the phone and email");
+    assert(errs.length === 0, errs.join(" | "));
+    await p.close();
+  });
+
+  await check("V1: the viewer on its own (not embedded): Request a Quote shows the phone, the email and the configuration's code; nothing told to any page; on a phone the preview sits above the choices", async () => {
+    const p = await browser.newPage({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true });
+    await p.goto(`${B}/viewer.html`); await p.waitForTimeout(1800);
+    const pv = await p.locator("#screen").boundingBox(), ch = await p.locator("#controls").boundingBox();
+    assert(pv.y < ch.y && pv.width <= 390, "the preview first, within the phone's width");
+    await p.fill('input[name="name"]', "Phone Test Plaza"); await p.click("#quote"); await p.waitForTimeout(1500);
+    assert(await p.locator("#direct").isVisible() && /205-701-0191/.test(await p.textContent("#direct")), "the phone and email");
+    const code = (await p.textContent("#code")).trim();
+    assert(/^[0-9A-F]{8}$/.test(code), code);
+    const rows = (await sb("viewer_visits?select=*")).data.filter((r) => r.config.name === "Phone Test Plaza");
+    assert(rows.length === 1 && rows[0].quote === "started" && rows[0].id.slice(0, 8).toUpperCase() === code, JSON.stringify(rows));
+    await shot(p, "viewer-phone");
+    await p.close();
+  });
+
+  await check("V1: /api/viewer refuses what isn't a real visit (a third display, an email in the choices, a bad code) and keeps nothing from it", async () => {
+    const before = (await sb("viewer_visits?select=id")).data.length;
+    const send = (b) => fetch(`${B}/api/viewer`, { method: "POST", body: JSON.stringify(b) }).then((r) => r.status);
+    const ok = VS.normalizeConfig({ name: "API" });
+    assert(await send({ id: crypto.randomUUID(), config: { ...ok, kind: "wayfinding" } }) === 400);
+    assert(await send({ id: crypto.randomUUID(), config: { ...ok, email: "a@b.c" } }) === 400);
+    assert(await send({ id: "12345", config: ok }) === 400);
+    assert((await sb("viewer_visits?select=id")).data.length === before);
+    assert(await send({ id: crypto.randomUUID(), config: ok, source: { page: "/x", ip: "203.0.113.9" } }) === 204);
+    const r = (await sb("viewer_visits?select=*")).data.find((x) => x.config.name === "API");
+    assert(JSON.stringify(r.source) === JSON.stringify({ page: "/x" }), "only the page kept from the source");
+  });
+
+  await check("V1: the console's Viewer tab (1Point only): the visits with their choices, time, source and quote; View redraws one exactly; Remove takes a test visit away; a customer has no Viewer tab and reads no visits", async () => {
+    await boss.goto(`${B}/console.html#viewer`); await boss.waitForTimeout(2500);
+    assert(await boss.locator("#tab-viewer").isVisible(), "1Point's Viewer tab");
+    const rowsText = await boss.textContent("#viewer-rows");
+    assert(rowsText.includes("Landmark Business Center") && rowsText.includes("google / cpc / directory-fall") && rowsText.includes("Sent") && rowsText.includes("Phone Test Plaza") && rowsText.includes("Started"), rowsText.slice(0, 500));
+    assert(/3 visits · 2 asked for a quote \(1 sent the form\)/.test(await boss.textContent("#viewer-summary")), await boss.textContent("#viewer-summary"));
+    await boss.locator("#viewer-rows tr", { hasText: "Landmark Business Center" }).locator("[data-view]").click(); await boss.waitForTimeout(2500);
+    const fr = boss.frameLocator("#viewer-dlg-frame");
+    const names = await fr.locator(".tenant-name").allTextContents();
+    assert(JSON.stringify(names) === JSON.stringify(VS.sampleTenants({ name: "Landmark Business Center", tenants: 20 }).map((t) => t.name)), "redrawn exactly");
+    assert(await fr.locator("#togo").isVisible() && await fr.locator(".stage, #stage").first().evaluate((e) => e.classList.contains("touch")), "the QR code and the touch directory");
+    assert(await fr.locator("#offline").isHidden(), "no 'Reconnecting' line in a preview");
+    assert((await boss.textContent("#viewer-dlg-line")).includes("Touch directory · Landmark Business Center · 20 tenants · portrait"), "its summary");
+    await shot(boss, "viewer-console-redraw");
+    await boss.click("#viewer-dlg button[value=close]");
+    await boss.locator("#viewer-rows tr", { hasText: "API" }).locator("[data-remove]").click(); await boss.waitForTimeout(1500);
+    assert(!(await sb("viewer_visits?select=*")).data.some((x) => x.config.name === "API"), "removed");
+    await owner.goto(`${B}/console.html`); await owner.waitForTimeout(2000);
+    assert(await owner.locator("#tab-viewer").isHidden(), "no Viewer tab for a customer");
+    const theirs = await owner.evaluate(async () => (await Auth.db("viewer_visits?select=id")).length);
+    assert(theirs === 0, `a customer reads ${theirs} visits`);
+  });
+
   await owner.close(); await boss.close();
   await sb(`screens?id=eq.${landscape.id}`, { method: "PATCH", body: JSON.stringify({ layout_id: null, property_id: null, directory_id: landscape.directory_id }) });
   void otherOrg;

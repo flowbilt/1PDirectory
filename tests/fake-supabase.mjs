@@ -3,6 +3,7 @@
 import { createHash, randomUUID } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { checkMenuSpec, checkMenuContent } from "../public/menu-format.mjs";
+import { configProblem as viewerConfigProblem } from "../public/viewer-sample.mjs";
 
 // Per-screen size ranges, % of standard: 18-sizes.sql (title, logo, brand, welcome) and 22-widget-sizes.sql (news,
 // clock, weather, contacts). A test checks the SQL, the display and the editor all say the same.
@@ -17,7 +18,7 @@ const CODE_ALPHA = "ABCDEFGHJKMNPQRSTUVWXYZ23456789";
 const newCode = () => Array.from({ length: 6 }, () => CODE_ALPHA[Math.floor(Math.random() * CODE_ALPHA.length)]).join("");
 
 export function createFake() {
-  const T = { organizations: [], profiles: [], properties: [], directories: [], tenants: [], screens: [], audit_log: [], devices: [], device_commands: [], device_daily: [], wifi_networks: [], prepare_codes: [], alert_recipients: [], mail_settings: [], togo_scans: [], companies: [], people: [], layouts: [], layout_versions: [], layout_images: [], menu_scans: [], menus: [], menu_revisions: [], sample_links: [] };
+  const T = { organizations: [], profiles: [], properties: [], directories: [], tenants: [], screens: [], audit_log: [], devices: [], device_commands: [], device_daily: [], wifi_networks: [], prepare_codes: [], alert_recipients: [], mail_settings: [], togo_scans: [], companies: [], people: [], layouts: [], layout_versions: [], layout_images: [], menu_scans: [], menus: [], menu_revisions: [], sample_links: [], viewer_visits: [] };
   const storage = new Map();   // bucket/path -> { bytes, mime, cacheControl } (E1b)
   const SERVICE_ONLY = new Set(["togo_scans", "devices", "device_commands", "device_daily", "wifi_networks", "prepare_codes", "alert_recipients", "mail_settings", "menu_scans"]); // row-level security on, no policies: server key only
   // Columns of screens signed-in users may read (supabase/06-trust.sql, plus sizes from 18 and no_cec from 21). hardware is server-only.
@@ -114,6 +115,7 @@ export function createFake() {
     const me = who.profile; if (!me) return false;
     if (me.role === "platform_admin") return table !== "profiles" && table !== "audit_log" && table !== "layout_versions"   // versions: the site only
       && table !== "menu_revisions"                                       // 32: revisions only through menu_save
+      && !(table === "viewer_visits" && op !== "delete")                  // 48: visits kept only through viewer_record
       && !(table === "layout_images" && op !== "update");                // pictures: added and removed by the site only (30)
     if (table === "tenants") return dirOrg(row.directory_id) === me.org_id;
     if (table === "people") return companyOrg(row.company_id) === me.org_id;            // 26-people.sql
@@ -599,6 +601,28 @@ export function createFake() {
         lists: m ? { id: m.id, spec: m.spec, content: m.content } : null,
         images: Object.fromEntries(T.layout_images.filter((i) => i.org_id === l.org_id && (JSON.stringify(lv.doc) + JSON.stringify(m?.content || {})).includes(`"img:${i.key}"`)).map((i) => [i.key, { path: i.path, w: i.width, h: i.height }])),
         prop: p ? { id: p.id, name: p.name, address: p.address, timezone: p.timezone, lat: p.lat, lon: p.lon, updated_at: p.updated_at } : null };
+    },
+    // 48-viewer.sql: keeping a visit to the viewer (the site only)
+    viewer_record({ p_id, p_config, p_seconds, p_changes, p_quote, p_source }) {
+      const bad = (m) => Object.assign(new Error(m), { status: 400 });
+      if (!p_id) throw bad("A visit has a code.");
+      const problem = viewerConfigProblem(p_config); if (problem) throw bad(problem);
+      if (p_quote != null && !["started", "sent"].includes(p_quote)) throw bad("A quote is started or sent.");
+      const src = p_source || {};
+      if (typeof src !== "object" || Object.entries(src).some(([k, v]) => !["page", "utm_source", "utm_medium", "utm_campaign", "utm_content", "utm_term"].includes(k) || typeof v !== "string" || v.length > 200)) throw bad("The source is the page and the ad's utm_ words.");
+      const clamp = (v, max) => Math.min(max, Math.max(0, Number(v) || 0));
+      const row = T.viewer_visits.find((x) => x.id === p_id);
+      if (!row) {
+        const since = (ms) => T.viewer_visits.filter((x) => Date.parse(x.started_at) > Date.now() - ms).length;
+        if (since(60e3) >= 120 || since(864e5) >= 5000) throw Object.assign(new Error("Too many visits right now."), { status: 400 });
+        T.viewer_visits = T.viewer_visits.filter((x) => Date.parse(x.started_at) > Date.now() - 400 * 864e5);
+        T.viewer_visits.push({ id: p_id, started_at: now(), updated_at: now(), config: p_config, seconds: clamp(p_seconds, 7200), changes: clamp(p_changes, 10000), quote: p_quote ?? null, source: src });
+      } else if (Date.parse(row.started_at) > Date.now() - 864e5) {
+        Object.assign(row, { config: p_config, updated_at: now(), seconds: Math.max(row.seconds, clamp(p_seconds, 7200)), changes: Math.max(row.changes, clamp(p_changes, 10000)),
+          quote: row.quote === "sent" || p_quote === "sent" ? "sent" : row.quote === "started" || p_quote === "started" ? "started" : null,
+          source: Object.keys(row.source || {}).length ? row.source : src });
+      }
+      return null;
     },
     // 36-templates.sql: a sample link's page (the site only)
     sample_page({ p_slug, p_open = false }) {

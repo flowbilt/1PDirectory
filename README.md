@@ -808,6 +808,36 @@ weather location and time zone, "If this isn't in the code for the menu style bo
   `layouts/template-burger-pictures.md`.
 - Display **2.23.0** (screens reload themselves). No Pi change.
 
+### V1 (DP-14): "See Your WayTuGo in Action", the viewer waytugo.com embeds
+
+Scot (2026-11-10): the configurator first for the directory (the first ads are aimed at it), built here and handed to
+the waytugo.com site builder; "I would want to know that they've been there and created something ... in advance of
+knowing if that interest is leading to sales" (each visit's choices kept, in place of screenshots); the inquiry goes
+through waytugo.com's own inquiry form.
+- **The viewer** (`public/viewer.html`, `viewer.js`, `viewer.css`; public, no sign-in, no cookies): Building directory
+  or Touch directory, the building's name and subtitle, about how many tenants (4 to 60), landscape or portrait, and
+  extras (weather, contacts, Directory to Go QR, places nearby). The preview is the **real directory screen**
+  (`index.html?preview=1`) drawn from invented content (`public/viewer-sample.mjs`: 60 invented businesses shuffled by
+  the building's name, suites by floor, sample contacts, "demonstration content" on the bottom line and a Sample label
+  above the screen). The touch directory can be tapped. On a phone the preview comes first.
+- **Embedded on waytugo.com** in an iframe (`/waytugo-viewer`); framed only by waytugo.com, 1pointusa.com and Netlify
+  preview addresses (`netlify.toml`, frame-ancestors). Messages to the embedding page (only to those sites):
+  `{ source: "waytugo-viewer", type: "height" | "event" | "quote" }`; events `viewer_start`, `viewer_type_selected`,
+  `viewer_preview_shown`, `viewer_quote_started` (for the site's tag, as information, not conversions); the quote
+  carries the visit's code, a one-line summary and the choices for the site's inquiry form. The page answers
+  `{ source: "waytugo-site", type: "quote-sent", visit }` when its form is sent. On its own (not embedded), Request a
+  Quote shows 1Point's phone and email with the configuration's code.
+- **Each visit kept without a name** (`/api/viewer`, `netlify/functions/viewer.mjs` → `viewer_record`,
+  `supabase/48-viewer.sql`, table `viewer_visits`): from its first change, a few seconds after the last and when the
+  page is left; the choices, seconds looked at, how many changes, the page and utm_ words from the address, and the
+  quote (started or sent). No IP address, cookie or device detail. Limits: 120 new visits a minute and 5,000 a day,
+  updates within a day, visits older than 400 days removed. Only the site writes (service key); only 1Point reads and
+  removes.
+- **The console's Viewer tab** (1Point only; `public/console-viewer.js`): the visits, newest first, with a summary
+  line; **View** redraws one exactly (same choices, same invented tenants); **Remove** for test visits.
+- Display **2.23.1**: a preview (`index.html?preview=1`) no longer fetches a screen first (it used to leave
+  "Showing saved information. Reconnecting…" on the bottom line). No Pi change.
+
 ## Screens and cards (Raspberry Pi)
 
 Every Pi runs from a **prepared card**, and every card is the same. A card carries no identity until it's in a Pi:

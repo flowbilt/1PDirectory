@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>See Your WayTuGo in Action</title>
+<link rel="preload" href="/fonts/InstrumentSans-Bold.ttf" as="font" type="font/ttf" crossorigin>
+<link rel="stylesheet" href="/viewer.css">
+</head>
+<!-- "See Your WayTuGo in Action" (DP-14, V1): waytugo.com embeds this page. The preview is the real directory screen
+     (index.html?preview=1) drawn from invented content (viewer-sample.mjs). See README "V1". -->
+<body>
+<main class="vw">
+  <header class="vw-head">
+    <img class="vw-logo" src="/waytugo-logo.png" alt="WayTuGo, powered by 1PointUSA">
+    <h1>See Your WayTuGo in Action</h1>
+    <p>See how WayTuGo could look in your building. Choose a display, add your name, and explore a personalized preview in minutes. No signup required.</p>
+  </header>
+
+  <div class="vw-body">
+    <form class="vw-controls" id="controls" autocomplete="off" onsubmit="return false">
+      <fieldset class="vw-step">
+        <legend><span class="vw-num">1</span> Choose a display</legend>
+        <div class="vw-kinds" role="radiogroup" aria-label="Display">
+          <label class="vw-kind"><input type="radio" name="kind" value="directory" checked>
+            <span class="vw-kind-name">Building directory</span><span class="vw-kind-line">Your tenants and suites in the lobby, always up to date</span></label>
+          <label class="vw-kind"><input type="radio" name="kind" value="touch">
+            <span class="vw-kind-name">Touch directory</span><span class="vw-kind-line">Visitors tap a company for its suite and its people</span></label>
+        </div>
+      </fieldset>
+
+      <fieldset class="vw-step">
+        <legend><span class="vw-num">2</span> Add your building</legend>
+        <label class="vw-field"><span>Building or company name</span>
+          <input name="name" maxlength="60" placeholder="e.g. Landmark Business Center"></label>
+        <label class="vw-field"><span>Subtitle <em>optional</em></span>
+          <input name="subtitle" maxlength="60" placeholder="e.g. 2100 First Avenue North"></label>
+        <label class="vw-field"><span>About how many tenants? <output id="tenants-out">12</output></span>
+          <input name="tenants" type="range" min="4" max="60" step="1" value="12"></label>
+        <div class="vw-field"><span>Screen</span>
+          <div class="vw-seg" role="radiogroup" aria-label="Screen">
+            <label><input type="radio" name="shape" value="landscape" checked><span>Landscape</span></label>
+            <label><input type="radio" name="shape" value="portrait"><span>Portrait</span></label>
+          </div></div>
+      </fieldset>
+
+      <fieldset class="vw-step">
+        <legend><span class="vw-num">3</span> Pick extras</legend>
+        <label class="vw-check"><input type="checkbox" name="weather" checked><span>Weather beside the clock</span></label>
+        <label class="vw-check"><input type="checkbox" name="contacts" checked><span>Building contacts (managed by, leasing)</span></label>
+        <label class="vw-check"><input type="checkbox" name="qr"><span>Directory to Go: a QR code visitors scan to take the directory with them</span></label>
+        <label class="vw-check"><input type="checkbox" name="places"><span>Places and promotions nearby</span></label>
+      </fieldset>
+
+      <div class="vw-cta">
+        <button type="button" class="vw-quote" id="quote">Request a Quote for This Configuration</button>
+        <p class="vw-fine">What you build here is saved without your name so we can see what visitors look for.</p>
+        <div class="vw-direct" id="direct" hidden>
+          <p>Call <a href="tel:+12057010191">205-701-0191</a> or email <a href="mailto:info@1pointusa.com">info@1pointusa.com</a> and mention your configuration code <strong id="code"></strong>.</p>
+        </div>
+      </div>
+    </form>
+
+    <section class="vw-preview" aria-label="Preview">
+      <div class="vw-tag">Sample · demonstration content</div>
+      <div class="vw-screen" id="screen">
+        <iframe id="pv" title="Your WayTuGo directory (sample)" src="/index.html?preview=1" tabindex="-1"></iframe>
+      </div>
+      <p class="vw-hint" id="hint">Names, suites and phone numbers are invented for this preview.</p>
+    </section>
+  </div>
+</main>
+<script type="module" src="/viewer.js"></script>
+</body>
+</html>

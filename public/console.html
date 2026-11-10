@@ -27,6 +27,7 @@
   <button role="tab" data-tab="layouts" aria-selected="false" id="tab-layouts" hidden>Layouts</button>
   <button role="tab" data-tab="menus" aria-selected="false" id="tab-menus" hidden>Menus</button>
   <button role="tab" data-tab="accounts" aria-selected="false" id="tab-accounts" hidden>Accounts</button>
+  <button role="tab" data-tab="viewer" aria-selected="false" id="tab-viewer" hidden>Viewer</button>
 </nav>
 
 <main class="console">
@@ -257,7 +258,33 @@
       </table>
     </div>
   </section>
+  <!-- DP-14 (V1): visits to "See Your WayTuGo in Action" on waytugo.com (1Point only) -->
+  <section id="panel-viewer" class="tabpanel" hidden>
+    <div class="toolbar">
+      <div class="summary" id="viewer-summary"></div>
+      <div class="toolbar-controls">
+        <select id="viewer-days" aria-label="Visits from"><option value="7">Last 7 days</option><option value="30" selected>Last 30 days</option><option value="90">Last 90 days</option><option value="0">All</option></select>
+        <a class="ghost button-link" href="/viewer.html" target="_blank" rel="noopener">Open the viewer ↗</a>
+      </div>
+    </div>
+    <p class="hint">Each visit that built something, without a name: what the visitor chose, how long they spent, the page or ad that brought them, and whether they asked for a quote. <strong>View</strong> redraws it exactly as they saw it.</p>
+    <div class="table-wrap">
+      <table class="grid">
+        <thead><tr><th>When</th><th>Display</th><th>Building name</th><th>Tenants</th><th>Screen</th><th>Extras</th><th>Time</th><th>From</th><th>Quote</th><th><span class="sr-only">Actions</span></th></tr></thead>
+        <tbody id="viewer-rows"></tbody>
+      </table>
+    </div>
+  </section>
 </main>
+
+<dialog id="viewer-dlg" class="viewer-dlg">
+  <form method="dialog">
+    <h2 id="viewer-dlg-title"></h2>
+    <p class="hint" id="viewer-dlg-line"></p>
+    <div class="viewer-dlg-screen" id="viewer-dlg-screen"><iframe id="viewer-dlg-frame" title="The visitor's preview"></iframe></div>
+    <div class="dialog-actions"><button value="close" class="primary">Close</button></div>
+  </form>
+</dialog>
 
 <!-- One reusable dialog; each action fills in its own fields -->
 <dialog id="dlg">
@@ -277,5 +304,6 @@
 <script src="/console-setup.js"></script>
 <script src="/console-layouts.js"></script>
 <script src="/console.js"></script>
+<script type="module" src="/console-viewer.js"></script>
 </body>
 </html>
