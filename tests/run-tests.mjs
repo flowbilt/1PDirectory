@@ -3623,7 +3623,20 @@ test("V1: the viewer's choices and its sample directory: kept within limits; the
   assert.equal(V.normalizeConfig({}).tenants, 10);
   const withNews = V.sampleDirectory({ news: true, places: true });
   assert.equal(withNews.news.enabled, true); assert.equal(withNews.news.items.length, 6);
-  assert.ok(withNews.news.items.every((n) => /^Sample headline: /.test(n.title) && n.source === "Sample news"), "plainly samples");
+  assert.ok(withNews.news.items.every((n) => n.source === "Sample news") && withNews.news.items.some((n) => n.title === "Monkey Runs Amok in Banana Factory"), "silly samples (V1c)");
+  // V1c: people at each tenant on the touch directory (2 to 4, invented); events with the places; pictures only once added
+  const touch = V.sampleTenants({ kind: "touch", name: "Landmark", tenants: 30 }), plain = V.sampleTenants({ name: "Landmark", tenants: 30 });
+  assert.ok(touch.every((t) => t.people.length >= 2 && t.people.length <= 4), "2 to 4 people each");
+  assert.ok(touch.every((t) => t.people.every((x) => x.first && x.last && x.title && /^\(205\) 555-\d{4}$/.test(x.phone) && /\.example$/.test(x.email))), "invented: 555 numbers, .example addresses");
+  assert.deepEqual(touch.map((t) => t.name), plain.map((t) => t.name), "the same tenants either way");
+  assert.ok(plain.every((t) => t.people.length === 0), "a building directory has no people");
+  assert.deepEqual(V.sampleTenants({ kind: "touch", name: "Landmark", tenants: 30 }), touch, "the same people every time (the console's redraw)");
+  assert.deepEqual(withNews.placeLists.map((l) => l.heading), ["Events", "Nearby"]);
+  assert.equal(withNews.placeLists[0].items[0].name, "Monster Trikes at Crambone Arena");
+  assert.ok(withNews.news.items.every((n) => n.image === (V.PICS.length ? n.image : "")) && withNews.placeLists[0].items.every((e) => typeof e.image === "string"));
+  const picsMd = readFileSync(new URL("../public/viewer-pics/README.md", import.meta.url), "utf8");
+  for (const k of ["donuts", "monkey", "goat", "office-plant", "squirrel", "socks", "monster-trikes", "chili", "dog"]) assert.ok(picsMd.includes("`" + k + "`"), k);
+  for (const k of V.PICS) assert.ok(existsSync(new URL(`../public/viewer-pics/${k}.jpg`, import.meta.url)), `${k}.jpg is there`);
   assert.equal(withNews.keepInfo, true, "ticked, the box is kept (the viewer only)"); assert.equal(V.sampleDirectory({}).keepInfo, false);
   assert.deepEqual(V.sampleDirectory({}).news.items, []);
   assert.equal(V.configProblem({ ...V.normalizeConfig({}), news: "yes" }), "news is on or off.");

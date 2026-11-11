@@ -73,29 +73,55 @@ const PLACES = [
   { name: "Riverside Bank ATM", line: "In the lobby, by the elevators", distance: "Lobby" },
   { name: "Greenway Fitness", line: "Day passes for visitors", distance: "5 min walk" },
 ];
-// Sample headlines for the information box (V1b): plainly samples, so a live feed's news never sits in a sales demo.
-// A real screen shows live headlines from a news feed.
+// The information box's sample stories (V1c, Scot: "Headlines like, 'Doc Find Donuts Boost Metabolism' and 'Monkey Runs
+// Amok in Banana Factory'"): silly on purpose, so nobody takes them for news. A real screen shows live headlines.
+// Each may have a picture in public/viewer-pics/ (see viewer-pics/README.md); a story whose picture isn't there yet
+// shows as text.
 const HEADLINES = [
-  "Sample headline: City breaks ground on a new riverfront park",
-  "Sample headline: Downtown farmers market returns this Saturday",
-  "Sample headline: Local high school robotics team heads to state finals",
-  "Sample headline: New bike lanes open along First Avenue",
-  "Sample headline: Library extends weekend hours for the holidays",
-  "Sample headline: Regional airport adds two new nonstop routes",
+  { title: "Docs Find Donuts Boost Metabolism", pic: "donuts" },
+  { title: "Monkey Runs Amok in Banana Factory", pic: "monkey" },
+  { title: "Goat Hockey Takes the City by Storm", pic: "goat" },
+  { title: "Squirrel Befriends Pumpkin", pic: "squirrel" },
+  { title: "Lab Irradiates Socks to End the Lost-Sock Crisis", pic: "socks" },
+  { title: "Mystery Office Plants Take Over Third Floor", pic: "office-plant" },
 ];
+// Events and places nearby, for Places and promotions (V1c, Scot: "An event could be 'Monster Trikes at Crambone Arena'")
+const EVENTS = [
+  { name: "Monster Trikes at Crambone Arena", line: "Big wheels, bigger noise. Tickets at the door", distance: "Saturday 7 pm", pic: "monster-trikes" },
+  { name: "Downtown Chili Cook-Off", line: "Forty pots, one champion, free tasting", distance: "Sunday noon", pic: "chili" },
+  { name: "Dog Day in the Park", line: "Contests, treat vendors, adoptions and family fun", distance: "Saturday 10 am", pic: "dog" },
+];
+// The pictures that have been added to public/viewer-pics/ (each <key>.jpg, at least 300 px wide)
+export const PICS = ["donuts", "monkey", "goat", "squirrel", "socks", "office-plant", "monster-trikes", "chili", "dog"];
+const pic = (k) => (PICS.includes(k) ? `/viewer-pics/${k}.jpg` : "");
+// People at a tenant, for the touch directory's cards (V1c: "add a few employees per tenant so the touch doesn't just
+// show the same thing as the company line"); invented names, 555 numbers and .example addresses
+const FIRST = ["Avery", "Jordan", "Morgan", "Taylor", "Casey", "Riley", "Quinn", "Parker", "Reese", "Hayden", "Dana", "Jamie", "Logan", "Skyler", "Rowan", "Emerson", "Blake", "Cameron", "Drew", "Elliot"];
+const LAST = ["Whitfield", "Calloway", "Brannon", "Pruitt", "Holloway", "McAdory", "Lindsey", "Garrison", "Tolbert", "Ashford", "Kimbrough", "Rutledge", "Hargrove", "Pickens", "Dunaway", "Crenshaw", "Bledsoe", "Fairley", "Stallings", "Yarbrough"];
+const TITLES = ["Owner", "Office Manager", "Partner", "Director", "Associate", "Front Desk", "Practice Manager", "Account Executive", "Operations Lead", "Client Services"];
 function hash(s) { let h = 2166136261; for (const ch of String(s)) h = Math.imul(h ^ ch.codePointAt(0), 16777619); return h >>> 0; }
 function rand(seed) { let a = seed || 1; return () => { a = (a + 0x6d2b79f5) | 0; let t = Math.imul(a ^ (a >>> 15), 1 | a); t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t; return ((t ^ (t >>> 14)) >>> 0) / 4294967296; }; }
 
 /** The invented tenants for these choices: names, suites by floor, and the arrow to each floor's lift lobby */
 export function sampleTenants(c) {
   c = normalizeConfig(c);
+  const withPeople = c.kind === "touch";
   const r = rand(hash(`${c.name.toLowerCase()}|${c.tenants}`));
   const names = TENANTS.slice();
   for (let i = names.length - 1; i > 0; i--) { const j = Math.floor(r() * (i + 1)); [names[i], names[j]] = [names[j], names[i]]; }
   const floors = Math.max(1, Math.ceil(c.tenants / 12)), dirs = ["right", "left", "up", "right", "left"];
   const out = names.slice(0, c.tenants).map((name, i) => {
     const floor = 1 + Math.floor((i * floors) / c.tenants), room = 100 * floor + 10 + ((i * 7) % 12) * 5;
-    return { name, suite: String(room), dir: floor === 1 ? dirs[i % 2] : "up", note: "", people: [] };
+    const people = [];
+    if (withPeople) {
+      const n = 2 + Math.floor(r() * 3), domain = name.toLowerCase().replace(/&/g, "and").replace(/[^a-z0-9]+/g, "").slice(0, 24);
+      for (let k = 0; k < n; k++) {
+        const first = FIRST[Math.floor(r() * FIRST.length)], last = LAST[Math.floor(r() * LAST.length)];
+        people.push({ first, last, title: k === 0 ? TITLES[Math.floor(r() * 4)] : TITLES[4 + Math.floor(r() * 6)],
+          phone: `(205) 555-${String(1000 + Math.floor(r() * 8999)).slice(0, 4)}`, email: `${first[0].toLowerCase()}${last.toLowerCase()}@${domain}.example`, suite: "" });
+      }
+    }
+    return { name, suite: String(room), dir: floor === 1 ? dirs[i % 2] : "up", note: "", people };
   });
   return out.sort((a, b) => a.name.localeCompare(b.name));
 }
@@ -116,11 +142,14 @@ export function sampleDirectory(c, { togoUrl = "https://waytugo.com/" } = {}) {
     timezone: "America/Chicago",
     // V1b: sample headlines when news is on. Ticked, news or places keeps its box (Scot: "Viewer keeps it"): a real
     // landscape screen gives the box up when the names would be clearly bigger without it
-    news: { enabled: c.news, rotateSeconds: 8, items: c.news ? HEADLINES.map((title) => ({ title, source: "Sample news", published: null, image: "" })) : [] },
+    news: { enabled: c.news, rotateSeconds: 8, items: c.news ? HEADLINES.map((h) => ({ title: h.title, source: "Sample news", published: null, image: pic(h.pic) })) : [] },
     keepInfo: c.news || c.places,
     traffic: { map: false, times: false, lat: null, lon: null, mapsKey: "", destinations: [] },
     amenities: [],
-    placeLists: c.places ? [{ heading: "Nearby", items: PLACES.map((p) => ({ ...p })) }] : [],
+    placeLists: c.places ? [
+      { heading: "Events", items: EVENTS.map(({ pic: k, ...e }) => ({ ...e, image: pic(k) })) },
+      { heading: "Nearby", items: PLACES.map((p) => ({ ...p })) },
+    ] : [],
     togo: { enabled: c.qr, url: togoUrl, line: "Take this directory with you!" },
     poweredBy: true,
     touch: c.kind === "touch", screenInches: c.kind === "touch" ? 55 : null, touchIdle: 90, keyboard: false,

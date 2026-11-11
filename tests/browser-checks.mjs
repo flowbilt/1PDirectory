@@ -1837,6 +1837,7 @@ try {
     assert(await scr.locator("#togo").isVisible(), "the Directory to Go QR code");
     await scr.locator(".tenant").first().click(); await p.waitForTimeout(800);
     assert(await scr.locator("#card").isVisible(), "a tenant's card opens on a tap");
+    assert(await scr.locator("#card .card-people li").count() >= 2, "V1c: the tenant's people on its card");
     await shot(p, "viewer-embedded");
     // the visit is kept a few seconds after the last change
     await p.waitForTimeout(6000);
@@ -1871,11 +1872,11 @@ try {
     assert(await scr.locator("#news").isVisible(), "the box at 10 tenants");
     const seen = new Set();
     for (let i = 0; i < 8; i++) { seen.add((await scr.locator("#news-slides .slide.on").textContent().catch(() => "")).trim()); await p.waitForTimeout(1200); }
-    assert([...seen].some((t) => t.startsWith("Sample headline:") && t.includes("Sample news")), `sample headlines: ${[...seen].join(" | ")}`);
+    assert([...seen].some((t) => t.includes("Sample news")), `sample headlines: ${[...seen].join(" | ")}`);
     await p.check('input[name="places"]'); await p.waitForTimeout(2000);
     const both = new Set();
     for (let i = 0; i < 26; i++) { both.add((await scr.locator("#news-slides .slide.on").textContent().catch(() => "")).trim()); await p.waitForTimeout(1000); }
-    assert([...both].some((t) => t.includes("Corner Bakery")) && [...both].some((t) => t.startsWith("Sample headline:")), `news and places take turns: ${[...both].join(" | ").slice(0, 400)}`);
+    assert([...both].some((t) => t.includes("Crambone Arena")) && [...both].some((t) => t.includes("Sample news")), `news and events take turns: ${[...both].join(" | ").slice(0, 400)}`);
     await shot(p, "viewer-news-places");
     await p.close();
   });

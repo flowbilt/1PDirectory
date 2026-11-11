@@ -847,6 +847,13 @@ through waytugo.com's own inquiry form.
   up when the names would be clearly bigger without it, or don't fit beside it. Display **2.23.2**: a preview takes
   sample headlines (`news.items`) and `keepInfo`; its box starts turning as soon as its data arrives (a screen's starts
   with its news); a preview never schedules the 30-second reload a screen with no data does.
+- **V1c** (Scot: "add a few employees per tenant so the touch doesn't just show the same thing as the company line";
+  "Part of what makes the directory come alive is the news story or events with images"): on the touch directory each
+  invented tenant has 2 to 4 invented people (names, titles, 555 numbers, `.example` addresses), the same every time
+  for the same choices; the sample stories are silly on purpose ("Docs Find Donuts Boost Metabolism", "Monkey Runs
+  Amok in Banana Factory" and four more) with pictures; Places and promotions adds an **Events** list ("Monster Trikes
+  at Crambone Arena", a chili cook-off, a dog day) before Nearby. The nine pictures are Scot's, cropped to the picture
+  alone, in `public/viewer-pics/` (`PICS` in viewer-sample.mjs lists them; a story without one shows as text).
 
 ## Screens and cards (Raspberry Pi)
 
