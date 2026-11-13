@@ -59,7 +59,7 @@ export function toCsv(list) {
 let boardNames = null;
 async function loadBoards() {
   if (boardNames) return;
-  try { const r = await fetch("/api/viewer-boards", { cache: "no-store" }); boardNames = new Map((await r.json()).templates.flatMap((t) => t.boards.map((b) => [b.id, `${t.name}: ${b.name.replace(/^[^:]*:\s*/, "")}`]))); }
+  try { const r = await fetch("/api/viewer-boards", { cache: "no-store" }); boardNames = new Map((await r.json()).templates.flatMap((t) => t.boards.map((b) => [b.id, b.name.replace(/^[^:]*:\s*/, "")]))); }
   catch { boardNames = new Map(); }
 }
 const boardName = (id) => boardNames?.get(id) || (id ? "a board no longer offered" : "");

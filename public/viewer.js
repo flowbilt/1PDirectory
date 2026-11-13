@@ -154,23 +154,24 @@ frame.addEventListener("load", draw);
 window.addEventListener("message", (e) => { if (e.origin === location.origin && e.source === frame.contentWindow && e.data?.type === "layout-ready") draw(); });
 
 // ── V4: the menu board ──
+// V4b (Scot's templates: several shops' boards share one menu, "WayTuGo Templates: menu"): one dropdown of every
+// template board, by the board's own name (1Point's), A to Z; its size and shape after it when the name doesn't say
 async function loadTemplates() {
   if (M.templates) return;
-  const sel = $("tpl");
+  const sel = $("board");
   try {
     const r = await fetch("/api/viewer-boards"); if (!r.ok) throw new Error(String(r.status));
     M.templates = (await r.json()).templates.filter((t) => t.boards?.length);
   } catch { M.templates = null; sel.innerHTML = `<option value="">The sample menus aren't available right now</option>`; return; }
-  sel.innerHTML = M.templates.map((t) => `<option value="${esc(t.id)}">${esc(t.name)}</option>`).join("");
-  fillBoards();
-}
-const inchesOf = (b) => (Number(b.inches) ? `${b.inches}″ ` : "");
-function fillBoards() {
-  const t = M.templates?.find((x) => x.id === $("tpl").value) || M.templates?.[0];
-  if (!t) return;
-  $("board").innerHTML = t.boards.map((b) => `<option value="${esc(b.id)}">${esc(b.name.replace(/^[^:]*:\s*/, ""))} · ${inchesOf(b)}${b.turns ? "landscape or portrait" : b.orientation}</option>`).join("");
+  const boards = M.templates.flatMap((t) => t.boards).sort((a, b) => a.name.localeCompare(b.name));
+  if (!boards.length) { sel.innerHTML = `<option value="">No sample menus yet: ask us for one</option>`; return; }
+  sel.innerHTML = boards.map((b) => `<option value="${esc(b.id)}">${esc(boardLabel(b))}</option>`).join("");
   boardChosen();
 }
+const boardLabel = (b) => {
+  const name = b.name.replace(/^[^:]*:\s*/, ""), inches = Number(b.inches) && !new RegExp(`\\b${b.inches}\\b`).test(name) ? `${b.inches}″ ` : "";
+  return `${name} · ${inches}${b.turns ? "landscape or portrait" : b.orientation}`;
+};
 async function boardChosen() {
   const b = boardOf($("board").value); if (!b) return;
   // its looks, as the template offers them (its first is how WayTuGo designed it)
@@ -186,7 +187,6 @@ async function boardChosen() {
   M.payload = M.boards.get(b.id);
   renderItems(); draw();
 }
-$("tpl").addEventListener("change", fillBoards);
 $("board").addEventListener("change", boardChosen);
 // the items to type over: the board's main list's first ones, the samples as placeholders (what was typed stays)
 function renderItems() {
@@ -240,7 +240,7 @@ $("quote").addEventListener("click", () => {
   keep(true);
   tell({ type: "event", name: "viewer_quote_started", kind: c.kind });
   const b = c.kind === "menu" ? boardOf(c.board) : null;   // V4: the summary names the sample board
-  if (parentOrigin) tell({ type: "quote", visit: V.id, code, summary: summary(c, { boardName: b ? `${b.shop}: ${b.name.replace(/^[^:]*:\s*/, "")}` : "" }), config: c });
+  if (parentOrigin) tell({ type: "quote", visit: V.id, code, summary: summary(c, { boardName: b ? b.name.replace(/^[^:]*:\s*/, "") : "" }), config: c });
   else { $("code").textContent = code; $("direct").hidden = false; }
 });
 window.addEventListener("message", (e) => {

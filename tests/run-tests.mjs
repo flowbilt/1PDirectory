@@ -3847,7 +3847,7 @@ test("V4: the menu board in the viewer: WayTuGo's templates read live (never Sam
   }
   // the page, the board page and the console
   const html = readFileSync(new URL("../public/viewer.html", import.meta.url), "utf8");
-  assert.ok(html.includes('name="kind" value="menu"') && html.includes('id="tpl"') && html.includes('id="board"') && html.includes('id="items"') && html.includes("Add your restaurant"));
+  assert.ok(html.includes('name="kind" value="menu"') && !html.includes('id="tpl"') && html.includes('Sample menu board to start from') && html.includes('id="board"') && html.includes('id="items"') && html.includes("Add your restaurant"));
   const bj = readFileSync(new URL("../public/board.js", import.meta.url), "utf8");
   assert.ok(bj.includes('PREVIEW && r === 0 && !data?.viewer'), "no overflow marks on the viewer's board");
   const cv = readFileSync(new URL("../public/console-viewer.js", import.meta.url), "utf8");

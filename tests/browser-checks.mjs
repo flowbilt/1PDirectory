@@ -2016,13 +2016,14 @@ try {
     const sent = []; p.on("request", (r) => { if (r.url().endsWith("/api/viewer")) sent.push(r.postData() || ""); });
     try {
       await p.goto(`${B}/viewer.html`); await p.waitForTimeout(1500);
-      assert(await p.isHidden("#tpl"), "no menu choices on a directory");
+      assert(await p.isHidden("#board"), "no menu choices on a directory");
       await p.check('input[name="kind"][value="menu"]'); await p.waitForTimeout(3500);
       assert(await p.isHidden('input[name="subtitle"]') && await p.isHidden('input[name="tenants"]') && await p.isVisible("#type"), "the directory's fields hide; the location type stays");
-      const shops = await p.locator("#tpl option").allTextContents();
-      assert(shops.some((x) => x.startsWith("Daybreak Coffee Co.")) && shops.some((x) => x.startsWith("The Meet Market")), shops.join(", "));
+      // V4b: one dropdown of every template board, by the board's own name, A to Z
+      const shops = await p.locator("#board option").allTextContents();
+      assert(JSON.stringify(shops) === JSON.stringify(["Coffee shop · counter board 55 · landscape", "The Meet Market - Counter Board · 55″ landscape or portrait"]), shops.join(" | "));
       assert(!shops.some((x) => /Filling Station|O'Henry/.test(x)), "no samples account's shop");
-      await p.selectOption("#tpl", { label: shops.find((x) => x.startsWith("Daybreak")) }); await p.waitForTimeout(2500);
+      await p.selectOption("#board", { index: 0 }); await p.waitForTimeout(2500);
       const fr = p.frameLocator("#pv");
       assert(await fr.locator("#blocks > *").count() > 5, "the board drawn");
       assert(await fr.locator(".overflow-mark").count() === 0, "no overflow marks");
@@ -2033,7 +2034,7 @@ try {
       const txt = await fr.locator("#blocks").textContent();
       assert(txt.includes("Gardendale Grind") && txt.includes("Civic Cortado") && txt.includes("$4.25"), "the name and the item on the board");
       assert(await p.frame({ url: /board\.html/ }).evaluate(() => window.LayoutBoard.doc.look.look) === "chalkboard", "Chalkboard");
-      await p.selectOption("#tpl", { label: shops.find((x) => x.startsWith("The Meet Market")) }); await p.waitForTimeout(2500);
+      await p.selectOption("#board", { index: 1 }); await p.waitForTimeout(2500);
       assert(await p.isVisible("#shape-field"), "the burger board turns: Screen offered");
       assert(await p.inputValue('#items .vw-row[data-i="0"] input[data-item="name"]') === "Civic Cortado", "what was typed stays");
       await p.check('input[name="shape"][value="portrait"]', { force: true }); await p.waitForTimeout(1500);
@@ -2044,7 +2045,7 @@ try {
       assert(last.config?.kind === "menu" && last.config.board === seeded.boards[1].layout.id && last.config.items?.[0]?.name === "Civic Cortado" && last.config.shape === "portrait", JSON.stringify(last.config));
       await boss.goto(`${B}/console.html#viewer`); await boss.reload(); await boss.waitForTimeout(2500);   // (already open at this address)
       const row = boss.locator("#viewer-rows tr", { hasText: "Gardendale Grind" });
-      assert((await row.textContent()).includes("Menu board") && (await row.textContent()).includes("The Meet Market"), await row.textContent());
+      assert((await row.textContent()).includes("Menu board") && (await row.textContent()).includes("The Meet Market - Counter Board"), await row.textContent());
       await row.locator("[data-view]").click(); await boss.waitForTimeout(3000);
       assert((await boss.frameLocator("#viewer-dlg-frame").locator("#blocks").textContent()).includes("Civic Cortado"), "redrawn");
       await boss.click("#viewer-dlg button[value=close]");

@@ -872,6 +872,7 @@ through waytugo.com's own inquiry form.
   and By ad source tables (visits, engaged = 30 s and 3 changes, average time, quotes), and **Download CSV** (cells
   that start with = + - @ are quoted so a spreadsheet won't run them).
 
+- **V4b**: one dropdown, **Sample menu board to start from**, of every template board by its own name, A to Z (size and shape after it unless the name says the size), since several template shops share one menu; an empty list says so. The account must be of type **WayTuGo templates** (Accounts → Edit → Type).
 - **V4** (Scot, 2026-11-13): **Menu board** is a third display. Step 2 becomes "Add your restaurant": **Sample menu to
   start from** (the shops in WayTuGo Templates accounts, read live from `/api/viewer-boards`; never WayTuGo Samples,
   never unpublished boards), **Board** (each published board with its size and shape), the restaurant's name, the

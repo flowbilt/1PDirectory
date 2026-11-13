@@ -1,6 +1,6 @@
 // Two WayTuGo template shops for checking the viewer's menu board (DP-14, V4): the coffee shop's and the burger joint's
 // 55" boards, each made into a menu as Make lists does (menu-format.mjs extractMenu), in a WayTuGo Templates account,
-// published. Their pictures aren't uploaded (a picture block draws its quiet panel). Used by the browser checks.
+// published, with board names like the live ones. Their pictures aren't uploaded (a picture block draws its quiet panel). Used by the browser checks.
 //   await seedTemplates(sb)   sb(path, init) = a call to the fake Supabase's REST with the service key and its own headers
 import { readFileSync } from "node:fs";
 import { checkLayout } from "../public/layout-format.mjs";
@@ -8,8 +8,8 @@ import { extractMenu } from "../public/menu-format.mjs";
 
 const file = (f) => JSON.parse(readFileSync(new URL(`../layouts/${f}`, import.meta.url), "utf8"));
 export const SEED = [
-  { shop: "Daybreak Coffee Co. (template)", board: "Daybreak Coffee Co.: Counter board", file: "template-coffee-55.json" },
-  { shop: "The Meet Market (template)", board: "The Meet Market: Counter board", file: "template-burger-55.json" },
+  { shop: "Daybreak Coffee Co. (template)", board: "Coffee shop · counter board 55", file: "template-coffee-55.json" },
+  { shop: "The Meet Market (template)", board: "The Meet Market - Counter Board", file: "template-burger-55.json" },
 ];
 
 export async function seedTemplates(sb) {
