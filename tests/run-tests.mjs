@@ -3752,7 +3752,7 @@ test("V2: the viewer's version 2: up to 20 tenants with the visitor's own names 
   for (const w of ["'look', 'logo', 'photo', 'rows'", "> 20", "('dark', 'light')", "('off', 'sample', 'own')", "> 60 or char_length(r ->> 'suite') > 12", "jsonb_array_length(c -> 'rows') > (c ->> 'tenants')::int"]) assert.ok(sql.includes(w), w);
 });
 
-test("V3: the viewer's optional location type: its samples (20 each), name and contacts only where nothing is typed; none chosen, Other and Just Exploring keep the defaults; kept with the visit; the console's breakdown and CSV; the site's rules (= 52-viewer-type.sql)", async () => {
+test("V3: the viewer's optional location type: its samples (20 each), name and contacts only where nothing is typed; none chosen, Other and Just Exploring keep the defaults; third in Add your building; kept with the visit; the console's breakdown and CSV; the site's rules (= 52-viewer-type.sql)", async () => {
   const V = await import("../public/viewer-sample.mjs");
   assert.deepEqual(Object.keys(V.TYPES), ["office", "medical", "government", "hospitality", "retail", "education", "restaurant", "other", "exploring"]);
   for (const k of ["office", "medical", "government", "hospitality", "retail", "education", "restaurant"]) {
@@ -3778,10 +3778,10 @@ test("V3: the viewer's optional location type: its samples (20 each), name and c
   assert.match(V.configProblem({ ...V.normalizeConfig(base), type: "casino" }), /location type/);
   assert.match(V.configProblem({ ...V.normalizeConfig({ v: 1 }), type: "office" }), /version 2's/);
   assert.equal(V.summary({ ...base, type: "medical", name: "X" }), "Building directory · Medical / Healthcare · X · 10 tenants · landscape · Dark · weather, contacts");
-  // the page: optional, below the choices and above Request a Quote
+  // the page: optional, third in "Add your building" (after the name and subtitle, before the tenants; Scot, 2026-11-13)
   const html = readFileSync(new URL("../public/viewer.html", import.meta.url), "utf8");
-  assert.ok(html.includes('<option value="">Choose a location type (optional)</option>') && html.includes("Make this preview more relevant to you")
-    && html.indexOf('name="type"') > html.indexOf('name="places"') && html.indexOf('name="type"') < html.indexOf('id="quote"'));
+  assert.ok(html.includes('<option value="">Choose a location type (optional)</option>') && html.includes("personalize the example names")
+    && html.indexOf('name="type"') > html.indexOf('name="subtitle"') && html.indexOf('name="type"') < html.indexOf('name="tenants"'));
   // the console: a column, the breakdowns, a CSV safe to open in a spreadsheet
   const con = readFileSync(new URL("../public/console-viewer.js", import.meta.url), "utf8");
   assert.ok(con.includes('"Not specified"') && con.includes("By location type") && con.includes("By ad source") && con.includes("toCsv(rows)"));

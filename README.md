@@ -864,7 +864,7 @@ through waytugo.com's own inquiry form.
   placeholder). Choices version 2 (`viewer-sample.mjs`; `supabase/51-viewer-v2.sql`); version 1 visits redraw as before.
 
 - **V3** (Scot's brief, 2026-11-13, "Optional Industry Selection & Sample Content Personalization"): an optional
-  **location type** dropdown below the extras ("Make this preview more relevant to you"). Office, medical, government,
+  **location type** dropdown, third in step 2 "Add your building" (after the name and subtitle; Scot moved it there from below the extras). Office, medical, government,
   hospitality, retail, education and restaurant (a food hall's counters until the menu board joins the viewer) each
   have 20 sample tenants and suites, a name shown while none is typed, and building contacts (`TYPES`, `typeSamples` in
   viewer-sample.mjs); Other, Just Exploring and none keep the defaults. Only placeholders change: anything typed stays.

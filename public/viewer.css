@@ -58,11 +58,9 @@ html, body { margin: 0; background: var(--bg); color: var(--ink); font: 16px/1.4
 .vw-pic { margin-top: 4px; }
 .vw-pic-own { display: flex; flex-wrap: wrap; gap: 4px 12px; align-items: center; margin: 4px 0 6px 28px; }
 .vw-pic-name { color: var(--muted); font-size: 13px; overflow-wrap: anywhere; }
-/* V3: the optional location type, small and below the choices */
-.vw-type { padding: 2px 4px 4px; }
-.vw-type .vw-field { margin-top: 0; }
-.vw-type-q { font-size: 14px; }
-.vw-type select { font: inherit; font-weight: 400; font-size: 15px; color: var(--ink); background: rgba(0,0,0,.25); border: 1px solid var(--line); border-radius: 8px; padding: 9px 10px; }
+/* V3: the optional location type, third in "Add your building" (Scot, 2026-11-13) */
+.vw-type label { display: flex; justify-content: space-between; gap: 8px; }
+.vw-type select { font: inherit; font-weight: 400; font-size: 16px; color: var(--ink); background: rgba(0,0,0,.25); border: 1px solid var(--line); border-radius: 8px; padding: 10px 10px; }
 .vw-type select option { color: #111; background: #fff; }
 .vw-type select:focus-visible { outline: 3px solid var(--blue); outline-offset: 2px; }
 @media (max-width: 860px) {
