@@ -14,6 +14,60 @@ export const LIMITS = { name: 60, subtitle: 60, suite: 12 };
 export const PICTURE = ["off", "sample", "own"];
 export const PLACEHOLDER = { logo: "/viewer-pics/your-logo.png", photo: "/viewer-pics/building.jpg" };
 
+// V3 (DP-14): the optional location type ("Make this preview more relevant to you"): it changes the sample tenants and
+// suites (only rows the visitor hasn't typed in), the name shown while none is typed, and the building contacts. The
+// news stories and events stay as they are. "" (none chosen), Other and Just exploring keep the default samples. Kept
+// with the visit (self-chosen, not a verified industry). Restaurant / Food Service shows a food hall's counters until
+// the menu board joins the viewer (Scot, 2026-11-13).
+export const TYPES = {
+  office: "Commercial Office Building", medical: "Medical / Healthcare", government: "Government / Municipal",
+  hospitality: "Hotel / Hospitality", retail: "Retail / Shopping Center", education: "Education / Campus",
+  restaurant: "Restaurant / Food Service", other: "Other", exploring: "Just Exploring",
+};
+// Each type's 20 invented names, with their suite (a number: by floor, as the default samples; or the words given)
+const T = (names, suites) => names.map((n, i) => [n, suites ? suites[i] : null]);
+const TYPE_SAMPLES = {
+  office: { building: "Your Office Tower", manager: ["Your Property Manager", "Sample Commercial Properties"], leasing: ["Leasing Office", "Sample Office Leasing"], tenants: T([
+    "Harbor Point Law", "Beacon Hill Accounting", "Summit Ridge Insurance", "Meridian Title Co.", "Granite Peak Consulting", "Oakline Financial Group",
+    "Stonebridge Mortgage", "Keystone Staffing", "Sterling Court Reporters", "Union Square Tax Service", "Valley Forge Benefits", "Highland Payroll",
+    "Ridgeway Insurance Agency", "Silver Maple Wealth", "Northstar IT Services", "Lantern Media Group", "Cedar & Stone Architects", "Ironwood Engineering",
+    "Old Mill Bookkeeping", "Fieldstone Realty"]) },
+  medical: { building: "Your Medical Plaza", manager: ["Practice Services Office", "Sample Medical Properties"], leasing: ["Suite Availability", "Sample Healthcare Realty"], tenants: T([
+    "Northgate Family Medicine", "Riverbend Imaging Center", "Clearwater Physical Therapy", "Lakeside Vision Care", "Bluebird Pediatrics", "Magnolia Dermatology",
+    "Parkview Allergy & Asthma", "Westbrook Sleep Clinic", "Redbud Hearing Center", "Pebble Creek Podiatry", "Fairhaven Endodontics", "Larkspur Women's Health",
+    "Summit Cardiology", "Willow Creek Counseling", "Glenwood Urgent Care", "Juniper Lab Services", "Maple Row Pharmacy", "Trailhead Chiropractic",
+    "Amberly Speech Therapy", "Pinecrest Orthodontics"]) },
+  government: { building: "Your City Hall", manager: ["Facilities Department", "City of Sampleton"], leasing: ["Information Desk", "Main Floor Lobby"], tenants: T([
+    "Mayor's Office", "City Clerk", "Revenue & Business Licenses", "Building Permits & Inspections", "Planning & Zoning", "Public Works",
+    "Parks & Recreation", "Human Resources", "City Council Chambers", "Municipal Court", "Water & Sewer Billing", "Code Enforcement",
+    "Engineering Department", "Finance Department", "Community Development", "Information Technology", "Economic Development", "Public Safety Records",
+    "Senior Services", "Veterans Services"]) },
+  hospitality: { building: "Your Hotel", manager: ["Front Desk", "Dial 0 from any room phone"], leasing: ["Catering & Events", "Sample Hotel Sales Office"], tenants: T([
+    "Grand Ballroom", "Magnolia Room", "Dogwood Room", "Azalea Room", "Executive Boardroom", "Business Center", "Fitness Center", "Pool & Spa",
+    "Lobby Bar & Grill", "Breakfast Room", "Gift Shop", "Guest Laundry", "Pre-Function Lounge", "Garden Terrace", "Camellia Room", "Laurel Room",
+    "Registration Desk", "Bell Stand", "Hospitality Suite", "Sales & Catering"],
+    ["Level 2", "Level 2", "Level 2", "Level 2", "Level 3", "Lobby", "Level 1", "Level 1", "Lobby", "Level 1", "Lobby", "Level 1", "Level 2", "Level 1",
+     "Level 3", "Level 3", "Level 2", "Lobby", "Level 3", "Level 2"]) },
+  retail: { building: "Your Shopping Center", manager: ["Center Management", "Sample Retail Properties"], leasing: ["Leasing Office", "Sample Retail Leasing"], tenants: T([
+    "Thistle & Pine Florist", "Corner Bakery & Coffee", "Rosewood Hair Studio", "Yellowhammer Print Shop", "Crossroads Travel", "Driftwood Yoga",
+    "Main Street Deli", "Maple Row Pharmacy", "Foxglove Interiors", "Kingfisher Shoe Repair", "Bright Harbor Tutoring", "Elm Street Notary",
+    "Sweet Magnolia Candy Co.", "Greenway Fitness", "Hollow Oak Bookstore", "Lakeside Nail Spa", "Copper Kettle Kitchenware", "Riverside Bank",
+    "Trailside Outfitters", "Leasing Office"],
+    ["A1", "A2", "A3", "A4", "A5", "A6", "A7", "A8", "B1", "B2", "B3", "B4", "B5", "B6", "B7", "B8", "C1", "C2", "C3", "C4"]) },
+  education: { building: "Your Campus", manager: ["Campus Operations", "Sample Community College"], leasing: ["Welcome Center", "Visitor Information"], tenants: T([
+    "Admissions", "Registrar", "Financial Aid", "Bursar's Office", "Academic Advising", "Career Services", "Student Life", "Library & Learning Commons",
+    "Testing Center", "Tutoring Center", "Department of English", "Department of Mathematics", "Department of Nursing", "Department of Business",
+    "Dean of Students", "Information Technology", "Veterans Center", "Disability Services", "Bookstore", "Lecture Hall A"]) },
+  restaurant: { building: "Your Food Hall", manager: ["Food Hall Management", "Sample Hospitality Group"], leasing: ["Vendor Leasing", "Sample Food Hall Partners"], tenants: T([
+    "Smoke & Pine Barbecue", "Little Saigon Pho", "Copper Kettle Coffee", "Gulf Coast Oyster Bar", "Taqueria El Sol", "Nonna's Pizza & Pasta",
+    "Sweet Magnolia Bakery", "Seoul Street Kitchen", "The Burger Stand", "Green Bowl Salads", "Sunrise Smoothies", "Biscuit Barn",
+    "Curry Leaf Indian Kitchen", "Southern Fried Chicken Co.", "Gelato Corner", "Taproom Bar", "Mediterranean Grill", "Sushi Counter",
+    "Wing Shack", "Shared Dining Hall"],
+    ["Stall 1", "Stall 2", "Stall 3", "Stall 4", "Stall 5", "Stall 6", "Stall 7", "Stall 8", "Stall 9", "Stall 10", "Stall 11", "Stall 12",
+     "Stall 13", "Stall 14", "Stall 15", "Center Bar", "Stall 16", "Stall 17", "Stall 18", "Main Floor"]) },
+};
+export const typeSamples = (t) => TYPE_SAMPLES[t] || null;
+
 const clean = (v, n) => String(v ?? "").replace(/[\u0000-\u001f\u007f<>]/g, "").replace(/\s+/g, " ").trim().slice(0, n);
 
 /** The viewer's choices, as kept: { v, kind, name, subtitle, tenants, shape, weather, qr, places, contacts, news }
@@ -40,14 +94,15 @@ export function normalizeConfig(c) {
     places: x.places === true,
     contacts: x.contacts !== false,
     news: x.news === true,
-    ...(v === 2 ? { look: x.look === "light" ? "light" : "dark", logo: PICTURE.includes(x.logo) ? x.logo : "off", photo: PICTURE.includes(x.photo) ? x.photo : "off", rows } : {}),
+    ...(v === 2 ? { look: x.look === "light" ? "light" : "dark", logo: PICTURE.includes(x.logo) ? x.logo : "off", photo: PICTURE.includes(x.photo) ? x.photo : "off", rows,
+      type: TYPES[x.type] ? x.type : "" } : {}),   // V3: the location type, "" when none was chosen
   };
 }
 
 /** Problems with choices sent to be kept (the same rules as supabase/48-viewer.sql's viewer_config_problem) */
 export function configProblem(c) {
   if (!c || typeof c !== "object" || Array.isArray(c)) return "The choices are an object.";
-  const keys = ["v", "kind", "name", "subtitle", "tenants", "shape", "weather", "qr", "places", "contacts", "news", "look", "logo", "photo", "rows"];
+  const keys = ["v", "kind", "name", "subtitle", "tenants", "shape", "weather", "qr", "places", "contacts", "news", "look", "logo", "photo", "rows", "type"];
   for (const k of Object.keys(c)) if (!keys.includes(k)) return `"${k}" isn't one of the viewer's choices.`;
   if (c.v !== 1 && c.v !== 2) return "The choices are version 1 or 2.";
   if (!KINDS[c.kind]) return "The display is a building directory or a touch directory.";
@@ -57,7 +112,8 @@ export function configProblem(c) {
   for (const k of ["weather", "qr", "places", "contacts"]) if (typeof c[k] !== "boolean") return `${k} is on or off.`;
   if (c.news !== undefined && typeof c.news !== "boolean") return "news is on or off.";
   // V2: version 2's choices
-  if (c.v === 1 && ["look", "logo", "photo", "rows"].some((k) => k in c)) return "The look, logo, photo and rows are version 2's.";
+  if (c.v === 1 && ["look", "logo", "photo", "rows", "type"].some((k) => k in c)) return "The look, logo, photo, rows and type are version 2's.";
+  if (c.type !== undefined && c.type !== "" && !TYPES[c.type]) return "The location type isn't one of the viewer's.";
   if (c.v === 2) {
     if (c.tenants > SLIDER_MAX) return `The tenants are ${MIN_TENANTS} to ${SLIDER_MAX}.`;
     if (!["dark", "light"].includes(c.look)) return "The look is Dark or Light.";
@@ -77,7 +133,7 @@ export function summary(c) {
   const extras = [c.weather && "weather", c.news && "news", c.qr && "QR", c.places && "places", c.contacts && "contacts"].filter(Boolean);
   const typed = (c.rows || []).filter((r) => r.name || r.suite).length;
   const pics = [c.logo === "own" ? "own logo" : c.logo === "sample" && "logo", c.photo === "own" ? "own photo" : c.photo === "sample" && "photo"].filter(Boolean);
-  return [KINDS[c.kind], c.name || "(no name)", `${c.tenants} tenants${typed ? ` (${typed} typed in)` : ""}`, c.shape, c.look === "light" ? "Light" : c.v === 2 ? "Dark" : "",
+  return [KINDS[c.kind], c.type ? TYPES[c.type] : "", c.name || "(no name)", `${c.tenants} tenants${typed ? ` (${typed} typed in)` : ""}`, c.shape, c.look === "light" ? "Light" : c.v === 2 ? "Dark" : "",
     pics.length ? pics.join(", ") : "", extras.length ? extras.join(", ") : "no extras"].filter(Boolean).join(" · ");
 }
 
@@ -166,9 +222,10 @@ export function sampleRows(c) {
   const r = rand(hash("waytugo-viewer-2"));
   const names = TENANTS.slice();
   for (let i = names.length - 1; i > 0; i--) { const j = Math.floor(r() * (i + 1)); [names[i], names[j]] = [names[j], names[i]]; }
+  const own = TYPE_SAMPLES[c.type]?.tenants;   // V3: the location type's samples, in its own order
   const dirs = ["right", "left"];
-  return names.slice(0, c.tenants).map((sample, i) => {
-    const floor = 1 + Math.floor(i / 7), room = String(100 * floor + 10 + (i % 7) * 10);
+  return (own ? own.map(([n]) => n) : names).slice(0, c.tenants).map((sample, i) => {
+    const floor = 1 + Math.floor(i / 7), room = own?.[i][1] || String(100 * floor + 10 + (i % 7) * 10);
     const typed = c.rows[i] || { name: "", suite: "" }, name = typed.name || sample;
     const people = [];
     if (c.kind === "touch") {
@@ -189,13 +246,14 @@ export function sampleDirectory(c, { togoUrl = "https://waytugo.com/", ownLogo =
   // V2: the visitor's own pictures come from their browser (ownLogo, ownPhoto); without them, the placeholders
   const logo = c.logo === "own" && ownLogo ? ownLogo : c.logo && c.logo !== "off" ? PLACEHOLDER.logo : "";
   const photo = c.photo === "own" && ownPhoto ? ownPhoto : c.photo && c.photo !== "off" ? PLACEHOLDER.photo : "";
+  const ts = TYPE_SAMPLES[c.type];   // V3: the location type's name and contacts while none are typed
   return {
     key: "viewer", orientation: c.shape, sample: true,
-    propertyName: c.name || "Your Building Name", buildingLabel: c.subtitle,
+    propertyName: c.name || ts?.building || "Your Building Name", buildingLabel: c.subtitle,
     logo, logoReplacesName: false, companyLogo: "", logoSwap: false,
     tenants: sampleTenants(c),
-    managedBy: c.contacts ? { name: "Your Property Manager", company: "Sample Property Management", phone: "(205) 555-0100" } : {},
-    leasedBy: c.contacts ? { name: "Leasing Office", company: "Sample Realty Partners", phone: "(205) 555-0142" } : {},
+    managedBy: c.contacts ? { name: ts?.manager[0] || "Your Property Manager", company: ts?.manager[1] || "Sample Property Management", phone: "(205) 555-0100" } : {},
+    leasedBy: c.contacts ? { name: ts?.leasing[0] || "Leasing Office", company: ts?.leasing[1] || "Sample Realty Partners", phone: "(205) 555-0142" } : {},
     welcome: "Sample directory · names, suites and phone numbers are demonstration content",
     // Weather for 1Point's home (Birmingham, Alabama): real weather, so the sample looks alive
     weather: { enabled: c.weather, lat: 33.5186, lon: -86.8104 },

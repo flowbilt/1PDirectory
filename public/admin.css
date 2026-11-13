@@ -561,5 +561,10 @@ body .me-offline { color: #ffd27a; font-weight: 700; }
 .viewer-quote { display: inline-block; padding: 2px 8px; border-radius: 999px; font-size: 12px; font-weight: 700; }
 .viewer-quote.sent { background: #1f7a3d; color: #fff; }
 .viewer-quote.started { background: #f1c25b; color: #2b1d00; }
+/* V3: the visits by location type and by ad source */
+.viewer-breakdown { display: flex; flex-wrap: wrap; gap: 8px 24px; margin: 4px 0 12px; }
+.viewer-breakdown .hint { flex-basis: 100%; margin: 0; }
+.viewer-bd h3 { font-size: 14px; margin: 0 0 4px; }
+.viewer-bd table.compact td, .viewer-bd table.compact th { padding: 4px 10px; font-size: 13px; }
 a.button-link { display: inline-flex; align-items: center; padding: 8px 12px; border-radius: 8px; text-decoration: none; }
 .muted { color: var(--muted); }

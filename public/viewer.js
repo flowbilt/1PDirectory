@@ -7,7 +7,7 @@
 //                                                                     viewer_preview_shown, viewer_quote_started
 //   { source: "waytugo-viewer", type: "quote", visit, code, summary, config }
 // and from it: { source: "waytugo-site", type: "quote-sent", visit }   its form was sent (kept with the visit)
-import { normalizeConfig, sampleDirectory, sampleRows, summary, KINDS, LIMITS, SLIDER_MAX } from "/viewer-sample.mjs";
+import { normalizeConfig, sampleDirectory, sampleRows, summary, typeSamples, KINDS, LIMITS, SLIDER_MAX } from "/viewer-sample.mjs";
 
 const $ = (id) => document.getElementById(id);
 const form = $("controls"), frame = $("pv"), box = $("screen");
@@ -37,14 +37,21 @@ function choices() {
   const pic = (k) => (!f.has(k) ? "off" : own[k] ? "own" : "sample");
   return normalizeConfig({ v: 2, kind: f.get("kind"), name: f.get("name"), subtitle: f.get("subtitle"), tenants: n, shape: f.get("shape"),
     weather: f.has("weather"), qr: f.has("qr"), places: f.has("places"), contacts: f.has("contacts"), news: f.has("news"),
-    look: f.get("look"), logo: pic("logo"), photo: pic("photo"), rows: typed.slice(0, n) });
+    look: f.get("look"), logo: pic("logo"), photo: pic("photo"), rows: typed.slice(0, n), type: f.get("type") || "" });
 }
 
 // ── V2: the tenant rows, one per tenant on the slider, the sample's name and suite as placeholders
 const rowsEl = $("rows");
+let rowsFor = "";
 function renderRows() {
   const c = choices(), list = sampleRows({ ...c, rows: [] });
-  if (rowsEl.children.length === list.length) return;
+  // V3: a new location type changes only the placeholders; what the visitor typed stays as it is
+  if (rowsEl.children.length === list.length && rowsFor === c.type) return;
+  if (rowsEl.children.length === list.length) {
+    list.forEach((r, i) => { const row = rowsEl.children[i]; row.children[0].placeholder = r.sample; row.children[1].placeholder = r.sampleSuite; });
+    rowsFor = c.type; return;
+  }
+  rowsFor = c.type;
   rowsEl.innerHTML = list.map((r, i) => `<div class="vw-row" data-i="${i}">`
     + `<input data-row="name" maxlength="${LIMITS.name}" placeholder="${esc(r.sample)}" value="${esc(typed[i].name)}" aria-label="Tenant ${i + 1} name">`
     + `<input data-row="suite" maxlength="${LIMITS.suite}" placeholder="${esc(r.sampleSuite)}" value="${esc(typed[i].suite)}" aria-label="Tenant ${i + 1} suite"></div>`).join("");
@@ -109,6 +116,8 @@ function draw() {
     const c = choices();
     $("tenants-out").textContent = String(c.tenants);
     renderRows();
+    const ts = typeSamples(c.type);   // V3: the name box's example follows the location type (only its placeholder)
+    form.elements.name.placeholder = ts ? `e.g. ${ts.building.replace(/^Your /, "Sample ")}` : "e.g. Landmark Business Center";
     $("hint").textContent = c.kind === "touch" ? "It's live: tap a company for its card, or a letter to jump. Names, suites and phone numbers are invented." : "Names, suites and phone numbers are invented for this preview.";
     fit();
     frame.contentWindow?.postMessage({ type: "draft", data: sampleDirectory(c, { ownLogo: own.logo?.url || "", ownPhoto: own.photo?.url || "" }) }, location.origin);

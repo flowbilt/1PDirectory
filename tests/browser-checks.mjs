@@ -1977,6 +1977,38 @@ try {
     assert(JSON.stringify(r.source) === JSON.stringify({ page: "/x" }), "only the page kept from the source");
   });
 
+  await check("V3: the optional location type: the viewer works without it; a type changes the sample rows, the name shown and the contacts but never what was typed; kept with the visit; the console's Location type column, the breakdowns and the CSV", async () => {
+    const p = await browser.newPage({ viewport: { width: 1360, height: 900 } });
+    const sent = []; p.on("request", (r) => { if (r.url().endsWith("/api/viewer")) sent.push(r.postData() || ""); });
+    await p.goto(`${B}/viewer.html`); await p.waitForTimeout(1500);
+    assert(await p.inputValue("#type") === "", "none chosen to start");
+    const scr = p.frameLocator("#pv");
+    const before = await scr.locator(".tenant-name").allTextContents();
+    await p.fill('#rows .vw-row[data-i="1"] input[data-row="name"]', "Acme Dental"); await p.waitForTimeout(400);
+    await p.selectOption("#type", "medical"); await p.waitForTimeout(800);
+    assert(await p.inputValue('#rows .vw-row[data-i="1"] input[data-row="name"]') === "Acme Dental", "what was typed stays");
+    assert(await p.getAttribute('#rows .vw-row[data-i="0"] input[data-row="name"]', "placeholder") === "Northgate Family Medicine", "the placeholders follow the type");
+    assert((await scr.locator("#property").textContent()).trim() === "Your Medical Plaza", "the name shown while none is typed");
+    const med = await scr.locator(".tenant-name").allTextContents();
+    assert(med.some((n) => n.startsWith("Acme Dental")) && med.some((n) => n.startsWith("Northgate Family Medicine")) && JSON.stringify(med) !== JSON.stringify(before), med.join(", "));
+    await p.fill('input[name="name"]', "Location Type Test"); await p.selectOption("#type", "government"); await p.waitForTimeout(800);
+    assert((await scr.locator("#property").textContent()).trim() === "Location Type Test", "a typed name stays");
+    assert((await scr.locator(".tenant-name").allTextContents()).some((n) => n.startsWith("Mayor's Office")) && !(await scr.locator(".tenant-name").allTextContents()).some((n) => n.startsWith("City Clerk")), "government's samples, but not under the typed row");
+    await p.waitForTimeout(6000);
+    const last = JSON.parse(sent[sent.length - 1] || "{}");
+    assert(last.config?.type === "government", JSON.stringify(last.config));
+    await p.close();
+    await boss.goto(`${B}/console.html#viewer`); await boss.waitForTimeout(2500);
+    assert((await boss.locator("#viewer-rows tr", { hasText: "Location Type Test" }).textContent()).includes("Government / Municipal"), "the column");
+    assert((await boss.textContent("#viewer-rows")).includes("Not specified"), "older visits: Not specified");
+    const bd = await boss.textContent("#viewer-breakdown");
+    assert(bd.includes("By location type") && bd.includes("Government / Municipal") && bd.includes("By ad source") && bd.includes("google / cpc"), bd.slice(0, 300));
+    const [dl] = await Promise.all([boss.waitForEvent("download"), boss.click("#viewer-csv")]);
+    const csv = readFileSync(await dl.path(), "utf8");
+    assert(csv.startsWith("code,started,location_type,") && csv.includes("Government / Municipal") && csv.includes("Location Type Test") && csv.includes("Not specified"), csv.slice(0, 300));
+    await shot(boss, "viewer-console-types");
+  });
+
   await check("V1: the console's Viewer tab (1Point only): the visits with their choices, time, source and quote; View redraws one exactly; Remove takes a test visit away; a customer has no Viewer tab and reads no visits", async () => {
     await boss.goto(`${B}/console.html#viewer`); await boss.waitForTimeout(2500);
     assert(await boss.locator("#tab-viewer").isVisible(), "1Point's Viewer tab");

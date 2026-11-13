@@ -863,6 +863,15 @@ through waytugo.com's own inquiry form.
   shrunk in their browser and shown only there (the visit keeps only `"own"`; the console's View shows the
   placeholder). Choices version 2 (`viewer-sample.mjs`; `supabase/51-viewer-v2.sql`); version 1 visits redraw as before.
 
+- **V3** (Scot's brief, 2026-11-13, "Optional Industry Selection & Sample Content Personalization"): an optional
+  **location type** dropdown below the extras ("Make this preview more relevant to you"). Office, medical, government,
+  hospitality, retail, education and restaurant (a food hall's counters until the menu board joins the viewer) each
+  have 20 sample tenants and suites, a name shown while none is typed, and building contacts (`TYPES`, `typeSamples` in
+  viewer-sample.mjs); Other, Just Exploring and none keep the defaults. Only placeholders change: anything typed stays.
+  Kept as `type` (`supabase/52-viewer-type.sql`). Console: a Location type column ("Not specified"), By location type
+  and By ad source tables (visits, engaged = 30 s and 3 changes, average time, quotes), and **Download CSV** (cells
+  that start with = + - @ are quoted so a spreadsheet won't run them).
+
 ### Light and Dark directories (DP-14, D2)
 
 Each directory has a **Look** in the editor (This directory): **Dark** (the original, the default), **Light** (a pale

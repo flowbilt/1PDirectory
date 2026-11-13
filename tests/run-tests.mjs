@@ -3752,6 +3752,45 @@ test("V2: the viewer's version 2: up to 20 tenants with the visitor's own names 
   for (const w of ["'look', 'logo', 'photo', 'rows'", "> 20", "('dark', 'light')", "('off', 'sample', 'own')", "> 60 or char_length(r ->> 'suite') > 12", "jsonb_array_length(c -> 'rows') > (c ->> 'tenants')::int"]) assert.ok(sql.includes(w), w);
 });
 
+test("V3: the viewer's optional location type: its samples (20 each), name and contacts only where nothing is typed; none chosen, Other and Just Exploring keep the defaults; kept with the visit; the console's breakdown and CSV; the site's rules (= 52-viewer-type.sql)", async () => {
+  const V = await import("../public/viewer-sample.mjs");
+  assert.deepEqual(Object.keys(V.TYPES), ["office", "medical", "government", "hospitality", "retail", "education", "restaurant", "other", "exploring"]);
+  for (const k of ["office", "medical", "government", "hospitality", "retail", "education", "restaurant"]) {
+    const t = V.typeSamples(k);
+    assert.equal(t.tenants.length, 20, k); assert.equal(new Set(t.tenants.map((x) => x[0])).size, 20, `${k}: 20 different`);
+    assert.ok(t.tenants.every(([n, s]) => n.length <= V.LIMITS.name && (s == null || s.length <= V.LIMITS.suite)), `${k}: within the limits`);
+  }
+  const base = { v: 2, tenants: 10 };
+  const def = V.sampleDirectory(base), other = V.sampleDirectory({ ...base, type: "other" }), exploring = V.sampleDirectory({ ...base, type: "exploring" });
+  assert.deepEqual(other.tenants, def.tenants); assert.deepEqual(exploring.tenants, def.tenants); assert.equal(other.propertyName, "Your Building Name");
+  const med = V.sampleDirectory({ ...base, type: "medical" });
+  assert.equal(med.propertyName, "Your Medical Plaza"); assert.ok(med.tenants.some((t) => t.name === "Northgate Family Medicine")); assert.notDeepEqual(med.tenants, def.tenants);
+  const hotel = V.sampleDirectory({ ...base, type: "hospitality" });
+  assert.ok(hotel.tenants.some((t) => t.name === "Grand Ballroom" && t.suite === "Level 2")); assert.equal(hotel.managedBy.name, "Front Desk");
+  assert.ok(V.sampleDirectory({ ...base, type: "restaurant" }).tenants.every((t) => /^(Stall \d+|Center Bar|Main Floor)$/.test(t.suite)), "a food hall's counters");
+  // what the visitor typed is never replaced
+  const mine = V.sampleDirectory({ ...base, type: "government", name: "Gardendale City Hall", rows: [{ name: "Acme Dental", suite: "210" }] });
+  assert.equal(mine.propertyName, "Gardendale City Hall"); assert.ok(mine.tenants.some((t) => t.name === "Acme Dental" && t.suite === "210"));
+  assert.ok(mine.tenants.some((t) => t.name === "City Clerk"), "the other rows follow the type");
+  // kept: "" when none; only known types
+  assert.equal(V.normalizeConfig(base).type, ""); assert.equal(V.normalizeConfig({ ...base, type: "casino" }).type, "");
+  assert.equal(V.configProblem(V.normalizeConfig({ ...base, type: "retail" })), "");
+  assert.match(V.configProblem({ ...V.normalizeConfig(base), type: "casino" }), /location type/);
+  assert.match(V.configProblem({ ...V.normalizeConfig({ v: 1 }), type: "office" }), /version 2's/);
+  assert.equal(V.summary({ ...base, type: "medical", name: "X" }), "Building directory · Medical / Healthcare · X · 10 tenants · landscape · Dark · weather, contacts");
+  // the page: optional, below the choices and above Request a Quote
+  const html = readFileSync(new URL("../public/viewer.html", import.meta.url), "utf8");
+  assert.ok(html.includes('<option value="">Choose a location type (optional)</option>') && html.includes("Make this preview more relevant to you")
+    && html.indexOf('name="type"') > html.indexOf('name="places"') && html.indexOf('name="type"') < html.indexOf('id="quote"'));
+  // the console: a column, the breakdowns, a CSV safe to open in a spreadsheet
+  const con = readFileSync(new URL("../public/console-viewer.js", import.meta.url), "utf8");
+  assert.ok(con.includes('"Not specified"') && con.includes("By location type") && con.includes("By ad source") && con.includes("toCsv(rows)"));
+  const ch = readFileSync(new URL("../public/console.html", import.meta.url), "utf8");
+  assert.ok(ch.includes('id="viewer-csv"') && ch.includes("<th>Location type</th>") && ch.includes('id="viewer-breakdown"'));
+  const sql = readFileSync(new URL("../supabase/52-viewer-type.sql", import.meta.url), "utf8");
+  assert.ok(sql.includes("('', 'office', 'medical', 'government', 'hospitality', 'retail', 'education', 'restaurant', 'other', 'exploring')") && sql.includes("'rows', 'type'"));
+});
+
 let passed = 0;
 for (const [name, fn] of tests) {
   try { await fn(); passed++; console.log(`  ok  ${name}`); }

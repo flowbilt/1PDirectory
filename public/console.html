@@ -264,13 +264,16 @@
       <div class="summary" id="viewer-summary"></div>
       <div class="toolbar-controls">
         <select id="viewer-days" aria-label="Visits from"><option value="7">Last 7 days</option><option value="30" selected>Last 30 days</option><option value="90">Last 90 days</option><option value="0">All</option></select>
+        <button type="button" class="ghost" id="viewer-csv">Download CSV</button>
         <a class="ghost button-link" href="/viewer.html" target="_blank" rel="noopener">Open the viewer ↗</a>
       </div>
     </div>
     <p class="hint">Each visit that built something, without a name: what the visitor chose, how long they spent, the page or ad that brought them, and whether they asked for a quote. <strong>View</strong> redraws it exactly as they saw it.</p>
+    <!-- V3: the visits by location type and by where they came from (self-chosen types, not verified) -->
+    <div class="viewer-breakdown" id="viewer-breakdown"></div>
     <div class="table-wrap">
       <table class="grid">
-        <thead><tr><th>When</th><th>Display</th><th>Building name</th><th>Tenants</th><th>Screen</th><th>Extras</th><th>Time</th><th>From</th><th>Quote</th><th><span class="sr-only">Actions</span></th></tr></thead>
+        <thead><tr><th>When</th><th>Display</th><th>Location type</th><th>Building name</th><th>Tenants</th><th>Screen</th><th>Extras</th><th>Time</th><th>From</th><th>Quote</th><th><span class="sr-only">Actions</span></th></tr></thead>
         <tbody id="viewer-rows"></tbody>
       </table>
     </div>
