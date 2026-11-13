@@ -79,6 +79,7 @@ Do these once. The current site keeps running as it is until the new build is de
 51. For Light and Dark directories (DP-14, D2): **before uploading that code**, new query, paste all of `50-directory-look.sql`, and click **Run**. Then new query, paste all of `check-directory-look.sql`, and click **Run**; it should read **ALL 4 CHECKS PASSED** (red on purpose).
 52. For the viewer's version 2 (DP-14, V2): **before uploading that code**, new query, paste all of `51-viewer-v2.sql`, and click **Run**. Then new query, paste all of `check-viewer-v2.sql`, and click **Run**; it should read **ALL 4 CHECKS PASSED** (red on purpose).
 53. For the viewer's location type (DP-14, V3): **before uploading that code**, new query, paste all of `52-viewer-type.sql`, and click **Run**. Then new query, paste all of `check-viewer-type.sql`, and click **Run**; it should read **ALL 3 CHECKS PASSED** (red on purpose).
+54. For the menu board in the viewer (DP-14, V4): **before uploading that code**, new query, paste all of `53-viewer-menu.sql`, and click **Run**. Then new query, paste all of `check-viewer-menu.sql`, and click **Run**; it should read **ALL 5 CHECKS PASSED** (red on purpose).
 
 If any of them shows an error (other than the expected red messages from the `check-…sql` files), copy the message (it includes a line number) and send it to Claude.
 

@@ -624,6 +624,19 @@ export function createFake() {
       }
       return null;
     },
+    // 53-viewer-menu.sql: the templates' published boards for the viewer, and one of them (the site only)
+    viewer_boards() {
+      const tpl = new Set(T.organizations.filter((o) => o.kind === "templates").map((o) => o.id));
+      return order(T.menus.filter((m) => tpl.has(m.org_id)), "name").map((m) => ({ id: m.id, name: m.name, boards: order(T.layouts.filter((l) => l.menu_id === m.id && l.published_version != null), "name").map((l) => {
+        const doc = T.layout_versions.find((x) => x.layout_id === l.id && x.version === l.published_version)?.doc || {};
+        return { id: l.id, name: l.name, orientation: l.orientation, inches: doc.viewing?.inches ?? null, turns: !!doc.turned, looks: doc.theme?.looks || ["house"] };
+      }) })).filter((m) => m.boards.length);
+    },
+    viewer_board({ p_layout }) {
+      const l = T.layouts.find((x) => x.id === p_layout);
+      if (!l || l.published_version == null || !l.menu_id || T.organizations.find((o) => o.id === l.org_id)?.kind !== "templates") return { missing: true };
+      return FUNCS.menu_page({ p_code: l.menu_code, p_count: false });
+    },
     // 36-templates.sql: a sample link's page (the site only)
     sample_page({ p_slug, p_open = false }) {
       const s = T.sample_links.find((x) => x.slug === String(p_slug || "").toLowerCase());

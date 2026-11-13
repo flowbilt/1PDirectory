@@ -3602,7 +3602,7 @@ test("V1: the viewer's choices and its sample directory: kept within limits; the
   assert.deepEqual(c, { v: 1, kind: "touch", name: "Landmark bBusiness/b Center", subtitle: "", tenants: 60, shape: "portrait", weather: true, qr: true, places: false, contacts: true, news: false });
   assert.equal(V.normalizeConfig({ tenants: 1 }).tenants, 4); assert.equal(V.normalizeConfig({ kind: "wayfinding" }).kind, "directory");
   assert.equal(V.configProblem(c), "");
-  for (const [bad, re] of [[{ ...c, kind: "wayfinding" }, /building directory or a touch/], [{ ...c, tenants: 61 }, /4 to 60/], [{ ...c, tenants: 12.5 }, /4 to 60/],
+  for (const [bad, re] of [[{ ...c, kind: "wayfinding" }, /building directory, a touch directory or a menu board/], [{ ...c, tenants: 61 }, /4 to 60/], [{ ...c, tenants: 12.5 }, /4 to 60/],
     [{ ...c, name: "x".repeat(61) }, /up to 60/], [{ ...c, email: "a@b.c" }, /isn't one of/], [{ ...c, qr: "yes" }, /on or off/], [{ ...c, v: 3 }, /version 1 or 2/]]) assert.match(V.configProblem(bad), re);
   const a = V.sampleTenants({ name: "Landmark", tenants: 12 }), b = V.sampleTenants({ name: "Landmark", tenants: 12 });
   assert.deepEqual(a, b, "the same choices, the same tenants (the console's redraw matches)");
@@ -3789,6 +3789,72 @@ test("V3: the viewer's optional location type: its samples (20 each), name and c
   assert.ok(ch.includes('id="viewer-csv"') && ch.includes("<th>Location type</th>") && ch.includes('id="viewer-breakdown"'));
   const sql = readFileSync(new URL("../supabase/52-viewer-type.sql", import.meta.url), "utf8");
   assert.ok(sql.includes("('', 'office', 'medical', 'government', 'hospitality', 'retail', 'education', 'restaurant', 'other', 'exploring')") && sql.includes("'rows', 'type'"));
+});
+
+test("V4: the menu board in the viewer: WayTuGo's templates read live (never Samples, never unpublished); a template board as a screen's answer in an invented Birmingham building; the visitor's name, logo, look, shape and items laid over it in their browser; kept as version 2; the site's rules (= 53-viewer-menu.sql)", async () => {
+  const V = await import("../public/viewer-sample.mjs");
+  const vb = (await import("../netlify/functions/viewer-boards.mjs")).default;
+  const { seedTemplates } = await import("./viewer-templates-seed.mjs");
+  const sbr = async (path, opts = {}) => { const r = await fake.handle(new Request(`${SB}/rest/v1/${path}`, { headers: { apikey: SERVICE_KEY, Authorization: `Bearer ${SERVICE_KEY}`, "Content-Type": "application/json", Prefer: "return=representation" }, ...opts })); const t = await r.text(); return { status: r.status, data: t ? JSON.parse(t) : null }; };
+  const seeded = await seedTemplates(sbr);
+  try {
+    // a samples account's board and an unpublished template board never show
+    const smp = fake.T.organizations.find((o) => o.kind === "samples");
+    const list = await (await vb(new Request("https://x/api/viewer-boards"))).json();
+    const mine = list.templates.filter((t) => seeded.boards.some((b) => b.menu.id === t.id));
+    assert.equal(mine.length, 2); assert.ok(!list.templates.some((t) => fake.T.menus.find((m) => m.id === t.id)?.org_id === smp?.id));
+    const coffee = mine.find((t) => t.name.startsWith("Daybreak")).boards[0];
+    assert.equal(coffee.inches, 55); assert.deepEqual(coffee.looks, ["house", "chalkboard"]); assert.equal(coffee.turns, false);
+    const burger = mine.find((t) => t.name.startsWith("The Meet Market")).boards[0];
+    assert.equal(burger.turns, true, "the burger board turns to portrait"); assert.deepEqual(burger.looks.slice().sort(), ["dark", "light"]);
+    const r = await vb(new Request(`https://x/api/viewer-boards?board=${coffee.id}`));
+    assert.equal(r.status, 200);
+    const pay = await r.json();
+    assert.equal(pay.kind, "layout"); assert.equal(pay.viewer, true); assert.equal(pay.propertyName, ""); assert.equal(pay.timezone, "America/Chicago"); assert.equal(pay.weather.lat, 33.5186);
+    assert.equal((await vb(new Request(`https://x/api/viewer-boards?board=${crypto.randomUUID()}`))).status, 404);
+    assert.equal((await vb(new Request("https://x/api/viewer-boards?board=nope"))).status, 404);
+    const cust = fake.T.layouts.find((l) => l.published_version != null && fake.T.organizations.find((o) => o.id === l.org_id)?.kind !== "templates");
+    if (cust) assert.equal((await vb(new Request(`https://x/api/viewer-boards?board=${cust.id}`))).status, 404, "a customer's board isn't the viewer's");
+    // the visitor's choices laid over it
+    const rows = V.menuRows(pay);
+    assert.ok(rows.length >= 4 && rows.length <= 8 && rows[0].name === "Espresso", JSON.stringify(rows.slice(0, 2)));
+    const c = V.normalizeConfig({ v: 2, kind: "menu", board: coffee.id, name: "Gardendale Grind", look: "chalkboard", logo: "own", items: [{ name: "Civic Cortado", price: "$4.25" }, { name: "", price: "$3.10" }] });
+    const d = V.menuDraft(pay, c, { ownLogo: "data:image/png;base64,MINE" });
+    assert.equal(d.brand.name, "Gardendale Grind"); assert.equal(d.brand.logo, "img:viewer-logo"); assert.equal(d.images["viewer-logo"].url, "data:image/png;base64,MINE");
+    assert.equal(d.look.look, "chalkboard"); assert.equal(d.orientation, "landscape", "a board that doesn't turn keeps its shape");
+    const main = V.mainList(d);
+    assert.equal(main.entries[0].name, "Civic Cortado"); assert.equal(main.entries[0].price, "$4.25"); assert.equal(main.entries[1].name, rows[1].name); assert.equal(main.entries[1].price, "$3.10");
+    assert.equal(V.mainList(pay).entries[0].name, "Espresso", "the answer itself is untouched");
+    assert.equal(V.menuDraft(pay, { ...c, look: "dark" }).look.look ?? null, pay.look?.look ?? null, "a look the board doesn't offer: its own");
+    assert.equal(V.menuDraft(pay, c).images["viewer-logo"].url, V.PLACEHOLDER.logo, "a kept visit's own logo redraws as the placeholder");
+    assert.ok(!("viewer-logo" in (V.menuDraft(pay, { ...c, logo: "off" }).images || {})), "off keeps the template's");
+    const bp = await (await vb(new Request(`https://x/api/viewer-boards?board=${burger.id}`))).json();
+    assert.equal(V.menuDraft(bp, { ...c, board: burger.id, look: "light", shape: "portrait" }).orientation, "portrait", "a board that turns follows the choice");
+    // the rules
+    assert.equal(V.configProblem(c), "");
+    for (const [bad, re] of [[{ ...c, look: "neon" }, /House, Chalkboard/], [{ ...c, board: "Daybreak" }, /templates/], [{ ...c, items: Array.from({ length: 9 }, () => ({ name: "x", price: "" })) }, /8 at most/],
+      [{ ...c, items: [{ name: "x", price: "12345678901234567" }] }, /price up to 16/], [{ ...c, items: [{ name: "x", price: "", image: "data:" }] }, /a name and a price/]]) assert.match(V.configProblem(bad), re);
+    assert.equal(V.normalizeConfig({ v: 1, kind: "menu" }).kind, "directory", "no menu board in version 1");
+    assert.equal(V.summary(c, { boardName: "Daybreak Coffee Co.: Counter board" }), "Menu board · Gardendale Grind · Daybreak Coffee Co.: Counter board · landscape · Chalkboard · own logo · 2 items typed in");
+    // kept through /api/viewer
+    const keep = (await import("../netlify/functions/viewer.mjs")).default;
+    assert.equal((await keep(new Request("https://x/api/viewer", { method: "POST", body: JSON.stringify({ id: crypto.randomUUID(), config: c }) }))).status, 204);
+  } finally {
+    const ids = new Set(seeded.boards.map((b) => b.layout.id)), menus = new Set(seeded.boards.map((b) => b.menu.id));
+    fake.T.layout_versions = fake.T.layout_versions.filter((v) => !ids.has(v.layout_id)); fake.T.layouts = fake.T.layouts.filter((l) => !ids.has(l.id));
+    fake.T.menus = fake.T.menus.filter((m) => !menus.has(m.id)); fake.T.layout_images = fake.T.layout_images.filter((i) => i.org_id !== seeded.org.id);
+    fake.T.organizations = fake.T.organizations.filter((o) => o.id !== seeded.org.id);
+  }
+  // the page, the board page and the console
+  const html = readFileSync(new URL("../public/viewer.html", import.meta.url), "utf8");
+  assert.ok(html.includes('name="kind" value="menu"') && html.includes('id="tpl"') && html.includes('id="board"') && html.includes('id="items"') && html.includes("Add your restaurant"));
+  const bj = readFileSync(new URL("../public/board.js", import.meta.url), "utf8");
+  assert.ok(bj.includes('PREVIEW && r === 0 && !data?.viewer'), "no overflow marks on the viewer's board");
+  const cv = readFileSync(new URL("../public/console-viewer.js", import.meta.url), "utf8");
+  assert.ok(cv.includes("menuDraft(await r.json(), c)") && cv.includes('"/board.html?preview=1"'), "the console redraws a menu board visit");
+  const sql = readFileSync(new URL("../supabase/53-viewer-menu.sql", import.meta.url), "utf8");
+  assert.ok(sql.includes("o.kind = 'templates'") && sql.includes("public.menu_page(v_code, false)") && sql.includes("('house', 'chalkboard', 'light', 'dark')") && sql.includes("jsonb_array_length(c -> 'items') > 8")
+    && sql.includes("grant execute on function public.viewer_boards() to service_role"));
 });
 
 let passed = 0;

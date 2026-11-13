@@ -1,7 +1,7 @@
 // The console's Viewer tab (DP-14, V1; 1Point only): visits to "See Your WayTuGo in Action" on waytugo.com, kept
 // without a name by supabase/48-viewer.sql. View redraws a visit exactly as the visitor saw it, from its choices, with
 // the same sample content (viewer-sample.mjs) on the real directory screen.
-import { normalizeConfig, sampleDirectory, summary, KINDS, TYPES } from "/viewer-sample.mjs";
+import { normalizeConfig, sampleDirectory, summary, menuDraft, KINDS, TYPES, MENU_LOOKS } from "/viewer-sample.mjs";
 
 const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
@@ -13,9 +13,9 @@ const from = (src) => {
   const s = src || {}, ad = [s.utm_source, s.utm_medium, s.utm_campaign].filter(Boolean).join(" / ");
   return ad || s.page || "";
 };
-const extras = (c) => [c.weather && "Weather", c.news && "News", c.contacts && "Contacts", c.qr && "QR", c.places && "Places",
+const extras = (c) => (c.kind === "menu" ? [MENU_LOOKS[c.look], c.logo === "sample" && "Logo", c.logo === "own" && "Own logo"] : [c.weather && "Weather", c.news && "News", c.contacts && "Contacts", c.qr && "QR", c.places && "Places",
   // V2: the look, and the logo and photo (their own isn't kept: View shows the placeholder in its place)
-  c.look === "light" && "Light", c.logo === "sample" && "Logo", c.logo === "own" && "Own logo", c.photo === "sample" && "Photo", c.photo === "own" && "Own photo"].filter(Boolean).join(", ") || "None";
+  c.look === "light" && "Light", c.logo === "sample" && "Logo", c.logo === "own" && "Own logo", c.photo === "sample" && "Photo", c.photo === "own" && "Own photo"]).filter(Boolean).join(", ") || "None";
 const typedIn = (c) => (c.rows || []).filter((r) => r.name || r.suite).length;
 
 // V3: the location type the visitor chose (self-chosen; "Not specified" when none)
@@ -44,17 +44,28 @@ function breakdownHtml(title, list) {
 export function toCsv(list) {
   const cell = (v) => { const t = String(v ?? ""); return /[",\n\r]/.test(t) || /^[=+\-@]/.test(t) ? `"${(/^[=+\-@]/.test(t) ? "'" : "") + t.replace(/"/g, '""')}"` : t; };
   const head = ["code", "started", "location_type", "display", "building_name", "tenants", "typed_in", "screen", "look", "logo", "photo", "extras", "seconds", "changes", "engaged", "quote",
-    "page", "utm_source", "utm_medium", "utm_campaign", "utm_content", "utm_term"];
+    "page", "utm_source", "utm_medium", "utm_campaign", "utm_content", "utm_term", "menu_board", "items_typed_in"];
   const lines = list.map((r) => {
     const c = normalizeConfig(r.config), s = r.source || {};
     return [r.id.slice(0, 8).toUpperCase(), r.started_at, c.type ? TYPES[c.type] : "Not specified", KINDS[c.kind], c.name, c.tenants, (c.rows || []).filter((x) => x.name || x.suite).length,
       c.shape, c.look || "", c.logo || "", c.photo || "", extras(c), r.seconds, r.changes, engaged(r) ? "yes" : "no", r.quote || "",
-      s.page, s.utm_source, s.utm_medium, s.utm_campaign, s.utm_content, s.utm_term].map(cell).join(",");
+      s.page, s.utm_source, s.utm_medium, s.utm_campaign, s.utm_content, s.utm_term,
+      c.kind === "menu" ? boardName(c.board) : "", c.kind === "menu" ? (c.items || []).filter((x) => x.name || x.price).length : ""].map(cell).join(",");
   });
   return [head.join(","), ...lines].join("\r\n") + "\r\n";
 }
 
+// V4: the template boards' names, for menu board visits (a board no longer offered says so)
+let boardNames = null;
+async function loadBoards() {
+  if (boardNames) return;
+  try { const r = await fetch("/api/viewer-boards", { cache: "no-store" }); boardNames = new Map((await r.json()).templates.flatMap((t) => t.boards.map((b) => [b.id, `${t.name}: ${b.name.replace(/^[^:]*:\s*/, "")}`]))); }
+  catch { boardNames = new Map(); }
+}
+const boardName = (id) => boardNames?.get(id) || (id ? "a board no longer offered" : "");
+
 async function load() {
+  await loadBoards();
   const days = Number($("viewer-days").value);
   const since = days ? `&started_at=gte.${new Date(Date.now() - days * 864e5).toISOString()}` : "";
   try {
@@ -73,7 +84,8 @@ function render() {
     return `<tr data-id="${esc(r.id)}">
       <td>${esc(when(r.started_at))}<div class="sub">${esc(r.id.slice(0, 8).toUpperCase())}</div></td>
       <td>${esc(KINDS[c.kind])}</td><td>${c.type ? esc(TYPES[c.type]) : '<span class="muted">Not specified</span>'}</td><td>${c.name ? esc(c.name) : '<span class="muted">(no name)</span>'}${c.subtitle ? `<div class="sub">${esc(c.subtitle)}</div>` : ""}</td>
-      <td>${c.tenants}${typedIn(c) ? `<div class="sub">${typedIn(c)} typed in</div>` : ""}</td><td>${c.shape === "portrait" ? "Portrait" : "Landscape"}</td><td>${esc(extras(c))}</td>
+      <td>${c.kind === "menu" ? `<span class="sub">${esc(boardName(c.board))}</span>${(c.items || []).length ? `<div class="sub">${c.items.filter((x) => x.name || x.price).length} items typed in</div>` : ""}`
+        : `${c.tenants}${typedIn(c) ? `<div class="sub">${typedIn(c)} typed in</div>` : ""}`}</td><td>${c.shape === "portrait" ? "Portrait" : "Landscape"}</td><td>${esc(extras(c))}</td>
       <td>${esc(spent(r.seconds))}<div class="sub">${r.changes} change${r.changes === 1 ? "" : "s"}</div></td>
       <td>${esc(from(r.source)) || '<span class="muted">—</span>'}</td>
       <td>${r.quote ? `<span class="viewer-quote ${esc(r.quote)}">${r.quote === "sent" ? "Sent" : "Started"}</span>` : ""}</td>
@@ -85,12 +97,21 @@ function render() {
 function view(r) {
   const c = normalizeConfig(r.config), land = c.shape === "landscape", W = land ? 1920 : 1080, H = land ? 1080 : 1920;
   $("viewer-dlg-title").textContent = c.name || "(no name)";
-  $("viewer-dlg-line").textContent = `${summary(c)} · code ${r.id.slice(0, 8).toUpperCase()} · ${when(r.started_at)}`;
+  $("viewer-dlg-line").textContent = `${summary(c, { boardName: c.kind === "menu" ? boardName(c.board) : "" })} · code ${r.id.slice(0, 8).toUpperCase()} · ${when(r.started_at)}`;
   const dlg = $("viewer-dlg"), box = $("viewer-dlg-screen"), f = $("viewer-dlg-frame");
   dlg.showModal();
   const s = Math.min((box.parentElement.clientWidth - 16) / W, (window.innerHeight * 0.7) / H);
   Object.assign(box.style, { width: `${Math.round(W * s)}px`, height: `${Math.round(H * s)}px` });
   Object.assign(f.style, { width: `${W}px`, height: `${H}px`, transform: `scale(${s})` });
+  if (c.kind === "menu") {   // V4: the template board, with the visitor's choices laid over it (their own logo: the placeholder)
+    f.onload = async () => {
+      try { const r = await fetch(`/api/viewer-boards?board=${encodeURIComponent(c.board)}`); if (!r.ok) throw new Error(String(r.status));
+        f.contentWindow.postMessage({ type: "layout-draft", data: menuDraft(await r.json(), c) }, location.origin); }
+      catch { $("viewer-dlg-line").textContent += " · this sample board isn't offered any more, so it can't be redrawn"; }
+    };
+    f.src = "/board.html?preview=1";
+    return;
+  }
   f.onload = () => f.contentWindow.postMessage({ type: "draft", data: sampleDirectory(c) }, location.origin);
   f.src = "/index.html?preview=1";
 }

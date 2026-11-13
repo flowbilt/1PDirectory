@@ -12,6 +12,7 @@ import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
 const { chromium } = createRequire(import.meta.url)("playwright");
+import { seedTemplates } from "./viewer-templates-seed.mjs";
 
 const HERE = fileURLToPath(new URL(".", import.meta.url));
 const PORT = 8931, OLD_PORT = 8932, B = `http://localhost:${PORT}`;
@@ -2007,6 +2008,50 @@ try {
     const csv = readFileSync(await dl.path(), "utf8");
     assert(csv.startsWith("code,started,location_type,") && csv.includes("Government / Municipal") && csv.includes("Location Type Test") && csv.includes("Not specified"), csv.slice(0, 300));
     await shot(boss, "viewer-console-types");
+  });
+
+  await check("V4: the menu board in the viewer: the sample menus from WayTuGo Templates; the board drawn on the real board page with no overflow marks; name, logo, look and items over it; a board that turns offers portrait; kept and redrawn by the console", async () => {
+    const seeded = await seedTemplates(sb);
+    const p = await browser.newPage({ viewport: { width: 1360, height: 900 } });
+    const sent = []; p.on("request", (r) => { if (r.url().endsWith("/api/viewer")) sent.push(r.postData() || ""); });
+    try {
+      await p.goto(`${B}/viewer.html`); await p.waitForTimeout(1500);
+      assert(await p.isHidden("#tpl"), "no menu choices on a directory");
+      await p.check('input[name="kind"][value="menu"]'); await p.waitForTimeout(3500);
+      assert(await p.isHidden('input[name="subtitle"]') && await p.isHidden('input[name="tenants"]') && await p.isVisible("#type"), "the directory's fields hide; the location type stays");
+      const shops = await p.locator("#tpl option").allTextContents();
+      assert(shops.some((x) => x.startsWith("Daybreak Coffee Co.")) && shops.some((x) => x.startsWith("The Meet Market")), shops.join(", "));
+      assert(!shops.some((x) => /Filling Station|O'Henry/.test(x)), "no samples account's shop");
+      await p.selectOption("#tpl", { label: shops.find((x) => x.startsWith("Daybreak")) }); await p.waitForTimeout(2500);
+      const fr = p.frameLocator("#pv");
+      assert(await fr.locator("#blocks > *").count() > 5, "the board drawn");
+      assert(await fr.locator(".overflow-mark").count() === 0, "no overflow marks");
+      assert(await p.isHidden("#shape-field"), "the counter board doesn't turn: no Screen choice");
+      await p.fill('input[name="name"]', "Gardendale Grind");
+      await p.fill('#items .vw-row[data-i="0"] input[data-item="name"]', "Civic Cortado"); await p.fill('#items .vw-row[data-i="0"] input[data-item="price"]', "$4.25");
+      await p.check('input[name="mlook"][value="chalkboard"]', { force: true }); await p.waitForTimeout(1500);
+      const txt = await fr.locator("#blocks").textContent();
+      assert(txt.includes("Gardendale Grind") && txt.includes("Civic Cortado") && txt.includes("$4.25"), "the name and the item on the board");
+      assert(await p.frame({ url: /board\.html/ }).evaluate(() => window.LayoutBoard.doc.look.look) === "chalkboard", "Chalkboard");
+      await p.selectOption("#tpl", { label: shops.find((x) => x.startsWith("The Meet Market")) }); await p.waitForTimeout(2500);
+      assert(await p.isVisible("#shape-field"), "the burger board turns: Screen offered");
+      assert(await p.inputValue('#items .vw-row[data-i="0"] input[data-item="name"]') === "Civic Cortado", "what was typed stays");
+      await p.check('input[name="shape"][value="portrait"]', { force: true }); await p.waitForTimeout(1500);
+      const box = await p.locator("#screen").boundingBox();
+      assert(box.height > box.width, "portrait");
+      await p.waitForTimeout(6000);
+      const last = JSON.parse(sent[sent.length - 1] || "{}");
+      assert(last.config?.kind === "menu" && last.config.board === seeded.boards[1].layout.id && last.config.items?.[0]?.name === "Civic Cortado" && last.config.shape === "portrait", JSON.stringify(last.config));
+      await boss.goto(`${B}/console.html#viewer`); await boss.reload(); await boss.waitForTimeout(2500);   // (already open at this address)
+      const row = boss.locator("#viewer-rows tr", { hasText: "Gardendale Grind" });
+      assert((await row.textContent()).includes("Menu board") && (await row.textContent()).includes("The Meet Market"), await row.textContent());
+      await row.locator("[data-view]").click(); await boss.waitForTimeout(3000);
+      assert((await boss.frameLocator("#viewer-dlg-frame").locator("#blocks").textContent()).includes("Civic Cortado"), "redrawn");
+      await boss.click("#viewer-dlg button[value=close]");
+    } finally {
+      await p.close();
+      for (const b of seeded.boards) { await sb(`layouts?id=eq.${b.layout.id}`, { method: "DELETE" }); await sb(`menus?id=eq.${b.menu.id}`, { method: "DELETE" }); }
+    }
   });
 
   await check("V1: the console's Viewer tab (1Point only): the visits with their choices, time, source and quote; View redraws one exactly; Remove takes a test visit away; a customer has no Viewer tab and reads no visits", async () => {

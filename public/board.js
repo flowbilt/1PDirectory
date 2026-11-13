@@ -12,7 +12,7 @@
 import { applyMenu, menuMoment } from "/menu-format.mjs";
 import { checkLayout, arrange, applyLook, applyBrand, lookWhen, lookByTime, sunTimes, canvas, blockBox, blockShows, zonedNow, hoursNow, nowNext, niceTime, niceDays, FONTS, SIZES, SURFACES, STYLE_PX, TAGS, QR_LINE, qrSide } from "/layout-format.mjs";
 
-const VERSION = "2.24.0";   // = netlify/lib/version.mjs and display.js (a test keeps them equal)
+const VERSION = "2.24.1";   // = netlify/lib/version.mjs and display.js (a test keeps them equal)
 const C = window.ScreenCore;
 const { PREVIEW, CHECKS_IN, MENU, SAMPLE, cache, esc } = C;
 const READ_ONLY = MENU || SAMPLE;   // drawn for a visitor (the phone menu's See the board, or a sample link): no check-in, never turned
@@ -354,7 +354,7 @@ function fitAll() {
   for (const el of blocksEl.children) {
     if (el.hidden) continue;
     const r = fitBlock(el);
-    el.classList.toggle("overflow-mark", PREVIEW && r === 0);
+    el.classList.toggle("overflow-mark", PREVIEW && r === 0 && !data?.viewer);   // V4: never on the viewer's board (a visitor sees it as a customer would)
     if (r === 0) report.overflow.push(el.dataset.id); else if (r < 1) report.shrunk.push({ id: el.dataset.id, scale: Math.round(r * 100) / 100 });
   }
   if (PREVIEW && HOST) HOST.postMessage({ type: "layout-report", ...report }, location.origin);

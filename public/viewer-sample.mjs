@@ -3,12 +3,15 @@
 // and the console's Viewer tab, so a saved visit redraws exactly as the visitor saw it. Everything made here is
 // invented demonstration content: no real tenants, people, phone numbers or places.
 
-export const KINDS = { directory: "Building directory", touch: "Touch directory" };
+export const KINDS = { directory: "Building directory", touch: "Touch directory", menu: "Menu board" };   // V4: the menu board
 export const MIN_TENANTS = 4, MAX_TENANTS = 60;
 // V2 (DP-14): the slider goes to 20 (Scot: "lower the amount of tenants available on the slider to 20 ... They can ask
 // for other configurations"); visits kept before V2 may say up to 60, and redraw as they were
 export const SLIDER_MAX = 20;
-export const LIMITS = { name: 60, subtitle: 60, suite: 12 };
+export const LIMITS = { name: 60, subtitle: 60, suite: 12, item: 60, price: 16, items: 8 };
+// V4: a menu board's looks (its template's own choice of these); a directory's are Dark and Light
+export const MENU_LOOKS = { house: "House", chalkboard: "Chalkboard", light: "Light", dark: "Dark" };
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 // V2: the logo and the building photo: none, WayTuGo's placeholder, or the visitor's own (shown only in their browser:
 // never sent or kept; a kept visit says only "own", and redraws with the placeholder)
 export const PICTURE = ["off", "sample", "own"];
@@ -75,6 +78,11 @@ const clean = (v, n) => String(v ?? "").replace(/[\u0000-\u001f\u007f<>]/g, "").
  *  V2 (DP-14), version 2: also { look, logo, photo, rows }: Dark or Light; the logo and building photo (off, the
  *  placeholder, or the visitor's own); and the tenant rows the visitor typed over ([{ name, suite }], one per row
  *  shown; blank keeps the sample's). Version 1 visits (before V2) keep their own sample list. */
+function menuItems(list) {
+  const items = (Array.isArray(list) ? list : []).slice(0, LIMITS.items).map((r) => ({ name: clean(r?.name, LIMITS.item), price: clean(r?.price, LIMITS.price) }));
+  while (items.length && !items[items.length - 1].name && !items[items.length - 1].price) items.pop();
+  return items;
+}
 export function normalizeConfig(c) {
   const x = c && typeof c === "object" ? c : {};
   const n = Math.round(Number(x.tenants));
@@ -84,7 +92,7 @@ export function normalizeConfig(c) {
   while (rows.length && !rows[rows.length - 1].name && !rows[rows.length - 1].suite) rows.pop();   // nothing typed at the end: not kept
   return {
     v,
-    kind: KINDS[x.kind] ? x.kind : "directory",
+    kind: KINDS[x.kind] && (x.kind !== "menu" || v === 2) ? x.kind : "directory",
     name: clean(x.name, LIMITS.name),
     subtitle: clean(x.subtitle, LIMITS.subtitle),
     tenants,                                               // V1b: 10 to start (Scot)
@@ -94,29 +102,40 @@ export function normalizeConfig(c) {
     places: x.places === true,
     contacts: x.contacts !== false,
     news: x.news === true,
-    ...(v === 2 ? { look: x.look === "light" ? "light" : "dark", logo: PICTURE.includes(x.logo) ? x.logo : "off", photo: PICTURE.includes(x.photo) ? x.photo : "off", rows,
-      type: TYPES[x.type] ? x.type : "" } : {}),   // V3: the location type, "" when none was chosen
+    ...(v === 2 ? { look: x.kind === "menu" ? (MENU_LOOKS[x.look] ? x.look : "house") : x.look === "light" ? "light" : "dark",
+      logo: PICTURE.includes(x.logo) ? x.logo : "off", photo: PICTURE.includes(x.photo) ? x.photo : "off", rows,
+      type: TYPES[x.type] ? x.type : "",   // V3: the location type, "" when none was chosen
+      // V4: the menu board: which template board, and the items typed over its samples (nothing typed at the end not kept)
+      ...(x.kind === "menu" ? { board: UUID.test(String(x.board || "").toLowerCase()) ? String(x.board).toLowerCase() : "", items: menuItems(x.items) } : {}) } : {}),
   };
 }
 
 /** Problems with choices sent to be kept (the same rules as supabase/48-viewer.sql's viewer_config_problem) */
 export function configProblem(c) {
   if (!c || typeof c !== "object" || Array.isArray(c)) return "The choices are an object.";
-  const keys = ["v", "kind", "name", "subtitle", "tenants", "shape", "weather", "qr", "places", "contacts", "news", "look", "logo", "photo", "rows", "type"];
+  const keys = ["v", "kind", "name", "subtitle", "tenants", "shape", "weather", "qr", "places", "contacts", "news", "look", "logo", "photo", "rows", "type", "board", "items"];
   for (const k of Object.keys(c)) if (!keys.includes(k)) return `"${k}" isn't one of the viewer's choices.`;
   if (c.v !== 1 && c.v !== 2) return "The choices are version 1 or 2.";
-  if (!KINDS[c.kind]) return "The display is a building directory or a touch directory.";
+  if (!KINDS[c.kind]) return "The display is a building directory, a touch directory or a menu board.";
   for (const k of ["name", "subtitle"]) if (typeof c[k] !== "string" || c[k].length > LIMITS[k]) return `The ${k} is text of up to ${LIMITS[k]} characters.`;
   if (!Number.isInteger(c.tenants) || c.tenants < MIN_TENANTS || c.tenants > MAX_TENANTS) return `The tenants are ${MIN_TENANTS} to ${MAX_TENANTS}.`;
   if (!["landscape", "portrait"].includes(c.shape)) return "The screen is landscape or portrait.";
   for (const k of ["weather", "qr", "places", "contacts"]) if (typeof c[k] !== "boolean") return `${k} is on or off.`;
   if (c.news !== undefined && typeof c.news !== "boolean") return "news is on or off.";
   // V2: version 2's choices
-  if (c.v === 1 && ["look", "logo", "photo", "rows", "type"].some((k) => k in c)) return "The look, logo, photo, rows and type are version 2's.";
+  if (c.v === 1 && (["look", "logo", "photo", "rows", "type", "board", "items"].some((k) => k in c) || c.kind === "menu")) return "The look, logo, photo, rows, type, board, items and the menu board are version 2's.";
   if (c.type !== undefined && c.type !== "" && !TYPES[c.type]) return "The location type isn't one of the viewer's.";
   if (c.v === 2) {
     if (c.tenants > SLIDER_MAX) return `The tenants are ${MIN_TENANTS} to ${SLIDER_MAX}.`;
-    if (!["dark", "light"].includes(c.look)) return "The look is Dark or Light.";
+    if (c.kind === "menu" ? !MENU_LOOKS[c.look] : !["dark", "light"].includes(c.look)) return "The look is Dark or Light (or, on a menu board, House, Chalkboard, Light or Dark).";
+    if (c.board !== undefined && (typeof c.board !== "string" || (c.board !== "" && !UUID.test(c.board)))) return "The board is one of WayTuGo's templates.";
+    if (c.items !== undefined) {
+      if (!Array.isArray(c.items) || c.items.length > LIMITS.items) return `The items are a list of ${LIMITS.items} at most.`;
+      for (const r of c.items) {
+        if (!r || typeof r !== "object" || Array.isArray(r) || Object.keys(r).some((k) => k !== "name" && k !== "price")) return "Each item is a name and a price.";
+        if (typeof r.name !== "string" || r.name.length > LIMITS.item || typeof r.price !== "string" || r.price.length > LIMITS.price) return `An item's name is up to ${LIMITS.item} characters and its price up to ${LIMITS.price}.`;
+      }
+    }
     for (const k of ["logo", "photo"]) if (!PICTURE.includes(c[k])) return `The ${k} is off, the sample or their own.`;
     if (!Array.isArray(c.rows) || c.rows.length > c.tenants) return "The rows are a list, one for each tenant at most.";
     for (const r of c.rows) {
@@ -128,8 +147,13 @@ export function configProblem(c) {
 }
 
 /** One line for an inquiry or the console, e.g. "Touch directory · Landmark Business Center · 12 tenants · portrait · weather, QR" */
-export function summary(c) {
+export function summary(c, { boardName = "" } = {}) {
   c = normalizeConfig(c);
+  if (c.kind === "menu") {   // V4: the menu board: its template board, look, logo and items typed in
+    const items = (c.items || []).filter((r) => r.name || r.price).length;
+    return [KINDS.menu, c.type ? TYPES[c.type] : "", c.name || "(no name)", boardName || "", c.shape, MENU_LOOKS[c.look],
+      c.logo === "own" ? "own logo" : c.logo === "sample" ? "logo" : "", items ? `${items} item${items === 1 ? "" : "s"} typed in` : ""].filter(Boolean).join(" · ");
+  }
   const extras = [c.weather && "weather", c.news && "news", c.qr && "QR", c.places && "places", c.contacts && "contacts"].filter(Boolean);
   const typed = (c.rows || []).filter((r) => r.name || r.suite).length;
   const pics = [c.logo === "own" ? "own logo" : c.logo === "sample" && "logo", c.photo === "own" ? "own photo" : c.photo === "sample" && "photo"].filter(Boolean);
@@ -276,4 +300,58 @@ export function sampleDirectory(c, { togoUrl = "https://waytugo.com/", ownLogo =
     look: c.look === "light" ? "light" : "dark", lookWhen: null,   // V2: a real screen can follow sunrise and sunset
     sizes: {}, assigned: true, updatedAt: null,
   };
+}
+
+// ── V4 (DP-14): the menu board. The viewer draws one of WayTuGo's template boards (/api/viewer-boards) on the real board
+// page, and lays the visitor's choices over it here, in their browser: the shop's name, a logo (the placeholder or
+// their own; off keeps the template's), a look the board offers, the screen's shape when the board turns, and the
+// items they typed over the samples of the board's main list. The console's View does the same from a kept visit. ──
+
+/** The board's main list: the items list (shown on the board) with the most priced entries showing; null if none */
+export function mainList(payload) {
+  const lists = payload?.lists, doc = payload?.layout?.doc;
+  if (!lists?.spec?.lists || !doc) return null;
+  const shown = new Set(JSON.stringify(doc).match(/"list":"[a-z0-9-]+"/g)?.map((m) => m.slice(8, -1)) || []);
+  let best = null;
+  for (const l of lists.spec.lists) {
+    if (l.kind !== "items" || !shown.has(l.key)) continue;
+    const entries = (lists.content?.lists?.[l.key]?.entries || []).filter((e) => e && !e.hidden && e.name);
+    const score = entries.filter((e) => typeof e.price === "string" && e.price).length * 100 + entries.length;
+    if (entries.length && (!best || score > best.score)) best = { key: l.key, entries, score };
+  }
+  return best ? { key: best.key, entries: best.entries } : null;
+}
+/** The rows the viewer offers to type over: the main list's first items, as samples */
+export function menuRows(payload) {
+  return (mainList(payload)?.entries || []).slice(0, LIMITS.items).map((e) => ({ name: String(e.name || ""), price: String(e.price || "") }));
+}
+/** A template board's answer with the visitor's choices laid over it (a copy; the answer itself is untouched) */
+export function menuDraft(payload, c, { ownLogo = "" } = {}) {
+  if (!payload?.layout?.doc) return payload;
+  c = normalizeConfig(c);
+  const d = JSON.parse(JSON.stringify(payload));
+  const doc = d.layout.doc, looks = doc.theme?.looks || ["house"];
+  d.viewer = true; d.sample = true;
+  d.orientation = doc.turned ? c.shape : doc.orientation || "auto";
+  // the look: one the board offers (else its own), all day
+  d.look = { ...(d.look || {}) }; delete d.look.when;
+  if (looks.includes(c.look)) d.look.look = c.look;
+  // the name and the logo, through the brand (as WayTuGo sets a real shop's)
+  const logo = c.logo === "own" && ownLogo ? ownLogo : c.logo === "own" || c.logo === "sample" ? PLACEHOLDER.logo : "";
+  d.brand = { ...(d.brand || {}) };
+  if (c.name) d.brand.name = c.name;
+  if (logo) { d.images = { ...(d.images || {}), "viewer-logo": { url: logo, w: 900, h: 240 } }; d.brand.logo = "img:viewer-logo"; }
+  // the items typed over the main list's first entries (only the ones shown; a blank keeps the sample's)
+  const main = mainList(d);
+  if (main && (c.items || []).length) {
+    const entries = d.lists.content.lists[main.key].entries;
+    let i = 0;
+    for (const e of entries) {
+      if (!e || e.hidden || !e.name) continue;
+      const t = c.items[i++]; if (!t) break;
+      if (t.name) e.name = t.name;
+      if (t.price) e.price = t.price;
+    }
+  }
+  return d;
 }

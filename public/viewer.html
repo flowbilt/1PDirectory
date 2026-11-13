@@ -27,14 +27,21 @@
             <span class="vw-kind-name">Building directory</span><span class="vw-kind-line">Your tenants and suites in the lobby, always up to date</span></label>
           <label class="vw-kind"><input type="radio" name="kind" value="touch">
             <span class="vw-kind-name">Touch directory</span><span class="vw-kind-line">Visitors tap a company for its suite and its people</span></label>
+          <label class="vw-kind"><input type="radio" name="kind" value="menu">
+            <span class="vw-kind-name">Menu board</span><span class="vw-kind-line">Your menu by the counter: prices, specials and pictures, changed from your phone</span></label>
         </div>
       </fieldset>
 
       <fieldset class="vw-step">
-        <legend><span class="vw-num">2</span> Add your building</legend>
-        <label class="vw-field"><span>Building or company name</span>
+        <legend><span class="vw-num">2</span> <span data-only="directory">Add your building</span><span data-only="menu">Add your restaurant</span></legend>
+        <!-- V4: the menu board's template and board, from WayTuGo's template shops (/api/viewer-boards) -->
+        <div class="vw-field" data-only="menu"><label for="tpl">Sample menu to start from</label>
+          <select id="tpl" name="tpl"><option value="">Loading the sample menus…</option></select></div>
+        <div class="vw-field" data-only="menu"><label for="board">Board</label>
+          <select id="board" name="board"></select></div>
+        <label class="vw-field"><span><span data-only="directory">Building or company name</span><span data-only="menu">Restaurant name</span></span>
           <input name="name" maxlength="60" placeholder="e.g. Landmark Business Center"></label>
-        <label class="vw-field"><span>Subtitle <em>optional</em></span>
+        <label class="vw-field" data-only="directory"><span>Subtitle <em>optional</em></span>
           <input name="subtitle" maxlength="60" placeholder="e.g. 2100 First Avenue North"></label>
         <div class="vw-field vw-type"><label for="type">What type of building or business is it? <em>optional</em></label>
           <select name="type" id="type">
@@ -51,34 +58,42 @@
           </select>
           <p class="vw-note vw-note-flat">We'll use your selection to personalize the example names and information in your preview.</p>
         </div>
-        <label class="vw-field"><span>How many tenants? <output id="tenants-out">10</output></span>
+        <label class="vw-field" data-only="directory"><span>How many tenants? <output id="tenants-out">10</output></span>
           <input name="tenants" type="range" min="4" max="20" step="1" value="10"></label>
-        <div class="vw-field vw-rows-field"><span>Tenants and suites <em>type over the samples</em></span>
+        <div class="vw-field vw-rows-field" data-only="menu"><span>Menu items and prices <em>type over the samples</em></span>
+          <div class="vw-rows vw-items" id="items"></div>
+          <button type="button" class="vw-link" id="items-reset" hidden>Back to the samples</button>
+          <p class="vw-note vw-note-flat">A few from the board's main list. Your real board has all of yours, with pictures, specials by day and time, and Sold out at a tap.</p>
+        </div>
+        <div class="vw-field vw-rows-field" data-only="directory"><span>Tenants and suites <em>type over the samples</em></span>
           <div class="vw-rows" id="rows"></div>
           <button type="button" class="vw-link" id="rows-reset" hidden>Back to the samples</button>
           <p class="vw-note vw-note-flat">Up to 20 here. A real directory takes as many as your building has; ask us about larger lists.</p>
         </div>
-        <div class="vw-field"><span>Screen</span>
+        <div class="vw-field" id="shape-field"><span>Screen</span>
           <div class="vw-seg" role="radiogroup" aria-label="Screen">
             <label><input type="radio" name="shape" value="landscape" checked><span>Landscape</span></label>
             <label><input type="radio" name="shape" value="portrait"><span>Portrait</span></label>
           </div></div>
-        <div class="vw-field"><span>Look</span>
+        <div class="vw-field" data-only="directory"><span>Look</span>
           <div class="vw-seg" role="radiogroup" aria-label="Look">
             <label><input type="radio" name="look" value="dark" checked><span>Dark</span></label>
             <label><input type="radio" name="look" value="light"><span>Light</span></label>
           </div>
           <p class="vw-note vw-note-flat">A real screen can change between them by itself at sunrise and sunset.</p></div>
+        <div class="vw-field" data-only="menu" id="mlook-field"><span>Look</span>
+          <div class="vw-seg" role="radiogroup" aria-label="Board look" id="mlooks"></div>
+          <p class="vw-note vw-note-flat" id="mlook-note"></p></div>
       </fieldset>
 
       <fieldset class="vw-step">
-        <legend><span class="vw-num">3</span> Add your logo and building photo</legend>
+        <legend><span class="vw-num">3</span> <span data-only="directory">Add your logo and building photo</span><span data-only="menu">Add your logo</span></legend>
         <div class="vw-pic" data-pic="logo">
-          <label class="vw-check"><input type="checkbox" name="logo"><span>Logo above the name</span></label>
+          <label class="vw-check"><input type="checkbox" name="logo"><span><span data-only="directory">Logo above the name</span><span data-only="menu">Your logo in place of the sample's</span></span></label>
           <div class="vw-pic-own"><button type="button" class="vw-link" data-own>Use my own logo…</button><span class="vw-pic-name"></span><button type="button" class="vw-link" data-drop hidden>Back to the placeholder</button>
             <input type="file" accept="image/png,image/jpeg,image/webp,image/svg+xml" hidden></div>
         </div>
-        <div class="vw-pic" data-pic="photo">
+        <div class="vw-pic" data-pic="photo" data-only="directory">
           <label class="vw-check"><input type="checkbox" name="photo"><span>Building photo behind the directory</span></label>
           <div class="vw-pic-own"><button type="button" class="vw-link" data-own>Use my own photo…</button><span class="vw-pic-name"></span><button type="button" class="vw-link" data-drop hidden>Back to the placeholder</button>
             <input type="file" accept="image/png,image/jpeg,image/webp" hidden></div>
@@ -86,8 +101,9 @@
         <p class="vw-note vw-note-flat">Your pictures stay on your device: they're shown here only, never uploaded or saved.</p>
       </fieldset>
 
-      <fieldset class="vw-step">
+      <fieldset class="vw-step" data-only="directory">
         <legend><span class="vw-num">4</span> Pick extras</legend>
+        <!-- (a building directory's; a menu board's extras are its template's) -->
         <label class="vw-check"><input type="checkbox" name="weather" checked><span>Weather beside the clock</span></label>
         <label class="vw-check"><input type="checkbox" name="contacts" checked><span>Building contacts (managed by, leasing)</span></label>
         <label class="vw-check"><input type="checkbox" name="qr"><span>Directory to Go: a QR code visitors scan to take the directory with them</span></label>

@@ -872,6 +872,17 @@ through waytugo.com's own inquiry form.
   and By ad source tables (visits, engaged = 30 s and 3 changes, average time, quotes), and **Download CSV** (cells
   that start with = + - @ are quoted so a spreadsheet won't run them).
 
+- **V4** (Scot, 2026-11-13): **Menu board** is a third display. Step 2 becomes "Add your restaurant": **Sample menu to
+  start from** (the shops in WayTuGo Templates accounts, read live from `/api/viewer-boards`; never WayTuGo Samples,
+  never unpublished boards), **Board** (each published board with its size and shape), the restaurant's name, the
+  location type, **Menu items and prices** (the board's main list's first items as samples, 8 at most), Screen only for a
+  board that turns, and the looks that board offers. Step 3 is the logo (placeholder or their own; unticked keeps the
+  template's). The preview is the real board page (`board.html?preview=1`, no overflow marks for `viewer` answers)
+  drawn from the template board with the visitor's choices laid over it in their browser (`viewer-sample.mjs`
+  `menuDraft`, `mainList`, `menuRows`), in an invented Birmingham building (`netlify/functions/viewer-boards.mjs`).
+  Kept as `kind: "menu"`, `board`, `items` (`supabase/53-viewer-menu.sql`: `viewer_boards`, `viewer_board`, the rules).
+  The console names the board and View redraws it; the CSV adds `menu_board` and `items_typed_in`. Display 2.24.1.
+
 ### Light and Dark directories (DP-14, D2)
 
 Each directory has a **Look** in the editor (This directory): **Dark** (the original, the default), **Light** (a pale

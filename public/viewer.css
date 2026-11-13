@@ -3,6 +3,7 @@
 @font-face { font-family: "Instrument Sans"; src: url("/fonts/InstrumentSans-Bold.ttf") format("truetype"); font-weight: 700; font-display: swap; }
 :root { --bg: #0e2021; --panel: #15302f; --line: rgba(255,255,255,.14); --ink: #fff; --muted: #a9bcbc; --blue: #2f8cff; --orange: #ff7a1a; --orange-ink: #1b1206; }
 * { box-sizing: border-box; }
+[hidden] { display: none !important; }
 html, body { margin: 0; background: var(--bg); color: var(--ink); font: 16px/1.45 "Instrument Sans", system-ui, -apple-system, "Segoe UI", Roboto, Arial, sans-serif; }
 .vw { max-width: 1280px; margin: 0 auto; padding: 28px 22px 32px; }
 .vw-head { max-width: 760px; margin-bottom: 22px; }
@@ -63,6 +64,13 @@ html, body { margin: 0; background: var(--bg); color: var(--ink); font: 16px/1.4
 .vw-type select { font: inherit; font-weight: 400; font-size: 16px; color: var(--ink); background: rgba(0,0,0,.25); border: 1px solid var(--line); border-radius: 8px; padding: 10px 10px; }
 .vw-type select option { color: #111; background: #fff; }
 .vw-type select:focus-visible { outline: 3px solid var(--blue); outline-offset: 2px; }
+/* V4: the menu board's steps; a building directory's (and a touch directory's) fields hide for it, and the other way */
+.vw-controls[data-kind="menu"] [data-only="directory"], .vw-controls:not([data-kind="menu"]) [data-only="menu"] { display: none !important; }
+.vw-field select { font: inherit; font-weight: 400; font-size: 16px; color: var(--ink); background: rgba(0,0,0,.25); border: 1px solid var(--line); border-radius: 8px; padding: 10px; }
+.vw-field select option { color: #111; background: #fff; }
+.vw-field select:focus-visible { outline: 3px solid var(--blue); outline-offset: 2px; }
+.vw-items .vw-row { grid-template-columns: 1fr 96px; }
+#mlooks { grid-template-columns: repeat(var(--n, 2), 1fr); }
 @media (max-width: 860px) {
   .vw { padding: 18px 14px 24px; }
   .vw-body { grid-template-columns: 1fr; }
