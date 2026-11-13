@@ -11,10 +11,11 @@ import { SITE_RE } from "../lib/common.mjs";
 import { rpc } from "../lib/sb.mjs";
 import { DISPLAY_VERSION } from "../lib/version.mjs";
 import { boardProblem, brandProblem } from "../../public/menu-format.mjs";
+import { lookWhen } from "../../public/layout-format.mjs";
 
 // Bump when toPayload's output changes shape, so every screen re-downloads once after the deploy. The live display
 // version is part of the tag too (TAG), so a display deploy also gives every screen a fresh answer.
-const PAYLOAD_V = "p8";
+const PAYLOAD_V = "p9";
 const TAG = `${PAYLOAD_V}-${DISPLAY_VERSION.replace(/[^0-9.]/g, "")}`;
 const HEADERS = { "Content-Type": "application/json; charset=utf-8", "Cache-Control": "no-cache" };
 
@@ -160,6 +161,10 @@ export function toPayload(screen, dir, prop, tenants) {
     // the whole list (1Point, per screen), and the customer's accessible keyboard switch (per directory)
     touchIdle: Math.min(300, Math.max(15, Math.round(Number(screen.touch_idle_s)) || 45)),
     keyboard: !!dir?.touch_keyboard,
+    // DP-14 (D2; supabase/50-directory-look.sql): the customer's Dark or Light, or one by day and the other in the evening
+    // (by the clock or at sunrise and sunset, from weather's lat and lon and the timezone above); null: the fixed look
+    look: dir?.look === "light" ? "light" : "dark",
+    lookWhen: lookWhen(dir?.look_when, ["dark", "light"]),
     sizes: screen.sizes || {},                             // this screen's sizes, % of standard (supabase/18-sizes.sql)
     display: DISPLAY_VERSION,                              // the live display code; an older screen reloads itself
     assigned: !!dir,

@@ -138,6 +138,7 @@
     renderDestinations(); renderLists();
     $("togo-on").checked = !!d.togo_enabled; $("togo-line").value = d.togo_line || ""; renderTogo();
     $("kbd-on").checked = !!d.touch_keyboard;
+    fillLook();
     $("address").value = p.address || "";
     $("m-name").value = p.managed_by?.name || ""; $("m-company").value = p.managed_by?.company || ""; $("m-phone").value = p.managed_by?.phone || "";
     $("l-name").value = p.leased_by?.name || ""; $("l-company").value = p.leased_by?.company || ""; $("l-phone").value = p.leased_by?.phone || "";
@@ -163,6 +164,7 @@
     readLists();
     d.togo_enabled = $("togo-on").checked; d.togo_line = $("togo-line").value.trim();
     d.touch_keyboard = $("kbd-on").checked;
+    readLook();
     p.address = $("address").value.trim();
     p.managed_by = { name: $("m-name").value.trim(), company: $("m-company").value.trim(), phone: $("m-phone").value.trim() };
     p.leased_by = { name: $("l-name").value.trim(), company: $("l-company").value.trim(), phone: $("l-phone").value.trim() };
@@ -171,6 +173,7 @@
     const lat = parseFloat($("lat").value), lon = parseFloat($("lon").value);
     p.lat = Number.isFinite(lat) ? lat : null; p.lon = Number.isFinite(lon) ? lon : null;
     p.timezone = $("timezone").value;
+    lookLine();   // D2: the sunrise and sunset line follows the location and time zone
     p.logo_replaces_name = !!p.logo && $("logo-replaces-name").checked;
     p.logo_swap = !!p.company_logo && $("clogo-swap").checked;
     const bg = p.background || {};
@@ -188,6 +191,43 @@
       arrow: row.querySelector(".t-dir").value,
       note: row.querySelector(".t-note")?.value.trim() || "",
     }));
+  }
+
+  // ── DP-14 (D2): Dark or Light, or one by day and the other in the evening (supabase/50-directory-look.sql). The
+  // schedule's rules and the sunrise and sunset sums are the menu boards' (layout-format.mjs) ──
+  const LOOK_DEFAULT = { day: "light", evening: "dark", dayAt: "06:00", eveningAt: "17:00", sun: false };
+  let LF = null;
+  import("/layout-format.mjs").then((m) => { LF = m; if (S.dir) { lookLine(); pushPreview(); } }).catch(() => {});
+  function fillLook() {
+    const d = S.dir, w = d.look_when || null, t = { ...LOOK_DEFAULT, ...(w || {}) };
+    const pick = w ? "time" : d.look === "light" ? "light" : "dark";
+    for (const r of document.querySelectorAll('input[name="look"]')) r.checked = r.value === pick;
+    $("look-day").value = t.day; $("look-day-at").value = t.dayAt; $("look-eve-at").value = t.eveningAt; $("look-sun").checked = !!t.sun;
+    lookLine();
+  }
+  function readLook() {
+    const d = S.dir, pick = document.querySelector('input[name="look"]:checked')?.value || "dark";
+    if (pick === "time") {
+      const day = $("look-day").value === "dark" ? "dark" : "light", hm = (v, f) => (/^([01]\d|2[0-3]):[0-5]\d$/.test(v) ? v : f);
+      d.look_when = { day, evening: day === "light" ? "dark" : "light", dayAt: hm($("look-day-at").value, "06:00"), eveningAt: hm($("look-eve-at").value, "17:00"), sun: $("look-sun").checked };
+    } else { d.look = pick; d.look_when = null; }
+    lookLine();
+  }
+  /** Shows the times when the look follows the clock, and today's sunrise and sunset at the building when ticked */
+  function lookLine() {
+    const d = S.dir, w = d?.look_when, p = S.prop;
+    $("look-times").hidden = !w;
+    for (const r of document.querySelectorAll('input[name="look"]')) r.closest(".me-choice").classList.toggle("is-on", r.checked);
+    if (!w) return;
+    $("look-evening").textContent = w.evening === "light" ? "Light" : "Dark";
+    $("look-day-at").disabled = $("look-eve-at").disabled = !!w.sun;
+    const line = $("look-sun-line");
+    line.hidden = !w.sun;
+    if (!w.sun) return;
+    const tz = p.timezone || "America/Chicago", sun = LF && p.lat != null && p.lon != null ? LF.sunTimes(LF.zonedNow(Date.now(), tz).date, p.lat, p.lon, tz) : null;
+    line.textContent = p.lat == null || p.lon == null ? "This building has no weather location yet, so the times above are used. Add its latitude and longitude below."
+      : sun ? `Today here: sunrise ${LF.niceTime(sun.rise)}, sunset ${LF.niceTime(sun.set)}. It changes by itself through the year.` : "";
+    line.hidden = !line.textContent;
   }
 
   function setDirty(v) { S.dirty = v; $("dirty").hidden = !v; }
@@ -526,6 +566,7 @@
       togo: { enabled: !!d.togo_enabled, url: (S.togoBase || "https://waytugo.com/d/") + d.togo_code, line: d.togo_line || "Take this directory with you!" },
       poweredBy: !scr?.hide_powered_by,
       touch: !!scr?.touch, screenInches: scr?.screen_inches ?? null, touchIdle: scr?.touch_idle_s || 45, keyboard: !!d.touch_keyboard,
+      look: d.look === "light" ? "light" : "dark", lookWhen: d.look_when || null,   // D2: the preview shows the look as it is now
       background: p.background || {}, sizes: scr?.sizes || {}, assigned: true, updatedAt: d.updated_at,
     };
   }
@@ -575,6 +616,7 @@
         title: d.title, subtitle: d.subtitle, news_enabled: d.news_enabled, rotate_seconds: d.rotate_seconds, weather_enabled: d.weather_enabled,
         map_enabled: !!d.map_enabled, times_enabled: !!d.times_enabled, amenities_enabled: !!d.amenities_enabled,
         togo_enabled: !!d.togo_enabled, togo_line: d.togo_line || "", touch_keyboard: !!d.touch_keyboard,
+        look: d.look === "light" ? "light" : "dark", look_when: d.look_when || null,
         ...(d.footer_override != null ? { footer_override: d.footer_override } : {}),
       } });
       await Auth.db(`properties?id=eq.${p.id}`, { method: "PATCH", prefer: "return=minimal", body: {

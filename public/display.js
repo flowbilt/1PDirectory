@@ -10,7 +10,7 @@
 */
 (() => {
   "use strict";
-  const VERSION = "2.23.2";   // = netlify/lib/version.mjs (a test keeps them equal)
+  const VERSION = "2.24.0";   // = netlify/lib/version.mjs (a test keeps them equal)
   // What every screen does (which screen, check-in, clock, rotation, Identify, lockdown, reloads, offline cache) is in
   // screen-core.js, shared with the layout page (DP-11, round E1a).
   const C = window.ScreenCore;
@@ -128,7 +128,7 @@
     down: '<path d="M12 5v14M18 13l-6 6-6-6"/>',
   };
   const arrowSvg = (d) =>
-    ARROWS[d] ? `<svg viewBox="0 0 24 24" fill="none" stroke="#c7cdd6" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round">${ARROWS[d]}</svg>` : "";
+    ARROWS[d] ? `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round">${ARROWS[d]}</svg>` : "";
 
   function contactHtml(role, c) {
     if (!c || !(c.name || c.company || c.phone)) return "";
@@ -283,12 +283,46 @@
     dataSig = sig;
     data = d;
     if (orientationChanged) sizeStage();
+    showLook();
     render();
     if (coordsChanged) loadWeather();
   }
 
+  // ── DP-14 (D2): Dark or Light ──
+  // The customer's choice (the editor): Dark (the original), Light, or one by day and the other in the evening, at set
+  // times every day or at sunrise and sunset (worked out from the building's location, once a day), by the building's
+  // clock. The schedule's rules are the menu boards' (layout-format.mjs), loaded only when a look follows the clock.
+  const LIGHT = () => document.documentElement.classList.contains("light");
+  let LF = null, lfLoading = false, lookMin = -1, sunFor = "", sunToday = null;
+  function lookNow() {
+    const fixed = data?.look === "light" ? "light" : "dark";
+    if (!data?.lookWhen) return fixed;
+    if (!LF) {
+      if (!lfLoading) { lfLoading = true; import("/layout-format.mjs").then((m) => { LF = m; showLook(); }).catch(() => { lfLoading = false; }); }
+      return LIGHT() ? "light" : "dark";   // keep what's showing until the rules arrive (a moment; they're cached)
+    }
+    const w = LF.lookWhen(data.lookWhen, ["dark", "light"]);
+    if (!w) return fixed;
+    const tz = data.timezone || "America/Chicago", now = LF.zonedNow(C.now(), tz);
+    const pl = data.weather || {}, key = `${now.date}|${pl.lat}|${pl.lon}|${tz}`;
+    if (key !== sunFor) { sunFor = key; sunToday = w.sun ? LF.sunTimes(now.date, pl.lat, pl.lon, tz) : null; }
+    if (w.sun && !sunToday && pl.lat != null) sunToday = LF.sunTimes(now.date, pl.lat, pl.lon, tz);
+    return LF.lookByTime(w, now, w.sun ? sunToday : null) || w.day;
+  }
+  function showLook() {
+    const light = lookNow() === "light";
+    if (light === LIGHT()) return;
+    document.documentElement.classList.toggle("light", light);
+    // the traffic map is drawn in the look it started with: give it the other style
+    if (traffic.map && traffic.mapLook !== light) {
+      traffic.map.setOptions({ styles: light ? MAP_LIGHT : MAP_STYLE, backgroundColor: light ? "#eef0f3" : "#0d1b2e" }); traffic.mapLook = light;
+    }
+  }
+
   // ── Clock ──
   function tick() {
+    const min = Math.floor(C.now() / 60000);
+    if (min !== lookMin) { lookMin = min; showLook(); }   // a look that follows the clock changes on the minute
     C.showIdentify($("identify"), data);
     const tz = data?.timezone || "America/Chicago";
     $("time").hidden = $("date").hidden = !clock.trusted;
@@ -470,8 +504,9 @@
         const g = window.google.maps;
         traffic.map = new g.Map(traffic.mapEl.querySelector(".map-canvas"), {
           center: { lat: Number(t.lat), lng: Number(t.lon) }, zoom: 12, disableDefaultUI: true, gestureHandling: "none",
-          keyboardShortcuts: false, clickableIcons: false, backgroundColor: "#0d1b2e", styles: MAP_STYLE,
+          keyboardShortcuts: false, clickableIcons: false, backgroundColor: LIGHT() ? "#eef0f3" : "#0d1b2e", styles: LIGHT() ? MAP_LIGHT : MAP_STYLE,
         });
+        traffic.mapLook = LIGHT();
         new g.TrafficLayer({ autoRefresh: true }).setMap(traffic.map);
         traffic.mapCenter = center; traffic.mapState = "ready";
       } catch (e) { traffic.mapState = "failed"; console.warn("Map failed", e); }
@@ -492,6 +527,17 @@
     { featureType: "road", elementType: "geometry", stylers: [{ color: "#2a3b55" }] },
     { featureType: "road.highway", elementType: "geometry", stylers: [{ color: "#3a4d6b" }] },
     { featureType: "water", elementType: "geometry", stylers: [{ color: "#081322" }] },
+  ];
+  // DP-14 (D2): the same quiet map for the Light look, pale so the traffic colours still stand out
+  const MAP_LIGHT = [
+    { elementType: "geometry", stylers: [{ color: "#eef0f3" }] },
+    { elementType: "labels.text.fill", stylers: [{ color: "#5d6a7b" }] },
+    { elementType: "labels.text.stroke", stylers: [{ color: "#f5f2ec" }] },
+    { featureType: "poi", stylers: [{ visibility: "off" }] },
+    { featureType: "transit", stylers: [{ visibility: "off" }] },
+    { featureType: "road", elementType: "geometry", stylers: [{ color: "#ffffff" }] },
+    { featureType: "road.highway", elementType: "geometry", stylers: [{ color: "#dde2e9" }] },
+    { featureType: "water", elementType: "geometry", stylers: [{ color: "#c9d6e3" }] },
   ];
 
   function startRotation() {

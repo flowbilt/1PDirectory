@@ -12,7 +12,7 @@
 import { applyMenu, menuMoment } from "/menu-format.mjs";
 import { checkLayout, arrange, applyLook, applyBrand, lookWhen, lookByTime, sunTimes, canvas, blockBox, blockShows, zonedNow, hoursNow, nowNext, niceTime, niceDays, FONTS, SIZES, SURFACES, STYLE_PX, TAGS, QR_LINE, qrSide } from "/layout-format.mjs";
 
-const VERSION = "2.23.2";   // = netlify/lib/version.mjs and display.js (a test keeps them equal)
+const VERSION = "2.24.0";   // = netlify/lib/version.mjs and display.js (a test keeps them equal)
 const C = window.ScreenCore;
 const { PREVIEW, CHECKS_IN, MENU, SAMPLE, cache, esc } = C;
 const READ_ONLY = MENU || SAMPLE;   // drawn for a visitor (the phone menu's See the board, or a sample link): no check-in, never turned

@@ -474,6 +474,36 @@ try {
     await p.close();
   });
 
+  await check("D2: the editor's Look (as the owner's editor): Light shows in the preview at once; By time of day with sunrise and sunset shows today's times and turns the times off; Publish saves it; the screen draws it", async () => {
+    const p = await browser.newPage({ viewport: { width: 1400, height: 1000 } });
+    p.on("dialog", (d) => d.accept());
+    await signIn(p, "editor@barber.test", "editor-pass");
+    await p.goto(`${B}/edit.html?d=${landscape.directory_id}`); await p.waitForTimeout(3000);
+    assert(await p.isChecked('input[name="look"][value="dark"]'), "Dark to start");
+    const light = () => p.frameLocator("iframe").locator("html").evaluate((h) => h.classList.contains("light"));
+    assert(!(await light()), "the preview starts Dark");
+    await p.check('input[name="look"][value="light"]'); await p.waitForTimeout(500);
+    assert(await light(), "Light in the preview");
+    assert(await p.isHidden("#look-times"), "no times for a fixed look");
+    await p.check('input[name="look"][value="time"]'); await p.waitForTimeout(300);
+    assert(await p.isVisible("#look-times"), "the times show");
+    await p.check("#look-sun"); await p.waitForTimeout(300);
+    const line = await p.textContent("#look-sun-line");
+    assert(/sunrise \d/.test(line) || /no weather location/.test(line), `the sun line: ${line}`);
+    assert(await p.isDisabled("#look-day-at"), "the times are off while sunrise and sunset decide");
+    await p.click("#save"); await p.waitForTimeout(1500);
+    const { data: [dir] } = await sb(`directories?id=eq.${landscape.directory_id}&select=look,look_when`);
+    assert(dir.look === "light" && dir.look_when?.sun === true && dir.look_when.day === "light" && dir.look_when.evening === "dark", `saved: ${JSON.stringify(dir)}`);
+    const scr = await browser.newPage({ viewport: { width: 960, height: 540 } });
+    await scr.goto(`${B}/index.html?screen=${landscape.key}&view=1`); await scr.waitForTimeout(2500);
+    const has = await scr.evaluate(() => document.documentElement.classList.contains("light"));
+    const exp = await scr.evaluate(async () => { const LF = await import("/layout-format.mjs"); const r = await (await fetch(location.search.replace("?screen=", "/api/screen?key=").replace("&view=1", ""))).json();
+      const tz = r.timezone, now = LF.zonedNow(Date.now(), tz), sun = LF.sunTimes(now.date, r.weather.lat, r.weather.lon, tz); return LF.lookByTime(LF.lookWhen(r.lookWhen, ["dark", "light"]), now, sun) === "light"; });
+    assert(has === exp, `the screen shows ${has ? "Light" : "Dark"}, as it should be now`);
+    await sb(`directories?id=eq.${landscape.directory_id}`, { method: "PATCH", body: JSON.stringify({ look: "dark", look_when: null }) });
+    await scr.close(); await p.close();
+  });
+
   await check("the technician page says Orientation", async () => {
     const html = readFileSync(new URL("../public/tech.html", import.meta.url), "utf8");
     assert(html.includes("<h2>Orientation</h2>") && html.includes("Save orientation") && !/>Layout</.test(html), "tech.html");

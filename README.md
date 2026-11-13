@@ -855,6 +855,16 @@ through waytugo.com's own inquiry form.
   at Crambone Arena", a chili cook-off, a dog day) before Nearby. The nine pictures are Scot's, cropped to the picture
   alone, in `public/viewer-pics/` (`PICS` in viewer-sample.mjs lists them; a story without one shows as text).
 
+### Light and Dark directories (DP-14, D2)
+
+Each directory has a **Look** in the editor (This directory): **Dark** (the original, the default), **Light** (a pale
+page with dark lettering), or **By time of day**: one by day and the other in the evening, every day by the building's
+clock, at set times or at sunrise and sunset (from the weather location; the menu boards' rules in
+`layout-format.mjs`). Saved as `directories.look` and `look_when` (`supabase/50-directory-look.sql`); sent to screens as
+`look` and `lookWhen`. Display **2.24.0** puts `.light` on the page and checks the clock each minute; `display.css`
+keeps its colours in variables that `html.light` swaps (headlines over photos, the QR code and Identify keep theirs);
+the traffic map has a pale style for Light.
+
 ## Screens and cards (Raspberry Pi)
 
 Every Pi runs from a **prepared card**, and every card is the same. A card carries no identity until it's in a Pi:

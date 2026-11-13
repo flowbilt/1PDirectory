@@ -3676,6 +3676,46 @@ test("V1: /api/viewer keeps a visit only as it should be: POST, a code, real cho
   assert.ok(ch.includes('id="tab-viewer" hidden>Viewer</button>') && cj.includes('$("tab-viewer").hidden = !S.admin;'), "the Viewer tab is 1Point's");
 });
 
+test("D2: Light and Dark for directory screens: the customer's choice, or one by day and the other in the evening (by the clock or at sunrise and sunset); it reaches the screen and the preview; the database's rules", async () => {
+  const scr = fake.T.screens.find((x) => x.key === "ppi-1s");
+  const dir = fake.T.directories.find((x) => x.id === scr.directory_id);
+  const first = await screen(req("/api/screen?key=ppi-1s"));
+  const d0 = await first.json();
+  assert.equal(d0.look, "dark", "Dark by default"); assert.equal(d0.lookWhen, null);
+  const when = { day: "light", evening: "dark", dayAt: "07:00", eveningAt: "18:30", sun: true };
+  try {
+    Object.assign(dir, { look: "light", look_when: when, updated_at: new Date(Date.now() + 1000).toISOString() });
+    const next = await screen(req("/api/screen?key=ppi-1s", { headers: { "If-None-Match": first.headers.get("ETag") } }));
+    assert.equal(next.status, 200, "a change of look is a new answer");
+    const d1 = await next.json();
+    assert.equal(d1.look, "light"); assert.deepEqual(d1.lookWhen, when);
+  } finally { Object.assign(dir, { look: "dark", look_when: null }); }
+  // only Dark and Light, and only a real schedule, reach a screen
+  const pay = (look, look_when) => toPayload({ key: "k" }, { look, look_when }, {}, []);
+  assert.equal(pay("neon").look, "dark");
+  assert.equal(pay("dark", { day: "dark", evening: "dark", dayAt: "06:00", eveningAt: "17:00" }).lookWhen, null, "the same look twice");
+  assert.equal(pay("dark", { day: "house", evening: "dark", dayAt: "06:00", eveningAt: "17:00" }).lookWhen, null, "a menu board's look");
+  assert.deepEqual(pay("dark", { day: "dark", evening: "light", dayAt: "08:00", eveningAt: "20:00" }).lookWhen, { day: "dark", evening: "light", dayAt: "08:00", eveningAt: "20:00", sun: false });
+  // the screen's rules are the menu boards': by the clock, and sunrise and sunset override the times
+  const w = LF.lookWhen(when, ["dark", "light"]), sun = LF.sunTimes("2026-11-13", 33.52, -86.8, "America/Chicago");
+  assert.ok(sun && sun.rise > "06:00" && sun.rise < "06:45" && sun.set > "16:30" && sun.set < "17:00", `Birmingham's sun on 13 November: ${JSON.stringify(sun)}`);
+  assert.equal(LF.lookByTime(w, { hm: "06:45" }, sun), "light", "after sunrise, though before 07:00");
+  assert.equal(LF.lookByTime(w, { hm: "17:30" }, sun), "dark", "after sunset, though before 18:30");
+  assert.equal(LF.lookByTime({ ...w, sun: false }, { hm: "17:30" }, null), "light", "untick it: the times");
+  const dj = readFileSync(new URL("../public/display.js", import.meta.url), "utf8");
+  assert.ok(dj.includes('document.documentElement.classList.toggle("light", light)') && dj.includes('import("/layout-format.mjs")') && dj.includes("if (min !== lookMin) { lookMin = min; showLook(); }"), "the screen puts .light on the page, and checks the clock each minute");
+  assert.ok(dj.includes("traffic.map.setOptions({ styles: light ? MAP_LIGHT : MAP_STYLE"), "the traffic map follows the look");
+  const css = readFileSync(new URL("../public/display.css", import.meta.url), "utf8");
+  assert.ok(css.includes("html.light {") && !/rgba\(13, 27, 46|rgba\(199, 205, 214, 0\.(0|1[0-4]|[2-9])/.test(css) && css.includes("html.light .slide:not(.text-only) .slide-text { color: #ffffff;"), "the page's colours come from variables the Light look swaps; a headline over its photo stays light");
+  const ed = readFileSync(new URL("../public/edit.js", import.meta.url), "utf8"), eh = readFileSync(new URL("../public/edit.html", import.meta.url), "utf8");
+  assert.ok(ed.includes('look: d.look === "light" ? "light" : "dark", look_when: d.look_when || null,') && ed.includes("lookWhen: d.look_when || null") && eh.includes('id="look-sun"') && eh.includes('value="time"> By time of day'), "the editor saves it and previews it");
+  const sql = readFileSync(new URL("../supabase/50-directory-look.sql", import.meta.url), "utf8");
+  assert.ok(sql.includes("add column if not exists look text not null default 'dark'") && sql.includes("check (look in ('dark', 'light'))") && sql.includes("before insert or update of look_when on public.directories")
+    && sql.includes("not in ('day', 'evening', 'dayAt', 'eveningAt', 'sun')") && sql.includes("'The day look and the evening look are different looks.'"), "50's rules match the screen's");
+  const chk = readFileSync(new URL("../supabase/check-directory-look.sql", import.meta.url), "utf8");
+  assert.ok(chk.includes("perform set_config('role', 'authenticated', true)") && chk.includes("ALL 4 CHECKS PASSED"), "the check saves as signed-in users");
+});
+
 let passed = 0;
 for (const [name, fn] of tests) {
   try { await fn(); passed++; console.log(`  ok  ${name}`); }

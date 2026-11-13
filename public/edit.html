@@ -51,6 +51,23 @@
           <label class="check"><input type="checkbox" id="kbd-on"> Show the accessible keyboard on touch screens</label>
           <p class="hint">Adds a Search button at the bottom left of the directory on touch screens. It opens an on-screen keyboard that finds companies by name, for visitors who'd rather type than scroll. Display-only screens never show it.</p>
         </div>
+        <div class="togo-field me-look" id="look-field">
+          <div class="me-look-row"><span class="me-look-label">Look</span>
+            <label class="me-choice"><input type="radio" name="look" value="dark"> Dark</label>
+            <label class="me-choice"><input type="radio" name="look" value="light"> Light</label>
+            <label class="me-choice"><input type="radio" name="look" value="time"> By time of day</label>
+          </div>
+          <div id="look-times" hidden>
+            <div class="me-look-row"><span class="me-look-label">By day</span>
+              <select id="look-day" aria-label="Day look"><option value="light">Light</option><option value="dark">Dark</option></select>
+              <span class="me-when-from">from</span><input type="time" id="look-day-at" step="300" aria-label="Day look starts"></div>
+            <div class="me-look-row"><span class="me-look-label">Evening</span><strong id="look-evening">Dark</strong>
+              <span class="me-when-from">from</span><input type="time" id="look-eve-at" step="300" aria-label="Evening look starts"></div>
+            <div class="me-look-row"><span class="me-look-label"></span><label class="check inline"><input type="checkbox" id="look-sun"> Change at sunrise and sunset instead</label></div>
+            <p class="hint" id="look-sun-line" hidden></p>
+          </div>
+          <p class="hint">Dark is the original look; Light is a pale page with dark lettering, for bright lobbies. By time of day changes between them every day by the building's clock, at the times you set or at sunrise and sunset (from the weather location below). The preview shows the look as it would be now.</p>
+        </div>
       </section>
 
       <section class="panel" id="tenants-panel">
