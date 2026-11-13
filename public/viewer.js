@@ -7,7 +7,7 @@
 //                                                                     viewer_preview_shown, viewer_quote_started
 //   { source: "waytugo-viewer", type: "quote", visit, code, summary, config }
 // and from it: { source: "waytugo-site", type: "quote-sent", visit }   its form was sent (kept with the visit)
-import { normalizeConfig, sampleDirectory, summary, KINDS } from "/viewer-sample.mjs";
+import { normalizeConfig, sampleDirectory, sampleRows, summary, KINDS, LIMITS, SLIDER_MAX } from "/viewer-sample.mjs";
 
 const $ = (id) => document.getElementById(id);
 const form = $("controls"), frame = $("pv"), box = $("screen");
@@ -27,10 +27,67 @@ const source = Object.fromEntries(["page", "utm_source", "utm_medium", "utm_camp
 const code = V.id.slice(0, 8).toUpperCase();
 const seconds = () => Math.min(7200, Math.round(V.seconds + (V.shownSince ? (Date.now() - V.shownSince) / 1000 : 0)));
 
+// V2: what the visitor typed over the sample tenants (kept for all 20, so a row comes back when the slider does), and
+// their own logo and photo: in this page only, as pictures shrunk in the browser; never sent anywhere
+const typed = Array.from({ length: SLIDER_MAX }, () => ({ name: "", suite: "" }));
+const own = { logo: null, photo: null };   // { url, name }
+
 function choices() {
-  const f = new FormData(form);
-  return normalizeConfig({ kind: f.get("kind"), name: f.get("name"), subtitle: f.get("subtitle"), tenants: Number(f.get("tenants")), shape: f.get("shape"),
-    weather: f.has("weather"), qr: f.has("qr"), places: f.has("places"), contacts: f.has("contacts"), news: f.has("news") });
+  const f = new FormData(form), n = Number(f.get("tenants"));
+  const pic = (k) => (!f.has(k) ? "off" : own[k] ? "own" : "sample");
+  return normalizeConfig({ v: 2, kind: f.get("kind"), name: f.get("name"), subtitle: f.get("subtitle"), tenants: n, shape: f.get("shape"),
+    weather: f.has("weather"), qr: f.has("qr"), places: f.has("places"), contacts: f.has("contacts"), news: f.has("news"),
+    look: f.get("look"), logo: pic("logo"), photo: pic("photo"), rows: typed.slice(0, n) });
+}
+
+// ── V2: the tenant rows, one per tenant on the slider, the sample's name and suite as placeholders
+const rowsEl = $("rows");
+function renderRows() {
+  const c = choices(), list = sampleRows({ ...c, rows: [] });
+  if (rowsEl.children.length === list.length) return;
+  rowsEl.innerHTML = list.map((r, i) => `<div class="vw-row" data-i="${i}">`
+    + `<input data-row="name" maxlength="${LIMITS.name}" placeholder="${esc(r.sample)}" value="${esc(typed[i].name)}" aria-label="Tenant ${i + 1} name">`
+    + `<input data-row="suite" maxlength="${LIMITS.suite}" placeholder="${esc(r.sampleSuite)}" value="${esc(typed[i].suite)}" aria-label="Tenant ${i + 1} suite"></div>`).join("");
+}
+const esc = (v) => String(v ?? "").replace(/[&<>"']/g, (ch) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[ch]));
+rowsEl.addEventListener("input", (e) => {
+  const i = Number(e.target.closest(".vw-row")?.dataset.i), k = e.target.dataset.row;
+  if (Number.isInteger(i) && typed[i] && (k === "name" || k === "suite")) typed[i][k] = e.target.value;
+  showReset();
+});
+const showReset = () => { $("rows-reset").hidden = !typed.some((r) => r.name || r.suite); };
+$("rows-reset").addEventListener("click", () => {
+  for (const r of typed) { r.name = ""; r.suite = ""; }
+  for (const el of rowsEl.querySelectorAll("input")) el.value = "";
+  showReset(); V.changes++; draw(); keep();
+});
+
+// ── V2: their own logo or building photo, shrunk here (a logo keeps its clear background) and kept in this page only
+function shrink(file, maxW, keepClear) {
+  return new Promise((resolve, reject) => {
+    const url = URL.createObjectURL(file), img = new Image();
+    img.onload = () => {
+      const w = Math.min(maxW, img.naturalWidth || maxW), h = Math.round(((img.naturalHeight || maxW) * w) / (img.naturalWidth || maxW));
+      const cv = document.createElement("canvas"); cv.width = w; cv.height = h;
+      cv.getContext("2d").drawImage(img, 0, 0, w, h); URL.revokeObjectURL(url);
+      resolve(cv.toDataURL(keepClear ? "image/png" : "image/jpeg", 0.86));
+    };
+    img.onerror = () => { URL.revokeObjectURL(url); reject(new Error("not a picture")); };
+    img.src = url;
+  });
+}
+for (const box of document.querySelectorAll(".vw-pic")) {
+  const k = box.dataset.pic, input = box.querySelector("input[type=file]"), tick = box.querySelector(`input[name="${k}"]`);
+  const show = () => { box.querySelector(".vw-pic-name").textContent = own[k] ? own[k].name : ""; box.querySelector("[data-drop]").hidden = !own[k]; };
+  box.querySelector("[data-own]").addEventListener("click", () => input.click());
+  input.addEventListener("change", async () => {
+    const file = input.files?.[0]; input.value = "";
+    if (!file) return;
+    try { own[k] = { url: await shrink(file, k === "logo" ? 900 : 1600, k === "logo"), name: file.name.slice(0, 60) }; }
+    catch { box.querySelector(".vw-pic-name").textContent = "That file isn't a picture we can show."; return; }
+    tick.checked = true; show(); V.changes++; draw(); keep();
+  });
+  box.querySelector("[data-drop]").addEventListener("click", () => { own[k] = null; show(); V.changes++; draw(); keep(); });
 }
 
 // ── the preview: the screen at its real size (1920 × 1080 or 1080 × 1920), scaled to fit
@@ -51,9 +108,10 @@ function draw() {
   drawT = setTimeout(() => {
     const c = choices();
     $("tenants-out").textContent = String(c.tenants);
+    renderRows();
     $("hint").textContent = c.kind === "touch" ? "It's live: tap a company for its card, or a letter to jump. Names, suites and phone numbers are invented." : "Names, suites and phone numbers are invented for this preview.";
     fit();
-    frame.contentWindow?.postMessage({ type: "draft", data: sampleDirectory(c) }, location.origin);
+    frame.contentWindow?.postMessage({ type: "draft", data: sampleDirectory(c, { ownLogo: own.logo?.url || "", ownPhoto: own.photo?.url || "" }) }, location.origin);
     if (V.changes > 0 && !V.previewTold) { V.previewTold = true; tell({ type: "event", name: "viewer_preview_shown", kind: c.kind }); }
   }, 120);
 }
@@ -76,6 +134,7 @@ document.addEventListener("visibilitychange", () => {
 });
 
 form.addEventListener("input", (e) => {
+  if (e.target.type === "file") return;
   V.changes++;
   if (e.target.name === "kind") tell({ type: "event", name: "viewer_type_selected", kind: e.target.value });
   draw(); keep();
@@ -103,7 +162,8 @@ if (parentOrigin) {
 }
 // Each visit starts from the defaults (a building directory, landscape): browsers otherwise bring back a reload's choices
 form.reset();
-window.addEventListener("pageshow", (e) => { if (e.persisted) { form.reset(); V.changes = 0; draw(); } });
+renderRows();
+window.addEventListener("pageshow", (e) => { if (e.persisted) { form.reset(); for (const r of typed) { r.name = ""; r.suite = ""; } own.logo = own.photo = null; rowsEl.innerHTML = ""; renderRows(); V.changes = 0; draw(); } });
 tell({ type: "event", name: "viewer_start", kind: choices().kind });
 fit();
-window.Viewer = { visit: V, choices, KINDS };   // for the browser checks
+window.Viewer = { visit: V, choices, KINDS, typed, own };   // for the browser checks

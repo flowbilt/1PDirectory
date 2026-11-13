@@ -13,7 +13,10 @@ const from = (src) => {
   const s = src || {}, ad = [s.utm_source, s.utm_medium, s.utm_campaign].filter(Boolean).join(" / ");
   return ad || s.page || "";
 };
-const extras = (c) => [c.weather && "Weather", c.news && "News", c.contacts && "Contacts", c.qr && "QR", c.places && "Places"].filter(Boolean).join(", ") || "None";
+const extras = (c) => [c.weather && "Weather", c.news && "News", c.contacts && "Contacts", c.qr && "QR", c.places && "Places",
+  // V2: the look, and the logo and photo (their own isn't kept: View shows the placeholder in its place)
+  c.look === "light" && "Light", c.logo === "sample" && "Logo", c.logo === "own" && "Own logo", c.photo === "sample" && "Photo", c.photo === "own" && "Own photo"].filter(Boolean).join(", ") || "None";
+const typedIn = (c) => (c.rows || []).filter((r) => r.name || r.suite).length;
 
 async function load() {
   const days = Number($("viewer-days").value);
@@ -31,7 +34,7 @@ function render() {
     return `<tr data-id="${esc(r.id)}">
       <td>${esc(when(r.started_at))}<div class="sub">${esc(r.id.slice(0, 8).toUpperCase())}</div></td>
       <td>${esc(KINDS[c.kind])}</td><td>${c.name ? esc(c.name) : '<span class="muted">(no name)</span>'}${c.subtitle ? `<div class="sub">${esc(c.subtitle)}</div>` : ""}</td>
-      <td>${c.tenants}</td><td>${c.shape === "portrait" ? "Portrait" : "Landscape"}</td><td>${esc(extras(c))}</td>
+      <td>${c.tenants}${typedIn(c) ? `<div class="sub">${typedIn(c)} typed in</div>` : ""}</td><td>${c.shape === "portrait" ? "Portrait" : "Landscape"}</td><td>${esc(extras(c))}</td>
       <td>${esc(spent(r.seconds))}<div class="sub">${r.changes} change${r.changes === 1 ? "" : "s"}</div></td>
       <td>${esc(from(r.source)) || '<span class="muted">—</span>'}</td>
       <td>${r.quote ? `<span class="viewer-quote ${esc(r.quote)}">${r.quote === "sent" ? "Sent" : "Started"}</span>` : ""}</td>

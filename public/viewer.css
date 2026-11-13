@@ -46,6 +46,18 @@ html, body { margin: 0; background: var(--bg); color: var(--ink); font: 16px/1.4
 .vw-screen iframe { position: absolute; top: 0; left: 0; border: 0; transform-origin: 0 0; background: #0d1b2e; }
 .vw-tag { width: fit-content; margin: 0 auto 4px; background: var(--orange); color: var(--orange-ink); font-weight: 700; font-size: 12px; letter-spacing: .06em; text-transform: uppercase; padding: 4px 12px; border-radius: 999px; }
 .vw-hint { color: var(--muted); font-size: 14px; margin: 18px 2px 0; text-align: center; }
+/* V2: the tenant rows, the pictures */
+.vw-rows { display: grid; gap: 6px; max-height: 320px; overflow-y: auto; padding-right: 4px; }
+.vw-row { display: grid; grid-template-columns: 1fr 76px; gap: 6px; }
+.vw-row input { font: inherit; font-weight: 400; font-size: 15px; color: var(--ink); background: rgba(0,0,0,.25); border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; min-width: 0; }
+.vw-row input::placeholder { color: rgba(255,255,255,.62); }
+.vw-row input:focus-visible { outline: 3px solid var(--blue); outline-offset: 1px; }
+.vw-link { background: none; border: 0; padding: 0; color: #8cc2ff; font: inherit; font-size: 14px; font-weight: 400; text-decoration: underline; cursor: pointer; text-align: left; width: fit-content; }
+.vw-link:focus-visible { outline: 3px solid var(--blue); outline-offset: 2px; }
+.vw-note-flat { margin: 2px 0 0; font-weight: 400; }
+.vw-pic { margin-top: 4px; }
+.vw-pic-own { display: flex; flex-wrap: wrap; gap: 4px 12px; align-items: center; margin: 4px 0 6px 28px; }
+.vw-pic-name { color: var(--muted); font-size: 13px; overflow-wrap: anywhere; }
 @media (max-width: 860px) {
   .vw { padding: 18px 14px 24px; }
   .vw-body { grid-template-columns: 1fr; }

@@ -855,6 +855,14 @@ through waytugo.com's own inquiry form.
   at Crambone Arena", a chili cook-off, a dog day) before Nearby. The nine pictures are Scot's, cropped to the picture
   alone, in `public/viewer-pics/` (`PICS` in viewer-sample.mjs lists them; a story without one shows as text).
 
+- **V2** (Scot, 2026-11-12/13): the slider runs **4 to 20** (larger lists on request); a row per tenant with the sample's
+  name and suite as placeholders, which the visitor can type over (kept with the visit as `rows`; **Back to the
+  samples**); the samples are the same whatever the name or slider, so a row never changes under the visitor; **Dark
+  or Light** (noted: a real screen can follow sunrise and sunset); a **logo** and **building photo**, each a placeholder
+  (`viewer-pics/your-logo.png`, `viewer-pics/building.jpg`, the Gardendale Civic Center from Scot) or the visitor's own,
+  shrunk in their browser and shown only there (the visit keeps only `"own"`; the console's View shows the
+  placeholder). Choices version 2 (`viewer-sample.mjs`; `supabase/51-viewer-v2.sql`); version 1 visits redraw as before.
+
 ### Light and Dark directories (DP-14, D2)
 
 Each directory has a **Look** in the editor (This directory): **Dark** (the original, the default), **Light** (a pale

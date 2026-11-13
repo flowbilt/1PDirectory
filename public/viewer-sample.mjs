@@ -5,42 +5,69 @@
 
 export const KINDS = { directory: "Building directory", touch: "Touch directory" };
 export const MIN_TENANTS = 4, MAX_TENANTS = 60;
-export const LIMITS = { name: 60, subtitle: 60 };
+// V2 (DP-14): the slider goes to 20 (Scot: "lower the amount of tenants available on the slider to 20 ... They can ask
+// for other configurations"); visits kept before V2 may say up to 60, and redraw as they were
+export const SLIDER_MAX = 20;
+export const LIMITS = { name: 60, subtitle: 60, suite: 12 };
+// V2: the logo and the building photo: none, WayTuGo's placeholder, or the visitor's own (shown only in their browser:
+// never sent or kept; a kept visit says only "own", and redraws with the placeholder)
+export const PICTURE = ["off", "sample", "own"];
+export const PLACEHOLDER = { logo: "/viewer-pics/your-logo.png", photo: "/viewer-pics/building.jpg" };
 
 const clean = (v, n) => String(v ?? "").replace(/[\u0000-\u001f\u007f<>]/g, "").replace(/\s+/g, " ").trim().slice(0, n);
 
 /** The viewer's choices, as kept: { v, kind, name, subtitle, tenants, shape, weather, qr, places, contacts, news }
- *  (V1b, DP-14: "news", sample headlines in the information box; older visits have no "news", which is off) */
+ *  (V1b, DP-14: "news", sample headlines in the information box; older visits have no "news", which is off)
+ *  V2 (DP-14), version 2: also { look, logo, photo, rows }: Dark or Light; the logo and building photo (off, the
+ *  placeholder, or the visitor's own); and the tenant rows the visitor typed over ([{ name, suite }], one per row
+ *  shown; blank keeps the sample's). Version 1 visits (before V2) keep their own sample list. */
 export function normalizeConfig(c) {
   const x = c && typeof c === "object" ? c : {};
   const n = Math.round(Number(x.tenants));
+  const v = x.v === 2 ? 2 : 1;   // no version: version 1 (every visit kept before V2 says 1; the viewer sends 2)
+  const tenants = Number.isFinite(n) ? Math.min(v === 1 ? MAX_TENANTS : SLIDER_MAX, Math.max(MIN_TENANTS, n)) : 10;
+  const rows = v === 2 && Array.isArray(x.rows) ? x.rows.slice(0, tenants).map((r) => ({ name: clean(r?.name, LIMITS.name), suite: clean(r?.suite, LIMITS.suite) })) : [];
+  while (rows.length && !rows[rows.length - 1].name && !rows[rows.length - 1].suite) rows.pop();   // nothing typed at the end: not kept
   return {
-    v: 1,
+    v,
     kind: KINDS[x.kind] ? x.kind : "directory",
     name: clean(x.name, LIMITS.name),
     subtitle: clean(x.subtitle, LIMITS.subtitle),
-    tenants: Number.isFinite(n) ? Math.min(MAX_TENANTS, Math.max(MIN_TENANTS, n)) : 10,   // V1b: 10 to start (Scot)
+    tenants,                                               // V1b: 10 to start (Scot)
     shape: x.shape === "portrait" ? "portrait" : "landscape",
     weather: x.weather !== false,
     qr: x.qr === true,
     places: x.places === true,
     contacts: x.contacts !== false,
     news: x.news === true,
+    ...(v === 2 ? { look: x.look === "light" ? "light" : "dark", logo: PICTURE.includes(x.logo) ? x.logo : "off", photo: PICTURE.includes(x.photo) ? x.photo : "off", rows } : {}),
   };
 }
 
 /** Problems with choices sent to be kept (the same rules as supabase/48-viewer.sql's viewer_config_problem) */
 export function configProblem(c) {
   if (!c || typeof c !== "object" || Array.isArray(c)) return "The choices are an object.";
-  const keys = ["v", "kind", "name", "subtitle", "tenants", "shape", "weather", "qr", "places", "contacts", "news"];
+  const keys = ["v", "kind", "name", "subtitle", "tenants", "shape", "weather", "qr", "places", "contacts", "news", "look", "logo", "photo", "rows"];
   for (const k of Object.keys(c)) if (!keys.includes(k)) return `"${k}" isn't one of the viewer's choices.`;
-  if (c.v !== 1) return "The choices are version 1.";
+  if (c.v !== 1 && c.v !== 2) return "The choices are version 1 or 2.";
   if (!KINDS[c.kind]) return "The display is a building directory or a touch directory.";
   for (const k of ["name", "subtitle"]) if (typeof c[k] !== "string" || c[k].length > LIMITS[k]) return `The ${k} is text of up to ${LIMITS[k]} characters.`;
   if (!Number.isInteger(c.tenants) || c.tenants < MIN_TENANTS || c.tenants > MAX_TENANTS) return `The tenants are ${MIN_TENANTS} to ${MAX_TENANTS}.`;
   if (!["landscape", "portrait"].includes(c.shape)) return "The screen is landscape or portrait.";
   for (const k of ["weather", "qr", "places", "contacts"]) if (typeof c[k] !== "boolean") return `${k} is on or off.`;
   if (c.news !== undefined && typeof c.news !== "boolean") return "news is on or off.";
+  // V2: version 2's choices
+  if (c.v === 1 && ["look", "logo", "photo", "rows"].some((k) => k in c)) return "The look, logo, photo and rows are version 2's.";
+  if (c.v === 2) {
+    if (c.tenants > SLIDER_MAX) return `The tenants are ${MIN_TENANTS} to ${SLIDER_MAX}.`;
+    if (!["dark", "light"].includes(c.look)) return "The look is Dark or Light.";
+    for (const k of ["logo", "photo"]) if (!PICTURE.includes(c[k])) return `The ${k} is off, the sample or their own.`;
+    if (!Array.isArray(c.rows) || c.rows.length > c.tenants) return "The rows are a list, one for each tenant at most.";
+    for (const r of c.rows) {
+      if (!r || typeof r !== "object" || Array.isArray(r) || Object.keys(r).some((k) => k !== "name" && k !== "suite")) return "Each row is a name and a suite.";
+      if (typeof r.name !== "string" || r.name.length > LIMITS.name || typeof r.suite !== "string" || r.suite.length > LIMITS.suite) return `A row's name is up to ${LIMITS.name} characters and its suite up to ${LIMITS.suite}.`;
+    }
+  }
   return "";
 }
 
@@ -48,7 +75,10 @@ export function configProblem(c) {
 export function summary(c) {
   c = normalizeConfig(c);
   const extras = [c.weather && "weather", c.news && "news", c.qr && "QR", c.places && "places", c.contacts && "contacts"].filter(Boolean);
-  return [KINDS[c.kind], c.name || "(no name)", `${c.tenants} tenants`, c.shape, extras.length ? extras.join(", ") : "no extras"].join(" · ");
+  const typed = (c.rows || []).filter((r) => r.name || r.suite).length;
+  const pics = [c.logo === "own" ? "own logo" : c.logo === "sample" && "logo", c.photo === "own" ? "own photo" : c.photo === "sample" && "photo"].filter(Boolean);
+  return [KINDS[c.kind], c.name || "(no name)", `${c.tenants} tenants${typed ? ` (${typed} typed in)` : ""}`, c.shape, c.look === "light" ? "Light" : c.v === 2 ? "Dark" : "",
+    pics.length ? pics.join(", ") : "", extras.length ? extras.join(", ") : "no extras"].filter(Boolean).join(" · ");
 }
 
 // Invented businesses (none is meant to be a real company); shuffled by the building's name so each visitor's list
@@ -105,6 +135,8 @@ function rand(seed) { let a = seed || 1; return () => { a = (a + 0x6d2b79f5) | 0
 /** The invented tenants for these choices: names, suites by floor, and the arrow to each floor's lift lobby */
 export function sampleTenants(c) {
   c = normalizeConfig(c);
+  if (c.v === 2) return sampleRows(c).map((t) => ({ name: t.name, suite: t.suite, dir: t.dir, note: "", people: t.people }))
+    .sort((a, b) => a.name.localeCompare(b.name));
   const withPeople = c.kind === "touch";
   const r = rand(hash(`${c.name.toLowerCase()}|${c.tenants}`));
   const names = TENANTS.slice();
@@ -126,13 +158,41 @@ export function sampleTenants(c) {
   return out.sort((a, b) => a.name.localeCompare(b.name));
 }
 
-/** The directory screen's data for these choices (the shape edit.js sends the screen's preview) */
-export function sampleDirectory(c, { togoUrl = "https://waytugo.com/" } = {}) {
+/** V2: the rows as the viewer lists them, in order: the sample's name and suite for each (the same ones whatever the
+ *  building's name or the slider, so a row doesn't change under the visitor), with what they typed over them, and the
+ *  sample's people on a touch directory (a typed-in company's people are invented too) */
+export function sampleRows(c) {
   c = normalizeConfig(c);
+  const r = rand(hash("waytugo-viewer-2"));
+  const names = TENANTS.slice();
+  for (let i = names.length - 1; i > 0; i--) { const j = Math.floor(r() * (i + 1)); [names[i], names[j]] = [names[j], names[i]]; }
+  const dirs = ["right", "left"];
+  return names.slice(0, c.tenants).map((sample, i) => {
+    const floor = 1 + Math.floor(i / 7), room = String(100 * floor + 10 + (i % 7) * 10);
+    const typed = c.rows[i] || { name: "", suite: "" }, name = typed.name || sample;
+    const people = [];
+    if (c.kind === "touch") {
+      const pr = rand(hash(`${i}|${name.toLowerCase()}`)), n = 2 + Math.floor(pr() * 3), domain = name.toLowerCase().replace(/&/g, "and").replace(/[^a-z0-9]+/g, "").slice(0, 24) || "company";
+      for (let k = 0; k < n; k++) {
+        const first = FIRST[Math.floor(pr() * FIRST.length)], last = LAST[Math.floor(pr() * LAST.length)];
+        people.push({ first, last, title: k === 0 ? TITLES[Math.floor(pr() * 4)] : TITLES[4 + Math.floor(pr() * 6)],
+          phone: `(205) 555-${String(1000 + Math.floor(pr() * 8999)).slice(0, 4)}`, email: `${first[0].toLowerCase()}${last.toLowerCase()}@${domain}.example`, suite: "" });
+      }
+    }
+    return { sample, sampleSuite: room, name, suite: typed.suite || room, dir: floor === 1 ? dirs[i % 2] : "up", people };
+  });
+}
+
+/** The directory screen's data for these choices (the shape edit.js sends the screen's preview) */
+export function sampleDirectory(c, { togoUrl = "https://waytugo.com/", ownLogo = "", ownPhoto = "" } = {}) {
+  c = normalizeConfig(c);
+  // V2: the visitor's own pictures come from their browser (ownLogo, ownPhoto); without them, the placeholders
+  const logo = c.logo === "own" && ownLogo ? ownLogo : c.logo && c.logo !== "off" ? PLACEHOLDER.logo : "";
+  const photo = c.photo === "own" && ownPhoto ? ownPhoto : c.photo && c.photo !== "off" ? PLACEHOLDER.photo : "";
   return {
     key: "viewer", orientation: c.shape, sample: true,
     propertyName: c.name || "Your Building Name", buildingLabel: c.subtitle,
-    logo: "", logoReplacesName: false, companyLogo: "", logoSwap: false,
+    logo, logoReplacesName: false, companyLogo: "", logoSwap: false,
     tenants: sampleTenants(c),
     managedBy: c.contacts ? { name: "Your Property Manager", company: "Sample Property Management", phone: "(205) 555-0100" } : {},
     leasedBy: c.contacts ? { name: "Leasing Office", company: "Sample Realty Partners", phone: "(205) 555-0142" } : {},
@@ -153,6 +213,9 @@ export function sampleDirectory(c, { togoUrl = "https://waytugo.com/" } = {}) {
     togo: { enabled: c.qr, url: togoUrl, line: "Take this directory with you!" },
     poweredBy: true,
     touch: c.kind === "touch", screenInches: c.kind === "touch" ? 55 : null, touchIdle: 90, keyboard: false,
-    background: {}, sizes: {}, assigned: true, updatedAt: null,
+    // V2: the building photo behind the directory, as a building's editor sets it up (a quarter showing through)
+    background: photo ? { enabled: true, image: photo, visibility: 25, size: 100, position: 50, offset: 0 } : {},
+    look: c.look === "light" ? "light" : "dark", lookWhen: null,   // V2: a real screen can follow sunrise and sunset
+    sizes: {}, assigned: true, updatedAt: null,
   };
 }

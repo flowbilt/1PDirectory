@@ -17,3 +17,12 @@ text. When a picture is added, its key goes into `PICS` in viewer-sample.mjs.
 | `dog` | Dog Day in the Park (event) |
 
 Made by Scot for 1Point (2026-11-10), cropped to the picture alone (the screen writes the headline over the bottom).
+
+## Placeholders (DP-14, V2)
+
+| File | For |
+|---|---|
+| `your-logo.png` | The logo placeholder ("YOUR LOGO", a dashed box), mid-grey on clear so it shows on Dark and Light. Made by Claude. |
+| `building.jpg` | The building photo placeholder, behind the directory: the Gardendale Civic Center, from Scot (2026-11-13), 348 × 348. |
+
+A visitor's own logo or photo never comes here: it stays in their browser.

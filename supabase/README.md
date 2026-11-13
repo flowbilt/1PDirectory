@@ -77,6 +77,7 @@ Do these once. The current site keeps running as it is until the new build is de
 49. For the viewer on waytugo.com (DP-14, V1): **before uploading that code**, new query, paste all of `48-viewer.sql`, and click **Run**. Then new query, paste all of `check-viewer.sql`, and click **Run**; it should read **ALL 6 CHECKS PASSED** (red on purpose).
 50. For the viewer's News headlines (DP-14, V1b): **before uploading that code**, new query, paste all of `49-viewer-news.sql`, and click **Run**. Then new query, paste all of `check-viewer-news.sql`, and click **Run**; it should read **ALL 3 CHECKS PASSED** (red on purpose).
 51. For Light and Dark directories (DP-14, D2): **before uploading that code**, new query, paste all of `50-directory-look.sql`, and click **Run**. Then new query, paste all of `check-directory-look.sql`, and click **Run**; it should read **ALL 4 CHECKS PASSED** (red on purpose).
+52. For the viewer's version 2 (DP-14, V2): **before uploading that code**, new query, paste all of `51-viewer-v2.sql`, and click **Run**. Then new query, paste all of `check-viewer-v2.sql`, and click **Run**; it should read **ALL 4 CHECKS PASSED** (red on purpose).
 
 If any of them shows an error (other than the expected red messages from the `check-…sql` files), copy the message (it includes a line number) and send it to Claude.
 

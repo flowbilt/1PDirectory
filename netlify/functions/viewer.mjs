@@ -24,7 +24,7 @@ export function cleanSource(s) {
 export default async (req) => {
   if (req.method !== "POST") return say(405, { error: "POST only." });
   const text = await req.text();
-  if (text.length > 4000) return say(413, { error: "Too large." });
+  if (text.length > 8000) return say(413, { error: "Too large." });
   let b; try { b = JSON.parse(text); } catch { return say(400, { error: "Not JSON." }); }
   if (!b || !UUID_RE.test(String(b.id || ""))) return say(400, { error: "A visit has a code." });
   const problem = configProblem(b.config);

@@ -3603,7 +3603,7 @@ test("V1: the viewer's choices and its sample directory: kept within limits; the
   assert.equal(V.normalizeConfig({ tenants: 1 }).tenants, 4); assert.equal(V.normalizeConfig({ kind: "wayfinding" }).kind, "directory");
   assert.equal(V.configProblem(c), "");
   for (const [bad, re] of [[{ ...c, kind: "wayfinding" }, /building directory or a touch/], [{ ...c, tenants: 61 }, /4 to 60/], [{ ...c, tenants: 12.5 }, /4 to 60/],
-    [{ ...c, name: "x".repeat(61) }, /up to 60/], [{ ...c, email: "a@b.c" }, /isn't one of/], [{ ...c, qr: "yes" }, /on or off/], [{ ...c, v: 2 }, /version 1/]]) assert.match(V.configProblem(bad), re);
+    [{ ...c, name: "x".repeat(61) }, /up to 60/], [{ ...c, email: "a@b.c" }, /isn't one of/], [{ ...c, qr: "yes" }, /on or off/], [{ ...c, v: 3 }, /version 1 or 2/]]) assert.match(V.configProblem(bad), re);
   const a = V.sampleTenants({ name: "Landmark", tenants: 12 }), b = V.sampleTenants({ name: "Landmark", tenants: 12 });
   assert.deepEqual(a, b, "the same choices, the same tenants (the console's redraw matches)");
   assert.notDeepEqual(a.map((t) => t.name), V.sampleTenants({ name: "Perimeter Park", tenants: 12 }).map((t) => t.name), "another building, another list");
@@ -3658,7 +3658,7 @@ test("V1: /api/viewer keeps a visit only as it should be: POST, a code, real cho
   assert.equal((await post("not json")).status, 400);
   assert.equal((await post({ id: "nope", config })).status, 400);
   assert.equal((await post({ id, config: { ...config, kind: "wayfinding" } })).status, 400);
-  assert.equal((await post({ id, config, source: { page: "x".repeat(5000) } })).status, 413);
+  assert.equal((await post({ id, config, source: { page: "x".repeat(9000) } })).status, 413);
   assert.deepEqual(cleanSource({ page: " /waytugo-viewer ", utm_source: "google", ip: "203.0.113.9", email: "a@b.c", utm_term: 5 }), { page: "/waytugo-viewer", utm_source: "google" });
   const toml = readFileSync(new URL("../netlify.toml", import.meta.url), "utf8");
   assert.ok(toml.includes(`for = "/viewer.html"`) && toml.includes("frame-ancestors 'self' https://waytugo.com https://www.waytugo.com https://1pointusa.com https://www.1pointusa.com https://*.netlify.app"));
@@ -3714,6 +3714,42 @@ test("D2: Light and Dark for directory screens: the customer's choice, or one by
     && sql.includes("not in ('day', 'evening', 'dayAt', 'eveningAt', 'sun')") && sql.includes("'The day look and the evening look are different looks.'"), "50's rules match the screen's");
   const chk = readFileSync(new URL("../supabase/check-directory-look.sql", import.meta.url), "utf8");
   assert.ok(chk.includes("perform set_config('role', 'authenticated', true)") && chk.includes("ALL 4 CHECKS PASSED"), "the check saves as signed-in users");
+});
+
+test("V2: the viewer's version 2: up to 20 tenants with the visitor's own names and suites over the samples (the samples stay put as the slider moves); Light or Dark; the logo and building photo (placeholders, or their own shown only in their browser); the site's rules (= 51-viewer-v2.sql)", async () => {
+  const V = await import("../public/viewer-sample.mjs");
+  const c = V.normalizeConfig({ v: 2, kind: "touch", tenants: 30, look: "light", logo: "own", photo: "sample", rows: [{ name: " Acme  <Dental> ", suite: "210" }, { name: "", suite: "B" }, { name: "", suite: "" }] });
+  assert.equal(c.tenants, 20, "the slider's 20 at most"); assert.equal(c.look, "light"); assert.equal(c.logo, "own"); assert.equal(c.photo, "sample");
+  assert.deepEqual(c.rows, [{ name: "Acme Dental", suite: "210" }, { name: "", suite: "B" }], "trimmed; nothing typed at the end isn't kept");
+  assert.equal(V.configProblem(c), "");
+  for (const [bad, re] of [[{ ...c, tenants: 21 }, /4 to 20/], [{ ...c, look: "dim" }, /Dark or Light/], [{ ...c, logo: "data:image/png;base64,AA" }, /off, the sample or their own/],
+    [{ ...c, rows: Array.from({ length: 21 }, () => ({ name: "x", suite: "" })) }, /one for each tenant/], [{ ...c, rows: [{ name: "x", suite: "1", email: "a@b.c" }] }, /a name and a suite/],
+    [{ ...c, rows: [{ name: "x", suite: "1234567890123" }] }, /up to 12/], [{ v: 1, ...V.normalizeConfig({}), look: "light" }, /version 2's/]]) assert.match(V.configProblem(bad), re);
+  // the rows: the same samples whatever the name or the slider, so a row never changes under the visitor
+  const ten = V.sampleRows({ v: 2, tenants: 10 }), twenty = V.sampleRows({ v: 2, name: "Somewhere Else", tenants: 20 });
+  assert.deepEqual(ten.map((r) => [r.sample, r.sampleSuite]), twenty.slice(0, 10).map((r) => [r.sample, r.sampleSuite]));
+  const mine = V.sampleRows(c);
+  assert.equal(mine[0].name, "Acme Dental"); assert.equal(mine[0].suite, "210"); assert.equal(mine[1].name, mine[1].sample); assert.equal(mine[1].suite, "B");
+  assert.ok(mine.every((r) => r.people.length >= 2 && r.people.every((x) => /\.example$/.test(x.email))), "a touch directory's people, invented, for typed-in companies too");
+  const d = V.sampleDirectory(c, { ownLogo: "data:image/png;base64,MINE" });
+  assert.equal(d.tenants.length, 20); assert.ok(d.tenants.some((t) => t.name === "Acme Dental" && t.suite === "210"));
+  assert.equal(d.logo, "data:image/png;base64,MINE", "their own logo, from their browser"); assert.equal(d.background.image, V.PLACEHOLDER.photo); assert.equal(d.background.enabled, true);
+  assert.equal(d.look, "light"); assert.equal(d.lookWhen, null);
+  assert.equal(V.sampleDirectory(c).logo, V.PLACEHOLDER.logo, "a kept visit's own logo redraws as the placeholder");
+  assert.equal(V.sampleDirectory({ v: 2 }).logo, ""); assert.deepEqual(V.sampleDirectory({ v: 2 }).background, {});
+  for (const f of ["your-logo.png", "building.jpg"]) assert.ok(existsSync(new URL(`../public/viewer-pics/${f}`, import.meta.url)), f);
+  assert.equal(V.summary(c), "Touch directory · (no name) · 20 tenants (2 typed in) · landscape · Light · own logo, photo · weather, contacts");
+  // version 1 visits redraw as before
+  const old = V.normalizeConfig({ v: 1, name: "Landmark", tenants: 40 });
+  assert.equal(old.tenants, 40); assert.ok(!("rows" in old)); assert.equal(V.sampleDirectory(old).look, "dark");
+  // the page: the slider to 20, a row per tenant, their pictures never sent
+  const html = readFileSync(new URL("../public/viewer.html", import.meta.url), "utf8"), js = readFileSync(new URL("../public/viewer.js", import.meta.url), "utf8");
+  assert.ok(html.includes('name="tenants" type="range" min="4" max="20"') && html.includes('name="look" value="light"') && html.includes("never uploaded or saved"));
+  assert.ok(js.includes("ownLogo: own.logo?.url") && !/body\(\)[^\n]*own\./.test(js) && js.includes('logo: pic("logo")'), "only the word \"own\" goes in the visit");
+  const fn = readFileSync(new URL("../netlify/functions/viewer.mjs", import.meta.url), "utf8");
+  assert.ok(fn.includes("text.length > 8000"), "room for 20 typed rows");
+  const sql = readFileSync(new URL("../supabase/51-viewer-v2.sql", import.meta.url), "utf8");
+  for (const w of ["'look', 'logo', 'photo', 'rows'", "> 20", "('dark', 'light')", "('off', 'sample', 'own')", "> 60 or char_length(r ->> 'suite') > 12", "jsonb_array_length(c -> 'rows') > (c ->> 'tenants')::int"]) assert.ok(sql.includes(w), w);
 });
 
 let passed = 0;

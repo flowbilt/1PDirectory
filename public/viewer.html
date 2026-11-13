@@ -36,17 +36,43 @@
           <input name="name" maxlength="60" placeholder="e.g. Landmark Business Center"></label>
         <label class="vw-field"><span>Subtitle <em>optional</em></span>
           <input name="subtitle" maxlength="60" placeholder="e.g. 2100 First Avenue North"></label>
-        <label class="vw-field"><span>About how many tenants? <output id="tenants-out">10</output></span>
-          <input name="tenants" type="range" min="4" max="60" step="1" value="10"></label>
+        <label class="vw-field"><span>How many tenants? <output id="tenants-out">10</output></span>
+          <input name="tenants" type="range" min="4" max="20" step="1" value="10"></label>
+        <div class="vw-field vw-rows-field"><span>Tenants and suites <em>type over the samples</em></span>
+          <div class="vw-rows" id="rows"></div>
+          <button type="button" class="vw-link" id="rows-reset" hidden>Back to the samples</button>
+          <p class="vw-note vw-note-flat">Up to 20 here. A real directory takes as many as your building has; ask us about larger lists.</p>
+        </div>
         <div class="vw-field"><span>Screen</span>
           <div class="vw-seg" role="radiogroup" aria-label="Screen">
             <label><input type="radio" name="shape" value="landscape" checked><span>Landscape</span></label>
             <label><input type="radio" name="shape" value="portrait"><span>Portrait</span></label>
           </div></div>
+        <div class="vw-field"><span>Look</span>
+          <div class="vw-seg" role="radiogroup" aria-label="Look">
+            <label><input type="radio" name="look" value="dark" checked><span>Dark</span></label>
+            <label><input type="radio" name="look" value="light"><span>Light</span></label>
+          </div>
+          <p class="vw-note vw-note-flat">A real screen can change between them by itself at sunrise and sunset.</p></div>
       </fieldset>
 
       <fieldset class="vw-step">
-        <legend><span class="vw-num">3</span> Pick extras</legend>
+        <legend><span class="vw-num">3</span> Add your logo and building photo</legend>
+        <div class="vw-pic" data-pic="logo">
+          <label class="vw-check"><input type="checkbox" name="logo"><span>Logo above the name</span></label>
+          <div class="vw-pic-own"><button type="button" class="vw-link" data-own>Use my own logo…</button><span class="vw-pic-name"></span><button type="button" class="vw-link" data-drop hidden>Back to the placeholder</button>
+            <input type="file" accept="image/png,image/jpeg,image/webp,image/svg+xml" hidden></div>
+        </div>
+        <div class="vw-pic" data-pic="photo">
+          <label class="vw-check"><input type="checkbox" name="photo"><span>Building photo behind the directory</span></label>
+          <div class="vw-pic-own"><button type="button" class="vw-link" data-own>Use my own photo…</button><span class="vw-pic-name"></span><button type="button" class="vw-link" data-drop hidden>Back to the placeholder</button>
+            <input type="file" accept="image/png,image/jpeg,image/webp" hidden></div>
+        </div>
+        <p class="vw-note vw-note-flat">Your pictures stay on your device: they're shown here only, never uploaded or saved.</p>
+      </fieldset>
+
+      <fieldset class="vw-step">
+        <legend><span class="vw-num">4</span> Pick extras</legend>
         <label class="vw-check"><input type="checkbox" name="weather" checked><span>Weather beside the clock</span></label>
         <label class="vw-check"><input type="checkbox" name="contacts" checked><span>Building contacts (managed by, leasing)</span></label>
         <label class="vw-check"><input type="checkbox" name="qr"><span>Directory to Go: a QR code visitors scan to take the directory with them</span></label>
@@ -69,7 +95,7 @@
       <div class="vw-screen" id="screen">
         <iframe id="pv" title="Your WayTuGo directory (sample)" src="/index.html?preview=1" tabindex="-1"></iframe>
       </div>
-      <p class="vw-hint" id="hint">Names, suites and phone numbers are invented for this preview.</p>
+      <p class="vw-hint" id="hint">Sample names, suites and phone numbers are invented for this preview.</p>
     </section>
   </div>
 </main>

@@ -1853,7 +1853,7 @@ try {
     assert(await scr.locator("#property").textContent().then((t) => t.includes("Landmark Business Center")), "the name on the screen");
     assert(await scr.locator(".tenant").count() === 20, `20 tenants: ${await scr.locator(".tenant").count()}`);
     const names = await scr.locator(".tenant-name").allTextContents();
-    assert(JSON.stringify(names) === JSON.stringify(VS.sampleTenants({ name: "Landmark Business Center", tenants: 20 }).map((t) => t.name)), "the invented tenants, as the console will redraw them");
+    assert(JSON.stringify(names) === JSON.stringify(VS.sampleTenants({ v: 2, name: "Landmark Business Center", tenants: 20 }).map((t) => t.name)), "the invented tenants, as the console will redraw them");
     assert((await msgs()).some((m) => m.name === "viewer_preview_shown"), "viewer_preview_shown told");
     // touch and portrait: the visitor taps a company for its card
     await v.locator('input[name="kind"][value="touch"]').check(); await v.locator('input[name="shape"][value="portrait"]').check(); await v.locator('input[name="qr"]').check();
@@ -1880,7 +1880,7 @@ try {
     await v.locator("#quote").click(); await p.waitForTimeout(2000);
     const quote = (await msgs()).find((m) => m.type === "quote");
     assert(quote && quote.visit === row.id && quote.code === row.id.slice(0, 8).toUpperCase(), JSON.stringify(quote));
-    assert(quote.summary === "Touch directory · Landmark Business Center · 20 tenants · portrait · weather, QR, contacts", quote.summary);
+    assert(quote.summary === "Touch directory · Landmark Business Center · 20 tenants · portrait · Dark · weather, QR, contacts", quote.summary);
     assert((await msgs()).some((m) => m.name === "viewer_quote_started"), "viewer_quote_started told");
     [row] = (await sb(`viewer_visits?id=eq.${quote.visit}&select=quote`)).data;
     assert(row.quote === "sent", `the page's form sent: ${row.quote}`);
@@ -1892,7 +1892,7 @@ try {
   await check("V1b: the viewer starts as a landscape building directory with 10 tenants, even after a reload; News headlines (samples) and places take turns in the screen's information box, which shows at 10 tenants", async () => {
     const p = await browser.newPage({ viewport: { width: 1360, height: 900 } });
     await p.goto(`${B}/viewer.html`); await p.waitForTimeout(1500);
-    await p.check('input[name="shape"][value="portrait"]'); await p.fill('input[name="tenants"]', "30"); await p.waitForTimeout(500);
+    await p.check('input[name="shape"][value="portrait"]'); await p.fill('input[name="tenants"]', "20"); await p.waitForTimeout(500);
     await p.reload(); await p.waitForTimeout(1800);
     assert(await p.isChecked('input[name="shape"][value="landscape"]') && await p.isChecked('input[name="kind"][value="directory"]'), "landscape building directory after a reload");
     assert(await p.inputValue('input[name="tenants"]') === "10" && (await p.textContent("#tenants-out")).trim() === "10", "10 tenants");
@@ -1908,6 +1908,44 @@ try {
     for (let i = 0; i < 26; i++) { both.add((await scr.locator("#news-slides .slide.on").textContent().catch(() => "")).trim()); await p.waitForTimeout(1000); }
     assert([...both].some((t) => t.includes("Crambone Arena")) && [...both].some((t) => t.includes("Sample news")), `news and events take turns: ${[...both].join(" | ").slice(0, 400)}`);
     await shot(p, "viewer-news-places");
+    await p.close();
+  });
+
+  await check("V2: the viewer's tenants (the slider to 20, a row for each, the visitor's names and suites over the samples, Back to the samples), Light, and the logo and photo (placeholders, or their own shown on the screen but never sent)", async () => {
+    const p = await browser.newPage({ viewport: { width: 1360, height: 900 } });
+    const sent = []; p.on("request", (r) => { if (r.url().endsWith("/api/viewer")) sent.push(r.postData() || ""); });
+    await p.goto(`${B}/viewer.html`); await p.waitForTimeout(1500);
+    assert(await p.getAttribute('input[name="tenants"]', "max") === "20", "20 at most");
+    assert(await p.locator("#rows .vw-row").count() === 10, "a row for each of 10");
+    await p.fill('input[name="tenants"]', "14"); await p.waitForTimeout(400);
+    assert(await p.locator("#rows .vw-row").count() === 14, "a row for each of 14");
+    const first = await p.getAttribute('#rows .vw-row[data-i="0"] input[data-row="name"]', "placeholder");
+    await p.fill('#rows .vw-row[data-i="0"] input[data-row="name"]', "Acme Dental"); await p.fill('#rows .vw-row[data-i="0"] input[data-row="suite"]', "210");
+    await p.waitForTimeout(800);
+    const scr = p.frameLocator("#pv");
+    const names = await scr.locator(".tenant-name").allTextContents();
+    assert(names.some((n) => n.startsWith("Acme Dental")) && !names.some((n) => n.startsWith(first)), `typed over the sample: ${names.join(", ")}`);
+    assert(await scr.locator(".tenant").count() === 14, "14 on the screen");
+    await p.fill('input[name="tenants"]', "6"); await p.waitForTimeout(300); await p.fill('input[name="tenants"]', "14"); await p.waitForTimeout(400);
+    assert(await p.inputValue('#rows .vw-row[data-i="0"] input[data-row="suite"]') === "210", "a row comes back with the slider");
+    await p.check('input[name="look"][value="light"]', { force: true }); await p.waitForTimeout(600);
+    assert(await scr.locator("html").evaluate((h) => h.classList.contains("light")), "Light on the screen");
+    await p.check('input[name="logo"]'); await p.check('input[name="photo"]'); await p.waitForTimeout(800);
+    assert((await scr.locator("#logo").getAttribute("src")) === "/viewer-pics/your-logo.png", "the logo placeholder");
+    assert((await scr.locator(".bg-photo").getAttribute("src")) === "/viewer-pics/building.jpg", "the building placeholder");
+    const png = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAIAAAACCAYAAABytg0kAAAAFklEQVR4nGP8z8DwnwEJMDGgAaAPAC2QAgSVQ6rFAAAAAElFTkSuQmCC", "base64");
+    const [chooser] = await Promise.all([p.waitForEvent("filechooser"), p.click('.vw-pic[data-pic="logo"] [data-own]')]);
+    await chooser.setFiles({ name: "my-logo.png", mimeType: "image/png", buffer: png }); await p.waitForTimeout(1000);
+    assert(/^data:image\/png/.test(await scr.locator("#logo").getAttribute("src")), "their own logo on the screen");
+    assert((await p.textContent('.vw-pic[data-pic="logo"] .vw-pic-name')).includes("my-logo.png"));
+    await p.waitForTimeout(6500);
+    assert(sent.length > 0, "the visit kept");
+    const last = JSON.parse(sent[sent.length - 1]);
+    assert(last.config.v === 2 && last.config.logo === "own" && last.config.photo === "sample" && last.config.look === "light" && last.config.tenants === 14
+      && JSON.stringify(last.config.rows) === JSON.stringify([{ name: "Acme Dental", suite: "210" }]), JSON.stringify(last.config));
+    assert(!sent.some((b) => b.includes("data:image")), "their picture is never sent");
+    await p.click("#rows-reset"); await p.waitForTimeout(600);
+    assert(!(await scr.locator(".tenant-name").allTextContents()).some((n) => n.startsWith("Acme Dental")) && await p.isHidden("#rows-reset"), "Back to the samples");
     await p.close();
   });
 
@@ -1948,7 +1986,7 @@ try {
     await boss.locator("#viewer-rows tr", { hasText: "Landmark Business Center" }).locator("[data-view]").click(); await boss.waitForTimeout(2500);
     const fr = boss.frameLocator("#viewer-dlg-frame");
     const names = await fr.locator(".tenant-name").allTextContents();
-    assert(JSON.stringify(names) === JSON.stringify(VS.sampleTenants({ name: "Landmark Business Center", tenants: 20 }).map((t) => t.name)), "redrawn exactly");
+    assert(JSON.stringify(names) === JSON.stringify(VS.sampleTenants({ v: 2, name: "Landmark Business Center", tenants: 20 }).map((t) => t.name)), "redrawn exactly");
     assert(await fr.locator("#togo").isVisible() && await fr.locator(".stage, #stage").first().evaluate((e) => e.classList.contains("touch")), "the QR code and the touch directory");
     assert(await fr.locator("#offline").isHidden(), "no 'Reconnecting' line in a preview");
     assert((await boss.textContent("#viewer-dlg-line")).includes("Touch directory · Landmark Business Center · 20 tenants · portrait"), "its summary");
