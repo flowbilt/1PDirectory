@@ -3867,7 +3867,7 @@ test("V5: the viewer's visits from the page's load: events counted (only the vie
   // the events' rules
   assert.equal(V.eventsProblem({ viewer_page_loaded: 1, full_preview_opened: 3 }), ""); assert.equal(V.eventsProblem(null), "");
   for (const bad of [[], "x", { clicked_ad: 1 }, { full_preview_opened: -1 }, { full_preview_opened: 1.5 }, { full_preview_opened: 10001 }, { full_preview_opened: "1" }]) assert.ok(V.eventsProblem(bad), JSON.stringify(bad));
-  assert.deepEqual(V.VISIT_EVENTS, ["viewer_page_loaded", "viewer_initialized", "configuration_edited", "full_preview_opened", "full_preview_closed", "directory_image_downloaded", "directory_share_initiated", "directory_share_completed", "quote_form_opened", "quote_submitted", "viewer_error"]);
+  assert.deepEqual(V.VISIT_EVENTS, ["viewer_page_loaded", "viewer_initialized", "configuration_edited", "full_preview_opened", "full_preview_closed", "directory_image_downloaded", "directory_share_initiated", "directory_share_completed", "directory_email_sent", "quote_form_opened", "quote_submitted", "viewer_error"]);
   // the device and browser, as categories
   const IPHONE_FB = "Mozilla/5.0 (iPhone; CPU iPhone OS 17_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148 [FBAN/FBIOS;FBAV/470.0.0.40.97;FBBV/123]";
   const ANDROID_IG = "Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/129.0 Mobile Safari/537.36 Instagram 350.0.0.0.0 Android";
@@ -3920,11 +3920,92 @@ test("V5: the viewer's visits from the page's load: events counted (only the vie
   assert.ok(snap.includes("Preview created with WayTuGo · waytugo.com") && snap.includes("CONCEPT PREVIEW") && !/fetch\([^)]*api\//.test(snap), "the picture is framed and made here, nothing sent");
   // the database's rules say the same
   const sql = readFileSync(new URL("../supabase/54-viewer-events.sql", import.meta.url), "utf8");
-  for (const w of [...V.VISIT_EVENTS.map((e) => `'${e}'`), "alter column config drop not null", "check (device in ('phone', 'tablet', 'desktop'))", "check (browser in ('facebook', 'instagram', 'other'))",
+  for (const w of [...V.VISIT_EVENTS.filter((e) => e !== "directory_email_sent").map((e) => `'${e}'`), "alter column config drop not null", "check (device in ('phone', 'tablet', 'desktop'))", "check (browser in ('facebook', 'instagram', 'other'))",
     "while jsonb_array_length(v_snaps) > 5", "drop function if exists public.viewer_record(uuid, jsonb, integer, integer, text, jsonb);", "grant execute on function public.viewer_page_record(uuid, jsonb, text, text) to service_role", "interval '400 days'", ">= 120", ">= 5000"]) assert.ok(sql.includes(w), w);
   const chk = readFileSync(new URL("../supabase/check-viewer-events.sql", import.meta.url), "utf8");
   assert.ok(chk.includes("ALL 8 CHECKS PASSED") && chk.includes("p_id => v_old, p_config =>"), "the check: and the code before V5 still works");
   fake.T.viewer_visits = fake.T.viewer_visits.filter((r) => r.id !== id); fake.T.viewer_page_loads = fake.T.viewer_page_loads.filter((x) => x.id !== load);
+});
+
+test("V5b: Email Me a Copy: off until 1Point turns it on in the console (1Point only; addresses checked); the picture emailed once through the alert mail server, attached, from the console's name and address with replies where set; never kept, nor the address; robots and bad input refused; 3 a visit, 1 an hour to an address, the daily limit; a failed send can be tried again", async () => {
+  const send = (await import("../netlify/functions/viewer-email.mjs")).default, settingsFn = (await import("../netlify/functions/viewer-email-settings.mjs")).default;
+  const V = await import("../public/viewer-sample.mjs");
+  const admin = await login("scot@1pointusa.com", "admin-pass"), owner = await login("leighann@barber.test", "owner-pass");
+  const srv = await fakeSmtp({ starttls: true, password: "gmail-app-pass" });
+  const saved = { ...process.env };
+  Object.assign(process.env, { SMTP_HOST: "localhost", SMTP_PORT: String(srv.port), SMTP_USER: "scotmuncher@gmail.com", SMTP_PASS: "gmail-app-pass", ALERT_EMAIL_FROM: "Lobby Directory <scotmuncher@gmail.com>" });
+  const tlsOptions = { ca: CERT };
+  const api = (body, token = admin) => settingsFn(req("/api/viewer-email-settings", { method: body ? "POST" : "GET", token, body }), {}, { tlsOptions });
+  const post = (b, ua = "Mozilla/5.0 (iPhone)") => send(new Request("https://x/api/viewer-email", { method: "POST", body: JSON.stringify(b), headers: { "user-agent": ua } }), {}, { tlsOptions });
+  const PNG = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAIAAAACCAIAAAD91JpzAAAAEUlEQVR4nGPgU1DkU1BkgFAACGYBPZUHEw8AAAAASUVORK5CYII=";
+  const visit = crypto.randomUUID(), visit2 = crypto.randomUUID();
+  for (const id of [visit, visit2]) fake.T.viewer_visits.push({ id, started_at: new Date().toISOString(), updated_at: new Date().toISOString(), config: V.normalizeConfig({ v: 2 }), seconds: 0, changes: 0, quote: null, source: {}, events: {}, snapshots: [], failures: 0 });
+  try {
+    // off until turned on
+    assert.equal((await (await send(new Request("https://x/api/viewer-email"))).json()).enabled, false);
+    assert.equal((await post({ visit, email: "pat@example.com", image: PNG })).status, 403);
+    // the console: 1Point only; addresses checked; the mail server shown, Gmail noted, no password
+    assert.equal((await api(null, owner)).status, 403);
+    assert.equal((await api({ action: "save", enabled: true, from_address: "not an address" })).status, 400);
+    assert.equal((await api({ action: "save", enabled: true, daily_limit: 900 })).status, 400);
+    assert.equal((await api({ action: "save", enabled: true, from_name: "WayTuGo <x>", from_address: "", reply_to: "scot@1pointusa.com", daily_limit: 3 })).status, 200);
+    const info = await (await api(null)).json();
+    assert.ok(info.settings.enabled && info.settings.from_name === "WayTuGo x" && info.settings.from_address === null && info.from === "WayTuGo x <scotmuncher@gmail.com>", JSON.stringify(info));
+    assert.ok(!JSON.stringify(info).includes("gmail-app-pass"), "no password");
+    assert.equal((await (await send(new Request("https://x/api/viewer-email"))).json()).enabled, true);
+    // a test copy from the console
+    const t = await (await api({ action: "test", email: "scot@1pointusa.com" })).json();
+    assert.equal(t.ok, true, t.error);
+    // a visitor's copy: attached, from the console's name and the server's address, replies to Scot's; the text says why
+    let r = await post({ visit, email: "pat@example.com", image: PNG, kind: "directory", name: "Landmark <Tower>", code: visit.slice(0, 8).toUpperCase(), fileName: "waytugo-landmark-tower.png" });
+    assert.equal(r.status, 200, await r.clone().text());
+    const m = srv.got.messages.at(-1);
+    assert.deepEqual(m.to, ["pat@example.com"]); assert.equal(m.from, "scotmuncher@gmail.com");
+    assert.match(m.data, /^From: WayTuGo x <scotmuncher@gmail\.com>$/m); assert.match(m.data, /^Reply-To: scot@1pointusa\.com$/m);
+    assert.match(m.data, /^Subject: Your WayTuGo directory preview: Landmark Tower$/m);
+    assert.match(m.data, /Content-Type: multipart\/mixed/); assert.match(m.data, /Content-Disposition: attachment; filename="waytugo-landmark-tower\.png"/);
+    assert.ok(m.data.includes(PNG.split(",")[1].slice(0, 40)), "the picture attached");
+    const parts = m.data.split(/\n--/).filter((x) => /Content-Type: text\/(html|plain)/.test(x)).map((x) => Buffer.from(x.split("\n\n").slice(1).join("").replace(/\s/g, ""), "base64").toString());
+    assert.ok(parts.some((x) => x.includes("asked for a copy at waytugo.com") && x.includes("any list")) && parts.some((x) => x.includes(visit.slice(0, 8).toUpperCase())), "why they got it; the code");
+    assert.ok(!parts.join("").includes("<Tower>"), "the name made safe");
+    // nothing kept but a fingerprint: no address, no picture
+    assert.ok(!JSON.stringify(fake.T).includes("pat@example.com") && !JSON.stringify(fake.T).includes(PNG.slice(40, 80)), "neither the address nor the picture kept");
+    assert.ok(fake.T.viewer_email_sends.length === 1 && /^[0-9a-f]{64}$/.test(fake.T.viewer_email_sends[0].addr_hash));
+    // refused: the same address again within the hour; a bad address; a bad picture; a robot; the trap (told it went, nothing sent)
+    assert.equal((await post({ visit, email: "PAT@example.com", image: PNG })).status, 429);
+    assert.equal((await post({ visit, email: "pat@", image: PNG })).status, 400);
+    assert.equal((await post({ visit, email: "a@b.co\r\nBcc: x@y.z", image: PNG })).status, 400);
+    assert.equal((await post({ visit, email: "sam@example.com", image: "data:image/svg+xml;base64,PHN2Zz4=" })).status, 400);
+    assert.equal((await post({ visit, email: "sam@example.com", image: PNG }, "Mozilla/5.0 (compatible; bingbot/2.0)")).status, 400);
+    const before = srv.got.messages.length;
+    assert.equal((await post({ visit, email: "sam@example.com", image: PNG, website: "http://spam" })).status, 200);
+    assert.equal(srv.got.messages.length, before, "the trap sends nothing");
+    assert.equal((await post({ visit: crypto.randomUUID(), email: "sam@example.com", image: PNG })).status, 400, "no such visit");
+    // a failed send gives its claim back: the same address may try again at once
+    process.env.SMTP_PASS = "wrong";
+    assert.equal((await post({ visit, email: "sam@example.com", image: PNG })).status, 503);
+    process.env.SMTP_PASS = "gmail-app-pass";
+    assert.equal((await post({ visit, email: "sam@example.com", image: PNG })).status, 200);
+    // 3 a visit (pat, sam, and a third), then the daily limit (3) stops another visit
+    assert.equal((await post({ visit, email: "lee@example.com", image: PNG })).status, 200);
+    assert.equal((await post({ visit, email: "kim@example.com", image: PNG })).status, 429);
+    const daily = await post({ visit: visit2, email: "kim@example.com", image: PNG });
+    assert.equal(daily.status, 429); assert.match((await daily.json()).error, /more copies today/);
+    // turned off again: refused
+    assert.equal((await api({ action: "save", enabled: false })).status, 200);
+    assert.equal((await post({ visit: visit2, email: "kim@example.com", image: PNG })).status, 403);
+    // the pages
+    const html = readFileSync(new URL("../public/viewer.html", import.meta.url), "utf8"), js = readFileSync(new URL("../public/viewer.js", import.meta.url), "utf8");
+    assert.ok(html.includes('id="mail-to"') && html.includes('name="website"') && html.includes("Request a quote on waytugo.com") && js.includes('ev("directory_email_sent")'));
+    const sql = readFileSync(new URL("../supabase/55-viewer-email.sql", import.meta.url), "utf8");
+    for (const w of ["'directory_email_sent'", ">= 3 then return 'visit-limit'", "interval '1 hour') then return 'address-limit'", "enabled      boolean not null default false", "revoke all on public.viewer_email_sends from anon, authenticated"]) assert.ok(sql.includes(w), w);
+  } finally {
+    for (const k of Object.keys(process.env)) if (!(k in saved)) delete process.env[k];
+    Object.assign(process.env, saved);
+    fake.T.viewer_email_settings.length = 0; fake.T.viewer_email_sends.length = 0;
+    fake.T.viewer_visits = fake.T.viewer_visits.filter((v) => v.id !== visit && v.id !== visit2);
+    srv.close();
+  }
 });
 
 let passed = 0;

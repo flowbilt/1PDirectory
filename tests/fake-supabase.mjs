@@ -18,9 +18,9 @@ const CODE_ALPHA = "ABCDEFGHJKMNPQRSTUVWXYZ23456789";
 const newCode = () => Array.from({ length: 6 }, () => CODE_ALPHA[Math.floor(Math.random() * CODE_ALPHA.length)]).join("");
 
 export function createFake() {
-  const T = { organizations: [], profiles: [], properties: [], directories: [], tenants: [], screens: [], audit_log: [], devices: [], device_commands: [], device_daily: [], wifi_networks: [], prepare_codes: [], alert_recipients: [], mail_settings: [], togo_scans: [], companies: [], people: [], layouts: [], layout_versions: [], layout_images: [], menu_scans: [], menus: [], menu_revisions: [], sample_links: [], viewer_visits: [], viewer_page_loads: [] };
+  const T = { organizations: [], profiles: [], properties: [], directories: [], tenants: [], screens: [], audit_log: [], devices: [], device_commands: [], device_daily: [], wifi_networks: [], prepare_codes: [], alert_recipients: [], mail_settings: [], togo_scans: [], companies: [], people: [], layouts: [], layout_versions: [], layout_images: [], menu_scans: [], menus: [], menu_revisions: [], sample_links: [], viewer_visits: [], viewer_page_loads: [], viewer_email_settings: [], viewer_email_sends: [] };
   const storage = new Map();   // bucket/path -> { bytes, mime, cacheControl } (E1b)
-  const SERVICE_ONLY = new Set(["togo_scans", "devices", "device_commands", "device_daily", "wifi_networks", "prepare_codes", "alert_recipients", "mail_settings", "menu_scans"]); // row-level security on, no policies: server key only
+  const SERVICE_ONLY = new Set(["togo_scans", "devices", "device_commands", "device_daily", "wifi_networks", "prepare_codes", "alert_recipients", "mail_settings", "menu_scans", "viewer_email_settings", "viewer_email_sends"]); // row-level security on, no policies: server key only
   // Columns of screens signed-in users may read (supabase/06-trust.sql, plus sizes from 18 and no_cec from 21). hardware is server-only.
   const SCREEN_COLS = new Set(["id", "directory_id", "key", "name", "location_note", "orientation", "last_seen", "last_report", "identify_until", "created_at", "sizes", "no_cec", "hide_powered_by", "touch", "screen_inches", "touch_idle_s", "layout_id", "property_id"]);
   const users = new Map(); // id -> {id,email,password,last_sign_in_at,invited_at,user_metadata}
@@ -635,6 +635,23 @@ export function createFake() {
           device: row.device ?? p_device, browser: row.browser ?? p_browser, init_ms: row.init_ms ?? (p_init_ms == null ? null : clamp(p_init_ms, 600000)),
           failures: Math.max(row.failures || 0, clamp(p_failures, 10000)), page_load: row.page_load ?? p_load });
       }
+      return null;
+    },
+    // 55-viewer-email.sql: Email Me a Copy's limits, checked and counted in one step (the site only)
+    viewer_email_claim({ p_visit, p_hash, p_limit }) {
+      if (!p_visit || !/^[0-9a-f]{64}$/.test(p_hash || "")) return "bad";
+      const nowMs = Date.now(), at = (x) => Date.parse(x.at);
+      T.viewer_email_sends = T.viewer_email_sends.filter((x) => at(x) > nowMs - 2 * 864e5);
+      if (!T.viewer_visits.some((v) => v.id === p_visit && Date.parse(v.started_at) > nowMs - 864e5)) return "visit";
+      if (T.viewer_email_sends.filter((x) => x.visit === p_visit).length >= 3) return "visit-limit";
+      if (T.viewer_email_sends.some((x) => x.addr_hash === p_hash && at(x) > nowMs - 36e5)) return "address-limit";
+      if (T.viewer_email_sends.filter((x) => at(x) > nowMs - 864e5).length >= Math.min(500, Math.max(1, p_limit ?? 50))) return "daily-limit";
+      T.viewer_email_sends.push({ id: T.viewer_email_sends.length + 1, at: now(), visit: p_visit, addr_hash: p_hash });
+      return null;
+    },
+    viewer_email_release({ p_visit, p_hash }) {
+      const mine = T.viewer_email_sends.filter((x) => x.visit === p_visit && x.addr_hash === p_hash && Date.parse(x.at) > Date.now() - 6e5);
+      if (mine.length) T.viewer_email_sends = T.viewer_email_sends.filter((x) => x !== mine[mine.length - 1]);
       return null;
     },
     // 54-viewer-events.sql: a load of waytugo.com's viewer page, kept once per code (the site only)

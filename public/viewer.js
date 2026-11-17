@@ -305,7 +305,11 @@ function requestQuote() {
   tell({ type: "event", name: "viewer_quote_started", kind: c.kind });
   const b = c.kind === "menu" ? boardOf(c.board) : null;   // V4: the summary names the sample board
   if (parentOrigin) tell({ type: "quote", visit: V.id, code, summary: summary(c, { boardName: b ? b.name.replace(/^[^:]*:\s*/, "") : "" }), config: c });
-  else { $("code").textContent = code; $("direct").hidden = false; $("direct").scrollIntoView({ block: "center" }); }
+  else {   // V5b: on its own (not inside waytugo.com): the code and a link to waytugo.com's quote form, easy to see
+    $("code").textContent = code; $("direct").hidden = false;
+    $("direct").scrollIntoView({ block: "center", behavior: "smooth" });
+    $("direct").classList.remove("flash"); void $("direct").offsetWidth; $("direct").classList.add("flash");
+  }
 }
 $("quote").addEventListener("click", requestQuote);
 window.addEventListener("message", (e) => {
@@ -413,6 +417,7 @@ function sheetMsg(t, bad = false) { const m = $("sheet-msg"); m.textContent = t;
 async function openSheet() {
   $("sheet").hidden = false;
   $("sheet-download").disabled = true; $("sheet-share").disabled = true; $("sheet-share").hidden = true;
+  $("mail").hidden = !mail.on; $("mail-send").disabled = true;
   $("sheet").querySelector(".vw-sheet-actions").classList.add("one");
   if (F.url) { URL.revokeObjectURL(F.url); F.url = ""; } $("sheet-img").removeAttribute("src");
   sheetMsg("Making your picture…");
@@ -424,7 +429,7 @@ async function openSheet() {
     if (F.making !== making || $("sheet").hidden) return;
     F.file = new File([blob], imageName(c.name || (c.kind === "menu" ? "menu-board" : "directory")), { type: "image/png" });
     F.url = URL.createObjectURL(blob); $("sheet-img").src = F.url;
-    $("sheet-download").disabled = false;
+    $("sheet-download").disabled = false; $("mail-send").disabled = false;
     const canShare = !!(navigator.share && navigator.canShare?.({ files: [F.file] }));
     $("sheet-share").hidden = !canShare; $("sheet-share").disabled = !canShare;
     $("sheet").querySelector(".vw-sheet-actions").classList.toggle("one", !canShare);
@@ -440,6 +445,37 @@ function closeSheet() {
   $("sheet").hidden = true; F.making = null;
   if (F.open) $("full-save").focus();
 }
+// ── V5b: Email Me a Copy (Scot, 2026-11-17: Share didn't list his email program). The picture goes to the site once,
+// to be emailed from 1Point's address (the console's Viewer → Viewer emails), and isn't kept; nor is the address.
+const mail = { on: false };
+fetch("/api/viewer-email", { cache: "no-store" }).then((r) => (r.ok ? r.json() : {})).then((d) => { mail.on = !!d.enabled; }).catch(() => {});
+async function pictureForEmail(blob) {
+  // a PNG up to about 3.3 MB goes as it is; a bigger one as a JPEG (the email's limit)
+  if (blob.size <= 3_300_000) return { blob, type: "png" };
+  const bmp = await createImageBitmap(blob), cv = document.createElement("canvas"); cv.width = bmp.width; cv.height = bmp.height;
+  cv.getContext("2d").drawImage(bmp, 0, 0);
+  return { blob: await new Promise((res) => cv.toBlob(res, "image/jpeg", 0.9)), type: "jpg" };
+}
+const dataUrl = (blob) => new Promise((res, rej) => { const fr = new FileReader(); fr.onload = () => res(String(fr.result)); fr.onerror = () => rej(fr.error); fr.readAsDataURL(blob); });
+$("mail").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const to = $("mail-to").value.trim();
+  if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(to)) { sheetMsg("Please enter your email address.", true); $("mail-to").focus(); return; }
+  if (!F.file) return;
+  $("mail-send").disabled = true; sheetMsg("Sending…");
+  try {
+    const { blob, type } = await pictureForEmail(F.file);
+    const c = choices();
+    const r = await fetch("/api/viewer-email", { method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ visit: V.id, email: to, image: await dataUrl(blob), website: $("mail-trap").value, kind: c.kind, name: c.name, code, fileName: F.file.name.replace(/\.png$/, `.${type}`) }) });
+    const d = await r.json().catch(() => ({}));
+    if (!r.ok || !d.ok) throw new Error(d.error || "Couldn't send just now. Please try again in a minute.");
+    ev("directory_email_sent"); keep(true);
+    $("mail-to").value = "";
+    sheetMsg(`Sent to ${to}. Check your inbox (and spam folder) in a minute or two.`);
+  } catch (err) { sheetMsg(err.message, true); }
+  finally { $("mail-send").disabled = !F.file; }
+});
 $("full-save").addEventListener("click", openSheet);
 $("sheet-close").addEventListener("click", closeSheet);
 $("sheet-download").addEventListener("click", () => {

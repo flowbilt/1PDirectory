@@ -24,6 +24,8 @@ import sample from "../netlify/functions/sample.mjs";
 import viewer from "../netlify/functions/viewer.mjs";
 import viewerBoards from "../netlify/functions/viewer-boards.mjs";
 import viewerPage from "../netlify/functions/viewer-page.mjs";   // V5
+import viewerEmail from "../netlify/functions/viewer-email.mjs";   // V5b
+import viewerEmailSettings from "../netlify/functions/viewer-email-settings.mjs";
 
 const port = Number(process.argv[2]) || 8888;
 const ORIGIN = `http://localhost:${port}`;
@@ -56,7 +58,7 @@ globalThis.fetch = async (url, init = {}) => {
   return new Response("offline", { status: 503 });
 };
 
-const ROUTES = { "/api/screen": screen, "/api/users": users, "/api/config": config, "/api/weather": weather, "/api/news": news, "/api/agent": agent, "/api/devices": devices, "/api/networks": networks, "/api/alert-settings": alertSettings, "/api/traffic": traffic, "/api/layouts": layouts, "/api/menu": menu, "/api/pictures": pictures, "/api/shops": shops, "/api/sample": sample, "/api/viewer": viewer, "/api/viewer-boards": viewerBoards, "/api/viewer-page": viewerPage };
+const ROUTES = { "/api/screen": screen, "/api/users": users, "/api/config": config, "/api/weather": weather, "/api/news": news, "/api/agent": agent, "/api/devices": devices, "/api/networks": networks, "/api/alert-settings": alertSettings, "/api/traffic": traffic, "/api/layouts": layouts, "/api/menu": menu, "/api/pictures": pictures, "/api/shops": shops, "/api/sample": sample, "/api/viewer": viewer, "/api/viewer-boards": viewerBoards, "/api/viewer-page": viewerPage, "/api/viewer-email": viewerEmail, "/api/viewer-email-settings": viewerEmailSettings };
 const TYPES = { ".html": "text/html", ".js": "text/javascript", ".mjs": "text/javascript", ".css": "text/css", ".ttf": "font/ttf", ".svg": "image/svg+xml", ".png": "image/png", ".jpg": "image/jpeg", ".webmanifest": "application/manifest+json" };
 // PUBLIC_DIR serves another copy of public/ (the browser checks compare directory screens with an older display)
 const PUB = process.env.PUBLIC_DIR ? join(process.env.PUBLIC_DIR, "/") : new URL("../public/", import.meta.url).pathname;

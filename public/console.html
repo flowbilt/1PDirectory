@@ -278,6 +278,24 @@
         <tbody id="viewer-rows"></tbody>
       </table>
     </div>
+    <!-- V5b (DP-15): Email Me a Copy's settings (55-viewer-email.sql); kept in the database, nothing to edit in Netlify -->
+    <h2 class="section-title" id="vmail-title">Viewer emails</h2>
+    <p class="sub">The viewer's <strong>Email me a copy</strong> (in Save / Share): the visitor's picture, emailed to them once through the alert emails' mail server (<span id="vmail-server">…</span>). Neither the picture nor the address is kept.</p>
+    <form id="vmail-form" class="vmail-form">
+      <label class="vmail-on"><input type="checkbox" id="vmail-on"> Offer Email me a copy to visitors</label>
+      <div class="vmail-grid">
+        <label>From name <input id="vmail-name" maxlength="80" placeholder="WayTuGo"></label>
+        <label>From address <input id="vmail-from" type="email" maxlength="254" placeholder="the mail server's own"></label>
+        <label>Replies go to <input id="vmail-reply" type="email" maxlength="254" placeholder="the From address"></label>
+        <label>Most emails a day <input id="vmail-limit" type="number" min="1" max="500" value="50"></label>
+      </div>
+      <p class="hint" id="vmail-note"></p>
+      <div class="vmail-actions">
+        <button type="submit" class="primary">Save</button>
+        <span class="vmail-test"><input id="vmail-test-to" type="email" placeholder="your address" aria-label="Send a test copy to"> <button type="button" id="vmail-test" class="ghost">Send a test copy</button></span>
+      </div>
+      <p id="vmail-out" class="mail-test-out" hidden></p>
+    </form>
   </section>
 </main>
 

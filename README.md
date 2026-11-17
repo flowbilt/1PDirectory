@@ -929,6 +929,26 @@ through waytugo.com's own inquiry form.
     full_previews, downloads, shares_started, shares_completed, quote_opened, quote_sent, snapshots, send_failures,
     viewer_failed, from_page_load.
 
+- **V5b** (DP-15, 2026-11-17; Scot: Share didn't list his email program, and Request a Quote on the viewer's own
+  address reached no form):
+  - **Email me a copy** in Save / Share (shown only when 1Point turns it on): the visitor types their address and
+    presses Send; the picture (a PNG, or a JPEG over about 3.3 MB) goes to `/api/viewer-email`
+    (`netlify/functions/viewer-email.mjs`) once and is emailed as an attachment through the alert emails' mail server
+    (the console's Pi setup → Alert emails, or Netlify's `SMTP_*`; Resend too), with the configuration code, a link
+    back to the viewer (`utm_source=viewer_email`) and why they got it. Neither the picture nor the address is kept:
+    only a one-way fingerprint (SHA-256 with `SETTINGS_KEY`) for two days. Limits (`viewer_email_claim`): a visit kept
+    in the last day, 3 a visit, 1 an hour to an address, a daily limit; a failed send gives its claim back
+    (`viewer_email_release`); a hidden "website" field traps robots; crawlers refused. Counted as
+    `directory_email_sent` ("Emailed" in the console; part of "Saved or shared").
+  - **Viewer emails** in the console's Viewer tab (`/api/viewer-email-settings`, 1Point only): on or off, From name,
+    From address (empty: the mail server's own), Replies go to, Most emails a day, Send a test copy. Kept in
+    `viewer_email_settings` (`supabase/55-viewer-email.sql`), so nothing is edited in Netlify. With Gmail, the From
+    address is the Gmail account's own (or a "Send mail as" address set up in it); the console says so.
+  - `netlify/lib/smtp.mjs`: optional `replyTo`, a plain-text part and attachments (alert emails unchanged).
+  - **On the viewer's own address** (not inside waytugo.com, which has the form): Request a Quote, from the full view
+    or the column, brings the code box into view and flashes it: the code, **Request a quote on waytugo.com**
+    (`https://waytugo.com/#quote`), and the phone and email.
+
 ### Light and Dark directories (DP-14, D2)
 
 Each directory has a **Look** in the editor (This directory): **Dark** (the original, the default), **Light** (a pale
@@ -1254,7 +1274,7 @@ Local sample logins: `scot@1pointusa.com / admin-pass`, `leighann@barber.test / 
 
 ```
 public/             screen (index.html, display.*; board.* for a layout; screen-core.js, what every screen does, shared by both; layout-format.mjs, the layout format; menu-format.mjs, the menu format), sign-in, console (+ console-devices.js, console-setup.js, console-layouts.js), editor, menu editor (menu-edit.*), technician page (tech.*), shared auth.js
-netlify/functions/  screen, users, config, viewer, viewer-boards, viewer-page (the viewer on waytugo.com, V1–V5), weather, news, traffic, togo (the Directory to Go page), menu (Take this menu with you: /m/<code> and /api/menu), agent, devices, networks, alert-settings, alerts, layouts (check, preview, publish, roll back; upload and remove pictures; make lists from a layout), pictures (the menu editor's), shops (copy a shop into an account, T0), sample (sample links: /s/<name> and /api/sample, T0)
+netlify/functions/  screen, users, config, viewer, viewer-boards, viewer-page, viewer-email, viewer-email-settings (the viewer on waytugo.com, V1–V5b), weather, news, traffic, togo (the Directory to Go page), menu (Take this menu with you: /m/<code> and /api/menu), agent, devices, networks, alert-settings, alerts, layouts (check, preview, publish, roll back; upload and remove pictures; make lists from a layout), pictures (the menu editor's), shops (copy a shop into an account, T0), sample (sample links: /s/<name> and /api/sample, T0)
 netlify/lib/        Supabase client (and Storage), RSS reader, pictures (images.mjs: what a file really is), shared helpers
 supabase/           database schema (01 to 35, run in order), starting data, check queries, setup guide
 migration/          the Yodeck/Wix transcription the starting data was built from

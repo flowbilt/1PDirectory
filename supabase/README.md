@@ -81,6 +81,7 @@ Do these once. The current site keeps running as it is until the new build is de
 53. For the viewer's location type (DP-14, V3): **before uploading that code**, new query, paste all of `52-viewer-type.sql`, and click **Run**. Then new query, paste all of `check-viewer-type.sql`, and click **Run**; it should read **ALL 3 CHECKS PASSED** (red on purpose).
 54. For the menu board in the viewer (DP-14, V4): **before uploading that code**, new query, paste all of `53-viewer-menu.sql`, and click **Run**. Then new query, paste all of `check-viewer-menu.sql`, and click **Run**; it should read **ALL 5 CHECKS PASSED** (red on purpose).
 55. For the viewer's full-screen view and visits from the page's load (DP-15, V5): **before uploading that code**, new query, paste all of `54-viewer-events.sql`, and click **Run**. Then new query, paste all of `check-viewer-events.sql`, and click **Run**; it should read **ALL 8 CHECKS PASSED** (red on purpose).
+56. For the viewer's Email me a copy (DP-15, V5b): **before uploading that code**, new query, paste all of `55-viewer-email.sql`, and click **Run**. Then new query, paste all of `check-viewer-email.sql`, and click **Run**; it should read **ALL 6 CHECKS PASSED** (red on purpose).
 
 If any of them shows an error (other than the expected red messages from the `check-…sql` files), copy the message (it includes a line number) and send it to Claude.
 

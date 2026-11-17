@@ -42,11 +42,12 @@ export function did(r) {
     edits: v5 ? n(r, "configuration_edited") : null,
     edited: v5 ? n(r, "configuration_edited") > 0 : true,
     full: n(r, "full_preview_opened"), downloaded: n(r, "directory_image_downloaded"), shareStarted: n(r, "directory_share_initiated"), shared: n(r, "directory_share_completed"),
+    emailed: n(r, "directory_email_sent"),   // V5b
     quoteOpened: !!r.quote || n(r, "quote_form_opened") > 0, quoteSent: r.quote === "sent" || n(r, "quote_submitted") > 0,
     failed: n(r, "viewer_error") > 0,
   };
 }
-const saved = (d) => d.downloaded > 0 || d.shareStarted > 0;
+const saved = (d) => d.downloaded > 0 || d.shareStarted > 0 || d.emailed > 0;
 /** Something was built or looked at closely: the list's default */
 export const built = (r) => { const d = did(r); return !d.v5 || d.edited || d.full > 0 || d.quoteOpened; };
 
@@ -99,14 +100,14 @@ export function toCsv(list) {
   const cell = (v) => { const t = String(v ?? ""); return /[",\n\r]/.test(t) || /^[=+\-@]/.test(t) ? `"${(/^[=+\-@]/.test(t) ? "'" : "") + t.replace(/"/g, '""')}"` : t; };
   const head = ["code", "started", "location_type", "display", "building_name", "tenants", "typed_in", "screen", "look", "logo", "photo", "extras", "seconds", "changes", "engaged", "quote",
     "page", "utm_source", "utm_medium", "utm_campaign", "utm_content", "utm_term", "menu_board", "items_typed_in",
-    "last_active", "device", "browser", "page_loads", "viewer_started", "start_ms", "edits", "full_previews", "downloads", "shares_started", "shares_completed", "quote_opened", "quote_sent", "snapshots", "send_failures", "viewer_failed", "from_page_load"];
+    "last_active", "device", "browser", "page_loads", "viewer_started", "start_ms", "edits", "full_previews", "downloads", "shares_started", "shares_completed", "emails_sent", "quote_opened", "quote_sent", "snapshots", "send_failures", "viewer_failed", "from_page_load"];
   const lines = list.map((r) => {
     const c = normalizeConfig(r.config), s = r.source || {}, d = did(r), none = !r.config;
     return [r.id.slice(0, 8).toUpperCase(), r.started_at, none ? "" : c.type ? TYPES[c.type] : "Not specified", none ? "" : KINDS[c.kind], none ? "" : c.name, none ? "" : c.tenants, none ? "" : (c.rows || []).filter((x) => x.name || x.suite).length,
       none ? "" : c.shape, none ? "" : c.look || "", none ? "" : c.logo || "", none ? "" : c.photo || "", none ? "" : extras(c), r.seconds, r.changes, engaged(r) ? "yes" : "no", r.quote || "",
       s.page, s.utm_source, s.utm_medium, s.utm_campaign, s.utm_content, s.utm_term,
       !none && c.kind === "menu" ? boardName(c.board) : "", !none && c.kind === "menu" ? (c.items || []).filter((x) => x.name || x.price).length : "",
-      r.updated_at || "", r.device || "", r.browser || "", d.v5 ? d.loads : "", d.started ? "yes" : "no", r.init_ms ?? "", d.edits ?? "", d.full, d.downloaded, d.shareStarted, d.shared,
+      r.updated_at || "", r.device || "", r.browser || "", d.v5 ? d.loads : "", d.started ? "yes" : "no", r.init_ms ?? "", d.edits ?? "", d.full, d.downloaded, d.shareStarted, d.shared, d.emailed,
       d.quoteOpened ? "yes" : "no", d.quoteSent ? "yes" : "no", (r.snapshots || []).length, r.failures || 0, d.failed ? "yes" : "no", r.page_load ? "yes" : ""].map(cell).join(",");
   });
   return [head.join(","), ...lines].join("\r\n") + "\r\n";
@@ -135,6 +136,7 @@ async function load() {
 function badges(d) {
   return [d.full && `<span class="viewer-did">Full screen${d.full > 1 ? ` ×${d.full}` : ""}</span>`, d.downloaded && '<span class="viewer-did">Downloaded</span>',
     d.shared ? '<span class="viewer-did">Shared</span>' : d.shareStarted && '<span class="viewer-did">Share started</span>',
+    d.emailed && `<span class="viewer-did">Emailed${d.emailed > 1 ? ` ×${d.emailed}` : ""}</span>`,
     d.failed && '<span class="viewer-did bad">Viewer failed</span>'].filter(Boolean).join(" ");
 }
 function render() {
@@ -214,5 +216,31 @@ $("viewer-csv").addEventListener("click", () => {
 });
 $("viewer-dlg").addEventListener("close", () => { $("viewer-dlg-frame").src = "about:blank"; });
 
-window.ConsoleViewer = { show: load };
-if (location.hash === "#viewer" && !document.getElementById("panel-viewer").hidden) load();
+// ── V5b: Viewer emails (Email Me a Copy's settings) ──
+async function loadMail() {
+  let d; try { d = await Auth.api("/api/viewer-email-settings"); } catch (e) { $("vmail-server").textContent = `couldn't load: ${e.message}`; return; }
+  const st = d.settings, snd = d.sender;
+  $("vmail-on").checked = !!st.enabled; $("vmail-name").value = st.from_name || ""; $("vmail-from").value = st.from_address || ""; $("vmail-reply").value = st.reply_to || ""; $("vmail-limit").value = st.daily_limit || 50;
+  $("vmail-server").textContent = snd.server ? `${snd.server}${snd.from ? `, from ${snd.from}` : ""}; set under Pi setup → Alert emails` : "none set up yet: Pi setup → Alert emails";
+  $("vmail-note").innerHTML = [d.from ? `Emails go from <strong>${esc(d.from)}</strong>${st.reply_to ? `, replies to <strong>${esc(st.reply_to)}</strong>` : ""}.` : "No From address yet.",
+    d.gmail ? "This mail server is Gmail: it sends from the Gmail account's own address, or a <em>Send mail as</em> address set up in that Gmail account; any other From address is replaced with the account's. Use <em>Replies go to</em> for a business address until WayTuGo has its own mail server." : "",
+    st.missing ? "Run <code>55-viewer-email.sql</code> in Supabase first." : ""].filter(Boolean).join(" ");
+}
+$("vmail-form").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  try {
+    await Auth.api("/api/viewer-email-settings", { method: "POST", body: { action: "save", enabled: $("vmail-on").checked, from_name: $("vmail-name").value, from_address: $("vmail-from").value, reply_to: $("vmail-reply").value, daily_limit: $("vmail-limit").value } });
+    $("vmail-out").hidden = false; $("vmail-out").textContent = $("vmail-on").checked ? "Saved. Visitors now see Email me a copy." : "Saved. Email me a copy is off.";
+    loadMail();
+  } catch (ex) { $("vmail-out").hidden = false; $("vmail-out").textContent = ex.message; }
+});
+$("vmail-test").addEventListener("click", async () => {
+  const out = $("vmail-out"); out.hidden = false; out.textContent = "Sending…";
+  try {
+    const r = await Auth.api("/api/viewer-email-settings", { method: "POST", body: { action: "test", email: $("vmail-test-to").value } });
+    out.textContent = r.ok ? `Sent a test copy to ${r.to}.` : `Not sent: ${r.error}`;
+  } catch (ex) { out.textContent = ex.message; }
+});
+
+window.ConsoleViewer = { show: () => { load(); loadMail(); } };
+if (location.hash === "#viewer" && !document.getElementById("panel-viewer").hidden) { load(); loadMail(); }

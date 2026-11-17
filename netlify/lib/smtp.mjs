@@ -12,8 +12,28 @@ const fromHeader = (s) => { const m = String(s).match(/^\s*(.*?)\s*<([^>]+)>\s*$
 
 /**
  * @param {{host: string, port?: number, user: string, pass: string, from: string, to: string[], subject: string,
- *          html: string, tlsOptions?: object, timeoutMs?: number}} m
+ *          html: string, tlsOptions?: object, timeoutMs?: number,
+ *          replyTo?: string, text?: string, attachments?: {name: string, type: string, data: Buffer}[]}} m
+ * DP-15 V5b: replyTo, a plain-text copy (text) and attachments (the viewer's Email Me a Copy). Without them the
+ * message is exactly as before (one HTML part).
  */
+const wrap = (buf) => Buffer.from(buf).toString("base64").replace(/.{1,76}/g, "$&\r\n").replace(/\r\n$/, "");
+const safeName = (n) => String(n || "file").replace(/[^A-Za-z0-9._-]+/g, "-").slice(0, 80);
+/** The message's Content-Type and body: one HTML part as before, or (V5b) text and HTML with attachments */
+function mimeBody(m) {
+  const html = ["Content-Type: text/html; charset=utf-8", "Content-Transfer-Encoding: base64", "", wrap(Buffer.from(m.html, "utf8"))];
+  if (!m.text && !m.attachments?.length) return html;
+  const alt = `alt-${randomUUID()}`, mix = `mix-${randomUUID()}`;
+  const altPart = m.text
+    ? [`Content-Type: multipart/alternative; boundary="${alt}"`, "", `--${alt}`, "Content-Type: text/plain; charset=utf-8", "Content-Transfer-Encoding: base64", "",
+       wrap(Buffer.from(m.text, "utf8")), `--${alt}`, ...html, `--${alt}--`]
+    : html;
+  if (!m.attachments?.length) return altPart;
+  return [`Content-Type: multipart/mixed; boundary="${mix}"`, "", `--${mix}`, ...altPart,
+    ...m.attachments.flatMap((a) => [`--${mix}`, `Content-Type: ${a.type}; name="${safeName(a.name)}"`, "Content-Transfer-Encoding: base64",
+      `Content-Disposition: attachment; filename="${safeName(a.name)}"`, "", wrap(a.data)]), `--${mix}--`];
+}
+
 export async function sendMail(m) {
   const port = Number(m.port) || 587;
   const secure = m.secure ?? port === 465;
@@ -79,18 +99,15 @@ export async function sendMail(m) {
     await expect(`MAIL FROM:<${addr(m.from)}>`, [250], "sender");
     for (const t of m.to) await expect(`RCPT TO:<${addr(t)}>`, [250, 251], `recipient ${addr(t)}`);
     await expect("DATA", [354], "DATA");
-    const body = b64(m.html).replace(/.{1,76}/g, "$&\r\n");
     const msg = [
       `From: ${fromHeader(m.from)}`,
       `To: ${m.to.map(addr).join(", ")}`,
+      ...(m.replyTo ? [`Reply-To: ${fromHeader(m.replyTo)}`] : []),
       `Subject: ${header(m.subject)}`,
       `Date: ${new Date().toUTCString().replace("GMT", "+0000")}`,
       `Message-ID: <${randomUUID()}@${addr(m.from).split("@")[1] || "lobby-directory"}>`,
       "MIME-Version: 1.0",
-      "Content-Type: text/html; charset=utf-8",
-      "Content-Transfer-Encoding: base64",
-      "",
-      body,
+      ...mimeBody(m),
     ].join("\r\n");
     await expect(`${msg}\r\n.`, [250], "message");
     sock.write("QUIT\r\n");

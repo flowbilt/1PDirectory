@@ -155,7 +155,10 @@
         <button type="button" class="vw-quote" id="quote">Request a Quote for This Configuration</button>
         <p class="vw-fine">Your visit and what you build here are kept without your name, so we can see what visitors look for.</p>
         <div class="vw-direct" id="direct" hidden>
-          <p>Call <a href="tel:+12057010191">205-701-0191</a> or email <a href="mailto:info@1pointusa.com">info@1pointusa.com</a> and mention your configuration code <strong id="code"></strong>.</p>
+          <!-- (shown only where the viewer isn't inside waytugo.com, which has the quote form) -->
+          <p><strong>Your configuration code: <span id="code"></span></strong></p>
+          <p><a class="vw-direct-go" href="https://waytugo.com/#quote" target="_blank" rel="noopener">Request a quote on waytugo.com</a></p>
+          <p>Or call <a href="tel:+12057010191">205-701-0191</a> or email <a href="mailto:info@1pointusa.com">info@1pointusa.com</a> and mention the code.</p>
         </div>
       </div>
     </form>
@@ -192,11 +195,21 @@
     <h2 id="sheet-title">Save or share your preview</h2>
     <div class="vw-sheet-pic"><img id="sheet-img" alt="Your preview as a picture"></div>
     <p class="vw-sheet-msg" id="sheet-msg" role="status"></p>
+    <!-- V5b: Email Me a Copy (shown when 1Point has it on: the console's Viewer → Viewer emails) -->
+    <form class="vw-mail" id="mail" hidden novalidate>
+      <label for="mail-to">Email me a copy</label>
+      <div class="vw-mail-row">
+        <input type="email" id="mail-to" name="email" autocomplete="email" inputmode="email" placeholder="you@example.com" maxlength="254" required>
+        <button type="submit" class="vw-quote" id="mail-send" disabled>Send</button>
+      </div>
+      <input type="text" name="website" id="mail-trap" class="vw-trap" tabindex="-1" autocomplete="off" aria-hidden="true">
+      <p class="vw-sheet-note">We email you the picture once. We don't keep it or your address, or add you to any list.</p>
+    </form>
     <div class="vw-sheet-actions">
       <button type="button" class="vw-quote" id="sheet-download" disabled>Download Image</button>
       <button type="button" class="vw-save" id="sheet-share" disabled hidden>Share…</button>
     </div>
-    <p class="vw-sheet-note" id="sheet-note">Made on your device as a concept preview. Nothing is uploaded or kept by us.</p>
+    <p class="vw-sheet-note" id="sheet-note">Download and Share stay on your device.</p>
     <button type="button" class="vw-link vw-sheet-close" id="sheet-close">Close</button>
   </div>
 </div>

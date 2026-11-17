@@ -2278,6 +2278,52 @@ try {
     for (const r of (await sb("viewer_visits?select=id,source")).data.filter((x) => ["slowtest", "brokentest"].includes(x.source?.utm_source))) await sb(`viewer_visits?id=eq.${r.id}`, { method: "DELETE" });
   });
 
+  await check("V5b: Email Me a Copy: hidden while off; when on, the address and Send under the picture, the picture sent once (a PNG) with the visit, counted; the console's Viewer emails (save, a test copy says why it can't go without a mail server); on the viewer's own address, Request a Quote shows the code and a link to waytugo.com's form, from the full view too", async () => {
+    await sb("viewer_email_settings", { method: "POST", body: JSON.stringify({ id: true, enabled: false }) }).catch(() => {});
+    const p = await browser.newPage({ viewport: { width: 1280, height: 860 } });
+    const errs = []; p.on("pageerror", (e) => errs.push(String(e)));
+    await p.goto(`${B}/viewer.html`); await p.waitForTimeout(2000);
+    await p.click("#see"); await p.waitForTimeout(600); await p.click("#full-save");
+    await p.waitForFunction(() => !document.getElementById("sheet-download").disabled, null, { timeout: 30000 });
+    assert(await p.locator("#mail").isHidden(), "hidden while off");
+    await p.click("#sheet-close"); await p.click("#full-back");
+    // on, from the console
+    await boss.goto(`${B}/console.html#viewer`); await boss.reload(); await boss.waitForTimeout(2500);
+    assert((await boss.textContent("#vmail-server")).includes("none set up yet"), await boss.textContent("#vmail-server"));
+    await boss.check("#vmail-on"); await boss.fill("#vmail-name", "WayTuGo"); await boss.fill("#vmail-reply", "scot@1pointusa.com"); await boss.fill("#vmail-limit", "40");
+    await boss.click("#vmail-form button[type=submit]"); await boss.waitForTimeout(800);
+    assert((await boss.textContent("#vmail-out")).includes("Visitors now see Email me a copy"), await boss.textContent("#vmail-out"));
+    await boss.fill("#vmail-test-to", "scot@1pointusa.com"); await boss.click("#vmail-test"); await boss.waitForTimeout(800);
+    assert(/Not sent: No mail server is set up yet/.test(await boss.textContent("#vmail-out")), await boss.textContent("#vmail-out"));
+    await shot(boss, "v5b-console-viewer-emails");
+    // the visitor: the address, Send, the picture posted (stood in for here: the unit tests send it through a mail server)
+    let posted = null;
+    await p.route(`${B}/api/viewer-email`, async (r) => { if (r.request().method() === "POST") { posted = JSON.parse(r.request().postData()); return r.fulfill({ status: 200, contentType: "application/json", body: '{"ok":true}' }); } return r.continue(); });
+    await p.reload(); await p.waitForTimeout(2000);
+    await p.fill('input[name="name"]', "Email Test Tower"); await p.click('input[name="subtitle"]');
+    await p.click("#see"); await p.waitForTimeout(600); await p.click("#full-save");
+    await p.waitForFunction(() => !document.getElementById("mail-send").disabled, null, { timeout: 30000 });
+    assert(await p.locator("#mail").isVisible() && await p.locator("#mail-trap").evaluate((x) => x.getBoundingClientRect().left < 0), "the email box; the robots' trap off screen");
+    await p.click("#mail-send"); await p.waitForTimeout(300);
+    assert(/enter your email/i.test(await p.textContent("#sheet-msg")) && !posted, "an address first");
+    await p.fill("#mail-to", "pat@example.com"); await p.click("#mail-send"); await p.waitForTimeout(1500);
+    assert(posted && posted.email === "pat@example.com" && /^data:image\/png;base64,/.test(posted.image) && posted.image.length > 100000 && posted.fileName === "waytugo-email-test-tower.png" && posted.name === "Email Test Tower" && posted.website === "", JSON.stringify({ ...posted, image: posted?.image?.slice(0, 40) }));
+    assert((await p.textContent("#sheet-msg")).includes("Sent to pat@example.com") && await p.inputValue("#mail-to") === "", await p.textContent("#sheet-msg"));
+    assert(await p.evaluate(() => window.Viewer.state.ev.directory_email_sent) === 1, "counted");
+    await shot(p, "v5b-email-sheet");
+    // Request a Quote on the viewer's own address: from the full view, then from the column
+    await p.click("#sheet-close"); await p.click("#full-quote"); await p.waitForTimeout(1200);
+    assert(await p.evaluate(() => !window.Viewer.full.open) && await p.isVisible("#direct") && await p.locator("#direct").evaluate((d) => d.classList.contains("flash")), "the code box, shown and flashing");
+    const box = await p.locator("#direct").boundingBox(); assert(box.y >= 0 && box.y + box.height <= 860, `in view: ${JSON.stringify(box)}`);
+    assert(await p.getAttribute(".vw-direct-go", "href") === "https://waytugo.com/#quote" && /^[0-9A-F]{8}$/.test(await p.textContent("#code")), "the link and the code");
+    await p.evaluate(() => scrollTo(0, 0)); await p.click("#quote"); await p.waitForTimeout(1200);
+    const box2 = await p.locator("#direct").boundingBox(); assert(box2.y >= 0 && box2.y + box2.height <= 860, `the column's button brings it into view: ${JSON.stringify(box2)}`);
+    await shot(p, "v5b-direct-quote");
+    assert(errs.length === 0, errs.join(" | "));
+    await p.close();
+    await sb("viewer_email_settings?id=eq.true", { method: "DELETE" });
+  });
+
   await check("V5: the console's Viewer tab: the funnel (page loads on waytugo.com, visits, edited, full screen, saved or shared, quotes), page loads with no visit, by ad source with page loads, by device and browser, what each did, page-load-only visits hidden until ticked, snapshots in View, engaged by edits, the CSV", async () => {
     // a Facebook-browser visitor on an iPhone who looked and left, and a page load whose viewer never started
     const FB = "Mozilla/5.0 (iPhone; CPU iPhone OS 17_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148 [FBAN/FBIOS;FBAV/470.0]";
@@ -2289,7 +2335,7 @@ try {
     assert(bd.includes("Page loads on waytugo.com") && bd.includes("Full screen") && bd.includes("Saved or shared") && bd.includes("Quote sent") && /page loads? on waytugo\.com had no viewer visit/.test(bd), bd.slice(0, 600));
     assert(bd.includes("By ad source") && bd.includes("facebook / paid") && bd.includes("By device and browser") && bd.includes("Phone · Facebook browser") && bd.includes("By location type"), "the tables");
     const rows = await boss.textContent("#viewer-rows");
-    assert(rows.includes("Perimeter Park One") && rows.includes("Full screen ×3") && rows.includes("Shared") && rows.includes("Downloaded") && rows.includes("Desktop") && !rows.includes(look.slice(0, 8).toUpperCase()), `built visits, what they did; the look-and-leave visit hidden: ${rows.replace(/\s+/g, " ").slice(0, 1500)}`);
+    assert(rows.includes("Perimeter Park One") && rows.includes("Full screen ×3") && rows.includes("Shared") && rows.includes("Downloaded") && rows.includes("Emailed") && rows.includes("Desktop") && !rows.includes(look.slice(0, 8).toUpperCase()), `built visits, what they did; the look-and-leave visit hidden: ${rows.replace(/\s+/g, " ").slice(0, 1500)}`);
     await boss.check("#viewer-all"); await boss.waitForTimeout(300);
     const all = await boss.textContent("#viewer-rows");
     assert(all.includes(look.slice(0, 8).toUpperCase()) && all.includes("(the viewer didn't start)") && all.includes("Phone · Facebook browser"), "shown when ticked");
@@ -2304,7 +2350,7 @@ try {
     await shot(boss, "v5-console-funnel");
     const [dl] = await Promise.all([boss.waitForEvent("download"), boss.click("#viewer-csv")]);
     const csv = readFileSync(await dl.path(), "utf8"), head = csv.split("\r\n")[0];
-    assert(head.endsWith("last_active,device,browser,page_loads,viewer_started,start_ms,edits,full_previews,downloads,shares_started,shares_completed,quote_opened,quote_sent,snapshots,send_failures,viewer_failed,from_page_load") && csv.includes("facebook"), head);
+    assert(head.endsWith("last_active,device,browser,page_loads,viewer_started,start_ms,edits,full_previews,downloads,shares_started,shares_completed,emails_sent,quote_opened,quote_sent,snapshots,send_failures,viewer_failed,from_page_load") && csv.includes("facebook"), head);
     // engaged: 30 s and 2 edits (V5); a V5 visit with 9 keystroke changes but 1 edit isn't
     const e1 = await boss.evaluate(async () => { const m = await import("/console-viewer.js"); return [m.engaged({ seconds: 40, changes: 9, events: { viewer_page_loaded: 1, configuration_edited: 1 } }), m.engaged({ seconds: 40, changes: 1, events: { configuration_edited: 2 } }), m.engaged({ seconds: 40, changes: 3 })]; });
     assert(JSON.stringify(e1) === "[false,true,true]", JSON.stringify(e1));
