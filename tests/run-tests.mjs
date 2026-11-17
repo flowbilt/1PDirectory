@@ -3658,7 +3658,7 @@ test("V1: /api/viewer keeps a visit only as it should be: POST, a code, real cho
   assert.equal((await post("not json")).status, 400);
   assert.equal((await post({ id: "nope", config })).status, 400);
   assert.equal((await post({ id, config: { ...config, kind: "wayfinding" } })).status, 400);
-  assert.equal((await post({ id, config, source: { page: "x".repeat(9000) } })).status, 413);
+  assert.equal((await post({ id, config, source: { page: "x".repeat(21000) } })).status, 413);   // (V5: room for the choices and a snapshot)
   assert.deepEqual(cleanSource({ page: " /waytugo-viewer ", utm_source: "google", ip: "203.0.113.9", email: "a@b.c", utm_term: 5 }), { page: "/waytugo-viewer", utm_source: "google" });
   const toml = readFileSync(new URL("../netlify.toml", import.meta.url), "utf8");
   assert.ok(toml.includes(`for = "/viewer.html"`) && toml.includes("frame-ancestors 'self' https://waytugo.com https://www.waytugo.com https://1pointusa.com https://www.1pointusa.com https://*.netlify.app"));
@@ -3747,7 +3747,7 @@ test("V2: the viewer's version 2: up to 20 tenants with the visitor's own names 
   assert.ok(html.includes('name="tenants" type="range" min="4" max="20"') && html.includes('name="look" value="light"') && html.includes("never uploaded or saved"));
   assert.ok(js.includes("ownLogo: own.logo?.url") && !/body\(\)[^\n]*own\./.test(js) && js.includes('logo: pic("logo")'), "only the word \"own\" goes in the visit");
   const fn = readFileSync(new URL("../netlify/functions/viewer.mjs", import.meta.url), "utf8");
-  assert.ok(fn.includes("text.length > 8000"), "room for 20 typed rows");
+  assert.ok(fn.includes("text.length > 20000"), "room for 20 typed rows (V5: and a snapshot)");
   const sql = readFileSync(new URL("../supabase/51-viewer-v2.sql", import.meta.url), "utf8");
   for (const w of ["'look', 'logo', 'photo', 'rows'", "> 20", "('dark', 'light')", "('off', 'sample', 'own')", "> 60 or char_length(r ->> 'suite') > 12", "jsonb_array_length(c -> 'rows') > (c ->> 'tenants')::int"]) assert.ok(sql.includes(w), w);
 });
@@ -3821,6 +3821,9 @@ test("V4: the menu board in the viewer: WayTuGo's templates read live (never Sam
     const c = V.normalizeConfig({ v: 2, kind: "menu", board: coffee.id, name: "Gardendale Grind", look: "chalkboard", logo: "own", items: [{ name: "Civic Cortado", price: "$4.25" }, { name: "", price: "$3.10" }] });
     const d = V.menuDraft(pay, c, { ownLogo: "data:image/png;base64,MINE" });
     assert.equal(d.brand.name, "Gardendale Grind"); assert.equal(d.brand.logo, "img:viewer-logo"); assert.equal(d.images["viewer-logo"].url, "data:image/png;base64,MINE");
+    assert.equal(d.menu.url, "https://waytugo.com/waytugo-viewer#quote-form", "V4c: the QR code asks for a quote");
+    assert.ok(d.layout.doc.blocks.filter((b) => b.type === "qr").every((b) => b.content.line === "Scan to ask for a quote") && d.layout.doc.blocks.some((b) => b.type === "qr"));
+    assert.notEqual(pay.menu?.url, d.menu.url, "the answer itself keeps the template's");
     assert.equal(d.look.look, "chalkboard"); assert.equal(d.orientation, "landscape", "a board that doesn't turn keeps its shape");
     const main = V.mainList(d);
     assert.equal(main.entries[0].name, "Civic Cortado"); assert.equal(main.entries[0].price, "$4.25"); assert.equal(main.entries[1].name, rows[1].name); assert.equal(main.entries[1].price, "$3.10");
@@ -3855,6 +3858,73 @@ test("V4: the menu board in the viewer: WayTuGo's templates read live (never Sam
   const sql = readFileSync(new URL("../supabase/53-viewer-menu.sql", import.meta.url), "utf8");
   assert.ok(sql.includes("o.kind = 'templates'") && sql.includes("public.menu_page(v_code, false)") && sql.includes("('house', 'chalkboard', 'light', 'dark')") && sql.includes("jsonb_array_length(c -> 'items') > 8")
     && sql.includes("grant execute on function public.viewer_boards() to service_role"));
+});
+
+test("V5: the viewer's visits from the page's load: events counted (only the viewer's, 0 to 10,000); a visit kept before anything is drawn, then filled in; snapshots; device and browser as categories (never the browser's description); crawlers not kept; waytugo.com's page loads; the picture's file name; the site's rules (= 54-viewer-events.sql)", async () => {
+  const V = await import("../public/viewer-sample.mjs");
+  const D = await import("../netlify/lib/viewer-device.mjs");
+  const keep = (await import("../netlify/functions/viewer.mjs")).default, page = (await import("../netlify/functions/viewer-page.mjs")).default;
+  // the events' rules
+  assert.equal(V.eventsProblem({ viewer_page_loaded: 1, full_preview_opened: 3 }), ""); assert.equal(V.eventsProblem(null), "");
+  for (const bad of [[], "x", { clicked_ad: 1 }, { full_preview_opened: -1 }, { full_preview_opened: 1.5 }, { full_preview_opened: 10001 }, { full_preview_opened: "1" }]) assert.ok(V.eventsProblem(bad), JSON.stringify(bad));
+  assert.deepEqual(V.VISIT_EVENTS, ["viewer_page_loaded", "viewer_initialized", "configuration_edited", "full_preview_opened", "full_preview_closed", "directory_image_downloaded", "directory_share_initiated", "directory_share_completed", "quote_form_opened", "quote_submitted", "viewer_error"]);
+  // the device and browser, as categories
+  const IPHONE_FB = "Mozilla/5.0 (iPhone; CPU iPhone OS 17_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148 [FBAN/FBIOS;FBAV/470.0.0.40.97;FBBV/123]";
+  const ANDROID_IG = "Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/129.0 Mobile Safari/537.36 Instagram 350.0.0.0.0 Android";
+  const ANDROID_TAB = "Mozilla/5.0 (Linux; Android 13; SM-X200) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/129.0 Safari/537.36";
+  const DESK = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0 Safari/537.36 Edg/130.0";
+  assert.deepEqual([D.deviceOf(IPHONE_FB), D.browserOf(IPHONE_FB)], ["phone", "facebook"]);
+  assert.deepEqual([D.deviceOf(ANDROID_IG), D.browserOf(ANDROID_IG)], ["phone", "instagram"]);
+  assert.deepEqual([D.deviceOf(ANDROID_TAB), D.deviceOf(DESK), D.browserOf(DESK)], ["tablet", "desktop", "other"]);
+  for (const bot of ["facebookexternalhit/1.1 (+http://www.facebook.com/externalhit_uatext.php)", "Mozilla/5.0 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)", "Mozilla/5.0 (compatible; bingbot/2.0)"]) assert.ok(D.isRobot(bot), bot);
+  assert.ok(!D.isRobot(IPHONE_FB) && !D.isRobot(DESK) && !D.isRobot(ANDROID_IG));
+  // a visit kept as the page loads (no choices yet), then filled in
+  const post = (b, ua = IPHONE_FB) => keep(new Request("https://x/api/viewer", { method: "POST", body: JSON.stringify(b), headers: { "user-agent": ua } }));
+  const id = crypto.randomUUID(), load = crypto.randomUUID(), c = V.normalizeConfig({ v: 2, name: "V5 unit" });
+  assert.equal((await post({ id, config: null, events: { viewer_page_loaded: 1 }, source: { page: "/waytugo-viewer", utm_source: "facebook" }, load })).status, 204);
+  let row = fake.T.viewer_visits.find((r) => r.id === id);
+  assert.ok(row && row.config === null && row.device === "phone" && row.browser === "facebook" && row.page_load === load && row.events.viewer_page_loaded === 1, JSON.stringify(row));
+  assert.ok(!JSON.stringify(row).includes("FBAN") && !JSON.stringify(row).includes("iPhone OS"), "the browser's description isn't kept");
+  assert.equal((await post({ id, config: c, events: { viewer_page_loaded: 1, viewer_initialized: 1, configuration_edited: 2, full_preview_opened: 1 }, snapshot: c, init_ms: 640, seconds: 35, changes: 9 }, DESK)).status, 204);
+  row = fake.T.viewer_visits.find((r) => r.id === id);
+  assert.ok(row.config.name === "V5 unit" && row.snapshots.length === 1 && row.init_ms === 640 && row.device === "phone" && row.events.configuration_edited === 2, JSON.stringify(row));
+  assert.equal((await post({ id, config: null, events: { configuration_edited: 1 } })).status, 204);
+  assert.equal(fake.T.viewer_visits.find((r) => r.id === id).config.name, "V5 unit", "a send without choices doesn't clear them");
+  // refused: a visit with neither choices nor events, bad events, a bad snapshot, a bad page-load code
+  for (const b of [{ id: crypto.randomUUID(), config: null }, { id: crypto.randomUUID(), config: c, events: { clicked_ad: 1 } }, { id: crypto.randomUUID(), config: c, snapshot: { ...c, email: "a@b.c" } }, { id: crypto.randomUUID(), config: c, load: "nope" }])
+    assert.equal((await post(b)).status, 400, JSON.stringify(b).slice(0, 80));
+  // crawlers aren't kept
+  const botId = crypto.randomUUID();
+  assert.equal((await post({ id: botId, config: null, events: { viewer_page_loaded: 1 } }, "facebookexternalhit/1.1")).status, 204);
+  assert.ok(!fake.T.viewer_visits.some((r) => r.id === botId), "a crawler isn't a visit");
+  // waytugo.com's page loads: plain text (a beacon), kept once, only from WayTuGo's and 1Point's sites
+  const send = (b, origin = "https://waytugo.com", ua = ANDROID_IG) => page(new Request("https://x/api/viewer-page", { method: "POST", body: typeof b === "string" ? b : JSON.stringify(b), headers: { "content-type": "text/plain;charset=UTF-8", origin, "user-agent": ua } }));
+  let r = await send({ id: load, source: { page: "/waytugo-viewer", utm_source: "facebook", utm_campaign: "reel-v1", ip: "203.0.113.9" } });
+  assert.equal(r.status, 204); assert.equal(r.headers.get("access-control-allow-origin"), "https://waytugo.com");
+  assert.equal((await send({ id: load, source: { page: "/other" } })).status, 204);
+  const pl = fake.T.viewer_page_loads.filter((x) => x.id === load);
+  assert.ok(pl.length === 1 && pl[0].source.utm_campaign === "reel-v1" && !pl[0].source.ip && pl[0].device === "phone" && pl[0].browser === "instagram", JSON.stringify(pl));
+  assert.equal((await send({ id: crypto.randomUUID() }, "https://evil.example")).status, 403);
+  assert.equal((await send("nope")).status, 400); assert.equal((await send({ id: "x" })).status, 400);
+  assert.equal((await page(new Request("https://x/api/viewer-page"))).status, 405);
+  // the picture's file name
+  assert.equal(V.imageName("Landmark Business Center"), "waytugo-landmark-business-center.png");
+  assert.equal(V.imageName("  Café / O'Henry's #2!! "), "waytugo-cafe-o-henry-s-2.png");
+  assert.equal(V.imageName(""), "waytugo-preview.png"); assert.equal(V.imageName("../../etc"), "waytugo-etc.png");
+  // the pages: the first script keeps the visit as the page loads; See My Directory; the full-screen view; Save / Share
+  const html = readFileSync(new URL("../public/viewer.html", import.meta.url), "utf8"), js = readFileSync(new URL("../public/viewer.js", import.meta.url), "utf8");
+  assert.ok(html.indexOf('s.ev.viewer_page_loaded = (s.ev.viewer_page_loaded || 0) + 1;') < html.indexOf('<script type="module"') && html.includes("window.sessionStorage") && html.includes("crypto.randomUUID) return crypto.randomUUID()") && html.includes("<script nomodule>"), "kept first, in the plainest script");
+  assert.ok(html.includes('id="see"') && html.includes("See My Directory") && html.includes('id="full-back"') && html.includes("Back to Viewer") && html.includes('id="full-quote">Request a Quote') && html.includes('id="full-save">Save / Share') && html.includes("Download Image"));
+  assert.ok(js.includes('"See My Menu Board"') && js.includes('form.addEventListener("change"') && js.includes("snapshot = c; keep(true);") && js.includes('tell({ type: "full", open: true })') && js.includes('e.data.type === "full-ready"') && js.includes("navigator.canShare?.({ files: [F.file] })"));
+  const snap = readFileSync(new URL("../public/viewer-snap.mjs", import.meta.url), "utf8");
+  assert.ok(snap.includes("Preview created with WayTuGo · waytugo.com") && snap.includes("CONCEPT PREVIEW") && !/fetch\([^)]*api\//.test(snap), "the picture is framed and made here, nothing sent");
+  // the database's rules say the same
+  const sql = readFileSync(new URL("../supabase/54-viewer-events.sql", import.meta.url), "utf8");
+  for (const w of [...V.VISIT_EVENTS.map((e) => `'${e}'`), "alter column config drop not null", "check (device in ('phone', 'tablet', 'desktop'))", "check (browser in ('facebook', 'instagram', 'other'))",
+    "while jsonb_array_length(v_snaps) > 5", "drop function if exists public.viewer_record(uuid, jsonb, integer, integer, text, jsonb);", "grant execute on function public.viewer_page_record(uuid, jsonb, text, text) to service_role", "interval '400 days'", ">= 120", ">= 5000"]) assert.ok(sql.includes(w), w);
+  const chk = readFileSync(new URL("../supabase/check-viewer-events.sql", import.meta.url), "utf8");
+  assert.ok(chk.includes("ALL 8 CHECKS PASSED") && chk.includes("p_id => v_old, p_config =>"), "the check: and the code before V5 still works");
+  fake.T.viewer_visits = fake.T.viewer_visits.filter((r) => r.id !== id); fake.T.viewer_page_loads = fake.T.viewer_page_loads.filter((x) => x.id !== load);
 });
 
 let passed = 0;

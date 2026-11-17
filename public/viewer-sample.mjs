@@ -146,6 +146,23 @@ export function configProblem(c) {
   return "";
 }
 
+/** V5 (DP-15): what a visit counts, from the moment the page loads (the same list as 54-viewer-events.sql's
+ *  viewer_events_problem). configuration_edited: once per control the visitor actually changed, when they finished
+ *  with it (samples and placeholders never count). viewer_error: the page failed before it started (no message kept). */
+export const VISIT_EVENTS = ["viewer_page_loaded", "viewer_initialized", "configuration_edited", "full_preview_opened", "full_preview_closed",
+  "directory_image_downloaded", "directory_share_initiated", "directory_share_completed", "quote_form_opened", "quote_submitted", "viewer_error"];
+export function eventsProblem(e) {
+  if (e === undefined || e === null) return "";
+  if (typeof e !== "object" || Array.isArray(e)) return "The events are an object.";
+  for (const [k, n] of Object.entries(e)) if (!VISIT_EVENTS.includes(k) || !Number.isInteger(n) || n < 0 || n > 10000) return "Each event is one of the viewer's, counted 0 to 10,000.";
+  return "";
+}
+/** V5: the saved picture's file name: waytugo-<building>.png, letters, digits and dashes only */
+export function imageName(name) {
+  const slug = String(name ?? "").normalize("NFKD").replace(/[̀-ͯ]/g, "").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 50).replace(/-+$/, "");
+  return `waytugo-${slug || "preview"}.png`;
+}
+
 /** One line for an inquiry or the console, e.g. "Touch directory · Landmark Business Center · 12 tenants · portrait · weather, QR" */
 export function summary(c, { boardName = "" } = {}) {
   c = normalizeConfig(c);
@@ -307,6 +324,8 @@ export function sampleDirectory(c, { togoUrl = "https://waytugo.com/", ownLogo =
 // their own; off keeps the template's), a look the board offers, the screen's shape when the board turns, and the
 // items they typed over the samples of the board's main list. The console's View does the same from a kept visit. ──
 
+export const QUOTE_URL = "https://waytugo.com/waytugo-viewer#quote-form", QUOTE_LINE = "Scan to ask for a quote";
+
 /** The board's main list: the items list (shown on the board) with the most priced entries showing; null if none */
 export function mainList(payload) {
   const lists = payload?.lists, doc = payload?.layout?.doc;
@@ -332,6 +351,10 @@ export function menuDraft(payload, c, { ownLogo = "" } = {}) {
   const d = JSON.parse(JSON.stringify(payload));
   const doc = d.layout.doc, looks = doc.theme?.looks || ["house"];
   d.viewer = true; d.sample = true;
+  // V4c (Scot): a sample board's QR code asks for a quote (the form on waytugo.com's viewer page), not the template's
+  // own phone menu, which would show the template's name and items
+  d.menu = { ...(d.menu || {}), url: QUOTE_URL };
+  doc.blocks = doc.blocks.map((b) => (b.type === "qr" ? { ...b, content: { ...(b.content || {}), line: QUOTE_LINE } } : b));
   d.orientation = doc.turned ? c.shape : doc.orientation || "auto";
   // the look: one the board offers (else its own), all day
   d.look = { ...(d.look || {}) }; delete d.look.when;

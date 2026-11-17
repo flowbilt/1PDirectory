@@ -7,7 +7,21 @@
 //                                                                     viewer_preview_shown, viewer_quote_started
 //   { source: "waytugo-viewer", type: "quote", visit, code, summary, config }
 // and from it: { source: "waytugo-site", type: "quote-sent", visit }   its form was sent (kept with the visit)
-import { normalizeConfig, sampleDirectory, sampleRows, summary, typeSamples, menuDraft, menuRows, KINDS, LIMITS, SLIDER_MAX, MENU_LOOKS } from "/viewer-sample.mjs";
+//
+// V5 (DP-15, Scot's "Full-Screen Preview, Save/Share & Engagement Tracking"):
+//   * the visit is kept from the moment the page loads (viewer.html's first script makes it, and its code and counts
+//     stay in this tab's storage, so a reload carries on the same visit), with what happened (VISIT_EVENTS), counted;
+//   * an edit counts once per control the visitor actually changed, when they finish with it ("change", not each key);
+//   * See My Directory / See My Menu Board: the screen full size, with Request a Quote, Save / Share and Back to Viewer;
+//     the choices are kept as a snapshot each time it opens; Save / Share makes a PNG here (viewer-snap.mjs);
+//   * more messages to the page:
+//   { source: "waytugo-viewer", type: "event", name, kind }   also viewer_initialized, configuration_edited (the first),
+//        full_preview_opened/closed, directory_image_downloaded, directory_share_initiated/completed,
+//        quote_form_opened, quote_submitted
+//   { source: "waytugo-viewer", type: "full", open }           please make the frame fill the window (or put it back)
+//   and from it: { source: "waytugo-site", type: "full-ready" } done (the frame fills the window)
+import { normalizeConfig, sampleDirectory, sampleRows, summary, typeSamples, menuDraft, menuRows, imageName, KINDS, LIMITS, SLIDER_MAX, MENU_LOOKS } from "/viewer-sample.mjs";
+import { makePicture } from "/viewer-snap.mjs";
 
 const $ = (id) => document.getElementById(id);
 const form = $("controls"), frame = $("pv"), box = $("screen");
@@ -20,17 +34,31 @@ const parentOrigin = (() => {
 })();
 const tell = (msg) => { if (parentOrigin) window.parent.postMessage({ source: "waytugo-viewer", ...msg }, parentOrigin); };
 
-// The visit: its code, how long it's been looked at (while the page is showing), how much was changed
-const V = { id: crypto.randomUUID(), shownSince: document.visibilityState === "visible" ? Date.now() : 0, seconds: 0, changes: 0, quote: null, kept: "", previewTold: false };
+// The visit: its code, how long it's been looked at (while the page is showing), how much was changed. V5: made by
+// viewer.html's first script as the page loads (window.__wtg), with its counts; kept in this tab's storage (S)
+window.__wtgStarted = true;
+const S = window.__wtg || { id: crypto.randomUUID(), t: Date.now(), ev: { viewer_page_loaded: 1 }, seconds: 0, changes: 0, quote: null, failures: 0, initMs: null };
+const saveS = () => { try { sessionStorage.setItem("wtg-viewer-visit", JSON.stringify(S)); } catch { /* this tab only */ } };
+const V = { id: S.id, shownSince: document.visibilityState === "visible" ? Date.now() : 0, seconds: S.seconds || 0, changes: S.changes || 0, quote: S.quote || null, kept: "", previewTold: false, inited: false, edited: false, touched: false };
 const q = new URLSearchParams(location.search);
 const source = Object.fromEntries(["page", "utm_source", "utm_medium", "utm_campaign", "utm_content", "utm_term"].map((k) => [k, (q.get(k) || "").slice(0, 200)]).filter(([, v]) => v));
+const load = window.__wtgLoad || null;   // V5: the waytugo.com page load that opened this (its script says so)
 const code = V.id.slice(0, 8).toUpperCase();
 const seconds = () => Math.min(7200, Math.round(V.seconds + (V.shownSince ? (Date.now() - V.shownSince) / 1000 : 0)));
+/** V5: something happened: counted with the visit, and (most) told to the page */
+function ev(name, { page = true } = {}) {
+  S.ev[name] = Math.min(10000, (S.ev[name] || 0) + 1); saveS();
+  if (page) tell({ type: "event", name, kind: choices().kind });
+}
+/** V5: an edit: a control the visitor changed, counted once when they finish with it (the page hears of the first) */
+function edited() { ev("configuration_edited", { page: !V.edited }); V.edited = true; V.touched = true; }
 
 // V2: what the visitor typed over the sample tenants (kept for all 20, so a row comes back when the slider does), and
 // their own logo and photo: in this page only, as pictures shrunk in the browser; never sent anywhere
 const typed = Array.from({ length: SLIDER_MAX }, () => ({ name: "", suite: "" }));
 const own = { logo: null, photo: null };   // { url, name }
+// V5: the full-screen view: open, the frame filled by the page (true full screen or the page's own), the picture made
+const F = { open: false, parentFull: false, native: false, visible: null, io: null, pic: null, file: null, url: "", making: null };
 
 // V4: the menu board: WayTuGo's template shops and their boards (read live), the board drawn now, the items typed over
 // its samples
@@ -76,7 +104,7 @@ const showReset = () => { $("rows-reset").hidden = !typed.some((r) => r.name || 
 $("rows-reset").addEventListener("click", () => {
   for (const r of typed) { r.name = ""; r.suite = ""; }
   for (const el of rowsEl.querySelectorAll("input")) el.value = "";
-  showReset(); V.changes++; draw(); keep();
+  showReset(); V.changes++; edited(); draw(); keep();
 });
 
 // ── V2: their own logo or building photo, shrunk here (a logo keeps its clear background) and kept in this page only
@@ -102,13 +130,14 @@ for (const box of document.querySelectorAll(".vw-pic")) {
     if (!file) return;
     try { own[k] = { url: await shrink(file, k === "logo" ? 900 : 1600, k === "logo"), name: file.name.slice(0, 60) }; }
     catch { box.querySelector(".vw-pic-name").textContent = "That file isn't a picture we can show."; return; }
-    tick.checked = true; show(); V.changes++; draw(); keep();
+    tick.checked = true; show(); V.changes++; edited(); draw(); keep();
   });
-  box.querySelector("[data-drop]").addEventListener("click", () => { own[k] = null; show(); V.changes++; draw(); keep(); });
+  box.querySelector("[data-drop]").addEventListener("click", () => { own[k] = null; show(); V.changes++; edited(); draw(); keep(); });
 }
 
 // ── the preview: the screen at its real size (1920 × 1080 or 1080 × 1920), scaled to fit
 function fit() {
+  if (F.open) { layoutFull(); return; }   // V5: the full-screen view places the screen itself
   const c = choices(), land = c.shape === "landscape", W = land ? 1920 : 1080, H = land ? 1080 : 1920;
   // Embedded, the frame grows to fit this page, so its height can't size the preview (it would grow with it): the
   // visitor's own screen does, within 900 px
@@ -135,6 +164,7 @@ function draw() {
       $("hint").textContent = "A sample menu from WayTuGo: the items and prices are examples. Your board is made from your own menu.";
       fit();
       if (M.payload) frame.contentWindow?.postMessage({ type: "layout-draft", data: menuDraft(M.payload, c, { ownLogo: own.logo?.url || "" }) }, location.origin);
+      seeLabel(c);
       if (V.changes > 0 && !V.previewTold) { V.previewTold = true; tell({ type: "event", name: "viewer_preview_shown", kind: c.kind }); }
       return;
     }
@@ -146,6 +176,8 @@ function draw() {
     $("hint").textContent = c.kind === "touch" ? "It's live: tap a company for its card, or a letter to jump. Names, suites and phone numbers are invented." : "Names, suites and phone numbers are invented for this preview.";
     fit();
     frame.contentWindow?.postMessage({ type: "draft", data: sampleDirectory(c, { ownLogo: own.logo?.url || "", ownPhoto: own.photo?.url || "" }) }, location.origin);
+    seeLabel(c);
+    initialized();
     if (V.changes > 0 && !V.previewTold) { V.previewTold = true; tell({ type: "event", name: "viewer_preview_shown", kind: c.kind }); }
   }, 120);
 }
@@ -205,58 +237,238 @@ const showItemsReset = () => { $("items-reset").hidden = !M.typed.some((r) => r.
 $("items-reset").addEventListener("click", () => {
   for (const r of M.typed) { r.name = ""; r.price = ""; }
   for (const el of $("items").querySelectorAll("input")) el.value = "";
-  showItemsReset(); V.changes++; draw(); keep();
+  showItemsReset(); V.changes++; edited(); draw(); keep();
 });
 
-// ── keeping the visit (from its first change; a few seconds after the last; and when the page is left)
-let keepT = 0;
-function body() { return JSON.stringify({ id: V.id, config: choices(), seconds: seconds(), changes: V.changes, quote: V.quote, source }); }
+// ── keeping the visit (V5: from the page's load; a few seconds after the last change; at once for what matters; and
+// when the page is left). A send that fails is tried once more, then counted ("failures"), so 1Point can see it.
+let keepT = 0, snapshot = null;
+function body(extra = {}) {
+  S.seconds = seconds(); S.changes = V.changes; S.quote = V.quote; saveS();
+  // after a reload the form starts afresh: its choices are sent only once the visitor changes something again, so the
+  // ones they built before the reload stay the visit's
+  const fresh = (S.ev.viewer_page_loaded || 1) > 1 && !V.touched;
+  return JSON.stringify({ id: V.id, config: fresh ? null : choices(), seconds: S.seconds, changes: V.changes, quote: V.quote, source, events: S.ev, failures: S.failures || 0,
+    ...(S.initMs != null ? { init_ms: S.initMs } : {}), ...(load ? { load } : {}), ...extra });
+}
+function post(b, retry = true) {
+  fetch("/api/viewer", { method: "POST", body: b, headers: { "Content-Type": "application/json" }, keepalive: b.length < 60000 })
+    .then((r) => { if (!r.ok && r.status !== 413) throw new Error(String(r.status)); })
+    .catch(() => {
+      if (retry) { setTimeout(() => post(b, false), 3000); return; }
+      S.failures = Math.min(10000, (S.failures || 0) + 1); saveS(); V.kept = "";   // said next time
+    });
+}
 function keep(now = false) {
   clearTimeout(keepT);
-  if (!V.changes && !V.quote) return;
-  const send = () => { const b = body(); if (b === V.kept) return; V.kept = b; fetch("/api/viewer", { method: "POST", body: b, headers: { "Content-Type": "application/json" }, keepalive: true }).catch(() => {}); };
+  const send = () => {
+    const extra = snapshot ? { snapshot } : {};
+    const b = body(extra); if (b === V.kept) return; V.kept = b; snapshot = null; post(b);
+  };
   if (now) send(); else keepT = setTimeout(send, 5000);
 }
 document.addEventListener("visibilitychange", () => {
   if (document.visibilityState === "hidden") {
     if (V.shownSince) { V.seconds += (Date.now() - V.shownSince) / 1000; V.shownSince = 0; }
-    if (V.changes || V.quote) { const b = body(); if (b !== V.kept) { V.kept = b; navigator.sendBeacon?.("/api/viewer", new Blob([b], { type: "application/json" })); } }
+    const b = body(snapshot ? { snapshot } : {}); snapshot = null;
+    if (b !== V.kept) { V.kept = b; if (!navigator.sendBeacon?.("/api/viewer", new Blob([b], { type: "application/json" }))) post(b, false); }
   } else V.shownSince = Date.now();
 });
+/** V5: the viewer has drawn its first preview: said at once (a visitor who leaves now still counts as having seen it) */
+function initialized() {
+  if (V.inited) return;
+  V.inited = true;
+  if (S.initMs == null) { S.initMs = Math.round(performance.now()); }
+  ev("viewer_initialized");
+  keep(true);
+}
 
+// V5: an edit counts when the visitor finishes with a control (a box when they leave it, a slider when they let go, a
+// choice when it's made): "change" fires only when the value is really different
+form.addEventListener("change", (e) => { if (e.target.type !== "file") { edited(); keep(); } });
 form.addEventListener("input", (e) => {
   if (e.target.type === "file") return;
-  V.changes++;
+  V.changes++; V.touched = true;
   if (e.target.name === "kind") tell({ type: "event", name: "viewer_type_selected", kind: e.target.value });
   if (e.target.name === "kind" && e.target.value === "menu") loadTemplates();   // V4: the sample menus, the first time
   draw(); keep();
 });
 window.addEventListener("resize", fit);
 
-// ── Request a Quote: the configuration to the page's own inquiry form (or, on its own, how to reach 1Point)
-$("quote").addEventListener("click", () => {
+// ── Request a Quote: the configuration to the page's own inquiry form (or, on its own, how to reach 1Point). V5: from
+// the full-screen view too (it closes first). Opening the form isn't a quote: the page says when its form is sent.
+function requestQuote() {
   const c = choices();
   if (V.quote !== "sent") V.quote = "started";
+  V.touched = true; ev("quote_form_opened");
   keep(true);
   tell({ type: "event", name: "viewer_quote_started", kind: c.kind });
   const b = c.kind === "menu" ? boardOf(c.board) : null;   // V4: the summary names the sample board
   if (parentOrigin) tell({ type: "quote", visit: V.id, code, summary: summary(c, { boardName: b ? b.name.replace(/^[^:]*:\s*/, "") : "" }), config: c });
-  else { $("code").textContent = code; $("direct").hidden = false; }
-});
+  else { $("code").textContent = code; $("direct").hidden = false; $("direct").scrollIntoView({ block: "center" }); }
+}
+$("quote").addEventListener("click", requestQuote);
 window.addEventListener("message", (e) => {
   if (e.origin !== parentOrigin || e.data?.source !== "waytugo-site") return;
-  if (e.data.type === "quote-sent" && e.data.visit === V.id) { V.quote = "sent"; keep(true); }
+  if (e.data.type === "quote-sent" && e.data.visit === V.id) { V.quote = "sent"; ev("quote_submitted"); keep(true); }
+  if (e.data.type === "full-ready" && F.open) { F.parentFull = true; layoutFull(); }   // V5: the frame fills the window
+});
+
+// ── V5: See My Directory / See My Menu Board: the screen full size, as a finished directory ──
+// On its own (not embedded), the view fills this window. Embedded: true full screen where the browser and the page allow
+// it (the page's iframe has allow="fullscreen"), otherwise the page is asked to make its frame fill the window
+// ({type:"full"}; it answers "full-ready"); until it does (or if it never does), the view covers the part of the frame
+// the visitor can see. iPhones and the Facebook and Instagram browsers have no full-screen mode for a page, so the
+// page's own way is the one they get.
+const seeLabel = (c) => {
+  const menu = c.kind === "menu";
+  $("see-label").textContent = menu ? "See My Menu Board" : "See My Directory";
+  $("see-line").textContent = menu ? "View your menu board full screen." : "View your directory full screen.";
+  $("full-title").textContent = menu ? "Your menu board · sample preview" : "Your directory · sample preview";
+};
+const dims = () => { const land = choices().shape === "landscape"; return { W: land ? 1920 : 1080, H: land ? 1080 : 1920 }; };
+/** Where the view goes, in this page's window: all of it, or (embedded, before the page fills the window) the part of
+ *  the frame the visitor can see now */
+function stage() {
+  const all = { left: 0, top: 0, width: window.innerWidth, height: window.innerHeight };
+  if (!embedded || F.parentFull || F.native) return all;
+  const v = F.visible, want = Math.min(window.innerHeight, Math.max(360, (window.screen?.availHeight || 800) * 0.92));
+  if (!v || v.height < 40) {   // not measured yet: around the button that was pressed
+    const b = $("see").getBoundingClientRect(), top = Math.max(0, Math.min(window.innerHeight - want, b.top + b.height / 2 - want / 2));
+    return { left: 0, top, width: window.innerWidth, height: want };
+  }
+  const h = Math.max(v.height, Math.min(want, window.innerHeight)), top = Math.max(0, Math.min(window.innerHeight - h, v.top + v.height - h));
+  return { left: 0, top: v.height >= h ? v.top : top, width: window.innerWidth, height: h };
+}
+function layoutFull() {
+  if (!F.open) return;
+  const R = stage(), { W, H } = dims();
+  for (const el of [$("full-bg"), $("full")]) Object.assign(el.style, { left: `${R.left}px`, top: `${R.top}px`, width: `${R.width}px`, height: `${R.height}px` });
+  const topH = $("full").querySelector(".vw-full-top").offsetHeight, botH = $("full").querySelector(".vw-full-actions").offsetHeight;
+  const area = { x: R.left + 12, y: R.top + topH + 6, w: R.width - 24, h: R.height - topH - botH - 12 };
+  const s = Math.max(0.05, Math.min(area.w / W, area.h / H)), w = Math.round(W * s), h = Math.round(H * s);
+  Object.assign(box.style, { left: `${Math.round(area.x + (area.w - w) / 2)}px`, top: `${Math.round(area.y + (area.h - h) / 2)}px`, width: `${w}px`, height: `${h}px`, marginLeft: "0", marginRight: "0" });
+  Object.assign(frame.style, { width: `${W}px`, height: `${H}px`, transform: `scale(${s})` });
+  // a landscape screen on an upright phone (or the other way) is small: say so
+  const touch = matchMedia("(pointer: coarse)").matches, wrongWay = (W > H) !== (R.width > R.height);
+  $("full-turn").hidden = !(touch && wrongWay && s < 0.4);
+}
+const outside = () => [document.querySelector(".vw-head"), form, document.querySelector(".vw-tag"), document.querySelector(".vw-see"), $("hint")].filter(Boolean);
+async function openFull() {
+  if (F.open) return;
+  F.open = true; F.parentFull = false; F.native = false; F.visible = null;
+  const c = choices();
+  ev("full_preview_opened"); V.touched = true;
+  snapshot = c; keep(true);   // the choices as they are now, kept with the visit
+  for (const el of outside()) el.inert = true;
+  document.documentElement.classList.add("vw-full-open");
+  $("full-bg").hidden = false; $("full").hidden = false; box.classList.add("vw-screen-full");
+  frame.tabIndex = 0;
+  if (embedded) {
+    // the part of the frame the visitor can see, as they scroll (until the page fills the window)
+    F.io = new IntersectionObserver((es) => { const r = es[es.length - 1].intersectionRect; F.visible = { top: r.top, height: r.height }; layoutFull(); }, { threshold: Array.from({ length: 51 }, (_, i) => i / 50) });
+    F.io.observe(document.body);
+  }
+  layoutFull();
+  $("full-back").focus();
+  // true full screen where it's allowed; otherwise the page's own (embedded)
+  if (document.fullscreenEnabled && document.documentElement.requestFullscreen) {
+    try { await document.documentElement.requestFullscreen({ navigationUI: "hide" }); F.native = true; layoutFull(); return; } catch { /* the page's way */ }
+  }
+  if (embedded && parentOrigin) tell({ type: "full", open: true });
+}
+function closeFull({ quiet = false } = {}) {
+  if (!F.open) return;
+  closeSheet();
+  F.open = false;
+  F.io?.disconnect(); F.io = null;
+  if (document.fullscreenElement) document.exitFullscreen?.().catch(() => {});
+  if (embedded && parentOrigin && !F.native) tell({ type: "full", open: false });
+  F.native = F.parentFull = false;
+  for (const el of outside()) el.inert = false;
+  document.documentElement.classList.remove("vw-full-open");
+  $("full-bg").hidden = true; $("full").hidden = true; box.classList.remove("vw-screen-full");
+  for (const k of ["left", "top"]) box.style[k] = "";
+  frame.tabIndex = -1;
+  if (!quiet) ev("full_preview_closed");
+  keep();
+  fit(); tellHeight();
+  if (!quiet) $("see").focus();
+}
+$("see").addEventListener("click", openFull);
+$("full-back").addEventListener("click", () => closeFull());
+$("full-quote").addEventListener("click", () => { closeFull(); requestQuote(); });
+document.addEventListener("fullscreenchange", () => { if (F.open && F.native && !document.fullscreenElement) closeFull(); });   // Esc in true full screen
+document.addEventListener("keydown", (e) => {
+  if (e.key !== "Escape" || !F.open) return;
+  if (!$("sheet").hidden) closeSheet(); else closeFull();
+});
+window.addEventListener("resize", () => { if (F.open) layoutFull(); });
+
+// ── V5: Save / Share: a PNG of the screen as it shows now, made here (nothing uploaded); Download Image everywhere,
+// Share where the device can share a picture. The visitor's own logo and photo are in it, as on their screen (Scot,
+// 2026-11-16: "Agreed"); it goes only where they save or send it.
+const SHARE_URL = "https://waytugo.com/waytugo-viewer?utm_source=viewer_share&utm_medium=share";
+function sheetMsg(t, bad = false) { const m = $("sheet-msg"); m.textContent = t; m.classList.toggle("bad", bad); }
+async function openSheet() {
+  $("sheet").hidden = false;
+  $("sheet-download").disabled = true; $("sheet-share").disabled = true; $("sheet-share").hidden = true;
+  $("sheet").querySelector(".vw-sheet-actions").classList.add("one");
+  if (F.url) { URL.revokeObjectURL(F.url); F.url = ""; } $("sheet-img").removeAttribute("src");
+  sheetMsg("Making your picture…");
+  $("sheet-close").focus();
+  const c = choices(), { W, H } = dims();
+  const making = F.making = (async () => makePicture(frame.contentDocument, W, H))();
+  try {
+    const blob = await making;
+    if (F.making !== making || $("sheet").hidden) return;
+    F.file = new File([blob], imageName(c.name || (c.kind === "menu" ? "menu-board" : "directory")), { type: "image/png" });
+    F.url = URL.createObjectURL(blob); $("sheet-img").src = F.url;
+    $("sheet-download").disabled = false;
+    const canShare = !!(navigator.share && navigator.canShare?.({ files: [F.file] }));
+    $("sheet-share").hidden = !canShare; $("sheet-share").disabled = !canShare;
+    $("sheet").querySelector(".vw-sheet-actions").classList.toggle("one", !canShare);
+    const touch = matchMedia("(pointer: coarse)").matches;
+    sheetMsg(`${canShare ? "Ready to download or share." : "Ready to download."}${touch ? " You can also press and hold the picture to save it." : ""}`);
+  } catch {
+    if (F.making !== making) return;
+    sheetMsg("Sorry, this browser couldn't make the picture. A screenshot works too, or try another browser.", true);
+  }
+}
+function closeSheet() {
+  if ($("sheet").hidden) return;
+  $("sheet").hidden = true; F.making = null;
+  if (F.open) $("full-save").focus();
+}
+$("full-save").addEventListener("click", openSheet);
+$("sheet-close").addEventListener("click", closeSheet);
+$("sheet-download").addEventListener("click", () => {
+  if (!F.file) return;
+  const a = document.createElement("a"); a.href = F.url; a.download = F.file.name; document.body.appendChild(a); a.click(); a.remove();
+  ev("directory_image_downloaded"); keep(true);
+  sheetMsg(`Saved as ${F.file.name}.`);
+});
+$("sheet-share").addEventListener("click", async () => {
+  if (!F.file) return;
+  ev("directory_share_initiated"); keep(true);
+  try {
+    await navigator.share({ files: [F.file], title: "My WayTuGo preview", text: `My WayTuGo preview. See yours at ${SHARE_URL}` });
+    ev("directory_share_completed"); keep(true);   // the device says it was sent (where it can tell)
+    sheetMsg("Shared.");
+  } catch (e) {
+    if (e?.name === "AbortError") sheetMsg("Not shared.");
+    else sheetMsg("Sharing didn't work here: use Download Image instead.", true);
+  }
 });
 
 // ── the page's height, for the frame that holds it
-if (parentOrigin) {
-  let last = 0;
-  new ResizeObserver(() => { const px = Math.ceil(document.documentElement.scrollHeight); if (px !== last) { last = px; tell({ type: "height", px }); } }).observe(document.body);
-}
+let lastHeight = 0;
+const tellHeight = () => { if (!parentOrigin || F.open) return; const px = Math.ceil(document.documentElement.scrollHeight); if (px !== lastHeight) { lastHeight = px; tell({ type: "height", px }); } };
+if (parentOrigin) new ResizeObserver(tellHeight).observe(document.body);   // (not while the full-screen view is open)
 // Each visit starts from the defaults (a building directory, landscape): browsers otherwise bring back a reload's choices
 form.reset();
 renderRows();
-window.addEventListener("pageshow", (e) => { if (e.persisted) { form.reset(); for (const r of typed) { r.name = ""; r.suite = ""; } own.logo = own.photo = null; rowsEl.innerHTML = ""; renderRows(); V.changes = 0; draw(); } });
+window.addEventListener("pageshow", (e) => { if (e.persisted) { if (F.open) closeFull(); form.reset(); for (const r of typed) { r.name = ""; r.suite = ""; } own.logo = own.photo = null; rowsEl.innerHTML = ""; renderRows(); draw(); } });
 tell({ type: "event", name: "viewer_start", kind: choices().kind });
 fit();
-window.Viewer = { visit: V, choices, KINDS, typed, own };   // for the browser checks
+window.Viewer = { visit: V, state: S, choices, KINDS, typed, own, full: F };   // for the browser checks

@@ -872,6 +872,7 @@ through waytugo.com's own inquiry form.
   and By ad source tables (visits, engaged = 30 s and 3 changes, average time, quotes), and **Download CSV** (cells
   that start with = + - @ are quoted so a spreadsheet won't run them).
 
+- **V4c** (Scot): on the viewer's menu board, the QR code opens the quote form on waytugo.com (`https://waytugo.com/waytugo-viewer#quote-form`) with the line "Scan to ask for a quote", in place of the template's own phone menu. The template itself is unchanged.
 - **V4b**: one dropdown, **Sample menu board to start from**, of every template board by its own name, A to Z (size and shape after it unless the name says the size), since several template shops share one menu; an empty list says so. The account must be of type **WayTuGo templates** (Accounts → Edit → Type).
 - **V4** (Scot, 2026-11-13): **Menu board** is a third display. Step 2 becomes "Add your restaurant": **Sample menu to
   start from** (the shops in WayTuGo Templates accounts, read live from `/api/viewer-boards`; never WayTuGo Samples,
@@ -883,6 +884,50 @@ through waytugo.com's own inquiry form.
   `menuDraft`, `mainList`, `menuRows`), in an invented Birmingham building (`netlify/functions/viewer-boards.mjs`).
   Kept as `kind: "menu"`, `board`, `items` (`supabase/53-viewer-menu.sql`: `viewer_boards`, `viewer_board`, the rules).
   The console names the board and View redraws it; the CSV adds `menu_board` and `items_typed_in`. Display 2.24.1.
+
+- **V5** (DP-15, Scot's brief "Full-Screen Preview, Save/Share & Engagement Tracking", 2026-11-16):
+  - **See My Directory** / **See My Menu Board** under the preview: the screen whole, as large as the visitor's screen
+    allows, with **Request a Quote** and **Save / Share** along the bottom and **Back to Viewer** at the top (Esc too).
+    The screen is the preview itself moved over a dark background (nothing redrawn; the touch directory still taps).
+    On its own the view fills the window; embedded, the browser's own full screen where allowed (the page's iframe
+    has `allow="fullscreen"`), otherwise the page is asked to make the frame fill the window
+    (`{type:"full", open}`, answered `{source:"waytugo-site", type:"full-ready"}`); before the page has that script,
+    the view covers the part of the frame the visitor can see (an IntersectionObserver). Request a Quote closes it
+    first; Back to Viewer keeps every choice.
+  - **Save / Share** (`public/viewer-snap.mjs`, no outside library): a PNG made in the visitor's browser from the
+    real screen page in the preview frame (its styles, fonts and pictures folded into one SVG, drawn at 1920 × 1080 or
+    1080 × 1920), framed with "CONCEPT PREVIEW · Sample content · not a photo of an installed display" above and the
+    logo and "Preview created with WayTuGo · waytugo.com" below, outside the screen (2048 × 1362 landscape,
+    1208 × 2280 portrait). **Download Image** (`waytugo-<building>.png`, `imageName`), **Share…** where the device
+    can share a picture (`navigator.canShare`), the text with `waytugo.com/waytugo-viewer?utm_source=viewer_share`;
+    on a phone "press and hold the picture" as the fallback (in-app browsers). The visitor's own logo and photo are in
+    it as on their screen (Scot: "Agreed"); nothing is uploaded.
+  - **Visits from the page's load** (`viewer.html`'s first script, plain enough for any browser): the visit's code and
+    counts in the tab's `sessionStorage` (no cookie; a reload carries on the same visit; a new one after 20 hours),
+    sent at once with `config: null`; `viewer.js` takes over (`window.__wtg`). Counted events (`VISIT_EVENTS`):
+    `viewer_page_loaded`, `viewer_initialized` (sent the moment the first preview is drawn, with `init_ms`),
+    `configuration_edited` (once per control the visitor finished changing: the form's `change`, Back to the samples,
+    their own picture; not per key), `full_preview_opened`/`_closed`, `directory_image_downloaded`,
+    `directory_share_initiated`/`_completed` (the share sheet reports finished or cancelled), `quote_form_opened`,
+    `quote_submitted`, `viewer_error` (the code didn't load or run, before it started). A snapshot of the choices each
+    time the full view opens. A failed send is retried once, then counted (`failures`). The page hears the new events
+    as plain events (the first edit only), the old four names too.
+  - **waytugo.com's own page load** (`/api/viewer-page`, `netlify/functions/viewer-page.mjs`, a plain-text beacon from
+    the site builder's script; only from WayTuGo's and 1Point's sites): a code the page also gives the viewer as
+    `?load=`, so a load with no visit is someone who left before the viewer started.
+  - **Device and browser as categories** (Scot: "OK"): phone, tablet or desktop; Facebook, Instagram or other browser
+    (`netlify/lib/viewer-device.mjs`, from the User-Agent, which isn't kept). Crawlers and link previews aren't kept.
+  - `supabase/54-viewer-events.sql`: `viewer_visits` gains `events`, `snapshots`, `device`, `browser`, `init_ms`,
+    `failures`, `page_load` (config may be null); `viewer_page_loads`; `viewer_record` with seven optional inputs
+    (the six before V5 unchanged); `viewer_page_record`.
+  - **Console**: the funnel (page loads on waytugo.com, visits, started, edited, full screen, saved or shared, quote
+    opened, quote sent, with percentages; page loads with no visit; visits where the viewer failed; sends that failed),
+    By ad source (with page loads), By device and browser, By location type; columns Device and Did; the list shows
+    visits that built something unless **Show page loads too** is ticked; View offers each full-screen snapshot;
+    Remove takes its page load too. **Engaged**: 30 seconds and 2 edits (Scot: "Yes"); visits before V5, 30 seconds
+    and 3 changes. The CSV adds last_active, device, browser, page_loads, viewer_started, start_ms, edits,
+    full_previews, downloads, shares_started, shares_completed, quote_opened, quote_sent, snapshots, send_failures,
+    viewer_failed, from_page_load.
 
 ### Light and Dark directories (DP-14, D2)
 
@@ -1196,6 +1241,7 @@ python3 tests/button-test.py         # the case button and status light, with ke
 bash tests/setup-test.sh             # setup's options, Wi-Fi import, naming, TV keeper, pointer, HDMI, quiet start, start-up picture and animation, field Wi-Fi setup (seconds)
 node tests/browser-checks.mjs        # in Chromium (Playwright): the layout page, the console's Layouts tab and Pictures, the QR block and the phone menu, menus and the menu editor (as the owner, the editor and 1Point), Orientation, the directory still working (about three minutes; SHOTS=<folder> also saves screenshots of the menu editor)
 node tests/browser-checks.mjs --compare <older public/>   # also: directory screens drawn exactly as by an older copy of public/
+ONLY=V5 node tests/browser-checks.mjs  # only the checks whose names include the words (DP-15)
 bash tests/sql-test.sh               # every supabase/ file from scratch on a local PostgreSQL 16, each check after its file and again at the end (PGHOST/PGPORT/PGUSER)
 ```
 
@@ -1208,7 +1254,7 @@ Local sample logins: `scot@1pointusa.com / admin-pass`, `leighann@barber.test / 
 
 ```
 public/             screen (index.html, display.*; board.* for a layout; screen-core.js, what every screen does, shared by both; layout-format.mjs, the layout format; menu-format.mjs, the menu format), sign-in, console (+ console-devices.js, console-setup.js, console-layouts.js), editor, menu editor (menu-edit.*), technician page (tech.*), shared auth.js
-netlify/functions/  screen, users, config, weather, news, traffic, togo (the Directory to Go page), menu (Take this menu with you: /m/<code> and /api/menu), agent, devices, networks, alert-settings, alerts, layouts (check, preview, publish, roll back; upload and remove pictures; make lists from a layout), pictures (the menu editor's), shops (copy a shop into an account, T0), sample (sample links: /s/<name> and /api/sample, T0)
+netlify/functions/  screen, users, config, viewer, viewer-boards, viewer-page (the viewer on waytugo.com, V1–V5), weather, news, traffic, togo (the Directory to Go page), menu (Take this menu with you: /m/<code> and /api/menu), agent, devices, networks, alert-settings, alerts, layouts (check, preview, publish, roll back; upload and remove pictures; make lists from a layout), pictures (the menu editor's), shops (copy a shop into an account, T0), sample (sample links: /s/<name> and /api/sample, T0)
 netlify/lib/        Supabase client (and Storage), RSS reader, pictures (images.mjs: what a file really is), shared helpers
 supabase/           database schema (01 to 35, run in order), starting data, check queries, setup guide
 migration/          the Yodeck/Wix transcription the starting data was built from

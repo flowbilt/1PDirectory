@@ -77,3 +77,49 @@ html, body { margin: 0; background: var(--bg); color: var(--ink); font: 16px/1.4
   .vw-preview { position: static; order: -1; }
   .vw-logo { height: 42px; }
 }
+/* V5 (DP-15): See My Directory, and the full-screen view (the screen moved over a dark background, the bars and the
+   Save / Share sheet above it). Sizes and places are set by viewer.js, for the visitor's screen or, embedded, for the
+   part of the page they can see. */
+.vw-see { display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 6px 14px; margin: 16px 0 0; }
+.vw-see-btn { display: inline-flex; align-items: center; gap: 10px; min-height: 48px; padding: 10px 22px; border: 2px solid var(--blue); border-radius: 10px; background: var(--blue); color: #fff; font: inherit; font-weight: 700; font-size: 17px; cursor: pointer; }
+.vw-see-btn svg { width: 22px; height: 22px; fill: none; stroke: currentColor; stroke-width: 2.4; stroke-linecap: round; stroke-linejoin: round; }
+.vw-see-btn:hover { filter: brightness(1.08); }
+.vw-see-btn:focus-visible, .vw-back:focus-visible, .vw-save:focus-visible { outline: 3px solid #fff; outline-offset: 2px; }
+.vw-see-line { color: var(--muted); font-size: 14px; }
+.vw-full-bg { position: fixed; z-index: 990; background: #050b0c; }
+.vw-screen.vw-screen-full { position: fixed !important; margin: 0 !important; z-index: 995; border-radius: 6px; box-shadow: 0 0 0 6px #000, 0 10px 40px rgba(0,0,0,.6); }
+.vw-full { position: fixed; z-index: 1000; pointer-events: none; display: flex; flex-direction: column; justify-content: space-between; }
+.vw-full > * { pointer-events: auto; }
+.vw-full-top { display: flex; align-items: center; gap: 10px 16px; flex-wrap: wrap; padding: 10px 12px 6px; }
+.vw-back { min-height: 40px; padding: 6px 14px; border: 1px solid var(--line); border-radius: 999px; background: rgba(255,255,255,.08); color: #fff; font: inherit; font-size: 15px; cursor: pointer; }
+.vw-back:hover { background: rgba(255,255,255,.16); }
+.vw-full-title { color: var(--muted); font-size: 14px; }
+.vw-full-turn { color: var(--orange); font-size: 13px; font-weight: 700; }
+.vw-full-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; padding: 8px 12px max(12px, env(safe-area-inset-bottom)); max-width: 640px; width: 100%; margin: 0 auto; }
+.vw-full-actions .vw-quote, .vw-full-actions .vw-save { min-height: 50px; font-size: 17px; }
+.vw-save { width: 100%; min-height: 52px; border: 2px solid #fff; border-radius: 10px; background: transparent; color: #fff; font: inherit; font-weight: 700; font-size: 17px; cursor: pointer; padding: 10px 16px; }
+.vw-save:hover { background: rgba(255,255,255,.1); }
+.vw-quote:disabled, .vw-save:disabled { opacity: .45; cursor: default; filter: none; }
+.vw-sheet { position: absolute; left: 50%; bottom: 0; transform: translateX(-50%); width: min(560px, 100%); max-height: 100%; overflow-y: auto; background: var(--panel); border: 1px solid var(--line); border-radius: 16px 16px 0 0; padding: 16px 16px max(16px, env(safe-area-inset-bottom)); box-shadow: 0 -10px 40px rgba(0,0,0,.5); }
+.vw-sheet h2 { font-size: 18px; margin: 0 0 10px; }
+.vw-sheet-pic { background: #0e2021; border-radius: 10px; min-height: 120px; display: grid; place-items: center; overflow: hidden; }
+.vw-sheet-pic img { display: block; max-width: 100%; max-height: 38vh; }
+.vw-sheet-pic img:not([src]) { display: none; }
+.vw-sheet-msg { min-height: 1.4em; margin: 10px 0; font-size: 14px; color: var(--muted); }
+.vw-sheet-msg.bad { color: #ffb38a; }
+.vw-sheet-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.vw-sheet-actions.one { grid-template-columns: 1fr; }
+.vw-sheet-note { color: var(--muted); font-size: 13px; margin: 10px 0 6px; }
+.vw-sheet-close { display: block; margin: 6px auto 0; }
+html.vw-full-open { overflow: hidden; }
+@media (max-width: 520px) { .vw-full-title { display: none; } .vw-full-actions .vw-quote, .vw-full-actions .vw-save { font-size: 16px; padding: 10px 8px; } }
+/* (the preview column is sticky on a wide screen, which makes it its own layer: lifted above the background while the
+   full-screen view is open, so the screen inside it shows) */
+html.vw-full-open .vw-preview { z-index: 995; }
+/* (V5: a long board name in the dropdown made the menu board's controls wider than a phone, so the page scrolled
+   sideways (from V4); the column and its boxes may now shrink to the screen) */
+.vw-body > * { min-width: 0; }
+.vw-field select, .vw-type select { width: 100%; max-width: 100%; min-width: 0; text-overflow: ellipsis; }
+@media (max-width: 860px) { .vw-body { grid-template-columns: minmax(0, 1fr); } }
+/* (the preview column's label, button and hint share the screen's layer: hidden while the full-screen view is open) */
+html.vw-full-open .vw-tag, html.vw-full-open .vw-see, html.vw-full-open .vw-hint { visibility: hidden; }

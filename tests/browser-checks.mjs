@@ -25,7 +25,9 @@ let pass = 0, total = 0;
 // SHOTS=<folder>: also save screenshots of the menu editor and the board (for looking at, not checked)
 const SHOTS = process.env.SHOTS || "";
 const shot = async (page, name) => { if (SHOTS) await page.screenshot({ path: join(SHOTS, `${name}.png`), fullPage: false }).catch(() => {}); };
+// ONLY=<words>: run only the checks whose names include them (the rest are skipped, not counted)
 async function check(name, fn) {
+  if (process.env.ONLY && !name.includes(process.env.ONLY)) return;
   total++;
   try { await fn(); pass++; console.log(`  ok  ${name}`); }
   catch (e) { console.log(`  FAIL ${name}\n       ${String(e.message || e).split("\n").slice(0, process.env.FULL ? 14 : 4).join("\n       ")}`); }
@@ -1848,7 +1850,9 @@ try {
     const msgs = () => p.evaluate(() => window.__msgs);
     assert((await msgs()).some((m) => m.type === "event" && m.name === "viewer_start"), "viewer_start told");
     assert((await msgs()).some((m) => m.type === "height" && m.px > 600), "its height told");
-    assert(await sb("viewer_visits?select=id").then((r) => r.data.length) === 0, "nothing kept before anything is built");
+    // V5: kept as the page loads, before anything is built (it was kept only from the first change before V5)
+    const first = (await sb("viewer_visits?select=*")).data;
+    assert(first.length === 1 && first[0].events.viewer_page_loaded === 1 && first[0].events.viewer_initialized === 1 && !first[0].events.configuration_edited && first[0].device === "desktop", JSON.stringify(first));
     await v.locator('input[name="name"]').fill("Landmark Business Center");
     await v.locator('input[name="tenants"]').fill("20"); await p.waitForTimeout(1500);
     assert(await scr.locator("#property").textContent().then((t) => t.includes("Landmark Business Center")), "the name on the screen");
@@ -2033,6 +2037,7 @@ try {
       await p.check('input[name="mlook"][value="chalkboard"]', { force: true }); await p.waitForTimeout(1500);
       const txt = await fr.locator("#blocks").textContent();
       assert(txt.includes("Gardendale Grind") && txt.includes("Civic Cortado") && txt.includes("$4.25"), "the name and the item on the board");
+      assert(txt.includes("Scan to ask for a quote"), "V4c: the QR code's line");
       assert(await p.frame({ url: /board\.html/ }).evaluate(() => window.LayoutBoard.doc.look.look) === "chalkboard", "Chalkboard");
       await p.selectOption("#board", { index: 1 }); await p.waitForTimeout(2500);
       assert(await p.isVisible("#shape-field"), "the burger board turns: Screen offered");
@@ -2060,7 +2065,7 @@ try {
     assert(await boss.locator("#tab-viewer").isVisible(), "1Point's Viewer tab");
     const rowsText = await boss.textContent("#viewer-rows");
     assert(rowsText.includes("Landmark Business Center") && rowsText.includes("google / cpc / directory-fall") && rowsText.includes("Sent") && rowsText.includes("Phone Test Plaza") && rowsText.includes("Started"), rowsText.slice(0, 500));
-    assert(/^\d+ visits · 2 asked for a quote \(1 sent the form\)$/.test((await boss.textContent("#viewer-summary")).trim()), await boss.textContent("#viewer-summary"));
+    assert(/^\d+ visits · \d+ edited · 2 asked for a quote \(1 sent the form\)$/.test((await boss.textContent("#viewer-summary")).trim()), await boss.textContent("#viewer-summary"));   // (V5: and how many edited)
     await boss.locator("#viewer-rows tr", { hasText: "Landmark Business Center" }).locator("[data-view]").click(); await boss.waitForTimeout(2500);
     const fr = boss.frameLocator("#viewer-dlg-frame");
     const names = await fr.locator(".tenant-name").allTextContents();
@@ -2076,6 +2081,233 @@ try {
     assert(await owner.locator("#tab-viewer").isHidden(), "no Viewer tab for a customer");
     const theirs = await owner.evaluate(async () => (await Auth.db("viewer_visits?select=id")).length);
     assert(theirs === 0, `a customer reads ${theirs} visits`);
+  });
+
+  // ── DP-15 (V5): the full-screen view, Save / Share, and what visitors do from the page's load ──
+  // A stand-in for waytugo.com's page with the V5 hand-off's script: it says it has loaded (/api/viewer-page), hands
+  // its code to the viewer (?load=), makes the frame fill the window when the viewer asks, and sends quotes
+  const PARENT5 = `<!DOCTYPE html><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>waytugo.com (V5 test)</title><body style="margin:0">
+    <div style="height:300px">Intro</div>
+    <iframe id="wv" allow="web-share; fullscreen 'none'" style="width:100%;border:0;height:800px"></iframe><div id="quote-form" style="height:900px">form</div>
+    <script>window.__msgs = []; var frame = document.getElementById("wv"), saved = null;
+      var load = crypto.randomUUID(), src = { page: "/waytugo-viewer", utm_source: "facebook", utm_medium: "paid", utm_campaign: "reel-v1" };
+      navigator.sendBeacon("/api/viewer-page", new Blob([JSON.stringify({ id: load, source: src })], { type: "text/plain" }));
+      window.__load = load;
+      frame.src = "/viewer.html?" + new URLSearchParams({ ...src, load });
+      addEventListener("message", (e) => { if (e.data?.source !== "waytugo-viewer") return; var m = e.data; window.__msgs.push(m);
+        if (m.type === "height" && !saved) frame.style.height = m.px + "px";
+        if (m.type === "full" && m.open) { saved = { css: frame.style.cssText, y: scrollY }; frame.style.cssText = "position:fixed;top:0;left:0;width:100vw;height:100vh;border:0;z-index:2147483000"; document.documentElement.style.overflow = "hidden";
+          e.source.postMessage({ source: "waytugo-site", type: "full-ready" }, e.origin); }
+        if (m.type === "full" && !m.open && saved) { frame.style.cssText = saved.css; document.documentElement.style.overflow = ""; scrollTo(0, saved.y); saved = null; }
+        if (m.type === "quote") setTimeout(() => e.source.postMessage({ source: "waytugo-site", type: "quote-sent", visit: m.visit }, e.origin), 300); });</script>`;
+  const visitOf = async (id) => (await sb(`viewer_visits?id=eq.${id}&select=*`)).data[0];
+
+  await check("V5: embedded: the page's load and the viewer's visit matched, kept before anything is built; an edit counted once per control; See My Directory fills the window (the page's way) with the screen whole; a snapshot each time; Back to Viewer keeps everything; Request a Quote from the full view; a reload carries on the same visit", async () => {
+    const p = await browser.newPage({ viewport: { width: 1280, height: 800 } });
+    const errs = []; p.on("pageerror", (e) => errs.push(String(e)));
+    await p.route(`${B}/parent5.html`, (r) => r.fulfill({ status: 200, contentType: "text/html", body: PARENT5 }));
+    await p.goto(`${B}/parent5.html`); await p.waitForTimeout(2500);
+    const load = await p.evaluate(() => window.__load), v = p.frameLocator("#wv"), vf = p.frame({ url: /viewer\.html/ });
+    const pl = (await sb(`viewer_page_loads?id=eq.${load}&select=*`)).data[0];
+    assert(pl && pl.source.utm_campaign === "reel-v1" && pl.device === "desktop" && pl.browser === "other", JSON.stringify(pl));
+    const id = await vf.evaluate(() => window.Viewer.visit.id);
+    let row = await visitOf(id);
+    assert(row && row.page_load === load && row.events.viewer_page_loaded === 1 && row.events.viewer_initialized === 1 && !row.events.configuration_edited && row.source.utm_campaign === "reel-v1" && row.init_ms > 0, JSON.stringify(row));
+    // edits: a name typed key by key is one edit (when the box is left); the slider one; a tenant's name one
+    await v.locator('input[name="name"]').pressSequentially("Perimeter Park Two", { delay: 10 }); await v.locator('input[name="subtitle"]').click();
+    await v.locator('input[name="tenants"]').fill("12");
+    await v.locator('#rows .vw-row[data-i="0"] input[data-row="name"]').pressSequentially("Acme Dental", { delay: 10 }); await v.locator('input[name="subtitle"]').click();
+    assert(await vf.evaluate(() => window.Viewer.state.ev.configuration_edited) === 3, `3 edits: ${await vf.evaluate(() => JSON.stringify(window.Viewer.state.ev))}`);
+    assert(await vf.evaluate(() => window.Viewer.visit.changes) > 20, "while every key is still a change (the old count)");
+    // See My Directory
+    await v.locator("#see").click(); await p.waitForTimeout(1500);
+    assert((await p.evaluate(() => window.__msgs)).some((m) => m.type === "full" && m.open), "the page asked to fill the window");
+    assert(await vf.evaluate(() => window.Viewer.full.parentFull), "the page said full-ready");
+    const fr = await p.locator("#wv").boundingBox();
+    assert(fr.x === 0 && fr.y === 0 && fr.width === 1280 && fr.height === 800, `the frame fills the window: ${JSON.stringify(fr)}`);
+    const sc = await v.locator("#screen").boundingBox();
+    assert(sc.width > 1000 && sc.y >= 0 && sc.y + sc.height <= 800 && Math.abs(sc.width / sc.height - 16 / 9) < 0.02, `the screen whole, 16:9: ${JSON.stringify(sc)}`);
+    assert(await v.locator("#controls").evaluate((f) => f.inert) && await v.locator("#full-back").isVisible() && await v.locator("#full-quote").isVisible() && await v.locator("#full-save").isVisible(), "the controls hidden away; the three actions");
+    assert((await v.frameLocator("#pv").locator("#property").textContent()).includes("Perimeter Park Two"), "the configuration as it was");
+    await shot(p, "v5-full-embedded");
+    await p.waitForTimeout(800);
+    row = await visitOf(id);
+    assert(row.snapshots.length === 1 && row.snapshots[0].config.name === "Perimeter Park Two" && row.events.full_preview_opened === 1, JSON.stringify(row.snapshots));
+    // Back to Viewer: everything kept; the frame back in the page
+    await v.locator("#full-back").click(); await p.waitForTimeout(800);
+    assert((await p.evaluate(() => window.__msgs)).some((m) => m.type === "full" && !m.open) && (await p.locator("#wv").boundingBox()).width === 1280 && !(await v.locator("#controls").evaluate((f) => f.inert)), "back in the page");
+    assert(await v.locator('input[name="name"]').inputValue() === "Perimeter Park Two" && await v.locator('#rows .vw-row[data-i="0"] input[data-row="name"]').inputValue() === "Acme Dental" && await v.locator('input[name="tenants"]').inputValue() === "12", "the choices kept");
+    // Esc closes it too; another edit, another snapshot
+    await v.locator('input[name="name"]').fill("Perimeter Park One"); await v.locator('input[name="subtitle"]').click();
+    await v.locator("#see").click(); await p.waitForTimeout(800); await p.keyboard.press("Escape"); await p.waitForTimeout(600);
+    assert(await vf.evaluate(() => !window.Viewer.full.open), "Esc goes back");
+    await v.locator("#see").click(); await p.waitForTimeout(800);
+    // Request a Quote from the full view: it closes, the page gets the configuration; the page says its form was sent
+    await v.locator("#full-quote").click(); await p.waitForTimeout(1500);
+    assert(await vf.evaluate(() => !window.Viewer.full.open), "the full view closes for the form");
+    const quote = (await p.evaluate(() => window.__msgs)).find((m) => m.type === "quote");
+    assert(quote && quote.visit === id && quote.summary.startsWith("Building directory · Perimeter Park One · 12 tenants (1 typed in)"), JSON.stringify(quote));
+    await p.waitForTimeout(800);
+    row = await visitOf(id);
+    assert(row.quote === "sent" && row.events.quote_form_opened === 1 && row.events.quote_submitted === 1 && row.events.full_preview_opened === 3 && row.events.full_preview_closed === 3, JSON.stringify(row.events));
+    assert(row.snapshots.length === 2 && row.snapshots[1].config.name === "Perimeter Park One", "the same choices twice in a row kept once: " + row.snapshots.map((x) => x.config.name).join(", "));
+    const told = (await p.evaluate(() => window.__msgs)).filter((m) => m.type === "event").map((m) => m.name);
+    for (const n of ["viewer_initialized", "configuration_edited", "full_preview_opened", "full_preview_closed", "quote_form_opened", "quote_submitted"]) assert(told.includes(n), `${n} told to the page`);
+    assert(told.filter((n) => n === "configuration_edited").length === 1, "the page hears of the first edit only");
+    // a reload of the page: the same visit, a second page load
+    await p.reload(); await p.waitForTimeout(2500);
+    const vf2 = p.frame({ url: /viewer\.html/ });
+    assert(await vf2.evaluate(() => window.Viewer.visit.id) === id, "the same visit after a reload");
+    row = await visitOf(id);
+    assert(row.events.viewer_page_loaded === 2 && row.page_load === load && row.quote === "sent", JSON.stringify(row.events));
+    assert(row.config.name === "Perimeter Park One", `the choices built before the reload stay the visit's: ${row.config.name}`);
+    assert((await sb("viewer_page_loads?select=id")).data.length >= 2, "both page loads");
+    assert(errs.length === 0, errs.join(" | "));
+    await p.close();
+  });
+
+  await check("V5: embedded in a page that hasn't the V5 script yet: the full view still covers the part of the frame the visitor can see", async () => {
+    const p = await browser.newPage({ viewport: { width: 1280, height: 800 } });
+    // (an iPhone: no full screen for the frame; same site here, so it's switched off as waytugo.com's would be)
+    await p.route(`${B}/parent-test.html`, (r) => r.fulfill({ status: 200, contentType: "text/html", body: PARENT.replace('<iframe id="wv"', `<iframe id="wv" allow="fullscreen 'none'"`) }));
+    await p.goto(`${B}/parent-test.html`); await p.waitForTimeout(2500);
+    const v = p.frameLocator("#wv");
+    await p.evaluate(() => scrollTo(0, 200)); await p.waitForTimeout(300);
+    await v.locator("#see").click(); await p.waitForTimeout(1500);
+    const bg = await v.locator("#full-bg").boundingBox(), sc = await v.locator("#screen").boundingBox(), back = await v.locator("#full-back").boundingBox(), save = await v.locator("#full-save").boundingBox();
+    for (const [n, b] of [["background", bg], ["screen", sc], ["back", back], ["save", save]]) assert(b.y >= -1 && b.y + b.height <= 801, `${n} in view: ${JSON.stringify(b)}`);
+    assert(bg.height >= 700, `most of the window: ${bg.height}`);
+    await v.locator("#full-back").click(); await p.waitForTimeout(500);
+    await p.close();
+  });
+
+  await check("V5: Save / Share on a phone: the picture (the real screen at 1920 × 1080 in WayTuGo's frame, the visitor's own logo in it, never sent), Download Image, Share where the phone can (finished, or cancelled), a turn-sideways note; the menu board too (See My Menu Board)", async () => {
+    const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true, acceptDownloads: true,
+      userAgent: "Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Mobile Safari/537.36" });
+    await ctx.addInitScript(() => { navigator.canShare = () => true; navigator.share = async (d) => { window.__shared = d; if (window.__cancel) throw new DOMException("cancelled", "AbortError"); }; });
+    const p = await ctx.newPage();
+    const sent = []; p.on("request", (r) => { if (r.url().includes("/api/")) sent.push(r.postData() || ""); });
+    const errs = []; p.on("pageerror", (e) => errs.push(String(e)));
+    await p.goto(`${B}/viewer.html`); await p.waitForTimeout(2000);
+    await p.fill('input[name="name"]', "Café O'Henry Plaza"); await p.check('input[name="logo"]');
+    const png = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAIAAAACCAYAAABytg0kAAAAFklEQVR4nGP8z8DwnwEJMDGgAaAPAC2QAgSVQ6rFAAAAAElFTkSuQmCC", "base64");
+    const [chooser] = await Promise.all([p.waitForEvent("filechooser"), p.click('.vw-pic[data-pic="logo"] [data-own]')]);
+    await chooser.setFiles({ name: "my-logo.png", mimeType: "image/png", buffer: png }); await p.waitForTimeout(1000);
+    await p.click("#see"); await p.waitForTimeout(1200);
+    const sc = await p.locator("#screen").boundingBox();
+    assert(sc.x >= 0 && sc.x + sc.width <= 390 && sc.width > 340, `the screen across the phone: ${JSON.stringify(sc)}`);
+    assert(await p.isVisible("#full-turn"), "turn sideways for a bigger view");
+    const scroll = await p.evaluate(() => document.documentElement.scrollWidth); assert(scroll <= 390, `no sideways scrolling: ${scroll}`);
+    await p.click("#full-save");
+    await p.waitForFunction(() => !document.getElementById("sheet-download").disabled || document.getElementById("sheet-msg").classList.contains("bad"), null, { timeout: 30000 });
+    assert(!(await p.locator("#sheet-msg").evaluate((m) => m.classList.contains("bad"))), await p.textContent("#sheet-msg"));
+    assert(await p.isVisible("#sheet-share") && /press and hold/.test(await p.textContent("#sheet-msg")), "Share offered; press and hold mentioned");
+    await shot(p, "v5-save-share-phone");
+    const [dl] = await Promise.all([p.waitForEvent("download"), p.click("#sheet-download")]);
+    assert(dl.suggestedFilename() === "waytugo-cafe-o-henry-plaza.png", dl.suggestedFilename());
+    const file = readFileSync(await dl.path());
+    assert(file.subarray(1, 4).toString() === "PNG" && file.readUInt32BE(16) === 2048 && file.readUInt32BE(20) === 1362, `a PNG, 2048 × 1362: ${file.readUInt32BE(16)} × ${file.readUInt32BE(20)}`);
+    // the picture is the real screen: its own logo (from the page) is in the picture's markup, and nothing was sent with it
+    assert(!sent.some((b) => b.includes("data:image")), "their logo never sent");
+    await p.click("#sheet-share"); await p.waitForTimeout(500);
+    const shared = await p.evaluate(() => ({ n: window.__shared?.files?.length, name: window.__shared?.files?.[0]?.name, text: window.__shared?.text }));
+    assert(shared.n === 1 && shared.name === "waytugo-cafe-o-henry-plaza.png" && shared.text.includes("waytugo.com/waytugo-viewer?utm_source=viewer_share"), JSON.stringify(shared));
+    await p.evaluate(() => { window.__cancel = true; }); await p.click("#sheet-share"); await p.waitForTimeout(500);
+    assert((await p.textContent("#sheet-msg")).includes("Not shared"), "cancelled");
+    const ev = await p.evaluate(() => window.Viewer.state.ev);
+    assert(ev.directory_image_downloaded === 1 && ev.directory_share_initiated === 2 && ev.directory_share_completed === 1, JSON.stringify(ev));
+    await p.waitForTimeout(800);
+    const row = await visitOf(await p.evaluate(() => window.Viewer.visit.id));
+    assert(row.events.directory_share_completed === 1 && row.device === "phone" && row.config.logo === "own", JSON.stringify(row.events));
+    await p.click("#sheet-close"); await p.click("#full-back"); await p.waitForTimeout(400);
+    // the menu board: See My Menu Board, and its picture
+    const seeded = await seedTemplates(sb);
+    try {
+      await p.check('input[name="kind"][value="menu"]'); await p.waitForTimeout(3500);
+      assert((await p.textContent("#see-label")).trim() === "See My Menu Board", await p.textContent("#see-label"));
+      const wide = await p.evaluate(() => document.documentElement.scrollWidth); assert(wide <= 390, `no sideways scrolling on the menu board either (V4's long board names): ${wide}`);
+      await p.click("#see"); await p.waitForTimeout(1200);
+      await p.click("#full-save");
+      await p.waitForFunction(() => !document.getElementById("sheet-download").disabled || document.getElementById("sheet-msg").classList.contains("bad"), null, { timeout: 30000 });
+      assert(!(await p.locator("#sheet-msg").evaluate((m) => m.classList.contains("bad"))), await p.textContent("#sheet-msg"));
+      const size = await p.evaluate(() => ({ s: window.Viewer.full.file.size, n: window.Viewer.full.file.name }));
+      assert(size.s > 50000 && size.n === "waytugo-cafe-o-henry-plaza.png", JSON.stringify(size));
+      await shot(p, "v5-menu-save");
+    } finally {
+      for (const b of seeded.boards) { await sb(`layouts?id=eq.${b.layout.id}`, { method: "DELETE" }); await sb(`menus?id=eq.${b.menu.id}`, { method: "DELETE" }); }
+    }
+    assert(errs.length === 0, errs.join(" | "));
+    await ctx.close();
+  });
+
+  await check("V5: hard conditions: on a slow phone network the visit is kept before the viewer is ready (and how long it took); sends that fail are tried again and counted; where the viewer's code can't load or run, the visit still says the page came and that it failed; true full screen where the page allows it", async () => {
+    // slow 3G (about 400 kb/s, 400 ms each way)
+    const p = await browser.newPage({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true });
+    const cdp = await p.context().newCDPSession(p);
+    await cdp.send("Network.emulateNetworkConditions", { offline: false, latency: 400, downloadThroughput: 50000, uploadThroughput: 50000 });
+    let fail = 2;   // the first two sends after the page's own are lost
+    await p.route(`${B}/api/viewer`, (r) => { const b = r.request().postData() || ""; if (!b.includes('"config":null') && fail > 0) { fail--; return r.abort("failed"); } return r.continue(); });
+    const t0 = Date.now();
+    await p.goto(`${B}/viewer.html?utm_source=slowtest`, { timeout: 120000 }); await p.waitForFunction(() => window.Viewer?.visit?.inited, null, { timeout: 120000 });
+    const id = await p.evaluate(() => window.Viewer.visit.id);
+    await cdp.send("Network.emulateNetworkConditions", { offline: false, latency: 0, downloadThroughput: -1, uploadThroughput: -1 });
+    await p.fill('input[name="name"]', "Slow Network Plaza"); await p.click('input[name="subtitle"]');
+    await p.waitForTimeout(9000);
+    const row = await visitOf(id);
+    assert(row && row.events.viewer_page_loaded === 1 && row.events.viewer_initialized === 1 && row.init_ms > 1000 && row.failures >= 1 && row.config?.name === "Slow Network Plaza", `${Date.now() - t0} ms: ${JSON.stringify({ ev: row?.events, init: row?.init_ms, failures: row?.failures, name: row?.config?.name })}`);
+    await p.close();
+    // the viewer's code doesn't load (an old or broken browser): the page's first script still counts the visit, and the failure
+    const q = await browser.newPage();
+    await q.route(`${B}/viewer.js`, (r) => r.fulfill({ status: 200, contentType: "text/javascript", body: "this is not javascript (" }));
+    await q.goto(`${B}/viewer.html?utm_source=brokentest`); await q.waitForTimeout(2500);
+    const broken = (await sb("viewer_visits?select=*")).data.find((r) => r.source?.utm_source === "brokentest");
+    assert(broken && broken.config === null && broken.events.viewer_page_loaded === 1 && broken.events.viewer_error === 1 && !broken.events.viewer_initialized, JSON.stringify(broken));
+    await q.close();
+    // true full screen where the page allows it (the same site here; waytugo.com with allow="fullscreen")
+    const f = await browser.newPage({ viewport: { width: 1280, height: 800 } });
+    await f.route(`${B}/parent-test.html`, (r) => r.fulfill({ status: 200, contentType: "text/html", body: PARENT }));
+    await f.goto(`${B}/parent-test.html`); await f.waitForTimeout(2500);
+    const vf = f.frame({ url: /viewer\.html/ });
+    await f.frameLocator("#wv").locator("#see").click(); await f.waitForTimeout(1200);
+    assert(await vf.evaluate(() => window.Viewer.full.native && !!document.fullscreenElement), "the browser's own full screen");
+    await f.keyboard.press("Escape"); await f.waitForTimeout(800);
+    if (await vf.evaluate(() => window.Viewer.full.open)) await f.frameLocator("#wv").locator("#full-back").click();
+    assert(await vf.evaluate(() => !window.Viewer.full.open && !document.fullscreenElement), "and back");
+    await f.close();
+    // (these test visits aren't wanted in the console's figures)
+    for (const r of (await sb("viewer_visits?select=id,source")).data.filter((x) => ["slowtest", "brokentest"].includes(x.source?.utm_source))) await sb(`viewer_visits?id=eq.${r.id}`, { method: "DELETE" });
+  });
+
+  await check("V5: the console's Viewer tab: the funnel (page loads on waytugo.com, visits, edited, full screen, saved or shared, quotes), page loads with no visit, by ad source with page loads, by device and browser, what each did, page-load-only visits hidden until ticked, snapshots in View, engaged by edits, the CSV", async () => {
+    // a Facebook-browser visitor on an iPhone who looked and left, and a page load whose viewer never started
+    const FB = "Mozilla/5.0 (iPhone; CPU iPhone OS 17_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148 [FBAN/FBIOS;FBAV/470.0]";
+    const look = crypto.randomUUID(), lonely = crypto.randomUUID();
+    await fetch(`${B}/api/viewer`, { method: "POST", headers: { "user-agent": FB }, body: JSON.stringify({ id: look, config: null, events: { viewer_page_loaded: 1, viewer_initialized: 1 }, source: { page: "/waytugo-viewer", utm_source: "facebook", utm_medium: "paid" } }) });
+    await fetch(`${B}/api/viewer-page`, { method: "POST", headers: { "user-agent": FB, "content-type": "text/plain" }, body: JSON.stringify({ id: lonely, source: { page: "/waytugo-viewer", utm_source: "facebook", utm_medium: "paid" } }) });
+    await boss.goto(`${B}/console.html#viewer`); await boss.reload(); await boss.waitForTimeout(3000);
+    const bd = await boss.textContent("#viewer-breakdown");
+    assert(bd.includes("Page loads on waytugo.com") && bd.includes("Full screen") && bd.includes("Saved or shared") && bd.includes("Quote sent") && /page loads? on waytugo\.com had no viewer visit/.test(bd), bd.slice(0, 600));
+    assert(bd.includes("By ad source") && bd.includes("facebook / paid") && bd.includes("By device and browser") && bd.includes("Phone · Facebook browser") && bd.includes("By location type"), "the tables");
+    const rows = await boss.textContent("#viewer-rows");
+    assert(rows.includes("Perimeter Park One") && rows.includes("Full screen ×3") && rows.includes("Shared") && rows.includes("Downloaded") && rows.includes("Desktop") && !rows.includes(look.slice(0, 8).toUpperCase()), `built visits, what they did; the look-and-leave visit hidden: ${rows.replace(/\s+/g, " ").slice(0, 1500)}`);
+    await boss.check("#viewer-all"); await boss.waitForTimeout(300);
+    const all = await boss.textContent("#viewer-rows");
+    assert(all.includes(look.slice(0, 8).toUpperCase()) && all.includes("(the viewer didn't start)") && all.includes("Phone · Facebook browser"), "shown when ticked");
+    await boss.uncheck("#viewer-all");
+    // View: the last choices, and each full-screen opening's
+    await boss.locator("#viewer-rows tr", { hasText: "Perimeter Park One" }).locator("[data-view]").click(); await boss.waitForTimeout(2500);
+    assert(await boss.locator("#viewer-dlg-snaps [data-snap]").count() === 3, "Last choices and two snapshots");
+    await boss.locator('#viewer-dlg-snaps [data-snap="0"]').click(); await boss.waitForTimeout(1500);
+    assert((await boss.frameLocator("#viewer-dlg-frame").locator("#property").textContent()).includes("Perimeter Park Two") && (await boss.textContent("#viewer-dlg-line")).includes("full screen at"), "the first snapshot redrawn");
+    await shot(boss, "v5-console-snapshot");
+    await boss.click("#viewer-dlg button[value=close]");
+    await shot(boss, "v5-console-funnel");
+    const [dl] = await Promise.all([boss.waitForEvent("download"), boss.click("#viewer-csv")]);
+    const csv = readFileSync(await dl.path(), "utf8"), head = csv.split("\r\n")[0];
+    assert(head.endsWith("last_active,device,browser,page_loads,viewer_started,start_ms,edits,full_previews,downloads,shares_started,shares_completed,quote_opened,quote_sent,snapshots,send_failures,viewer_failed,from_page_load") && csv.includes("facebook"), head);
+    // engaged: 30 s and 2 edits (V5); a V5 visit with 9 keystroke changes but 1 edit isn't
+    const e1 = await boss.evaluate(async () => { const m = await import("/console-viewer.js"); return [m.engaged({ seconds: 40, changes: 9, events: { viewer_page_loaded: 1, configuration_edited: 1 } }), m.engaged({ seconds: 40, changes: 1, events: { configuration_edited: 2 } }), m.engaged({ seconds: 40, changes: 3 })]; });
+    assert(JSON.stringify(e1) === "[false,true,true]", JSON.stringify(e1));
   });
 
   await owner.close(); await boss.close();

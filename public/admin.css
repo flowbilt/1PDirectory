@@ -568,3 +568,14 @@ body .me-offline { color: #ffd27a; font-weight: 700; }
 .viewer-bd table.compact td, .viewer-bd table.compact th { padding: 4px 10px; font-size: 13px; }
 a.button-link { display: inline-flex; align-items: center; padding: 8px 12px; border-radius: 8px; text-decoration: none; }
 .muted { color: var(--muted); }
+/* V5 (DP-15): the Viewer tab's funnel, what each visit did, the snapshots in View */
+.viewer-funnel { display: flex; flex-wrap: wrap; gap: 8px; flex-basis: 100%; }
+.viewer-step { min-width: 110px; padding: 8px 12px; border: 1px solid #d9dee5; border-radius: 10px; background: #fff; }
+.viewer-step-n { font-size: 22px; font-weight: 700; }
+.viewer-step-l { font-size: 13px; }
+.viewer-did { display: inline-block; padding: 1px 7px; margin: 1px 0; border-radius: 999px; font-size: 12px; background: #e6eefb; color: #173e7a; white-space: nowrap; }
+.viewer-did.bad { background: #fde3e1; color: #8a1c12; }
+tr.viewer-load-only td { color: #7a8594; }
+.viewer-all { display: inline-flex; align-items: center; gap: 6px; font-size: 14px; }
+.viewer-dlg-snaps { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin: 4px 0; }
+.viewer-dlg-snaps button.on { outline: 2px solid #2f6fd6; }

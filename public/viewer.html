@@ -5,6 +5,47 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="robots" content="noindex">
 <title>See Your WayTuGo in Action</title>
+<!-- V5 (DP-15): the visit is kept from the moment this page loads, before anything else runs, in the plainest script
+     (so an old browser that can't run the viewer still says it came, and that it failed). The visit's code and counts
+     stay in this tab's own storage (cleared when the tab closes; no cookie), so a reload carries on the same visit.
+     viewer.js takes it from here (window.__wtg). See README "V5". -->
+<script>
+(function () {
+  var K = "wtg-viewer-visit", now = Date.now(), s = null;
+  function uuid() {
+    if (window.crypto && crypto.randomUUID) return crypto.randomUUID();
+    var b = new Uint8Array(16), c = window.crypto || window.msCrypto, h = [], i;
+    if (c && c.getRandomValues) c.getRandomValues(b); else for (i = 0; i < 16; i++) b[i] = Math.floor(Math.random() * 256);
+    b[6] = (b[6] & 15) | 64; b[8] = (b[8] & 63) | 128;
+    for (i = 0; i < 16; i++) h.push((b[i] + 256).toString(16).slice(1));
+    h = h.join(""); return h.slice(0, 8) + "-" + h.slice(8, 12) + "-" + h.slice(12, 16) + "-" + h.slice(16, 20) + "-" + h.slice(20);
+  }
+  try { s = JSON.parse(window.sessionStorage.getItem(K) || "null"); } catch (e) { s = null; }
+  // a visit can be added to for a day (the database's rule): after 20 hours in the same tab, a new one
+  if (!s || !s.id || !s.ev || !(now - s.t < 72e6)) s = { id: uuid(), t: now, ev: {}, seconds: 0, changes: 0, quote: null, failures: 0, initMs: null };
+  s.ev.viewer_page_loaded = (s.ev.viewer_page_loaded || 0) + 1;
+  window.__wtg = s;
+  var save = function () { try { window.sessionStorage.setItem(K, JSON.stringify(s)); } catch (e) { /* this tab only, then */ } };
+  save();
+  var q = {}, parts = location.search.replace(/^\?/, "").split("&"), src = {}, keys = ["page", "utm_source", "utm_medium", "utm_campaign", "utm_content", "utm_term"];
+  for (var i = 0; i < parts.length; i++) { var kv = parts[i].split("="); try { if (kv[0]) q[decodeURIComponent(kv[0])] = decodeURIComponent((kv[1] || "").replace(/\+/g, " ")); } catch (e) { /* skipped */ } }
+  for (i = 0; i < keys.length; i++) if (q[keys[i]]) src[keys[i]] = q[keys[i]].slice(0, 200);
+  var load = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(q.load || "") ? q.load : null;
+  window.__wtgSource = src; window.__wtgLoad = load;
+  var send = function () {
+    var body = JSON.stringify({ id: s.id, config: null, events: s.ev, source: src, load: load, seconds: 0, changes: 0, failures: s.failures || 0 });
+    try {
+      if (window.fetch) window.fetch("/api/viewer", { method: "POST", body: body, headers: { "Content-Type": "application/json" }, keepalive: true }).catch(function () { s.failures = (s.failures || 0) + 1; save(); });
+      else { var x = new XMLHttpRequest(); x.open("POST", "/api/viewer"); x.setRequestHeader("Content-Type", "application/json"); x.send(body); }
+    } catch (e) { /* counted as a failure next time */ }
+  };
+  send();
+  // the page fails before the viewer starts (its code doesn't load or doesn't run here): counted, no message kept
+  window.__wtgFailed = function () { if (window.__wtgStarted || s.ev.viewer_error) return; s.ev.viewer_error = 1; save(); send(); };
+  window.addEventListener("error", function (e) { if (e.target === window || (e.target && e.target.tagName === "SCRIPT")) window.__wtgFailed(); }, true);
+})();
+</script>
+<script nomodule>window.__wtgFailed && window.__wtgFailed();</script>
 <link rel="preload" href="/fonts/InstrumentSans-Bold.ttf" as="font" type="font/ttf" crossorigin>
 <link rel="stylesheet" href="/viewer.css">
 </head>
@@ -112,7 +153,7 @@
 
       <div class="vw-cta">
         <button type="button" class="vw-quote" id="quote">Request a Quote for This Configuration</button>
-        <p class="vw-fine">What you build here is saved without your name so we can see what visitors look for.</p>
+        <p class="vw-fine">Your visit and what you build here are kept without your name, so we can see what visitors look for.</p>
         <div class="vw-direct" id="direct" hidden>
           <p>Call <a href="tel:+12057010191">205-701-0191</a> or email <a href="mailto:info@1pointusa.com">info@1pointusa.com</a> and mention your configuration code <strong id="code"></strong>.</p>
         </div>
@@ -124,10 +165,41 @@
       <div class="vw-screen" id="screen">
         <iframe id="pv" title="Your WayTuGo directory (sample)" src="/index.html?preview=1" tabindex="-1"></iframe>
       </div>
+      <!-- V5 (DP-15): the screen full size, as a finished directory -->
+      <div class="vw-see">
+        <button type="button" class="vw-see-btn" id="see"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/></svg><span id="see-label">See My Directory</span></button>
+        <span class="vw-see-line" id="see-line">View your directory full screen.</span>
+      </div>
       <p class="vw-hint" id="hint">Sample names, suites and phone numbers are invented for this preview.</p>
     </section>
   </div>
 </main>
+
+<!-- V5: the full-screen view. Its background, then (above the screen) the bars and the Save / Share sheet; the screen
+     itself is the preview above, moved over the background, so nothing is redrawn and the touch directory still taps -->
+<div class="vw-full-bg" id="full-bg" hidden></div>
+<div class="vw-full" id="full" hidden role="dialog" aria-modal="true" aria-labelledby="full-title">
+  <div class="vw-full-top">
+    <button type="button" class="vw-back" id="full-back"><span aria-hidden="true">‹</span> Back to Viewer</button>
+    <span class="vw-full-title" id="full-title">Your directory · sample preview</span>
+    <span class="vw-full-turn" id="full-turn" hidden>Turn your phone sideways for a bigger view</span>
+  </div>
+  <div class="vw-full-actions">
+    <button type="button" class="vw-quote" id="full-quote">Request a Quote</button>
+    <button type="button" class="vw-save" id="full-save">Save / Share</button>
+  </div>
+  <div class="vw-sheet" id="sheet" hidden role="dialog" aria-modal="true" aria-labelledby="sheet-title">
+    <h2 id="sheet-title">Save or share your preview</h2>
+    <div class="vw-sheet-pic"><img id="sheet-img" alt="Your preview as a picture"></div>
+    <p class="vw-sheet-msg" id="sheet-msg" role="status"></p>
+    <div class="vw-sheet-actions">
+      <button type="button" class="vw-quote" id="sheet-download" disabled>Download Image</button>
+      <button type="button" class="vw-save" id="sheet-share" disabled hidden>Share…</button>
+    </div>
+    <p class="vw-sheet-note" id="sheet-note">Made on your device as a concept preview. Nothing is uploaded or kept by us.</p>
+    <button type="button" class="vw-link vw-sheet-close" id="sheet-close">Close</button>
+  </div>
+</div>
 <script type="module" src="/viewer.js"></script>
 </body>
 </html>

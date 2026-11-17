@@ -264,16 +264,17 @@
       <div class="summary" id="viewer-summary"></div>
       <div class="toolbar-controls">
         <select id="viewer-days" aria-label="Visits from"><option value="7">Last 7 days</option><option value="30" selected>Last 30 days</option><option value="90">Last 90 days</option><option value="0">All</option></select>
+        <label class="viewer-all"><input type="checkbox" id="viewer-all"> Show page loads too</label>
         <button type="button" class="ghost" id="viewer-csv">Download CSV</button>
         <a class="ghost button-link" href="/viewer.html" target="_blank" rel="noopener">Open the viewer ↗</a>
       </div>
     </div>
-    <p class="hint">Each visit that built something, without a name: what the visitor chose, how long they spent, the page or ad that brought them, and whether they asked for a quote. <strong>View</strong> redraws it exactly as they saw it.</p>
+    <p class="hint">Each visit, without a name, from the moment the viewer's page loads (DP-15, V5): what the visitor chose, how long they spent, what they did (full screen, saved or shared, quote), the page or ad that brought them, and the device and browser as a category. The list shows visits that built something; tick <strong>Show page loads too</strong> for the rest. <strong>View</strong> redraws a visit exactly as they saw it, and as it was each time they opened the full-screen view.</p>
     <!-- V3: the visits by location type and by where they came from (self-chosen types, not verified) -->
     <div class="viewer-breakdown" id="viewer-breakdown"></div>
     <div class="table-wrap">
       <table class="grid">
-        <thead><tr><th>When</th><th>Display</th><th>Location type</th><th>Building name</th><th>Tenants</th><th>Screen</th><th>Extras</th><th>Time</th><th>From</th><th>Quote</th><th><span class="sr-only">Actions</span></th></tr></thead>
+        <thead><tr><th>When</th><th>Display</th><th>Location type</th><th>Building name</th><th>Tenants</th><th>Screen</th><th>Extras</th><th>Time</th><th>Device</th><th>From</th><th>Did</th><th>Quote</th><th><span class="sr-only">Actions</span></th></tr></thead>
         <tbody id="viewer-rows"></tbody>
       </table>
     </div>
@@ -284,6 +285,7 @@
   <form method="dialog">
     <h2 id="viewer-dlg-title"></h2>
     <p class="hint" id="viewer-dlg-line"></p>
+    <div class="viewer-dlg-snaps" id="viewer-dlg-snaps"></div>
     <div class="viewer-dlg-screen" id="viewer-dlg-screen"><iframe id="viewer-dlg-frame" title="The visitor's preview"></iframe></div>
     <div class="dialog-actions"><button value="close" class="primary">Close</button></div>
   </form>
