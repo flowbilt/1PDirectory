@@ -149,6 +149,9 @@
   // into a menu, so a passer-by can't leave the screen in a mess. On every screen (harmless without touch); the
   // styles are in each page's CSS. The touch directory opens its own taps on purpose. ──
   function lockdown() {
+    // V5c (DP-15): not in a preview (the viewer on waytugo.com, the editor, the console's View): there the page holding
+    // it decides, and on a phone a swipe over the preview must scroll that page. Screens are unchanged.
+    if (PREVIEW) { document.documentElement.classList.add("is-preview"); return; }
     for (const type of ["contextmenu", "selectstart", "dragstart", "gesturestart"]) document.addEventListener(type, (e) => e.preventDefault());
     document.addEventListener("touchmove", (e) => { if (e.touches.length > 1) e.preventDefault(); }, { passive: false });   // no pinch
     document.addEventListener("wheel", (e) => { if (e.ctrlKey) e.preventDefault(); }, { passive: false });                  // no pinch on a touchpad

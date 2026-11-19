@@ -21,12 +21,15 @@
 //   { source: "waytugo-viewer", type: "full", open }           please make the frame fill the window (or put it back)
 //   and from it: { source: "waytugo-site", type: "full-ready" } done (the frame fills the window)
 import { normalizeConfig, sampleDirectory, sampleRows, summary, typeSamples, menuDraft, menuRows, imageName, KINDS, LIMITS, SLIDER_MAX, MENU_LOOKS } from "/viewer-sample.mjs";
-import { makePicture } from "/viewer-snap.mjs";
+// (V5c: viewer-snap.mjs, the picture maker, is loaded only when Save / Share is opened: less to load before the preview)
 
 const $ = (id) => document.getElementById(id);
 const form = $("controls"), frame = $("pv"), box = $("screen");
 const ALLOWED = [/^https:\/\/(www\.)?waytugo\.com$/, /^https:\/\/(www\.)?1pointusa\.com$/, /^https:\/\/[a-z0-9-]+(--[a-z0-9-]+)?\.netlify\.app$/, /^http:\/\/localhost(:\d+)?$/];
 const embedded = window.parent !== window;
+// V5c: a phone-sized page (as the phone layout's CSS: a strip of preview, the controls folded, a bottom bar)
+const phoneMQ = matchMedia("(max-width: 760px)");
+function phone() { return phoneMQ.matches; }
 const parentOrigin = (() => {
   if (!embedded) return null;
   const o = location.ancestorOrigins?.[0] || (() => { try { return new URL(document.referrer).origin; } catch { return ""; } })();
@@ -58,7 +61,7 @@ function edited() { ev("configuration_edited", { page: !V.edited }); V.edited = 
 const typed = Array.from({ length: SLIDER_MAX }, () => ({ name: "", suite: "" }));
 const own = { logo: null, photo: null };   // { url, name }
 // V5: the full-screen view: open, the frame filled by the page (true full screen or the page's own), the picture made
-const F = { open: false, parentFull: false, native: false, visible: null, io: null, pic: null, file: null, url: "", making: null };
+const F = { open: false, parentFull: false, native: false, visible: null, io: null, hist: false, pic: null, file: null, url: "", making: null };
 
 // V4: the menu board: WayTuGo's template shops and their boards (read live), the board drawn now, the items typed over
 // its samples
@@ -142,7 +145,9 @@ function fit() {
   // Embedded, the frame grows to fit this page, so its height can't size the preview (it would grow with it): the
   // visitor's own screen does, within 900 px
   const tall = embedded ? Math.min(window.screen?.availHeight || 900, 1100) : window.innerHeight;
-  const avail = box.parentElement.clientWidth - 20, maxH = Math.min(900, Math.max(320, tall * (window.innerWidth <= 860 ? 0.62 : 0.8)));
+  // V5c: on a phone, a strip about a third of the screen (the controls come straight after it)
+  const share = phone() ? 0.36 : window.innerWidth <= 860 ? 0.62 : 0.8;
+  const avail = box.parentElement.clientWidth - 20, maxH = Math.min(900, Math.max(phone() ? 180 : 320, tall * share));
   const s = Math.min(avail / W, maxH / H);
   box.style.width = `${Math.round(W * s)}px`; box.style.height = `${Math.round(H * s)}px`;
   box.style.marginLeft = box.style.marginRight = "auto";
@@ -156,14 +161,15 @@ function draw() {
     form.dataset.kind = c.kind;
     // the preview: the directory screen, or (V4) the board page
     const want = menu ? "/board.html?preview=1" : "/index.html?preview=1";
-    if (frame.getAttribute("src") !== want) { frame.setAttribute("src", want); return; }   // drawn again when it's loaded
+    if (frame.getAttribute("src") !== want) { startPreview(want); return; }   // drawn again when it's loaded
+    if (!PV.ready) return;   // V5c: not loaded yet (its load, or its "ready" message, draws it)
     if (menu) {
       const b = boardOf(c.board);
       $("shape-field").hidden = !!b && !b.turns;
       form.elements.name.placeholder = M.payload?.brand?.name ? `e.g. ${M.payload.brand.name}` : "e.g. Main Street Grill";
       $("hint").textContent = "A sample menu from WayTuGo: the items and prices are examples. Your board is made from your own menu.";
       fit();
-      if (M.payload) frame.contentWindow?.postMessage({ type: "layout-draft", data: menuDraft(M.payload, c, { ownLogo: own.logo?.url || "" }) }, location.origin);
+      if (M.payload) { frame.contentWindow?.postMessage({ type: "layout-draft", data: menuDraft(M.payload, c, { ownLogo: own.logo?.url || "" }) }, location.origin); previewDrawn(); initialized(); }
       seeLabel(c);
       if (V.changes > 0 && !V.previewTold) { V.previewTold = true; tell({ type: "event", name: "viewer_preview_shown", kind: c.kind }); }
       return;
@@ -177,13 +183,34 @@ function draw() {
     fit();
     frame.contentWindow?.postMessage({ type: "draft", data: sampleDirectory(c, { ownLogo: own.logo?.url || "", ownPhoto: own.photo?.url || "" }) }, location.origin);
     seeLabel(c);
-    initialized();
+    previewDrawn(); initialized();
     if (V.changes > 0 && !V.previewTold) { V.previewTold = true; tell({ type: "event", name: "viewer_preview_shown", kind: c.kind }); }
   }, 120);
 }
-frame.addEventListener("load", draw);
+// ── V5c: the preview's first draw. The frame's address is set here, once this is listening (it was in the page, so
+// the screen could finish loading before this code had started, and stayed blank until the visitor changed
+// something). The screen page also says when it's ready ("preview-ready"; the board page "layout-ready"). Loading…
+// shows until it's drawn; after 15 seconds without it, "The preview didn't load" with Try again (counted as
+// viewer_error).
+const PV = { want: "", ready: false, drawn: false, timer: 0 };
+function startPreview(want) {
+  Object.assign(PV, { want, ready: false, drawn: false });
+  $("pv-error").hidden = true; $("pv-loading").hidden = false; box.classList.add("pv-wait");
+  clearTimeout(PV.timer); PV.timer = setTimeout(previewFailed, 15000);
+  frame.setAttribute("src", want);
+}
+function previewDrawn() { if (PV.drawn) return; PV.drawn = true; clearTimeout(PV.timer); $("pv-loading").hidden = true; $("pv-error").hidden = true; box.classList.remove("pv-wait"); }
+function previewFailed() {
+  if (PV.drawn) return;
+  $("pv-loading").hidden = true; $("pv-error").hidden = false;
+  ev("viewer_error", { page: false }); keep(true);
+}
+$("pv-retry").addEventListener("click", () => { frame.removeAttribute("src"); draw(); });
+const isWanted = () => { try { const l = frame.contentWindow.location; return !!PV.want && `${l.pathname}${l.search}` === PV.want; } catch { return false; } };
+frame.addEventListener("load", () => { if (isWanted()) { PV.ready = true; draw(); } });
+window.addEventListener("message", (e) => { if (e.origin === location.origin && e.source === frame.contentWindow && e.data?.type === "preview-ready" && isWanted()) { PV.ready = true; draw(); } });
 // V4: the board page says when it's ready for its board
-window.addEventListener("message", (e) => { if (e.origin === location.origin && e.source === frame.contentWindow && e.data?.type === "layout-ready") draw(); });
+window.addEventListener("message", (e) => { if (e.origin === location.origin && e.source === frame.contentWindow && e.data?.type === "layout-ready" && isWanted()) { PV.ready = true; draw(); } });
 
 // ── V4: the menu board ──
 // V4b (Scot's templates: several shops' boards share one menu, "WayTuGo Templates: menu"): one dropdown of every
@@ -316,6 +343,10 @@ window.addEventListener("message", (e) => {
   if (e.origin !== parentOrigin || e.data?.source !== "waytugo-site") return;
   if (e.data.type === "quote-sent" && e.data.visit === V.id) { V.quote = "sent"; ev("quote_submitted"); keep(true); }
   if (e.data.type === "full-ready" && F.open) { F.parentFull = true; layoutFull(); }   // V5: the frame fills the window
+  if (e.data.type === "viewport" && Number.isFinite(e.data.top) && Number.isFinite(e.data.height)) {   // V5c: where the visitor's screen is
+    const top = Math.max(0, e.data.top), bottom = Math.min(document.documentElement.scrollHeight, e.data.top + e.data.height);
+    B.view = { top, height: Math.max(0, bottom - top) }; placeBar(); if (F.open && !F.parentFull && !F.native) layoutFull();
+  }
 });
 
 // ── V5: See My Directory / See My Menu Board: the screen full size, as a finished directory ──
@@ -329,14 +360,50 @@ const seeLabel = (c) => {
   $("see-label").textContent = menu ? "See My Menu Board" : "See My Directory";
   $("see-line").textContent = menu ? "View your menu board full screen." : "View your directory full screen.";
   $("full-title").textContent = menu ? "Your menu board · sample preview" : "Your directory · sample preview";
+  $("bar-label").textContent = $("see-label").textContent;
+  $("pv-tap").setAttribute("aria-label", `${$("see-label").textContent} full screen`);
 };
+
+// ── V5c: the phone layout: the preview a strip (touch-free, so a swipe over it scrolls the page; a tap opens it full
+// screen), the building name straight under it, the rest folded (step 2's More options, steps 3 and 4 by their
+// headings), and See My Directory in a bar at the bottom of the screen. Embedded, "the bottom of the screen" is
+// worked out from the page's own messages (its V5c script: {type:"viewport"}), else from what's in sight here.
+const B = { view: null };
+function phoneSetup() {
+  const on = phone();
+  document.documentElement.classList.toggle("vw-phone", on);
+  document.documentElement.classList.toggle("vw-embedded", embedded);
+  [...form.querySelectorAll(".vw-step")].forEach((fs, i) => {
+    const lg = fs.querySelector("legend"), fold = on && i >= 2;
+    fs.classList.toggle("vw-fold", fold);
+    if (fold) { lg.setAttribute("role", "button"); lg.tabIndex = 0; lg.setAttribute("aria-expanded", String(fs.classList.contains("open"))); }
+    else { lg.removeAttribute("role"); lg.removeAttribute("tabindex"); lg.removeAttribute("aria-expanded"); }
+  });
+  placeBar();
+}
+const toggleFold = (fs) => { const open = fs.classList.toggle("open"); fs.querySelector("legend").setAttribute("aria-expanded", String(open)); tellHeight(); };
+form.addEventListener("click", (e) => { const lg = e.target.closest(".vw-fold > legend"); if (lg) toggleFold(lg.parentElement); });
+form.addEventListener("keydown", (e) => { if ((e.key === "Enter" || e.key === " ") && e.target.matches?.(".vw-fold > legend")) { e.preventDefault(); toggleFold(e.target.parentElement); } });
+$("more-btn").addEventListener("click", () => { const open = $("more").classList.toggle("open"); $("more-btn").setAttribute("aria-expanded", String(open)); });
+phoneMQ.addEventListener?.("change", () => { phoneSetup(); fit(); });
+// Embedded in a page without the V5c script (it doesn't say where the visitor's screen is), the bar can't be placed:
+// See My Directory then stays in the page, under the strip (html.vw-inline-see)
+function placeBar() {
+  const bar = $("bar"), show = phone() && !F.open, inline = embedded && !B.view;
+  document.documentElement.classList.toggle("vw-inline-see", inline);
+  bar.hidden = !show || inline;
+  if (bar.hidden || !embedded) return;   // on its own: fixed to the bottom of the window (CSS)
+  const v = B.view;
+  if (v.height < 160) { bar.hidden = true; return; }   // the viewer is (nearly) out of sight
+  bar.style.top = `${Math.round(v.top + v.height - bar.offsetHeight)}px`;
+}
 const dims = () => { const land = choices().shape === "landscape"; return { W: land ? 1920 : 1080, H: land ? 1080 : 1920 }; };
 /** Where the view goes, in this page's window: all of it, or (embedded, before the page fills the window) the part of
  *  the frame the visitor can see now */
 function stage() {
   const all = { left: 0, top: 0, width: window.innerWidth, height: window.innerHeight };
   if (!embedded || F.parentFull || F.native) return all;
-  const v = F.visible, want = Math.min(window.innerHeight, Math.max(360, (window.screen?.availHeight || 800) * 0.92));
+  const v = B.view || F.visible, want = Math.min(window.innerHeight, Math.max(360, (window.screen?.availHeight || 800) * 0.92));
   if (!v || v.height < 40) {   // not measured yet: around the button that was pressed
     const b = $("see").getBoundingClientRect(), top = Math.max(0, Math.min(window.innerHeight - want, b.top + b.height / 2 - want / 2));
     return { left: 0, top, width: window.innerWidth, height: want };
@@ -369,10 +436,13 @@ async function openFull() {
   $("full-bg").hidden = false; $("full").hidden = false; box.classList.add("vw-screen-full");
   frame.tabIndex = 0;
   if (embedded) {
-    // the part of the frame the visitor can see, as they scroll (until the page fills the window)
+    // the part of the frame the visitor can see, as they scroll (until the page fills the window), measured afresh
     F.io = new IntersectionObserver((es) => { const r = es[es.length - 1].intersectionRect; F.visible = { top: r.top, height: r.height }; layoutFull(); }, { threshold: Array.from({ length: 51 }, (_, i) => i / 50) });
     F.io.observe(document.body);
   }
+  placeBar();
+  // V5c: the browser's Back (a phone's Back button, the Facebook app's) comes back here rather than leaving the page
+  try { history.pushState({ wtgFull: 1 }, ""); F.hist = true; } catch { F.hist = false; }
   layoutFull();
   $("full-back").focus();
   // true full screen where it's allowed; otherwise the page's own (embedded)
@@ -386,6 +456,7 @@ function closeFull({ quiet = false } = {}) {
   closeSheet();
   F.open = false;
   F.io?.disconnect(); F.io = null;
+  if (F.hist) { F.hist = false; try { history.back(); } catch { /* nothing to undo */ } }   // (its own step in the history)
   if (document.fullscreenElement) document.exitFullscreen?.().catch(() => {});
   if (embedded && parentOrigin && !F.native) tell({ type: "full", open: false });
   F.native = F.parentFull = false;
@@ -397,9 +468,14 @@ function closeFull({ quiet = false } = {}) {
   if (!quiet) ev("full_preview_closed");
   keep();
   fit(); tellHeight();
-  if (!quiet) $("see").focus();
+  placeBar();
+  if (!quiet) (phone() ? $("bar-see") : $("see")).focus({ preventScroll: true });
 }
+window.addEventListener("popstate", () => { if (F.open) { F.hist = false; closeFull(); } });
 $("see").addEventListener("click", openFull);
+$("bar-see").addEventListener("click", openFull);   // V5c: the phone's bottom bar
+$("pv-tap").addEventListener("click", openFull);    // V5c: a tap on the phone's preview strip
+$("full-x").addEventListener("click", () => closeFull());
 $("full-back").addEventListener("click", () => closeFull());
 $("full-quote").addEventListener("click", () => { closeFull(); requestQuote(); });
 document.addEventListener("fullscreenchange", () => { if (F.open && F.native && !document.fullscreenElement) closeFull(); });   // Esc in true full screen
@@ -423,7 +499,7 @@ async function openSheet() {
   sheetMsg("Making your picture…");
   $("sheet-close").focus();
   const c = choices(), { W, H } = dims();
-  const making = F.making = (async () => makePicture(frame.contentDocument, W, H))();
+  const making = F.making = (async () => (await import("/viewer-snap.mjs")).makePicture(frame.contentDocument, W, H))();
   try {
     const blob = await making;
     if (F.making !== making || $("sheet").hidden) return;
@@ -506,5 +582,5 @@ form.reset();
 renderRows();
 window.addEventListener("pageshow", (e) => { if (e.persisted) { if (F.open) closeFull(); form.reset(); for (const r of typed) { r.name = ""; r.suite = ""; } own.logo = own.photo = null; rowsEl.innerHTML = ""; renderRows(); draw(); } });
 tell({ type: "event", name: "viewer_start", kind: choices().kind });
-fit();
+phoneSetup(); fit(); draw();
 window.Viewer = { visit: V, state: S, choices, KINDS, typed, own, full: F };   // for the browser checks

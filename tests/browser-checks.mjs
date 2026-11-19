@@ -6,6 +6,7 @@
 //                                                       # public/ (e.g. the previous chat's), element by element
 // Needs Playwright with Chromium (require("playwright")); about a minute.
 import { createRequire } from "node:module";
+import { swipe } from "./touch-swipe.mjs";   // DP-15 V5c
 import { spawn } from "node:child_process";
 import { readFileSync, mkdtempSync, copyFileSync } from "node:fs";
 import { join } from "node:path";
@@ -2189,11 +2190,13 @@ try {
     const sent = []; p.on("request", (r) => { if (r.url().includes("/api/")) sent.push(r.postData() || ""); });
     const errs = []; p.on("pageerror", (e) => errs.push(String(e)));
     await p.goto(`${B}/viewer.html`); await p.waitForTimeout(2000);
-    await p.fill('input[name="name"]', "Café O'Henry Plaza"); await p.check('input[name="logo"]');
+    await p.fill('input[name="name"]', "Café O'Henry Plaza");
+    await p.locator(".vw-step").nth(2).locator("legend").click();   // (V5c: on a phone, step 3 opens from its heading)
+    await p.check('input[name="logo"]');
     const png = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAIAAAACCAYAAABytg0kAAAAFklEQVR4nGP8z8DwnwEJMDGgAaAPAC2QAgSVQ6rFAAAAAElFTkSuQmCC", "base64");
     const [chooser] = await Promise.all([p.waitForEvent("filechooser"), p.click('.vw-pic[data-pic="logo"] [data-own]')]);
     await chooser.setFiles({ name: "my-logo.png", mimeType: "image/png", buffer: png }); await p.waitForTimeout(1000);
-    await p.click("#see"); await p.waitForTimeout(1200);
+    await p.click("#bar-see"); await p.waitForTimeout(1200);
     const sc = await p.locator("#screen").boundingBox();
     assert(sc.x >= 0 && sc.x + sc.width <= 390 && sc.width > 340, `the screen across the phone: ${JSON.stringify(sc)}`);
     assert(await p.isVisible("#full-turn"), "turn sideways for a bigger view");
@@ -2226,7 +2229,7 @@ try {
       await p.check('input[name="kind"][value="menu"]'); await p.waitForTimeout(3500);
       assert((await p.textContent("#see-label")).trim() === "See My Menu Board", await p.textContent("#see-label"));
       const wide = await p.evaluate(() => document.documentElement.scrollWidth); assert(wide <= 390, `no sideways scrolling on the menu board either (V4's long board names): ${wide}`);
-      await p.click("#see"); await p.waitForTimeout(1200);
+      await p.click("#bar-see"); await p.waitForTimeout(1200);
       await p.click("#full-save");
       await p.waitForFunction(() => !document.getElementById("sheet-download").disabled || document.getElementById("sheet-msg").classList.contains("bad"), null, { timeout: 30000 });
       assert(!(await p.locator("#sheet-msg").evaluate((m) => m.classList.contains("bad"))), await p.textContent("#sheet-msg"));
@@ -2251,7 +2254,7 @@ try {
     await p.goto(`${B}/viewer.html?utm_source=slowtest`, { timeout: 120000 }); await p.waitForFunction(() => window.Viewer?.visit?.inited, null, { timeout: 120000 });
     const id = await p.evaluate(() => window.Viewer.visit.id);
     await cdp.send("Network.emulateNetworkConditions", { offline: false, latency: 0, downloadThroughput: -1, uploadThroughput: -1 });
-    await p.fill('input[name="name"]', "Slow Network Plaza"); await p.click('input[name="subtitle"]');
+    await p.fill('input[name="name"]', "Slow Network Plaza"); await p.press('input[name="name"]', "Tab");   // (V5c: on a phone the subtitle is under More options)
     await p.waitForTimeout(9000);
     const row = await visitOf(id);
     assert(row && row.events.viewer_page_loaded === 1 && row.events.viewer_initialized === 1 && row.init_ms > 1000 && row.failures >= 1 && row.config?.name === "Slow Network Plaza", `${Date.now() - t0} ms: ${JSON.stringify({ ev: row?.events, init: row?.init_ms, failures: row?.failures, name: row?.config?.name })}`);
@@ -2322,6 +2325,120 @@ try {
     assert(errs.length === 0, errs.join(" | "));
     await p.close();
     await sb("viewer_email_settings?id=eq.true", { method: "DELETE" });
+  });
+
+  // ── DP-15 (V5c): the first visit, the phone layout, Back ──
+  const FB_ANDROID = "Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Mobile Safari/537.36 [FB_IAB/FB4A;FBAV/480.0.0.0]";
+  await check("V5c: the first visit draws the sample without a refresh, even when the viewer's code arrives late (as on a slow phone; it stayed blank before); Loading… while it loads; a preview that never loads says so, with Try again (counted as viewer_error), and Try again draws it", async () => {
+    const p = await browser.newPage({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true, userAgent: FB_ANDROID });
+    const errs = []; p.on("pageerror", (e) => errs.push(String(e)));
+    await p.route(/\/viewer\.js$/, async (r) => { await new Promise((x) => setTimeout(x, 2000)); r.continue(); });
+    await p.goto(`${B}/viewer.html?utm_source=racetest`);
+    await p.waitForTimeout(2600);
+    await p.waitForFunction(() => window.Viewer?.state?.ev?.viewer_initialized, null, { timeout: 15000 });
+    assert((await p.frameLocator("#pv").locator("#property").textContent()).includes("Your Building Name"), "the sample drawn");
+    assert(await p.locator("#pv-loading").isHidden() && await p.locator("#pv-error").isHidden(), "Loading… gone");
+    await p.close();
+    // the preview page never answers: Loading…, then (15 s) "didn't load" with Try again; it draws once it can
+    const q = await browser.newPage({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true });
+    let hold = true;
+    await q.route(/\/index\.html\?preview=1$/, async (r) => { if (hold) return; r.continue(); });   // (held: no answer)
+    await q.goto(`${B}/viewer.html?utm_source=failtest`); await q.waitForTimeout(1500);
+    assert(await q.locator("#pv-loading").isVisible() && /Loading your preview/.test(await q.textContent("#pv-loading")), "Loading… shown");
+    await q.waitForSelector("#pv-error:not([hidden])", { timeout: 20000 });
+    assert(await q.evaluate(() => window.Viewer.state.ev.viewer_error === 1 && !window.Viewer.state.ev.viewer_initialized), JSON.stringify(await q.evaluate(() => window.Viewer.state.ev)));
+    await shot(q, "v5c-preview-failed");
+    hold = false; await q.click("#pv-retry"); await q.waitForTimeout(2500);
+    assert(await q.locator("#pv-error").isHidden() && (await q.frameLocator("#pv").locator("#property").textContent()).includes("Your Building Name") && await q.evaluate(() => window.Viewer.state.ev.viewer_initialized === 1), "Try again draws it");
+    await q.waitForTimeout(800);
+    const row = (await sb("viewer_visits?select=*")).data.find((r) => r.source?.utm_source === "failtest");
+    assert(row && row.events.viewer_error === 1 && row.events.viewer_initialized === 1, JSON.stringify(row?.events));
+    await q.close();
+    for (const r of (await sb("viewer_visits?select=id,source")).data.filter((x) => ["racetest", "failtest"].includes(x.source?.utm_source))) await sb(`viewer_visits?id=eq.${r.id}`, { method: "DELETE" });
+    assert(errs.length === 0, errs.join(" | "));
+  });
+
+  await check("V5c: on a phone (the Facebook browser): a strip of preview, the building name in sight, a swipe over the preview scrolls the page (it didn't), a tap on it opens it full screen, See My Directory in a bar at the bottom; steps folded and opened by their headings; More options; the phone's Back and ✕ close the full view; every change kept; real screens still locked down", async () => {
+    const p = await browser.newPage({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true, userAgent: FB_ANDROID });
+    const errs = []; p.on("pageerror", (e) => errs.push(String(e)));
+    await p.goto(`${B}/viewer.html`); await p.waitForTimeout(2500);
+    const cdp = await p.context().newCDPSession(p);
+    const sc = await p.locator("#screen").boundingBox(), name = await p.locator('input[name="name"]').boundingBox();
+    assert(sc.height <= 844 * 0.38 && name.y + name.height < 844, `a strip (${sc.height}px), the name box on the first screen (${name.y}; embedded, higher: the next check)`);
+    assert(await p.isVisible("#bar-see") && (await p.textContent("#bar-label")).trim() === "See My Directory" && await p.isHidden(".vw-see"), "the bottom bar");
+    const bar = await p.locator("#bar").boundingBox(); assert(Math.abs(bar.y + bar.height - 844) < 2, `at the bottom: ${JSON.stringify(bar)}`);
+    // the preview takes no touches; the page under it is the frame's own, not locked down
+    assert(await p.frameLocator("#pv").locator("html").evaluate((h) => h.classList.contains("is-preview") && getComputedStyle(h).touchAction === "auto"), "the preview isn't locked down");
+    await swipe(cdp, Math.round(sc.x + sc.width / 2), Math.round(sc.y + sc.height / 2), -150); await p.waitForTimeout(700);
+    const y = await p.evaluate(() => scrollY); assert(y > 80, `a swipe over the preview scrolls the page: ${y}`);
+    await p.evaluate(() => scrollTo(0, 0)); await p.waitForTimeout(200);
+    // folds: step 3 and 4 by their headings; step 2's More options
+    assert(await p.locator('input[name="logo"]').isHidden() && await p.locator('input[name="weather"]').isHidden() && await p.locator('input[name="subtitle"]').isHidden(), "folded");
+    await p.click("#more-btn"); assert(await p.locator('input[name="subtitle"]').isVisible() && await p.getAttribute("#more-btn", "aria-expanded") === "true", "More options opens");
+    const legend3 = p.locator(".vw-step").nth(2).locator("legend");
+    assert(await legend3.getAttribute("role") === "button" && await legend3.getAttribute("aria-expanded") === "false", "a heading that opens");
+    await legend3.click(); assert(await p.locator('input[name="logo"]').isVisible(), "step 3 opens");
+    await p.locator(".vw-step").nth(3).locator("legend").focus(); await p.keyboard.press("Enter"); assert(await p.locator('input[name="weather"]').isVisible(), "step 4 opens from the keyboard");
+    // changes; the strip's tap opens the full view; Back (the phone's) closes it; ✕ too; all kept
+    await p.fill('input[name="name"]', "Phone Plaza"); await p.click('input[name="subtitle"]'); await p.check('input[name="look"][value="light"]');
+    await p.evaluate(() => scrollTo(0, 0)); await p.waitForTimeout(300);
+    await p.locator("#pv-tap").tap(); await p.waitForTimeout(900);
+    assert(await p.evaluate(() => window.Viewer.full.open) && await p.isHidden("#bar"), "a tap on the strip opens it; the bar steps aside");
+    assert(await p.frameLocator("#pv").locator("html").evaluate((h) => h.classList.contains("light")) && (await p.frameLocator("#pv").locator("#property").textContent()).includes("Phone Plaza"), "as built");
+    await shot(p, "v5c-phone-full");
+    await p.evaluate(() => history.back()); await p.waitForTimeout(800);   // the phone's Back
+    assert(await p.evaluate(() => !window.Viewer.full.open) && p.url().endsWith("/viewer.html"), `Back closes it, the page stays: ${p.url()}`);
+    await p.click("#bar-see"); await p.waitForTimeout(800);
+    assert(await p.isVisible("#full-x") && await p.getAttribute("#full-x", "aria-label") === "Close full screen", "the ✕");
+    await p.click("#full-x"); await p.waitForTimeout(800);
+    assert(await p.evaluate(() => !window.Viewer.full.open), "✕ closes it");
+    assert(await p.evaluate(() => history.state?.wtgFull) !== 1, "✕ took its own step back out of the history");
+    assert(errs.length === 0, errs.join(" | "));
+    await p.close();
+    // real screens: still locked down (no touch-action, the touch lock-down on)
+    const scr = await browser.newPage();
+    await scr.goto(`${B}/index.html?view=1&site=does-not-exist`).catch(() => {}); await scr.waitForTimeout(800);
+    assert(await scr.evaluate(() => getComputedStyle(document.documentElement).touchAction === "none" && !document.documentElement.classList.contains("is-preview")), "a screen keeps its lock-down");
+    await scr.close();
+  });
+
+  await check("V5c: embedded on a phone with the V5c page script: the viewer's heading gives way to the page's, the bottom bar follows the bottom of the visitor's screen as they scroll (and steps aside when the viewer's out of sight), See My Directory fills the window, the phone's Back comes back to the editor", async () => {
+    const PARENT5C = PARENT5.replace('if (m.type === "height" && !saved) frame.style.height = m.px + "px";',
+      'if (m.type === "height" && !saved) { frame.style.height = m.px + "px"; vp(); }').replace('window.__load = load;',
+      'window.__load = load; var vp = function () { if (saved || !frame.contentWindow) return; var r = frame.getBoundingClientRect(); frame.contentWindow.postMessage({ source: "waytugo-site", type: "viewport", top: -r.top, height: innerHeight }, location.origin); }; addEventListener("scroll", vp, { passive: true }); addEventListener("resize", vp); frame.addEventListener("load", function () { setTimeout(vp, 300); });');
+    const p = await browser.newPage({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true, userAgent: FB_ANDROID });
+    await p.route(`${B}/parent5c.html`, (r) => r.fulfill({ status: 200, contentType: "text/html", body: PARENT5C }));
+    await p.goto(`${B}/parent5c.html`); await p.waitForTimeout(3000);
+    const v = p.frameLocator("#wv"), vf = p.frame({ url: /viewer\.html/ });
+    assert(await v.locator(".vw-head").isHidden(), "the viewer's heading gives way");
+    const nm = await v.locator('input[name="name"]').boundingBox(), fr0 = await p.locator("#wv").boundingBox();
+    assert(nm.y - fr0.y + nm.height < 844 - 80, `the building name on the viewer's first screen, above the bar (the page's intro above it is the hand-off's "viewer first" item): ${nm.y - fr0.y}`);
+    const at = async () => { const f = await p.locator("#wv").boundingBox(), b = await v.locator("#bar").boundingBox(); return b ? b.y + b.height : null; };
+    let bottom = await at(); assert(bottom !== null && Math.abs(bottom - 844) < 3, `the bar at the bottom of the screen: ${bottom}`);
+    await p.evaluate(() => scrollTo(0, 500)); await p.waitForTimeout(400);
+    bottom = await at(); assert(Math.abs(bottom - 844) < 3, `still, after scrolling: ${bottom}`);
+    await p.evaluate(() => scrollTo(0, document.body.scrollHeight)); await p.waitForTimeout(400);
+    assert(await v.locator("#bar").isHidden(), "aside when the viewer's out of sight (at the form)");
+    await p.evaluate(() => scrollTo(0, 200)); await p.waitForTimeout(400);
+    await v.locator("#bar-see").click(); await p.waitForTimeout(1200);
+    const fr = await p.locator("#wv").boundingBox();
+    assert(fr.y === 0 && fr.height === 844 && await vf.evaluate(() => window.Viewer.full.open && window.Viewer.full.parentFull), `fills the window: ${JSON.stringify(fr)}`);
+    await shot(p, "v5c-embedded-phone-full");
+    await p.evaluate(() => history.back()); await p.waitForTimeout(1000);   // the phone's Back
+    assert(await vf.evaluate(() => !window.Viewer.full.open) && p.url().endsWith("/parent5c.html") && (await p.locator("#wv").boundingBox()).height > 844, "Back: the editor again, on the same page");
+    await p.close();
+  });
+
+  await check("V5c: on a phone in a page with the old site script (no viewport messages): See My Directory stays in the page under the strip, the floating bar doesn't guess", async () => {
+    const p = await browser.newPage({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true, userAgent: FB_ANDROID });
+    await p.route(`${B}/parent-test.html`, (r) => r.fulfill({ status: 200, contentType: "text/html", body: PARENT }));
+    await p.goto(`${B}/parent-test.html`); await p.waitForTimeout(2500);
+    const v = p.frameLocator("#wv");
+    assert(await v.locator("#see").isVisible() && await v.locator("#bar").isHidden(), "in the page, not floating");
+    await v.locator("#see").click(); await p.waitForTimeout(1200);
+    const sc = await v.locator("#screen").boundingBox();
+    assert(sc && sc.y >= -1 && sc.y + sc.height <= 845, `the full view in sight: ${JSON.stringify(sc)}`);
+    await p.close();
   });
 
   await check("V5: the console's Viewer tab: the funnel (page loads on waytugo.com, visits, edited, full screen, saved or shared, quotes), page loads with no visit, by ad source with page loads, by device and browser, what each did, page-load-only visits hidden until ticked, snapshots in View, engaged by edits, the CSV", async () => {

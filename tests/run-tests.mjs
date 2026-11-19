@@ -4008,6 +4008,21 @@ test("V5b: Email Me a Copy: off until 1Point turns it on in the console (1Point 
   }
 });
 
+test("V5c: the viewer's first visit and the phone: the preview frame's address set only once the viewer listens, the screen page says it's ready, Loading… and Try again, the screen pages not locked down in a preview (a swipe scrolls the page on a phone) while real screens are, the phone's strip, folds and bottom bar, Back through the history; the display version moves on together", async () => {
+  const read = (f) => readFileSync(new URL(`../public/${f}`, import.meta.url), "utf8");
+  const html = read("viewer.html"), js = read("viewer.js"), core = read("screen-core.js"), disp = read("display.js"), dcss = read("display.css"), bcss = read("board.css");
+  assert.ok(/<iframe id="pv" title="[^"]*" tabindex="-1"><\/iframe>/.test(html) && !/<iframe id="pv"[^>]*src=/.test(html), "no address in the page");
+  assert.ok(html.includes('id="pv-loading"') && html.includes('id="pv-retry"') && html.includes('id="bar-see"') && html.includes('id="more-btn"') && html.includes('id="full-x"'));
+  assert.ok(js.includes('e.data?.type === "preview-ready"') && js.includes("PV.timer = setTimeout(previewFailed, 15000)") && js.includes('ev("viewer_error", { page: false })') && js.includes('history.pushState({ wtgFull: 1 }, "")') && js.includes('window.addEventListener("popstate"'));
+  assert.ok(js.includes('await import("/viewer-snap.mjs")') && !/^import .*viewer-snap/m.test(js), "the picture maker loaded only when needed");
+  assert.ok(disp.includes('window.parent.postMessage({ type: "preview-ready" }, location.origin)'));
+  assert.ok(core.includes('if (PREVIEW) { document.documentElement.classList.add("is-preview"); return; }'), "a preview skips the lock-down");
+  for (const css of [dcss, bcss]) assert.ok(css.includes("html, body { touch-action: none;") && css.includes("html.is-preview, html.is-preview body { touch-action: auto;"), "screens locked, previews not");
+  const ver = (await import("../netlify/lib/version.mjs"));
+  assert.ok(JSON.stringify(ver).includes("2.24.2") || readFileSync(new URL("../netlify/lib/version.mjs", import.meta.url), "utf8").includes("2.24.2"));
+  assert.ok(disp.includes('const VERSION = "2.24.2"') && read("board.js").includes('const VERSION = "2.24.2"'));
+});
+
 let passed = 0;
 for (const [name, fn] of tests) {
   try { await fn(); passed++; console.log(`  ok  ${name}`); }

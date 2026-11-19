@@ -254,3 +254,7 @@ html.menu-view, html.menu-view body { overflow: auto; }
 .items-head, .chips-head { font-size: calc(1.15em * var(--head-k, 1) / var(--body-k, 1)); }
 .tt-head { font-size: calc(1.1em * var(--head-k, 1) / var(--body-k, 1)); }
 .b-title, .photo-cap .b-title, .hours-now { font-size: calc(1em * var(--head-k, 1) / var(--body-k, 1)); }
+
+/* V5c (DP-15): a preview (?preview=1: the viewer, the editor, the console's View) isn't locked down like a screen:
+   the page holding it decides about touches, so a swipe over it on a phone scrolls that page */
+html.is-preview, html.is-preview body { touch-action: auto; overscroll-behavior: auto; }

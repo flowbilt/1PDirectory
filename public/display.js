@@ -10,7 +10,7 @@
 */
 (() => {
   "use strict";
-  const VERSION = "2.24.1";   // = netlify/lib/version.mjs (a test keeps them equal)
+  const VERSION = "2.24.2";   // = netlify/lib/version.mjs (a test keeps them equal)
   // What every screen does (which screen, check-in, clock, rotation, Identify, lockdown, reloads, offline cache) is in
   // screen-core.js, shared with the layout page (DP-11, round E1a).
   const C = window.ScreenCore;
@@ -889,6 +889,8 @@
       apply({ site: SITE, ...e.data.data });
       fitTenants(); ensureRotation();   // V1b: the news box turns as soon as a preview turns it on (a screen's starts with its news)
     });
+    // V5c (DP-15): ready for a draft: the page holding it sends one (the viewer used to miss this page's load on a first visit)
+    if (window.parent !== window) window.parent.postMessage({ type: "preview-ready" }, location.origin);
   }
 
   C.registerOfflineCache();

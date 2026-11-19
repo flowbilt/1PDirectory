@@ -949,6 +949,32 @@ through waytugo.com's own inquiry form.
     or the column, brings the code box into view and flashes it: the code, **Request a quote on waytugo.com**
     (`https://waytugo.com/#quote`), and the phone and email.
 
+- **V5c** (DP-15, 2026-11-19; Scot's "Mobile Viewer Usability Corrections": visitors from the ads were doing almost
+  nothing; the console showed 43 visits, 15 with a drawn preview, 1 edit):
+  - **The first-load race (fixed).** The preview frame's address was in the page, so the screen page could finish
+    loading before `viewer.js` (a module, with its imports) was listening for it: the preview stayed blank until the
+    visitor changed something, and `viewer_initialized` was never sent. Now the frame starts empty and `viewer.js`
+    sets its address once it listens; the screen page also posts `{type:"preview-ready"}` (display.js; the board page
+    already posts `layout-ready`); **Loading your preview…** until it's drawn; after 15 s, **The preview didn't load**
+    with **Try again** (counted as `viewer_error`). `viewer-snap.mjs` is loaded only when Save / Share opens.
+  - **Swipes over the preview (fixed).** The screen pages' touch lock-down (`touch-action: none`, from DP-08 round 13)
+    applied in a preview too, so on a phone a swipe that began on the preview didn't scroll the page. In a preview
+    (`?preview=1`) `ScreenCore.lockdown()` now only marks `html.is-preview`, and display.css and board.css let it take
+    touches normally. Real screens are unchanged. Display **2.24.2**.
+  - **The phone layout** (`html.vw-phone`, up to 760 px): the preview a strip (about a third of the screen, touch-free
+    so swipes scroll; a tap opens it full screen; nothing to tap until it's drawn), the three displays as one row,
+    the building name next, the rest of step 2 under **More options**, steps 3 and 4 opened by their headings
+    (keyboard too), and **See My Directory** / **See My Menu Board** in a bar at the bottom of the screen. Embedded,
+    the bar follows the bottom of the visitor's screen from the page's `{source:"waytugo-site", type:"viewport", top,
+    height}` messages (the V5c site script); without them it stays in the page under the strip. Embedded on a phone,
+    the viewer's own heading is hidden (the page has it).
+  - **Back:** opening the full view adds a history step (`history.pushState`), so a phone's Back (Android's, the
+    Facebook app's, an iPhone swipe) returns to the editor; ✕ and Back to Viewer take the step back out. A **✕** close
+    in the full view's top row.
+  - Tests: `tests/touch-swipe.mjs` drags a finger with raw touch events (Playwright's gestures don't scroll in headless
+    Chromium); browser checks reproduce the race (the viewer's code held back 2 s: blank before, drawn now) and the
+    swipe (0 px before, scrolls now).
+
 ### Light and Dark directories (DP-14, D2)
 
 Each directory has a **Look** in the editor (This directory): **Dark** (the original, the default), **Light** (a pale

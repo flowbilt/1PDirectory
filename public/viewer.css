@@ -135,3 +135,55 @@ html.vw-full-open .vw-tag, html.vw-full-open .vw-see, html.vw-full-open .vw-hint
 .vw-direct a.vw-direct-go, .vw-direct a.vw-direct-go:visited { display: inline-block; margin: 4px 0; padding: 10px 18px; border-radius: 10px; background: var(--orange); color: #1b1206; font-weight: 700; text-decoration: none; }
 .vw-direct.flash { animation: vw-flash 1.2s ease-out 2; }
 @keyframes vw-flash { 0% { box-shadow: 0 0 0 0 rgba(255,122,26,.8); } 100% { box-shadow: 0 0 0 14px rgba(255,122,26,0); } }
+/* V5c (DP-15): the preview's loading and "didn't load" states */
+.vw-screen { position: relative; }
+.vw-pv-state { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 12px; text-align: center; padding: 12px;
+  background: #0b1617; color: var(--muted); font-size: 15px; z-index: 4; border-radius: inherit; }
+.vw-pv-state[hidden] { display: none; }
+.vw-pv-error { color: #fff; }
+.vw-spin { width: 28px; height: 28px; border-radius: 50%; border: 3px solid rgba(255,255,255,.18); border-top-color: var(--orange); animation: vw-spin 0.9s linear infinite; }
+@keyframes vw-spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .vw-spin { animation-duration: 3s; } }
+/* the phone's strip: no touches on the preview (a swipe scrolls the page), a tap opens it full screen */
+.vw-pv-tap { display: none; }
+.vw-more-btn { display: none; }
+.vw-bar { display: none; }
+html.vw-phone .vw-pv-tap { display: flex; position: absolute; inset: 0; z-index: 3; align-items: flex-end; justify-content: center; padding: 0 0 8px; border: 0; background: transparent; cursor: pointer; }
+html.vw-phone .vw-pv-tap span { padding: 4px 12px; border-radius: 999px; background: rgba(0,0,0,.6); color: #fff; font-size: 13px; font-weight: 600; }
+html.vw-phone .vw-screen:not(.vw-screen-full) #pv { pointer-events: none; }
+html.vw-phone .vw-screen-full .vw-pv-tap { display: none; }
+html.vw-phone .vw-see { display: none; }
+html.vw-phone .vw-tag { margin-bottom: 6px; }
+html.vw-phone .vw-preview { margin-bottom: 4px; }
+html.vw-phone .vw-hint { margin: 6px 0 0; font-size: 13px; }
+html.vw-phone .vw { padding-bottom: 96px; }
+html.vw-phone.vw-embedded .vw-head { display: none; }   /* waytugo.com's page has its own heading */
+/* the building name first; the rest of step 2 under More options; steps 3 and 4 by their headings */
+html.vw-phone .vw-more-btn { display: flex; align-items: center; justify-content: space-between; width: 100%; min-height: 46px; margin: 4px 0 2px; padding: 10px 14px;
+  border: 1px solid var(--line); border-radius: 10px; background: rgba(255,255,255,.05); color: #fff; font: inherit; font-weight: 600; text-align: left; cursor: pointer; }
+html.vw-phone .vw-more-btn::after, html.vw-phone .vw-fold > legend::after { content: "▾"; margin-left: 10px; transition: transform .2s; }
+html.vw-phone .vw-more-btn[aria-expanded="true"]::after, html.vw-phone .vw-fold.open > legend::after { transform: rotate(180deg); }
+html.vw-phone .vw-more:not(.open) { display: none; }
+html.vw-phone .vw-fold > legend { cursor: pointer; display: flex; align-items: center; width: 100%; min-height: 40px; }
+html.vw-phone .vw-fold:not(.open) > :not(legend) { display: none; }
+html.vw-phone .vw-fold:not(.open) { padding-bottom: 4px; }
+/* See My Directory at the bottom of the screen (embedded: placed by viewer.js where the visitor's screen ends) */
+html.vw-phone .vw-bar { display: block; position: fixed; left: 0; right: 0; bottom: 0; z-index: 900; padding: 10px 14px max(10px, env(safe-area-inset-bottom));
+  background: linear-gradient(to top, rgba(14,32,33,.98) 70%, rgba(14,32,33,0)); }
+html.vw-phone .vw-bar[hidden] { display: none; }
+html.vw-phone.vw-embedded .vw-bar { bottom: auto; }
+html.vw-phone .vw-bar .vw-see-btn { width: 100%; justify-content: center; min-height: 52px; font-size: 18px; }
+/* the full view's close (✕), top right, within the phone's safe area */
+.vw-full-top { padding-top: max(10px, env(safe-area-inset-top)); }
+.vw-full-x { margin-left: auto; width: 42px; height: 42px; border-radius: 50%; border: 1px solid var(--line); background: rgba(255,255,255,.08); color: #fff; font-size: 18px; cursor: pointer; }
+.vw-full-x:hover { background: rgba(255,255,255,.16); }
+.vw-full-x:focus-visible { outline: 3px solid #fff; outline-offset: 2px; }
+/* (V5c: on a phone, the three displays as one row of short choices, so the building name is in sight) */
+html.vw-phone .vw-kinds { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
+html.vw-phone .vw-kind { padding: 10px 6px; text-align: center; justify-content: center; }
+html.vw-phone .vw-kind-line { display: none; }
+html.vw-phone .vw-kind-name { font-size: 14px; line-height: 1.2; }
+html.vw-phone .vw-step { margin-bottom: 12px; }
+html.vw-phone .vw-screen.pv-wait .vw-pv-tap { display: none; }   /* (no tap-to-open before it's drawn: Try again must be pressable) */
+html.vw-phone.vw-inline-see .vw-see { display: flex; }   /* (embedded in a page without the V5c script: See My Directory under the strip) */
+.vw-full-turn { order: 3; flex-basis: 100%; }   /* (V5c: the note under the top row; ✕ stays beside Back) */

@@ -80,6 +80,9 @@
           <select id="board" name="board"><option value="">Loading the sample menus…</option></select></div>
         <label class="vw-field"><span><span data-only="directory">Building or company name</span><span data-only="menu">Restaurant name</span></span>
           <input name="name" maxlength="60" placeholder="e.g. Landmark Business Center"></label>
+        <!-- V5c: on a phone, the rest of this step folds under More options -->
+        <button type="button" class="vw-more-btn" id="more-btn" aria-expanded="false" aria-controls="more"><span data-only="directory">More options: tenants, screen and look</span><span data-only="menu">More options: items, screen and look</span></button>
+        <div class="vw-more" id="more">
         <label class="vw-field" data-only="directory"><span>Subtitle <em>optional</em></span>
           <input name="subtitle" maxlength="60" placeholder="e.g. 2100 First Avenue North"></label>
         <div class="vw-field vw-type"><label for="type">What type of building or business is it? <em>optional</em></label>
@@ -123,6 +126,7 @@
         <div class="vw-field" data-only="menu" id="mlook-field"><span>Look</span>
           <div class="vw-seg" role="radiogroup" aria-label="Board look" id="mlooks"></div>
           <p class="vw-note vw-note-flat" id="mlook-note"></p></div>
+        </div>
       </fieldset>
 
       <fieldset class="vw-step">
@@ -166,7 +170,13 @@
     <section class="vw-preview" aria-label="Preview">
       <div class="vw-tag">Sample · demonstration content</div>
       <div class="vw-screen" id="screen">
-        <iframe id="pv" title="Your WayTuGo directory (sample)" src="/index.html?preview=1" tabindex="-1"></iframe>
+        <!-- V5c (DP-15): no address here: viewer.js sets it once it's listening, so the preview can't finish loading
+             unseen (it was blank on a first visit until something was changed) -->
+        <iframe id="pv" title="Your WayTuGo directory (sample)" tabindex="-1"></iframe>
+        <div class="vw-pv-state" id="pv-loading" role="status"><span class="vw-spin" aria-hidden="true"></span>Loading your preview…</div>
+        <div class="vw-pv-state vw-pv-error" id="pv-error" role="alert" hidden><span>The preview didn't load.</span><button type="button" class="vw-see-btn" id="pv-retry">Try again</button></div>
+        <!-- on a phone: the preview doesn't take touches (swipes scroll the page); a tap opens it full screen -->
+        <button type="button" class="vw-pv-tap" id="pv-tap" aria-label="See My Directory full screen"><span>Tap to see it full screen</span></button>
       </div>
       <!-- V5 (DP-15): the screen full size, as a finished directory -->
       <div class="vw-see">
@@ -178,6 +188,9 @@
   </div>
 </main>
 
+<!-- V5c: on a phone, See My Directory stays in reach at the bottom of the screen -->
+<div class="vw-bar" id="bar" hidden><button type="button" class="vw-see-btn" id="bar-see"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/></svg><span id="bar-label">See My Directory</span></button></div>
+
 <!-- V5: the full-screen view. Its background, then (above the screen) the bars and the Save / Share sheet; the screen
      itself is the preview above, moved over the background, so nothing is redrawn and the touch directory still taps -->
 <div class="vw-full-bg" id="full-bg" hidden></div>
@@ -186,6 +199,7 @@
     <button type="button" class="vw-back" id="full-back"><span aria-hidden="true">‹</span> Back to Viewer</button>
     <span class="vw-full-title" id="full-title">Your directory · sample preview</span>
     <span class="vw-full-turn" id="full-turn" hidden>Turn your phone sideways for a bigger view</span>
+    <button type="button" class="vw-full-x" id="full-x" aria-label="Close full screen">✕</button>
   </div>
   <div class="vw-full-actions">
     <button type="button" class="vw-quote" id="full-quote">Request a Quote</button>

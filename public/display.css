@@ -387,3 +387,7 @@ html.light .wx-icon [fill="#c7cdd6"], html.light .wx-icon [fill="#ffffff"] { fil
 html.light .wx-icon [stroke="#c7cdd6"] { stroke: #8794a6; }
 /* A headline over its photo keeps the dark band, so its words stay light (a headline with no photo uses the page's) */
 html.light .slide:not(.text-only) .slide-text { color: #ffffff; --steel: #c7cdd6; }
+
+/* V5c (DP-15): a preview (?preview=1: the viewer, the editor, the console's View) isn't locked down like a screen:
+   the page holding it decides about touches, so a swipe over it on a phone scrolls that page */
+html.is-preview, html.is-preview body { touch-action: auto; overscroll-behavior: auto; }
