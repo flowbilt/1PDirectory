@@ -303,6 +303,7 @@ document.addEventListener("visibilitychange", () => {
     if (b !== V.kept) { V.kept = b; if (!navigator.sendBeacon?.("/api/viewer", new Blob([b], { type: "application/json" }))) post(b, false); }
   } else V.shownSince = Date.now();
 });
+window.__wtgKeep = () => keep(true);   // V5e: viewer.html's first script: the page has come on screen
 /** V5: the viewer has drawn its first preview: said at once (a visitor who leaves now still counts as having seen it) */
 function initialized() {
   if (V.inited) return;

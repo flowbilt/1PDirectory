@@ -7,7 +7,8 @@
 // time the full-screen view opened (snapshots, which View can redraw). waytugo.com's page also says when it loads
 // (viewer_page_loads), so a load with no visit shows who left before the viewer started. Here: where visitors drop off
 // (the funnel), by ad source, by device and browser, and by location type; the list shows visits where something was
-// built unless "Show page loads too" is ticked. Engaged: 30 seconds and 2 real edits (Scot, 2026-11-16: "Yes"); visits
+// built unless "Show page loads too" is ticked. V5e: background loads apart, and the steps counted among visitors who
+// stayed 3 seconds or more. Engaged: 30 seconds and 2 real edits (Scot, 2026-11-16: "Yes"); visits
 // kept before V5 keep their old rule (30 seconds and 3 changes).
 import { normalizeConfig, sampleDirectory, summary, menuDraft, KINDS, TYPES, MENU_LOOKS } from "/viewer-sample.mjs";
 
@@ -45,7 +46,19 @@ export function did(r) {
     emailed: n(r, "directory_email_sent"),   // V5b
     quoteOpened: !!r.quote || n(r, "quote_form_opened") > 0, quoteSent: r.quote === "sent" || n(r, "quote_submitted") > 0,
     failed: n(r, "viewer_error") > 0,
+    // V5e: a background load (the page loaded off screen and was never seen); visits from before V5e count as seen
+    background: n(r, "viewer_loaded_unseen") > 0 && n(r, "viewer_seen") === 0,
   };
+}
+/** V5e: a visitor who stayed 3 seconds or more (or did something): the base for the funnel's percentages. Visits from
+ *  before V5 count as stayed (they were kept only once something was built). */
+export const STAYED_MS = 3000;
+export function stayed(r) {
+  const d = did(r);
+  if (!d.v5) return true;
+  if (d.background) return false;
+  const span = Date.parse(r.updated_at || r.started_at) - Date.parse(r.started_at);
+  return (r.seconds || 0) * 1000 >= STAYED_MS || span >= STAYED_MS || d.edits > 0 || d.full > 0 || d.quoteOpened;
 }
 const saved = (d) => d.downloaded > 0 || d.shareStarted > 0 || d.emailed > 0;
 /** Something was built or looked at closely: the list's default */
@@ -59,13 +72,18 @@ const DEVICES = { phone: "Phone", tablet: "Tablet", desktop: "Desktop" }, BROWSE
 const deviceOf = (r) => (r.device ? [DEVICES[r.device], BROWSERS[r.browser]].filter(Boolean).join(" · ") : "Not known");
 
 /** The funnel for a list of visits (and, for the ad sources, the waytugo.com page loads with the same source) */
+// V5e: every step after "stayed" counts only visitors who stayed, and its percentage is of them; background loads are
+// counted apart and left out
 export function funnel(list, pageLoads = null) {
-  const f = { visits: list.length, started: 0, edited: 0, full: 0, saved: 0, shared: 0, quotes: 0, sent: 0, engaged: 0, seconds: 0, failed: 0, failures: 0, pageLoads: pageLoads == null ? null : pageLoads.length, loadsWithout: 0 };
+  const f = { visits: list.length, background: 0, stayed: 0, started: 0, edited: 0, full: 0, saved: 0, shared: 0, quotes: 0, sent: 0, engaged: 0, seconds: 0, failed: 0, failures: 0, pageLoads: pageLoads == null ? null : pageLoads.length, loadsWithout: 0 };
   for (const r of list) {
     const d = did(r);
+    f.failed += d.failed ? 1 : 0; f.failures += r.failures > 0 ? 1 : 0;
+    if (d.background) { f.background += 1; continue; }
+    if (!stayed(r)) continue;
+    f.stayed += 1;
     f.started += d.started ? 1 : 0; f.edited += d.edited ? 1 : 0; f.full += d.full > 0 ? 1 : 0; f.saved += saved(d) ? 1 : 0; f.shared += d.shared > 0 ? 1 : 0;
     f.quotes += d.quoteOpened ? 1 : 0; f.sent += d.quoteSent ? 1 : 0; f.engaged += engaged(r) ? 1 : 0; f.seconds += r.seconds || 0;
-    f.failed += d.failed ? 1 : 0; f.failures += r.failures > 0 ? 1 : 0;
   }
   if (pageLoads) { const seen = new Set(list.map((r) => r.page_load).filter(Boolean)); f.loadsWithout = pageLoads.filter((l) => !seen.has(l.id)).length; }
   return f;
@@ -80,17 +98,19 @@ export function breakdown(list, keyOf, pageLoads = null) {
     .sort((a, b) => b.visits - a.visits || (b.pageLoads || 0) - (a.pageLoads || 0) || a.key.localeCompare(b.key));
 }
 function breakdownHtml(title, list, { pageLoads = false } = {}) {
-  const head = `${pageLoads ? "<th>Page loads</th>" : ""}<th>Visits</th><th>Edited</th><th>Full screen</th><th>Saved or shared</th><th>Quote opened</th><th>Quote sent</th><th>Engaged</th><th>Avg time</th>`;
+  const head = `${pageLoads ? "<th>Page loads</th>" : ""}<th>Visits</th><th>Background</th><th>Stayed 3 s+</th><th>Started</th><th>Edited</th><th>Full screen</th><th>Saved or shared</th><th>Quote opened</th><th>Quote sent</th><th>Engaged</th><th>Avg time</th>`;
+  const of = (v, x) => `${v} <span class="sub">${pct(v, x.stayed)}</span>`;
   return `<div class="viewer-bd"><h3>${esc(title)}</h3><table class="grid compact"><thead><tr><th></th>${head}</tr></thead><tbody>${list.map((x) =>
-    `<tr><td>${esc(x.key)}</td>${pageLoads ? `<td>${x.pageLoads}</td>` : ""}<td>${x.visits}</td><td>${x.edited} <span class="sub">${pct(x.edited, x.visits)}</span></td><td>${x.full} <span class="sub">${pct(x.full, x.visits)}</span></td>`
-    + `<td>${x.saved} <span class="sub">${pct(x.saved, x.visits)}</span></td><td>${x.quotes} <span class="sub">${pct(x.quotes, x.visits)}</span></td><td>${x.sent} <span class="sub">${pct(x.sent, x.visits)}</span></td>`
-    + `<td>${x.engaged}</td><td>${x.visits ? esc(spent(Math.round(x.seconds / x.visits))) : "—"}</td></tr>`).join("")}</tbody></table></div>`;
+    `<tr><td>${esc(x.key)}</td>${pageLoads ? `<td>${x.pageLoads}</td>` : ""}<td>${x.visits}</td><td>${x.background}</td><td>${x.stayed} <span class="sub">${pct(x.stayed, x.visits - x.background)}</span></td>`
+    + `<td>${of(x.started, x)}</td><td>${of(x.edited, x)}</td><td>${of(x.full, x)}</td><td>${of(x.saved, x)}</td><td>${of(x.quotes, x)}</td><td>${of(x.sent, x)}</td>`
+    + `<td>${x.engaged}</td><td>${x.stayed ? esc(spent(Math.round(x.seconds / x.stayed))) : "—"}</td></tr>`).join("")}</tbody></table></div>`;
 }
 function funnelHtml(f) {
   const step = (label, v, of, note = "") => `<div class="viewer-step"><div class="viewer-step-n">${v}</div><div class="viewer-step-l">${esc(label)}</div><div class="sub">${of == null ? "&nbsp;" : pct(v, of)}${note}</div></div>`;
-  return `<div class="viewer-funnel">${f.pageLoads != null ? step("Page loads on waytugo.com", f.pageLoads, null) : ""}${step("Viewer visits", f.visits, null)}${step("Viewer started", f.started, f.visits)}`
-    + `${step("Edited something", f.edited, f.visits)}${step("Full screen", f.full, f.visits)}${step("Saved or shared", f.saved, f.visits)}${step("Quote form opened", f.quotes, f.visits)}${step("Quote sent", f.sent, f.visits)}</div>`
-    + `<p class="hint">Percentages are of viewer visits. ${f.pageLoads ? `<strong>${f.loadsWithout}</strong> page load${f.loadsWithout === 1 ? "" : "s"} on waytugo.com had no viewer visit (the visitor left before the viewer started, or it didn't load). ` : ""}`
+  return `<div class="viewer-funnel">${f.pageLoads != null ? step("Page loads on waytugo.com", f.pageLoads, null) : ""}${step("Viewer visits", f.visits, null)}${step("Background loads", f.background, null)}`
+    + `${step("Stayed 3 s or more", f.stayed, f.visits - f.background)}${step("Viewer started", f.started, f.stayed)}`
+    + `${step("Edited something", f.edited, f.stayed)}${step("Full screen", f.full, f.stayed)}${step("Saved or shared", f.saved, f.stayed)}${step("Quote form opened", f.quotes, f.stayed)}${step("Quote sent", f.sent, f.stayed)}</div>`
+    + `<p class="hint"><strong>Stayed 3 s or more</strong> is of the visits that weren't background loads; the steps after it count only those visitors, and their percentages are of them (quick exits, often accidental taps on an ad, would hide the real figures). A <strong>background load</strong> is the page loaded off screen (the browser said it was hidden or being prepared ahead of a tap) and never seen: left out (counted from V5e). ${f.pageLoads ? `<strong>${f.loadsWithout}</strong> page load${f.loadsWithout === 1 ? "" : "s"} on waytugo.com had no viewer visit (the visitor left before the viewer started, or it didn't load). ` : ""}`
     + `${f.failed ? `<strong>${f.failed}</strong> visit${f.failed === 1 ? "" : "s"} where the viewer failed to start in that browser. ` : ""}${f.failures ? `<strong>${f.failures}</strong> visit${f.failures === 1 ? "" : "s"} reported sends that didn't arrive (counted, then sent again). ` : ""}`
     + `Engaged: ${ENGAGED.seconds} seconds or more and ${ENGAGED.edits} or more edits (before V5: ${ENGAGED.changes} changes). Downloads and shares are interest, not leads. Location types are what visitors chose, not verified.</p>`;
 }
@@ -100,7 +120,7 @@ export function toCsv(list) {
   const cell = (v) => { const t = String(v ?? ""); return /[",\n\r]/.test(t) || /^[=+\-@]/.test(t) ? `"${(/^[=+\-@]/.test(t) ? "'" : "") + t.replace(/"/g, '""')}"` : t; };
   const head = ["code", "started", "location_type", "display", "building_name", "tenants", "typed_in", "screen", "look", "logo", "photo", "extras", "seconds", "changes", "engaged", "quote",
     "page", "utm_source", "utm_medium", "utm_campaign", "utm_content", "utm_term", "menu_board", "items_typed_in",
-    "last_active", "device", "browser", "page_loads", "viewer_started", "start_ms", "edits", "full_previews", "downloads", "shares_started", "shares_completed", "emails_sent", "quote_opened", "quote_sent", "snapshots", "send_failures", "viewer_failed", "from_page_load"];
+    "last_active", "device", "browser", "page_loads", "viewer_started", "start_ms", "edits", "full_previews", "downloads", "shares_started", "shares_completed", "emails_sent", "quote_opened", "quote_sent", "snapshots", "send_failures", "viewer_failed", "from_page_load", "seen", "background_load", "stayed_3s"];
   const lines = list.map((r) => {
     const c = normalizeConfig(r.config), s = r.source || {}, d = did(r), none = !r.config;
     return [r.id.slice(0, 8).toUpperCase(), r.started_at, none ? "" : c.type ? TYPES[c.type] : "Not specified", none ? "" : KINDS[c.kind], none ? "" : c.name, none ? "" : c.tenants, none ? "" : (c.rows || []).filter((x) => x.name || x.suite).length,
@@ -108,7 +128,8 @@ export function toCsv(list) {
       s.page, s.utm_source, s.utm_medium, s.utm_campaign, s.utm_content, s.utm_term,
       !none && c.kind === "menu" ? boardName(c.board) : "", !none && c.kind === "menu" ? (c.items || []).filter((x) => x.name || x.price).length : "",
       r.updated_at || "", r.device || "", r.browser || "", d.v5 ? d.loads : "", d.started ? "yes" : "no", r.init_ms ?? "", d.edits ?? "", d.full, d.downloaded, d.shareStarted, d.shared, d.emailed,
-      d.quoteOpened ? "yes" : "no", d.quoteSent ? "yes" : "no", (r.snapshots || []).length, r.failures || 0, d.failed ? "yes" : "no", r.page_load ? "yes" : ""].map(cell).join(",");
+      d.quoteOpened ? "yes" : "no", d.quoteSent ? "yes" : "no", (r.snapshots || []).length, r.failures || 0, d.failed ? "yes" : "no", r.page_load ? "yes" : "",
+      d.v5 && (n(r, "viewer_seen") || n(r, "viewer_loaded_unseen")) ? (n(r, "viewer_seen") ? "yes" : "no") : "", d.background ? "yes" : "no", stayed(r) ? "yes" : "no"].map(cell).join(",");
   });
   return [head.join(","), ...lines].join("\r\n") + "\r\n";
 }
@@ -133,16 +154,17 @@ async function load() {
   catch { loads = null; }   // (before 54-viewer-events.sql is run)
   render();
 }
-function badges(d) {
+function badges(d, r) {
   return [d.full && `<span class="viewer-did">Full screen${d.full > 1 ? ` ×${d.full}` : ""}</span>`, d.downloaded && '<span class="viewer-did">Downloaded</span>',
     d.shared ? '<span class="viewer-did">Shared</span>' : d.shareStarted && '<span class="viewer-did">Share started</span>',
     d.emailed && `<span class="viewer-did">Emailed${d.emailed > 1 ? ` ×${d.emailed}` : ""}</span>`,
-    d.failed && '<span class="viewer-did bad">Viewer failed</span>'].filter(Boolean).join(" ");
+    d.failed && '<span class="viewer-did bad">Viewer failed</span>', d.background && '<span class="viewer-did">Background load</span>',
+    d.v5 && !d.background && !stayed(r) && '<span class="viewer-did">Left under 3 s</span>'].filter(Boolean).join(" ");
 }
 function render() {
   const all = $("viewer-all").checked, shown = all ? rows : rows.filter(built);
   const f = funnel(rows, loads || null);
-  $("viewer-summary").textContent = `${rows.length} visit${rows.length === 1 ? "" : "s"} · ${f.edited} edited · ${f.quotes} asked for a quote${f.sent ? ` (${f.sent} sent the form)` : ""}`;
+  $("viewer-summary").textContent = `${rows.length} visit${rows.length === 1 ? "" : "s"} · ${f.stayed} stayed 3 s+ · ${f.edited} edited · ${f.quotes} asked for a quote${f.sent ? ` (${f.sent} sent the form)` : ""}`;
   const withConfig = rows.filter((r) => r.config);
   $("viewer-breakdown").innerHTML = rows.length || loads?.length ? funnelHtml(f)
     + breakdownHtml("By ad source", breakdown(rows, (r) => sourceOf(r.source), loads || null), { pageLoads: !!loads })
@@ -159,7 +181,7 @@ function render() {
       <td>${esc(spent(r.seconds))}<div class="sub">${d.v5 ? `${d.edits} edit${d.edits === 1 ? "" : "s"}` : `${r.changes} change${r.changes === 1 ? "" : "s"}`}</div></td>
       <td>${esc(deviceOf(r))}</td>
       <td>${esc(from(r.source)) || '<span class="muted">—</span>'}</td>
-      <td>${badges(d)}</td>
+      <td>${badges(d, r)}</td>
       <td>${r.quote ? `<span class="viewer-quote ${esc(r.quote)}">${r.quote === "sent" ? "Sent" : "Started"}</span>` : ""}</td>
       <td class="actions">${none ? "" : '<button type="button" class="ghost" data-view>View</button> '}<button type="button" class="ghost danger" data-remove>Remove</button></td></tr>`;
   }).join("") : `<tr><td colspan="13" class="muted">${rows.length ? "No visits built anything in this period: tick Show page loads too to see the rest." : "No visits yet in this period."}</td></tr>`;

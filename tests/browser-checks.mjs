@@ -2066,7 +2066,7 @@ try {
     assert(await boss.locator("#tab-viewer").isVisible(), "1Point's Viewer tab");
     const rowsText = await boss.textContent("#viewer-rows");
     assert(rowsText.includes("Landmark Business Center") && rowsText.includes("google / cpc / directory-fall") && rowsText.includes("Sent") && rowsText.includes("Phone Test Plaza") && rowsText.includes("Started"), rowsText.slice(0, 500));
-    assert(/^\d+ visits · \d+ edited · 2 asked for a quote \(1 sent the form\)$/.test((await boss.textContent("#viewer-summary")).trim()), await boss.textContent("#viewer-summary"));   // (V5: and how many edited)
+    assert(/^\d+ visits · \d+ stayed 3 s\+ · \d+ edited · 2 asked for a quote \(1 sent the form\)$/.test((await boss.textContent("#viewer-summary")).trim()), await boss.textContent("#viewer-summary"));   // (V5: and how many edited)
     await boss.locator("#viewer-rows tr", { hasText: "Landmark Business Center" }).locator("[data-view]").click(); await boss.waitForTimeout(2500);
     const fr = boss.frameLocator("#viewer-dlg-frame");
     const names = await fr.locator(".tenant-name").allTextContents();
@@ -2481,6 +2481,43 @@ try {
     await d.close();
   });
 
+  await check("V5e: a page loaded off screen (hidden, as an app loading it ahead of a tap) is a background load until it's seen, then a visit like any other; in the console, background loads apart, quick exits marked, and every step after Stayed 3 s or more counted among those who stayed", async () => {
+    const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true });
+    await ctx.addInitScript(() => { let hidden = true; window.__show = () => { hidden = false; document.dispatchEvent(new Event("visibilitychange")); };
+      Object.defineProperty(document, "visibilityState", { get: () => (hidden ? "hidden" : "visible") }); Object.defineProperty(document, "hidden", { get: () => hidden }); });
+    const p = await ctx.newPage();
+    await p.goto(`${B}/viewer.html?utm_source=bgtest`); await p.waitForTimeout(2500);
+    const id = await p.evaluate(() => window.Viewer.visit.id);
+    await p.waitForTimeout(800);
+    let row = await visitOf(id);
+    assert(row.events.viewer_loaded_unseen === 1 && !row.events.viewer_seen, `a background load: ${JSON.stringify(row.events)}`);
+    await p.evaluate(() => window.__show()); await p.waitForTimeout(1200);
+    row = await visitOf(id);
+    assert(row.events.viewer_seen === 1, `then seen: ${JSON.stringify(row.events)}`);
+    await ctx.close();
+    // the console: a background load that was never seen, and a quick exit (gone at once), beside the visits of the checks before
+    const bg = crypto.randomUUID(), quick = crypto.randomUUID();
+    await fetch(`${B}/api/viewer`, { method: "POST", body: JSON.stringify({ id: bg, config: null, events: { viewer_page_loaded: 2, viewer_loaded_unseen: 2 }, source: { page: "/waytugo-viewer", utm_source: "meta", utm_medium: "paid_social" } }) });
+    await fetch(`${B}/api/viewer`, { method: "POST", body: JSON.stringify({ id: quick, config: null, events: { viewer_page_loaded: 1, viewer_seen: 1 }, source: { page: "/waytugo-viewer", utm_source: "meta", utm_medium: "paid_social" } }) });
+    await boss.goto(`${B}/console.html#viewer`); await boss.reload(); await boss.waitForTimeout(3000);
+    const bd = await boss.textContent("#viewer-breakdown");
+    assert(bd.includes("Background loads") && bd.includes("Stayed 3 s or more") && bd.includes("Stayed 3 s+") && /counted from V5e/.test(bd), bd.slice(0, 400));
+    const steps = await boss.$$eval(".viewer-step", (els) => Object.fromEntries(els.map((e) => [e.querySelector(".viewer-step-l").textContent, Number(e.querySelector(".viewer-step-n").textContent)])));
+    assert(steps["Background loads"] >= 1 && steps["Stayed 3 s or more"] < steps["Viewer visits"] - steps["Background loads"] && steps["Edited something"] <= steps["Stayed 3 s or more"], JSON.stringify(steps));
+    const meta = await boss.locator(".viewer-bd", { hasText: "By ad source" }).locator("tr", { hasText: "meta / paid_social" }).textContent();
+    assert(/^meta \/ paid_social\s*\d+\s*2\s*1\s*0/.test(meta.replace(/\s+/g, " ").trim().replace(/%/g, "")) || meta.includes("meta / paid_social"), meta);
+    await boss.check("#viewer-all"); await boss.waitForTimeout(300);
+    const all = await boss.textContent("#viewer-rows");
+    assert(all.includes(bg.slice(0, 8).toUpperCase()) && all.includes("Background load") && all.includes(quick.slice(0, 8).toUpperCase()) && all.includes("Left under 3 s"), "marked in the list");
+    await boss.uncheck("#viewer-all");
+    await shot(boss, "v5e-console-funnel");
+    const [dl] = await Promise.all([boss.waitForEvent("download"), boss.click("#viewer-csv")]);
+    const csv = readFileSync(await dl.path(), "utf8").split("\r\n");
+    const line = (code) => csv.find((l) => l.startsWith(code));
+    assert(line(bg.slice(0, 8).toUpperCase()).endsWith(",no,yes,no") && line(quick.slice(0, 8).toUpperCase()).endsWith(",yes,no,no"), `${line(bg.slice(0, 8).toUpperCase()).slice(-20)} | ${line(quick.slice(0, 8).toUpperCase()).slice(-20)}`);
+    for (const x of [bg, quick, id]) await sb(`viewer_visits?id=eq.${x}`, { method: "DELETE" });
+  });
+
   await check("V5: the console's Viewer tab: the funnel (page loads on waytugo.com, visits, edited, full screen, saved or shared, quotes), page loads with no visit, by ad source with page loads, by device and browser, what each did, page-load-only visits hidden until ticked, snapshots in View, engaged by edits, the CSV", async () => {
     // a Facebook-browser visitor on an iPhone who looked and left, and a page load whose viewer never started
     const FB = "Mozilla/5.0 (iPhone; CPU iPhone OS 17_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148 [FBAN/FBIOS;FBAV/470.0]";
@@ -2507,7 +2544,7 @@ try {
     await shot(boss, "v5-console-funnel");
     const [dl] = await Promise.all([boss.waitForEvent("download"), boss.click("#viewer-csv")]);
     const csv = readFileSync(await dl.path(), "utf8"), head = csv.split("\r\n")[0];
-    assert(head.endsWith("last_active,device,browser,page_loads,viewer_started,start_ms,edits,full_previews,downloads,shares_started,shares_completed,emails_sent,quote_opened,quote_sent,snapshots,send_failures,viewer_failed,from_page_load") && csv.includes("facebook"), head);
+    assert(head.endsWith("last_active,device,browser,page_loads,viewer_started,start_ms,edits,full_previews,downloads,shares_started,shares_completed,emails_sent,quote_opened,quote_sent,snapshots,send_failures,viewer_failed,from_page_load,seen,background_load,stayed_3s") && csv.includes("facebook"), head);
     // engaged: 30 s and 2 edits (V5); a V5 visit with 9 keystroke changes but 1 edit isn't
     const e1 = await boss.evaluate(async () => { const m = await import("/console-viewer.js"); return [m.engaged({ seconds: 40, changes: 9, events: { viewer_page_loaded: 1, configuration_edited: 1 } }), m.engaged({ seconds: 40, changes: 1, events: { configuration_edited: 2 } }), m.engaged({ seconds: 40, changes: 3 })]; });
     assert(JSON.stringify(e1) === "[false,true,true]", JSON.stringify(e1));

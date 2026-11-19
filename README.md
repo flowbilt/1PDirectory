@@ -988,6 +988,16 @@ through waytugo.com's own inquiry form.
     A mouse keeps the clickable preview.
   - **The tenant (and item) list** was a 320 px scroll box; on a phone it now grows with the page.
 
+- **V5e** (DP-15, 2026-11-19; from the 30-day CSV: 24 of 43 ad visits gone within about a second, 13 with two page
+  loads in the same second): `supabase/56-viewer-seen.sql` adds two events: `viewer_loaded_unseen` (the page loaded
+  while hidden or prerendered: `document.visibilityState`/`document.prerendering`, counted by viewer.html's first
+  script) and `viewer_seen` (on screen at some point; a later `visibilitychange`/`prerenderingchange` sends it at once).
+  A visit with the first and not the second is a **background load**. The console's funnel: Viewer visits, Background
+  loads (left out), **Stayed 3 s or more** (`stayed()`: 3 s of visible time, or 3 s between the visit's first and last
+  send, or an edit, full screen or quote; visits before V5 count as stayed), then every step counted among the
+  stayers, with percentages of them; the same columns in the three tables; "Background load" and "Left under 3 s" in
+  the list (with Show page loads too); CSV `seen`, `background_load`, `stayed_3s`.
+
 ### Light and Dark directories (DP-14, D2)
 
 Each directory has a **Look** in the editor (This directory): **Dark** (the original, the default), **Light** (a pale

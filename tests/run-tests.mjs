@@ -3867,7 +3867,7 @@ test("V5: the viewer's visits from the page's load: events counted (only the vie
   // the events' rules
   assert.equal(V.eventsProblem({ viewer_page_loaded: 1, full_preview_opened: 3 }), ""); assert.equal(V.eventsProblem(null), "");
   for (const bad of [[], "x", { clicked_ad: 1 }, { full_preview_opened: -1 }, { full_preview_opened: 1.5 }, { full_preview_opened: 10001 }, { full_preview_opened: "1" }]) assert.ok(V.eventsProblem(bad), JSON.stringify(bad));
-  assert.deepEqual(V.VISIT_EVENTS, ["viewer_page_loaded", "viewer_initialized", "configuration_edited", "full_preview_opened", "full_preview_closed", "directory_image_downloaded", "directory_share_initiated", "directory_share_completed", "directory_email_sent", "quote_form_opened", "quote_submitted", "viewer_error"]);
+  assert.deepEqual(V.VISIT_EVENTS, ["viewer_page_loaded", "viewer_loaded_unseen", "viewer_seen", "viewer_initialized", "configuration_edited", "full_preview_opened", "full_preview_closed", "directory_image_downloaded", "directory_share_initiated", "directory_share_completed", "directory_email_sent", "quote_form_opened", "quote_submitted", "viewer_error"]);
   // the device and browser, as categories
   const IPHONE_FB = "Mozilla/5.0 (iPhone; CPU iPhone OS 17_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148 [FBAN/FBIOS;FBAV/470.0.0.40.97;FBBV/123]";
   const ANDROID_IG = "Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/129.0 Mobile Safari/537.36 Instagram 350.0.0.0.0 Android";
@@ -3920,7 +3920,7 @@ test("V5: the viewer's visits from the page's load: events counted (only the vie
   assert.ok(snap.includes("Preview created with WayTuGo · waytugo.com") && snap.includes("CONCEPT PREVIEW") && !/fetch\([^)]*api\//.test(snap), "the picture is framed and made here, nothing sent");
   // the database's rules say the same
   const sql = readFileSync(new URL("../supabase/54-viewer-events.sql", import.meta.url), "utf8");
-  for (const w of [...V.VISIT_EVENTS.filter((e) => e !== "directory_email_sent").map((e) => `'${e}'`), "alter column config drop not null", "check (device in ('phone', 'tablet', 'desktop'))", "check (browser in ('facebook', 'instagram', 'other'))",
+  for (const w of [...V.VISIT_EVENTS.filter((e) => !["directory_email_sent", "viewer_loaded_unseen", "viewer_seen"].includes(e)).map((e) => `'${e}'`), "alter column config drop not null", "check (device in ('phone', 'tablet', 'desktop'))", "check (browser in ('facebook', 'instagram', 'other'))",
     "while jsonb_array_length(v_snaps) > 5", "drop function if exists public.viewer_record(uuid, jsonb, integer, integer, text, jsonb);", "grant execute on function public.viewer_page_record(uuid, jsonb, text, text) to service_role", "interval '400 days'", ">= 120", ">= 5000"]) assert.ok(sql.includes(w), w);
   const chk = readFileSync(new URL("../supabase/check-viewer-events.sql", import.meta.url), "utf8");
   assert.ok(chk.includes("ALL 8 CHECKS PASSED") && chk.includes("p_id => v_old, p_config =>"), "the check: and the code before V5 still works");
@@ -4021,6 +4021,17 @@ test("V5c: the viewer's first visit and the phone: the preview frame's address s
   const ver = (await import("../netlify/lib/version.mjs"));
   assert.ok(JSON.stringify(ver).includes("2.24.2") || readFileSync(new URL("../netlify/lib/version.mjs", import.meta.url), "utf8").includes("2.24.2"));
   assert.ok(disp.includes('const VERSION = "2.24.2"') && read("board.js").includes('const VERSION = "2.24.2"'));
+});
+
+test("V5e: background loads and quick exits: the page's first script counts a load off screen (hidden or prerendered) and when it's seen; the console leaves background loads out and counts the steps among visitors who stayed 3 seconds or more", async () => {
+  const html = readFileSync(new URL("../public/viewer.html", import.meta.url), "utf8"), con = readFileSync(new URL("../public/console-viewer.js", import.meta.url), "utf8");
+  assert.ok(html.includes('document.visibilityState === "visible" && !document.prerendering') && html.includes("s.ev.viewer_loaded_unseen = (s.ev.viewer_loaded_unseen || 0) + 1") && html.includes('document.addEventListener("prerenderingchange", seenNow)'));
+  assert.ok(html.indexOf("viewer_loaded_unseen") < html.indexOf("send();"), "counted before the first send");
+  assert.ok(con.includes("export const STAYED_MS = 3000;") && con.includes('background: n(r, "viewer_loaded_unseen") > 0 && n(r, "viewer_seen") === 0'));
+  const V = await import("../public/viewer-sample.mjs");
+  assert.equal(V.eventsProblem({ viewer_loaded_unseen: 2, viewer_seen: 1 }), "");
+  const sql = readFileSync(new URL("../supabase/56-viewer-seen.sql", import.meta.url), "utf8");
+  for (const e of V.VISIT_EVENTS) assert.ok(sql.includes(`'${e}'`), e);
 });
 
 let passed = 0;

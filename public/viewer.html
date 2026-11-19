@@ -24,6 +24,9 @@
   // a visit can be added to for a day (the database's rule): after 20 hours in the same tab, a new one
   if (!s || !s.id || !s.ev || !(now - s.t < 72e6)) s = { id: uuid(), t: now, ev: {}, seconds: 0, changes: 0, quote: null, failures: 0, initMs: null };
   s.ev.viewer_page_loaded = (s.ev.viewer_page_loaded || 0) + 1;
+  // V5e: on screen? A page loaded in the background (hidden, or prerendered ahead of a tap) isn't a visitor until it is
+  var onScreen = function () { return document.visibilityState === "visible" && !document.prerendering; };
+  if (onScreen()) s.ev.viewer_seen = 1; else s.ev.viewer_loaded_unseen = (s.ev.viewer_loaded_unseen || 0) + 1;
   window.__wtg = s;
   var save = function () { try { window.sessionStorage.setItem(K, JSON.stringify(s)); } catch (e) { /* this tab only, then */ } };
   save();
@@ -40,6 +43,14 @@
     } catch (e) { /* counted as a failure next time */ }
   };
   send();
+  // V5e: seen later (a background load the visitor then opened): said at once
+  var seenNow = function () {
+    if (s.ev.viewer_seen || !onScreen()) return;
+    s.ev.viewer_seen = 1; save();
+    if (window.__wtgKeep) window.__wtgKeep(); else send();
+  };
+  document.addEventListener("visibilitychange", seenNow);
+  document.addEventListener("prerenderingchange", seenNow);
   // the page fails before the viewer starts (its code doesn't load or doesn't run here): counted, no message kept
   window.__wtgFailed = function () { if (window.__wtgStarted || s.ev.viewer_error) return; s.ev.viewer_error = 1; save(); send(); };
   window.addEventListener("error", function (e) { if (e.target === window || (e.target && e.target.tagName === "SCRIPT")) window.__wtgFailed(); }, true);

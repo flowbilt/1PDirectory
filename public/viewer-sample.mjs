@@ -148,8 +148,9 @@ export function configProblem(c) {
 
 /** V5 (DP-15): what a visit counts, from the moment the page loads (the same list as 54-viewer-events.sql's
  *  viewer_events_problem). configuration_edited: once per control the visitor actually changed, when they finished
- *  with it (samples and placeholders never count). viewer_error: the page failed before it started (no message kept). V5b: directory_email_sent (Email Me a Copy). */
-export const VISIT_EVENTS = ["viewer_page_loaded", "viewer_initialized", "configuration_edited", "full_preview_opened", "full_preview_closed",
+ *  with it (samples and placeholders never count). viewer_error: the page failed before it started (no message kept). V5b: directory_email_sent (Email Me a Copy). V5e: viewer_loaded_unseen (the page loaded while not on
+ *  screen: hidden or prerendered), viewer_seen (it was on screen at some point); one without the other is a background load. */
+export const VISIT_EVENTS = ["viewer_page_loaded", "viewer_loaded_unseen", "viewer_seen", "viewer_initialized", "configuration_edited", "full_preview_opened", "full_preview_closed",
   "directory_image_downloaded", "directory_share_initiated", "directory_share_completed", "directory_email_sent", "quote_form_opened", "quote_submitted", "viewer_error"];
 export function eventsProblem(e) {
   if (e === undefined || e === null) return "";
