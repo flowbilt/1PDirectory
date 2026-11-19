@@ -27,8 +27,10 @@ const $ = (id) => document.getElementById(id);
 const form = $("controls"), frame = $("pv"), box = $("screen");
 const ALLOWED = [/^https:\/\/(www\.)?waytugo\.com$/, /^https:\/\/(www\.)?1pointusa\.com$/, /^https:\/\/[a-z0-9-]+(--[a-z0-9-]+)?\.netlify\.app$/, /^http:\/\/localhost(:\d+)?$/];
 const embedded = window.parent !== window;
-// V5c: a phone-sized page (as the phone layout's CSS: a strip of preview, the controls folded, a bottom bar)
-const phoneMQ = matchMedia("(max-width: 760px)");
+// V5c: a phone-sized page (as the phone layout's CSS: a strip of preview, the controls folded, a bottom bar). V5d: a
+// phone on its side too (a touch screen under 520 px tall: 800–930 px wide, it had the tablet layout, with a preview
+// taller than the screen taking the touches)
+const phoneMQ = matchMedia("(max-width: 760px), (pointer: coarse) and (max-height: 520px)");
 function phone() { return phoneMQ.matches; }
 const parentOrigin = (() => {
   if (!embedded) return null;
@@ -146,8 +148,8 @@ function fit() {
   // visitor's own screen does, within 900 px
   const tall = embedded ? Math.min(window.screen?.availHeight || 900, 1100) : window.innerHeight;
   // V5c: on a phone, a strip about a third of the screen (the controls come straight after it)
-  const share = phone() ? 0.36 : window.innerWidth <= 860 ? 0.62 : 0.8;
-  const avail = box.parentElement.clientWidth - 20, maxH = Math.min(900, Math.max(phone() ? 180 : 320, tall * share));
+  const share = phone() ? (window.innerWidth > window.innerHeight ? 0.5 : 0.36) : window.innerWidth <= 860 ? 0.62 : 0.8;   // (sideways: half)
+  const avail = box.parentElement.clientWidth - 20, maxH = Math.min(900, Math.max(phone() ? 150 : 320, tall * share));
   const s = Math.min(avail / W, maxH / H);
   box.style.width = `${Math.round(W * s)}px`; box.style.height = `${Math.round(H * s)}px`;
   box.style.marginLeft = box.style.marginRight = "auto";
@@ -369,9 +371,13 @@ const seeLabel = (c) => {
 // headings), and See My Directory in a bar at the bottom of the screen. Embedded, "the bottom of the screen" is
 // worked out from the page's own messages (its V5c script: {type:"viewport"}), else from what's in sight here.
 const B = { view: null };
+const touchMQ = matchMedia("(pointer: coarse)");   // V5d: any touch screen (a tablet too)
 function phoneSetup() {
   const on = phone();
   document.documentElement.classList.toggle("vw-phone", on);
+  // V5d: on a touch screen the editor's preview takes no touches (a touch directory's lists scroll inside it and
+  // never hand a swipe on to the page); a tap opens it full screen, where it's fully touchable
+  document.documentElement.classList.toggle("vw-touch", touchMQ.matches);
   document.documentElement.classList.toggle("vw-embedded", embedded);
   [...form.querySelectorAll(".vw-step")].forEach((fs, i) => {
     const lg = fs.querySelector("legend"), fold = on && i >= 2;
@@ -386,6 +392,7 @@ form.addEventListener("click", (e) => { const lg = e.target.closest(".vw-fold > 
 form.addEventListener("keydown", (e) => { if ((e.key === "Enter" || e.key === " ") && e.target.matches?.(".vw-fold > legend")) { e.preventDefault(); toggleFold(e.target.parentElement); } });
 $("more-btn").addEventListener("click", () => { const open = $("more").classList.toggle("open"); $("more-btn").setAttribute("aria-expanded", String(open)); });
 phoneMQ.addEventListener?.("change", () => { phoneSetup(); fit(); });
+touchMQ.addEventListener?.("change", phoneSetup);
 // Embedded in a page without the V5c script (it doesn't say where the visitor's screen is), the bar can't be placed:
 // See My Directory then stays in the page, under the strip (html.vw-inline-see)
 function placeBar() {

@@ -2441,6 +2441,46 @@ try {
     await p.close();
   });
 
+  await check("V5d: swipes always move the page on a touch screen: a phone on its side gets the phone layout (it had the tablet one, the preview taller than the screen taking the swipes), a touch directory's lists in the editor's preview don't take the swipe, a long tenant list grows with the page instead of scrolling inside it; a tablet's preview is touch-free too, a tap opening it full screen; a mouse keeps the clickable preview", async () => {
+    const IPHONE = "Mozilla/5.0 (iPhone; CPU iPhone OS 17_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148 [FBAN/FBIOS;FBAV/470.0]";
+    const bottomReached = async (p, cdp, x, y, h) => {
+      for (let i = 0; i < 24; i++) { await swipe(cdp, x, y, -Math.round(h * 0.6)); await p.waitForTimeout(120); }
+      return p.evaluate(() => Math.abs(scrollY - (document.documentElement.scrollHeight - innerHeight)) < 3);
+    };
+    // a phone on its side, the touch directory with 20 tenants, all the steps open
+    const p = await browser.newPage({ viewport: { width: 844, height: 340 }, isMobile: true, hasTouch: true, userAgent: IPHONE });
+    await p.goto(`${B}/viewer.html`); await p.waitForTimeout(2500);
+    const cdp = await p.context().newCDPSession(p);
+    assert(await p.evaluate(() => document.documentElement.classList.contains("vw-phone")), "the phone layout, sideways");
+    const sc = await p.locator("#screen").boundingBox(); assert(sc.height <= 340 * 0.55, `a strip: ${sc.height}`);
+    await p.check('input[name="kind"][value="touch"]'); await p.waitForTimeout(1500);
+    await p.click("#more-btn"); await p.locator('input[name="tenants"]').fill("20"); await p.waitForTimeout(800);
+    for (const i of [2, 3]) await p.locator(".vw-step").nth(i).locator("legend").click();
+    assert(await p.locator("#rows").evaluate((r) => r.scrollHeight <= r.clientHeight + 1 && getComputedStyle(r).overflowY === "visible"), "the tenant list grows with the page");
+    await p.evaluate(() => scrollTo(0, 0)); await p.waitForTimeout(200);
+    const s2 = await p.locator("#screen").boundingBox();
+    await swipe(cdp, Math.round(s2.x + s2.width / 2), Math.round(s2.y + s2.height / 2), -150); await p.waitForTimeout(600);
+    assert(await p.evaluate(() => scrollY) > 60, "a swipe over the touch directory's preview moves the page");
+    await p.evaluate(() => scrollTo(0, 0));
+    assert(await bottomReached(p, cdp, 420, 200, 340), "swiping reaches the bottom");
+    const q = await p.locator("#quote").boundingBox(); assert(q.y >= 0 && q.y + q.height <= 340, `Request a Quote in sight at the end: ${JSON.stringify(q)}`);
+    await shot(p, "v5d-phone-sideways");
+    await p.close();
+    // a tablet (not the phone layout): the preview touch-free, a tap opens it full screen, where it's touchable
+    const t = await browser.newPage({ viewport: { width: 820, height: 1180 }, isMobile: true, hasTouch: true });
+    await t.goto(`${B}/viewer.html`); await t.waitForTimeout(2500);
+    assert(await t.evaluate(() => !document.documentElement.classList.contains("vw-phone") && document.documentElement.classList.contains("vw-touch")), "a tablet: touch, not phone");
+    assert(await t.locator("#pv").evaluate((f) => getComputedStyle(f).pointerEvents === "none") && await t.isVisible("#pv-tap"), "the editor's preview touch-free, with Tap to see it full screen");
+    await t.locator("#pv-tap").tap(); await t.waitForTimeout(900);
+    assert(await t.evaluate(() => window.Viewer.full.open) && await t.locator("#pv").evaluate((f) => getComputedStyle(f).pointerEvents !== "none"), "full screen, touchable");
+    await t.click("#full-back"); await t.close();
+    // a mouse: the clickable preview, as before
+    const d = await browser.newPage({ viewport: { width: 1280, height: 860 } });
+    await d.goto(`${B}/viewer.html`); await d.waitForTimeout(2000);
+    assert(await d.locator("#pv").evaluate((f) => getComputedStyle(f).pointerEvents !== "none") && await d.isHidden("#pv-tap"), "a mouse keeps the clickable preview");
+    await d.close();
+  });
+
   await check("V5: the console's Viewer tab: the funnel (page loads on waytugo.com, visits, edited, full screen, saved or shared, quotes), page loads with no visit, by ad source with page loads, by device and browser, what each did, page-load-only visits hidden until ticked, snapshots in View, engaged by edits, the CSV", async () => {
     // a Facebook-browser visitor on an iPhone who looked and left, and a page load whose viewer never started
     const FB = "Mozilla/5.0 (iPhone; CPU iPhone OS 17_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148 [FBAN/FBIOS;FBAV/470.0]";

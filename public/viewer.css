@@ -187,3 +187,23 @@ html.vw-phone .vw-step { margin-bottom: 12px; }
 html.vw-phone .vw-screen.pv-wait .vw-pv-tap { display: none; }   /* (no tap-to-open before it's drawn: Try again must be pressable) */
 html.vw-phone.vw-inline-see .vw-see { display: flex; }   /* (embedded in a page without the V5c script: See My Directory under the strip) */
 .vw-full-turn { order: 3; flex-basis: 100%; }   /* (V5c: the note under the top row; ✕ stays beside Back) */
+/* V5d (DP-15): on a phone, no scroll box inside the page (the tenant and item lists grow instead), so a swipe anywhere
+   moves the page; and a phone on its side gets the phone layout (viewer.js's phoneMQ), with a slimmer bottom bar */
+html.vw-phone .vw-rows { max-height: none; overflow: visible; padding-right: 0; }
+html.vw-phone .vw-body { grid-template-columns: minmax(0, 1fr); }
+html.vw-phone .vw-preview { position: static; order: -1; }
+@media (orientation: landscape) {
+  html.vw-phone .vw-bar { padding-top: 6px; padding-bottom: max(6px, env(safe-area-inset-bottom)); }
+  html.vw-phone .vw-bar .vw-see-btn { min-height: 42px; font-size: 16px; }
+  html.vw-phone .vw { padding-bottom: 70px; }
+}
+/* V5d: a touch screen's editor preview: no touches (a tap opens it full screen); a phone on its side: a smaller heading */
+html.vw-touch .vw-screen:not(.vw-screen-full) #pv { pointer-events: none; }
+html.vw-touch .vw-pv-tap { display: flex; position: absolute; inset: 0; z-index: 3; align-items: flex-end; justify-content: center; padding: 0 0 8px; border: 0; background: transparent; cursor: pointer; }
+html.vw-touch .vw-pv-tap span { padding: 4px 12px; border-radius: 999px; background: rgba(0,0,0,.6); color: #fff; font-size: 13px; font-weight: 600; }
+html.vw-touch .vw-screen-full .vw-pv-tap, html.vw-touch .vw-screen.pv-wait .vw-pv-tap { display: none; }
+@media (orientation: landscape) {
+  html.vw-phone .vw-head p { display: none; }
+  html.vw-phone .vw-head h1 { font-size: 22px; margin: 4px 0; }
+  html.vw-phone .vw-logo { height: 30px; }
+}

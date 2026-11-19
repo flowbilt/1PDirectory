@@ -975,6 +975,19 @@ through waytugo.com's own inquiry form.
     Chromium); browser checks reproduce the race (the viewer's code held back 2 s: blank before, drawn now) and the
     swipe (0 px before, scrolls now).
 
+- **V5d** (DP-15, 2026-11-19; Scot on his phone after V5c: "the bottom swipes independently from the top and the
+  bottom content gets buried and unreachable… Sideways is worse"): three places where a swipe on a touch screen
+  didn't move the page:
+  - **A phone on its side** (800–930 px wide) got the tablet layout: a full-width preview taller than the screen, the
+    controls a thin strip under it, the preview taking the swipes. `phoneMQ` is now `(max-width: 760px), (pointer:
+    coarse) and (max-height: 520px)`: the phone layout sideways too (the strip half the screen's height, a slimmer
+    bar, a smaller heading).
+  - **The touch directory's lists** inside the preview scroll on their own and never hand a swipe on to the page (as
+    they must on a lobby touch screen). On any touch screen (`html.vw-touch`, `(pointer: coarse)`; a tablet too) the
+    editor's preview now takes no touches, with **Tap to see it full screen**; in the full view it's fully touchable.
+    A mouse keeps the clickable preview.
+  - **The tenant (and item) list** was a 320 px scroll box; on a phone it now grows with the page.
+
 ### Light and Dark directories (DP-14, D2)
 
 Each directory has a **Look** in the editor (This directory): **Dark** (the original, the default), **Light** (a pale
