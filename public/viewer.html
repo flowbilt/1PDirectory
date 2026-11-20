@@ -125,8 +125,8 @@
         </div>
         <div class="vw-field" id="shape-field"><span>Screen</span>
           <div class="vw-seg" role="radiogroup" aria-label="Screen">
-            <label><input type="radio" name="shape" value="landscape" checked><span>Landscape</span></label>
-            <label><input type="radio" name="shape" value="portrait"><span>Portrait</span></label>
+            <label><input type="radio" name="shape" value="landscape"><span>Landscape</span></label>
+            <label><input type="radio" name="shape" value="portrait" checked><span>Portrait</span></label>
           </div></div>
         <div class="vw-field" data-only="directory"><span>Look</span>
           <div class="vw-seg" role="radiogroup" aria-label="Look">
@@ -143,13 +143,13 @@
       <fieldset class="vw-step">
         <legend><span class="vw-num">3</span> <span data-only="directory">Add your logo and building photo</span><span data-only="menu">Add your logo</span></legend>
         <div class="vw-pic" data-pic="logo">
-          <label class="vw-check"><input type="checkbox" name="logo"><span><span data-only="directory">Logo above the name</span><span data-only="menu">Your logo in place of the sample's</span></span></label>
-          <div class="vw-pic-own"><button type="button" class="vw-link" data-own>Use my own logo…</button><span class="vw-pic-name"></span><button type="button" class="vw-link" data-drop hidden>Back to the placeholder</button>
+          <label class="vw-check"><input type="checkbox" name="logo" checked><span><span data-only="directory">Logo above the name</span><span data-only="menu">Your logo in place of the sample's</span></span></label>
+          <div class="vw-pic-own"><button type="button" class="vw-link" data-own>Use my own logo…</button><span class="vw-pic-name"></span><button type="button" class="vw-link" data-drop hidden>Back to the sample</button>
             <input type="file" accept="image/png,image/jpeg,image/webp,image/svg+xml" hidden></div>
         </div>
         <div class="vw-pic" data-pic="photo" data-only="directory">
-          <label class="vw-check"><input type="checkbox" name="photo"><span>Building photo behind the directory</span></label>
-          <div class="vw-pic-own"><button type="button" class="vw-link" data-own>Use my own photo…</button><span class="vw-pic-name"></span><button type="button" class="vw-link" data-drop hidden>Back to the placeholder</button>
+          <label class="vw-check"><input type="checkbox" name="photo" checked><span>Building photo behind the directory</span></label>
+          <div class="vw-pic-own"><button type="button" class="vw-link" data-own>Use my own photo…</button><span class="vw-pic-name"></span><button type="button" class="vw-link" data-drop hidden>Back to the sample</button>
             <input type="file" accept="image/png,image/jpeg,image/webp" hidden></div>
         </div>
         <p class="vw-note vw-note-flat">Your pictures stay on your device: they're shown here only, never uploaded or saved.</p>
@@ -161,7 +161,7 @@
         <label class="vw-check"><input type="checkbox" name="weather" checked><span>Weather beside the clock</span></label>
         <label class="vw-check"><input type="checkbox" name="contacts" checked><span>Building contacts (managed by, leasing)</span></label>
         <label class="vw-check"><input type="checkbox" name="qr"><span>Directory to Go: a QR code visitors scan to take the directory with them</span></label>
-        <label class="vw-check"><input type="checkbox" name="news"><span>News headlines (samples here; a real screen shows live news)</span></label>
+        <label class="vw-check"><input type="checkbox" name="news" checked><span>News headlines (samples here; a real screen shows live news)</span></label>
         <label class="vw-check"><input type="checkbox" name="places"><span>Events, places and promotions nearby</span></label>
         <p class="vw-note">News, events and places take turns in the same box. With a very long tenant list, the screen gives that room to the names.</p>
       </fieldset>
@@ -187,7 +187,7 @@
         <div class="vw-pv-state" id="pv-loading" role="status"><span class="vw-spin" aria-hidden="true"></span>Loading your preview…</div>
         <div class="vw-pv-state vw-pv-error" id="pv-error" role="alert" hidden><span>The preview didn't load.</span><button type="button" class="vw-see-btn" id="pv-retry">Try again</button></div>
         <!-- on a phone: the preview doesn't take touches (swipes scroll the page); a tap opens it full screen -->
-        <button type="button" class="vw-pv-tap" id="pv-tap" aria-label="See My Directory full screen"><span>Tap to see it full screen</span></button>
+        <button type="button" class="vw-pv-tap" id="pv-tap" aria-label="See My Directory full screen"><span>Tap for full screen</span></button>
       </div>
       <!-- V5 (DP-15): the screen full size, as a finished directory -->
       <div class="vw-see">

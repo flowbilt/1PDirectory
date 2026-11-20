@@ -207,3 +207,7 @@ html.vw-touch .vw-screen-full .vw-pv-tap, html.vw-touch .vw-screen.pv-wait .vw-p
   html.vw-phone .vw-head h1 { font-size: 22px; margin: 4px 0; }
   html.vw-phone .vw-logo { height: 30px; }
 }
+
+/* V5f (DP-15): Tap for full screen sits small along the bottom edge, on one line, so a portrait board shows whole */
+html.vw-phone .vw-pv-tap, html.vw-touch .vw-pv-tap { padding: 0 0 2px; }
+html.vw-phone .vw-pv-tap span, html.vw-touch .vw-pv-tap span { padding: 1px 8px; font-size: 10px; line-height: 1.5; white-space: nowrap; background: rgba(0,0,0,.6); }

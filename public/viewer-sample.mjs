@@ -15,7 +15,13 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 // V2: the logo and the building photo: none, WayTuGo's placeholder, or the visitor's own (shown only in their browser:
 // never sent or kept; a kept visit says only "own", and redraws with the placeholder)
 export const PICTURE = ["off", "sample", "own"];
-export const PLACEHOLDER = { logo: "/viewer-pics/your-logo.png", photo: "/viewer-pics/building.jpg" };
+// V5f (DP-15): the photo is an office park's (Scot's pictures, 2026-11-20); the dashed "YOUR LOGO" box stays for a menu
+// board and for a directory the visitor has named or typed (a placeholder for their own logo)
+export const PLACEHOLDER = { logo: "/viewer-pics/your-logo.png", photo: "/viewer-pics/office-occupancy.jpg" };
+// V5f: the sample building the viewer opens on (Scot: "the first shot needs to be a complete board ... as true to life as
+// if they're walking into a lobby"), invented: Stonepoint Office Park, with a logo of its own (made by Claude)
+export const SAMPLE_BUILDING = { name: "Stonepoint Office Park", subtitle: "100 Stonepoint Parkway", logo: "/viewer-pics/stonepoint-logo.png",
+  manager: ["Building Management Office", "Stonepoint Property Group"], leasing: ["Leasing Office", "Stonepoint Realty Partners"] };
 
 // V3 (DP-14): the optional location type ("Make this preview more relevant to you"): it changes the sample tenants and
 // suites (only rows the visitor hasn't typed in), the name shown while none is typed, and the building contacts. The
@@ -30,38 +36,38 @@ export const TYPES = {
 // Each type's 20 invented names, with their suite (a number: by floor, as the default samples; or the words given)
 const T = (names, suites) => names.map((n, i) => [n, suites ? suites[i] : null]);
 const TYPE_SAMPLES = {
-  office: { building: "Your Office Tower", manager: ["Your Property Manager", "Sample Commercial Properties"], leasing: ["Leasing Office", "Sample Office Leasing"], tenants: T([
+  office: { building: "Ridgeline Corporate Center", manager: ["Building Management Office", "Ridgeline Commercial Properties"], leasing: ["Leasing Office", "Ridgeline Office Leasing"], tenants: T([
     "Harbor Point Law", "Beacon Hill Accounting", "Summit Ridge Insurance", "Meridian Title Co.", "Granite Peak Consulting", "Oakline Financial Group",
     "Stonebridge Mortgage", "Keystone Staffing", "Sterling Court Reporters", "Union Square Tax Service", "Valley Forge Benefits", "Highland Payroll",
     "Ridgeway Insurance Agency", "Silver Maple Wealth", "Northstar IT Services", "Lantern Media Group", "Cedar & Stone Architects", "Ironwood Engineering",
     "Old Mill Bookkeeping", "Fieldstone Realty"]) },
-  medical: { building: "Your Medical Plaza", manager: ["Practice Services Office", "Sample Medical Properties"], leasing: ["Suite Availability", "Sample Healthcare Realty"], tenants: T([
+  medical: { building: "Northgate Medical Plaza", manager: ["Practice Services Office", "Northgate Medical Properties"], leasing: ["Suite Availability", "Northgate Healthcare Realty"], tenants: T([
     "Northgate Family Medicine", "Riverbend Imaging Center", "Clearwater Physical Therapy", "Lakeside Vision Care", "Bluebird Pediatrics", "Magnolia Dermatology",
     "Parkview Allergy & Asthma", "Westbrook Sleep Clinic", "Redbud Hearing Center", "Pebble Creek Podiatry", "Fairhaven Endodontics", "Larkspur Women's Health",
     "Summit Cardiology", "Willow Creek Counseling", "Glenwood Urgent Care", "Juniper Lab Services", "Maple Row Pharmacy", "Trailhead Chiropractic",
     "Amberly Speech Therapy", "Pinecrest Orthodontics"]) },
-  government: { building: "Your City Hall", manager: ["Facilities Department", "City of Sampleton"], leasing: ["Information Desk", "Main Floor Lobby"], tenants: T([
+  government: { building: "Municipal Center", manager: ["Facilities Department", "City Facilities Office"], leasing: ["Information Desk", "Main Floor Lobby"], tenants: T([
     "Mayor's Office", "City Clerk", "Revenue & Business Licenses", "Building Permits & Inspections", "Planning & Zoning", "Public Works",
     "Parks & Recreation", "Human Resources", "City Council Chambers", "Municipal Court", "Water & Sewer Billing", "Code Enforcement",
     "Engineering Department", "Finance Department", "Community Development", "Information Technology", "Economic Development", "Public Safety Records",
     "Senior Services", "Veterans Services"]) },
-  hospitality: { building: "Your Hotel", manager: ["Front Desk", "Dial 0 from any room phone"], leasing: ["Catering & Events", "Sample Hotel Sales Office"], tenants: T([
+  hospitality: { building: "Grandview Hotel & Conference Center", manager: ["Front Desk", "Dial 0 from any room phone"], leasing: ["Catering & Events", "Grandview Sales Office"], tenants: T([
     "Grand Ballroom", "Magnolia Room", "Dogwood Room", "Azalea Room", "Executive Boardroom", "Business Center", "Fitness Center", "Pool & Spa",
     "Lobby Bar & Grill", "Breakfast Room", "Gift Shop", "Guest Laundry", "Pre-Function Lounge", "Garden Terrace", "Camellia Room", "Laurel Room",
     "Registration Desk", "Bell Stand", "Hospitality Suite", "Sales & Catering"],
     ["Level 2", "Level 2", "Level 2", "Level 2", "Level 3", "Lobby", "Level 1", "Level 1", "Lobby", "Level 1", "Lobby", "Level 1", "Level 2", "Level 1",
      "Level 3", "Level 3", "Level 2", "Lobby", "Level 3", "Level 2"]) },
-  retail: { building: "Your Shopping Center", manager: ["Center Management", "Sample Retail Properties"], leasing: ["Leasing Office", "Sample Retail Leasing"], tenants: T([
+  retail: { building: "Oak Hollow Shopping Center", manager: ["Center Management", "Oak Hollow Retail Properties"], leasing: ["Leasing Office", "Oak Hollow Retail Leasing"], tenants: T([
     "Thistle & Pine Florist", "Corner Bakery & Coffee", "Rosewood Hair Studio", "Yellowhammer Print Shop", "Crossroads Travel", "Driftwood Yoga",
     "Main Street Deli", "Maple Row Pharmacy", "Foxglove Interiors", "Kingfisher Shoe Repair", "Bright Harbor Tutoring", "Elm Street Notary",
     "Sweet Magnolia Candy Co.", "Greenway Fitness", "Hollow Oak Bookstore", "Lakeside Nail Spa", "Copper Kettle Kitchenware", "Riverside Bank",
     "Trailside Outfitters", "Leasing Office"],
     ["A1", "A2", "A3", "A4", "A5", "A6", "A7", "A8", "B1", "B2", "B3", "B4", "B5", "B6", "B7", "B8", "C1", "C2", "C3", "C4"]) },
-  education: { building: "Your Campus", manager: ["Campus Operations", "Sample Community College"], leasing: ["Welcome Center", "Visitor Information"], tenants: T([
+  education: { building: "Lakeview Community College", manager: ["Campus Operations", "Lakeview Community College"], leasing: ["Welcome Center", "Visitor Information"], tenants: T([
     "Admissions", "Registrar", "Financial Aid", "Bursar's Office", "Academic Advising", "Career Services", "Student Life", "Library & Learning Commons",
     "Testing Center", "Tutoring Center", "Department of English", "Department of Mathematics", "Department of Nursing", "Department of Business",
     "Dean of Students", "Information Technology", "Veterans Center", "Disability Services", "Bookstore", "Lecture Hall A"]) },
-  restaurant: { building: "Your Food Hall", manager: ["Food Hall Management", "Sample Hospitality Group"], leasing: ["Vendor Leasing", "Sample Food Hall Partners"], tenants: T([
+  restaurant: { building: "Market Street Food Hall", manager: ["Food Hall Management", "Market Street Hospitality Group"], leasing: ["Vendor Leasing", "Market Street Food Hall Partners"], tenants: T([
     "Smoke & Pine Barbecue", "Little Saigon Pho", "Copper Kettle Coffee", "Gulf Coast Oyster Bar", "Taqueria El Sol", "Nonna's Pizza & Pasta",
     "Sweet Magnolia Bakery", "Seoul Street Kitchen", "The Burger Stand", "Green Bowl Salads", "Sunrise Smoothies", "Biscuit Barn",
     "Curry Leaf Indian Kitchen", "Southern Fried Chicken Co.", "Gelato Corner", "Taproom Bar", "Mediterranean Grill", "Sushi Counter",
@@ -201,26 +207,26 @@ const PLACES = [
   { name: "Riverside Bank ATM", line: "In the lobby, by the elevators", distance: "Lobby" },
   { name: "Greenway Fitness", line: "Day passes for visitors", distance: "5 min walk" },
 ];
-// The information box's sample stories (V1c, Scot: "Headlines like, 'Doc Find Donuts Boost Metabolism' and 'Monkey Runs
-// Amok in Banana Factory'"): silly on purpose, so nobody takes them for news. A real screen shows live headlines.
-// Each may have a picture in public/viewer-pics/ (see viewer-pics/README.md); a story whose picture isn't there yet
-// shows as text.
+// The information box's sample stories. V5f (DP-15): real-life headlines in place of V1c's jokes (Scot: "remove a bit of
+// the humor ... Something that looks like real life news headlines"): invented, local, not political, no real people or
+// businesses; Scot's pictures (2026-11-20). A real screen shows live headlines. Each may have a picture in
+// public/viewer-pics/ (see viewer-pics/README.md); a story whose picture isn't there shows as text.
 const HEADLINES = [
-  { title: "Docs Find Donuts Boost Metabolism", pic: "donuts" },
-  { title: "Monkey Runs Amok in Banana Factory", pic: "monkey" },
-  { title: "Goat Hockey Takes the City by Storm", pic: "goat" },
-  { title: "Squirrel Befriends Pumpkin", pic: "squirrel" },
-  { title: "Lab Irradiates Socks to End the Lost-Sock Crisis", pic: "socks" },
-  { title: "Mystery Office Plants Take Over Third Floor", pic: "office-plant" },
+  { title: "City Breaks Ground on Riverfront Park Expansion", pic: "riverfront-park" },
+  { title: "Farmers Market Returns to Main Street for the Season", pic: "farmers-market" },
+  { title: "Downtown Office Occupancy Climbs for Third Straight Quarter", pic: "office-occupancy" },   // (the photo behind the list too: not first)
+  { title: "Regional Airport Adds Three Nonstop Routes", pic: "airport-routes" },
+  { title: "Local Food Bank Tops Holiday Donation Goal", pic: "food-bank" },
+  { title: "High School Robotics Team Heads to State Finals", pic: "robotics-team" },
 ];
-// Events and places nearby, for Places and promotions (V1c, Scot: "An event could be 'Monster Trikes at Crambone Arena'")
+// Events and places nearby, for Places and promotions (V5f: real-life events too)
 const EVENTS = [
-  { name: "Monster Trikes at Crambone Arena", line: "Big wheels, bigger noise. Tickets at the door", distance: "Saturday 7 pm", pic: "monster-trikes" },
-  { name: "Downtown Chili Cook-Off", line: "Forty pots, one champion, free tasting", distance: "Sunday noon", pic: "chili" },
-  { name: "Dog Day in the Park", line: "Contests, treat vendors, adoptions and family fun", distance: "Saturday 10 am", pic: "dog" },
+  { name: "Holiday Market at City Center Plaza", line: "Local makers, warm drinks and lights after dark", distance: "Saturday 4 pm", pic: "holiday-market" },
+  { name: "Charity 5K Downtown", line: "Run or walk; proceeds go to the local food bank", distance: "Saturday 8 am", pic: "charity-5k" },
+  { name: "Symphony in the Park", line: "Free outdoor concert; bring a chair or blanket", distance: "Sunday 6 pm", pic: "symphony-park" },
 ];
 // The pictures that have been added to public/viewer-pics/ (each <key>.jpg, at least 300 px wide)
-export const PICS = ["donuts", "monkey", "goat", "squirrel", "socks", "office-plant", "monster-trikes", "chili", "dog"];
+export const PICS = ["office-occupancy", "riverfront-park", "farmers-market", "airport-routes", "food-bank", "robotics-team", "holiday-market", "charity-5k", "symphony-park"];
 const pic = (k) => (PICS.includes(k) ? `/viewer-pics/${k}.jpg` : "");
 // People at a tenant, for the touch directory's cards (V1c: "add a few employees per tenant so the touch doesn't just
 // show the same thing as the company line"); invented names, 555 numbers and .example addresses
@@ -286,23 +292,25 @@ export function sampleRows(c) {
 export function sampleDirectory(c, { togoUrl = "https://waytugo.com/", ownLogo = "", ownPhoto = "" } = {}) {
   c = normalizeConfig(c);
   // V2: the visitor's own pictures come from their browser (ownLogo, ownPhoto); without them, the placeholders
-  const logo = c.logo === "own" && ownLogo ? ownLogo : c.logo && c.logo !== "off" ? PLACEHOLDER.logo : "";
-  const photo = c.photo === "own" && ownPhoto ? ownPhoto : c.photo && c.photo !== "off" ? PLACEHOLDER.photo : "";
   const ts = TYPE_SAMPLES[c.type];   // V3: the location type's name and contacts while none are typed
+  // V5f: Stonepoint Office Park while the visitor hasn't named the building or chosen a type with its own samples
+  const sb = !c.name && !ts ? SAMPLE_BUILDING : null;
+  const logo = c.logo === "own" ? ownLogo || PLACEHOLDER.logo : c.logo === "sample" ? (sb ? sb.logo : PLACEHOLDER.logo) : "";   // (a kept visit's own: the placeholder)
+  const photo = c.photo === "own" && ownPhoto ? ownPhoto : c.photo && c.photo !== "off" ? PLACEHOLDER.photo : "";
   return {
     key: "viewer", orientation: c.shape, sample: true,
-    propertyName: c.name || ts?.building || "Your Building Name", buildingLabel: c.subtitle,
+    propertyName: c.name || ts?.building || SAMPLE_BUILDING.name, buildingLabel: c.subtitle || (sb ? sb.subtitle : ""),
     logo, logoReplacesName: false, companyLogo: "", logoSwap: false,
     tenants: sampleTenants(c),
-    managedBy: c.contacts ? { name: ts?.manager[0] || "Your Property Manager", company: ts?.manager[1] || "Sample Property Management", phone: "(205) 555-0100" } : {},
-    leasedBy: c.contacts ? { name: ts?.leasing[0] || "Leasing Office", company: ts?.leasing[1] || "Sample Realty Partners", phone: "(205) 555-0142" } : {},
+    managedBy: c.contacts ? { name: (ts || SAMPLE_BUILDING).manager[0], company: (ts || SAMPLE_BUILDING).manager[1], phone: "(205) 555-0100" } : {},
+    leasedBy: c.contacts ? { name: (ts || SAMPLE_BUILDING).leasing[0], company: (ts || SAMPLE_BUILDING).leasing[1], phone: "(205) 555-0142" } : {},
     welcome: "Sample directory · names, suites and phone numbers are demonstration content",
     // Weather for 1Point's home (Birmingham, Alabama): real weather, so the sample looks alive
     weather: { enabled: c.weather, lat: 33.5186, lon: -86.8104 },
     timezone: "America/Chicago",
     // V1b: sample headlines when news is on. Ticked, news or places keeps its box (Scot: "Viewer keeps it"): a real
     // landscape screen gives the box up when the names would be clearly bigger without it
-    news: { enabled: c.news, rotateSeconds: 8, items: c.news ? HEADLINES.map((h) => ({ title: h.title, source: "Sample news", published: null, image: pic(h.pic) })) : [] },
+    news: { enabled: c.news, rotateSeconds: 8, items: c.news ? HEADLINES.map((h) => ({ title: h.title, source: "Local news · sample", published: null, image: pic(h.pic) })) : [] },
     keepInfo: c.news || c.places,
     traffic: { map: false, times: false, lat: null, lon: null, mapsKey: "", destinations: [] },
     amenities: [],
@@ -361,7 +369,9 @@ export function menuDraft(payload, c, { ownLogo = "" } = {}) {
   d.look = { ...(d.look || {}) }; delete d.look.when;
   if (looks.includes(c.look)) d.look.look = c.look;
   // the name and the logo, through the brand (as WayTuGo sets a real shop's)
-  const logo = c.logo === "own" && ownLogo ? ownLogo : c.logo === "own" || c.logo === "sample" ? PLACEHOLDER.logo : "";
+  // V5f: the sample keeps the template's own logo (the logo box starts ticked, and a menu should open complete); their
+  // own logo replaces it (or the placeholder, when a kept visit's own logo isn't here)
+  const logo = c.logo === "own" && ownLogo ? ownLogo : c.logo === "own" ? PLACEHOLDER.logo : "";
   d.brand = { ...(d.brand || {}) };
   if (c.name) d.brand.name = c.name;
   if (logo) { d.images = { ...(d.images || {}), "viewer-logo": { url: logo, w: 900, h: 240 } }; d.brand.logo = "img:viewer-logo"; }

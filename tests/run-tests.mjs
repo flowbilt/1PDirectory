@@ -2,7 +2,7 @@
 // Every server function, against a fake Supabase with the same access rules as the real one. No network needed.
 import assert from "node:assert/strict";
 import vm from "node:vm";
-import { existsSync, readFileSync, readdirSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
 import { createFake, SERVICE_KEY, ANON_KEY, SIZE_RANGES } from "./fake-supabase.mjs";
 import screen, { toPayload } from "../netlify/functions/screen.mjs";
 import traffic, { toTimes } from "../netlify/functions/traffic.mjs";
@@ -3614,7 +3614,7 @@ test("V1: the viewer's choices and its sample directory: kept within limits; the
   const d = V.sampleDirectory(c);
   assert.equal(d.propertyName, "Landmark bBusiness/b Center"); assert.equal(d.orientation, "portrait"); assert.equal(d.touch, true); assert.equal(d.tenants.length, 60);
   assert.equal(d.togo.enabled, true); assert.deepEqual(d.placeLists, []); assert.equal(d.weather.enabled, true); assert.equal(d.news.enabled, false);
-  assert.equal(V.sampleDirectory({}).propertyName, "Your Building Name");
+  assert.equal(V.sampleDirectory({}).propertyName, "Stonepoint Office Park");
   assert.deepEqual(V.sampleDirectory({ contacts: false }).managedBy, {});
   assert.match(d.welcome, /demonstration content/);
   assert.equal(V.summary(c), "Touch directory · Landmark bBusiness/b Center · 60 tenants · portrait · weather, QR, contacts");
@@ -3623,7 +3623,7 @@ test("V1: the viewer's choices and its sample directory: kept within limits; the
   assert.equal(V.normalizeConfig({}).tenants, 10);
   const withNews = V.sampleDirectory({ news: true, places: true });
   assert.equal(withNews.news.enabled, true); assert.equal(withNews.news.items.length, 6);
-  assert.ok(withNews.news.items.every((n) => n.source === "Sample news") && withNews.news.items.some((n) => n.title === "Monkey Runs Amok in Banana Factory"), "silly samples (V1c)");
+  assert.ok(withNews.news.items.every((n) => n.source === "Local news · sample") && withNews.news.items.some((n) => n.title === "Regional Airport Adds Three Nonstop Routes"), "real-life samples (V5f)");
   // V1c: people at each tenant on the touch directory (2 to 4, invented); events with the places; pictures only once added
   const touch = V.sampleTenants({ kind: "touch", name: "Landmark", tenants: 30 }), plain = V.sampleTenants({ name: "Landmark", tenants: 30 });
   assert.ok(touch.every((t) => t.people.length >= 2 && t.people.length <= 4), "2 to 4 people each");
@@ -3632,10 +3632,10 @@ test("V1: the viewer's choices and its sample directory: kept within limits; the
   assert.ok(plain.every((t) => t.people.length === 0), "a building directory has no people");
   assert.deepEqual(V.sampleTenants({ kind: "touch", name: "Landmark", tenants: 30 }), touch, "the same people every time (the console's redraw)");
   assert.deepEqual(withNews.placeLists.map((l) => l.heading), ["Events", "Nearby"]);
-  assert.equal(withNews.placeLists[0].items[0].name, "Monster Trikes at Crambone Arena");
+  assert.equal(withNews.placeLists[0].items[0].name, "Holiday Market at City Center Plaza");
   assert.ok(withNews.news.items.every((n) => n.image === (V.PICS.length ? n.image : "")) && withNews.placeLists[0].items.every((e) => typeof e.image === "string"));
   const picsMd = readFileSync(new URL("../public/viewer-pics/README.md", import.meta.url), "utf8");
-  for (const k of ["donuts", "monkey", "goat", "office-plant", "squirrel", "socks", "monster-trikes", "chili", "dog"]) assert.ok(picsMd.includes("`" + k + "`"), k);
+  for (const k of V.PICS) assert.ok(picsMd.includes("`" + k + "`"), k);
   for (const k of V.PICS) assert.ok(existsSync(new URL(`../public/viewer-pics/${k}.jpg`, import.meta.url)), `${k}.jpg is there`);
   assert.equal(withNews.keepInfo, true, "ticked, the box is kept (the viewer only)"); assert.equal(V.sampleDirectory({}).keepInfo, false);
   assert.deepEqual(V.sampleDirectory({}).news.items, []);
@@ -3737,7 +3737,7 @@ test("V2: the viewer's version 2: up to 20 tenants with the visitor's own names 
   assert.equal(d.look, "light"); assert.equal(d.lookWhen, null);
   assert.equal(V.sampleDirectory(c).logo, V.PLACEHOLDER.logo, "a kept visit's own logo redraws as the placeholder");
   assert.equal(V.sampleDirectory({ v: 2 }).logo, ""); assert.deepEqual(V.sampleDirectory({ v: 2 }).background, {});
-  for (const f of ["your-logo.png", "building.jpg"]) assert.ok(existsSync(new URL(`../public/viewer-pics/${f}`, import.meta.url)), f);
+  for (const f of ["your-logo.png", "office-occupancy.jpg", "stonepoint-logo.png"]) assert.ok(existsSync(new URL(`../public/viewer-pics/${f}`, import.meta.url)), f);
   assert.equal(V.summary(c), "Touch directory · (no name) · 20 tenants (2 typed in) · landscape · Light · own logo, photo · weather, contacts");
   // version 1 visits redraw as before
   const old = V.normalizeConfig({ v: 1, name: "Landmark", tenants: 40 });
@@ -3762,9 +3762,9 @@ test("V3: the viewer's optional location type: its samples (20 each), name and c
   }
   const base = { v: 2, tenants: 10 };
   const def = V.sampleDirectory(base), other = V.sampleDirectory({ ...base, type: "other" }), exploring = V.sampleDirectory({ ...base, type: "exploring" });
-  assert.deepEqual(other.tenants, def.tenants); assert.deepEqual(exploring.tenants, def.tenants); assert.equal(other.propertyName, "Your Building Name");
+  assert.deepEqual(other.tenants, def.tenants); assert.deepEqual(exploring.tenants, def.tenants); assert.equal(other.propertyName, "Stonepoint Office Park");
   const med = V.sampleDirectory({ ...base, type: "medical" });
-  assert.equal(med.propertyName, "Your Medical Plaza"); assert.ok(med.tenants.some((t) => t.name === "Northgate Family Medicine")); assert.notDeepEqual(med.tenants, def.tenants);
+  assert.equal(med.propertyName, "Northgate Medical Plaza"); assert.ok(med.tenants.some((t) => t.name === "Northgate Family Medicine")); assert.notDeepEqual(med.tenants, def.tenants);
   const hotel = V.sampleDirectory({ ...base, type: "hospitality" });
   assert.ok(hotel.tenants.some((t) => t.name === "Grand Ballroom" && t.suite === "Level 2")); assert.equal(hotel.managedBy.name, "Front Desk");
   assert.ok(V.sampleDirectory({ ...base, type: "restaurant" }).tenants.every((t) => /^(Stall \d+|Center Bar|Main Floor)$/.test(t.suite)), "a food hall's counters");
@@ -3831,6 +3831,7 @@ test("V4: the menu board in the viewer: WayTuGo's templates read live (never Sam
     assert.equal(V.menuDraft(pay, { ...c, look: "dark" }).look.look ?? null, pay.look?.look ?? null, "a look the board doesn't offer: its own");
     assert.equal(V.menuDraft(pay, c).images["viewer-logo"].url, V.PLACEHOLDER.logo, "a kept visit's own logo redraws as the placeholder");
     assert.ok(!("viewer-logo" in (V.menuDraft(pay, { ...c, logo: "off" }).images || {})), "off keeps the template's");
+    assert.ok(!("viewer-logo" in (V.menuDraft(pay, { ...c, logo: "sample" }).images || {})), "V5f: the sample keeps the template's too (the box starts ticked)");
     const bp = await (await vb(new Request(`https://x/api/viewer-boards?board=${burger.id}`))).json();
     assert.equal(V.menuDraft(bp, { ...c, board: burger.id, look: "light", shape: "portrait" }).orientation, "portrait", "a board that turns follows the choice");
     // the rules
@@ -4021,6 +4022,41 @@ test("V5c: the viewer's first visit and the phone: the preview frame's address s
   const ver = (await import("../netlify/lib/version.mjs"));
   assert.ok(JSON.stringify(ver).includes("2.24.2") || readFileSync(new URL("../netlify/lib/version.mjs", import.meta.url), "utf8").includes("2.24.2"));
   assert.ok(disp.includes('const VERSION = "2.24.2"') && read("board.js").includes('const VERSION = "2.24.2"'));
+});
+
+test("V5f: the viewer opens on a complete board: portrait, Stonepoint Office Park with its logo, address and photo, real-life news headlines with pictures, weather and contacts; QR and places off; the visitor's name or a location type replaces the sample building (the YOUR LOGO box for their logo); a menu keeps its template's logo", async () => {
+  const V = await import("../public/viewer-sample.mjs");
+  const html = readFileSync(new URL("../public/viewer.html", import.meta.url), "utf8");
+  const on = (re) => re.test(html);
+  assert.ok(on(/name="shape" value="portrait" checked/) && !on(/name="shape" value="landscape" checked/), "portrait first");
+  for (const n of ["logo", "photo", "news", "weather", "contacts"]) assert.ok(new RegExp(`name="${n}" checked`).test(html), `${n} ticked`);
+  for (const n of ["qr", "places"]) assert.ok(!new RegExp(`name="${n}" checked`).test(html), `${n} not ticked`);
+  assert.ok(html.includes("Tap for full screen") && html.includes("Back to the sample"));
+  // the first view, as the viewer sends it
+  const first = V.sampleDirectory({ v: 2, kind: "directory", name: "", subtitle: "", tenants: 10, shape: "portrait", weather: true, qr: false, places: false, contacts: true, news: true, look: "dark", logo: "sample", photo: "sample", rows: [], type: "" });
+  assert.equal(first.propertyName, "Stonepoint Office Park"); assert.equal(first.buildingLabel, "100 Stonepoint Parkway"); assert.equal(first.orientation, "portrait");
+  assert.equal(first.logo, V.SAMPLE_BUILDING.logo); assert.equal(first.background.image, "/viewer-pics/office-occupancy.jpg");
+  assert.equal(first.managedBy.company, "Stonepoint Property Group"); assert.equal(first.leasedBy.company, "Stonepoint Realty Partners");
+  assert.equal(first.news.items.length, 6); assert.ok(first.news.items.every((n) => n.image.startsWith("/viewer-pics/")), "every headline has its picture");
+  assert.notEqual(first.news.items[0].image, first.background.image, "the photo behind the list isn't the first story's");
+  assert.ok(first.news.items.every((n) => !/monkey|donut|goat|squirrel|sock/i.test(n.title)), "no jokes");
+  assert.equal(first.togo.enabled, false); assert.deepEqual(first.placeLists, []);
+  // their name (or a type with its own samples) replaces the sample building; the logo box then invites theirs
+  const named = V.sampleDirectory({ v: 2, name: "Acme Tower", logo: "sample", photo: "sample", contacts: true });
+  assert.equal(named.propertyName, "Acme Tower"); assert.equal(named.buildingLabel, ""); assert.equal(named.logo, V.PLACEHOLDER.logo);
+  const med = V.sampleDirectory({ v: 2, type: "medical", logo: "sample" });
+  assert.equal(med.propertyName, "Northgate Medical Plaza"); assert.equal(med.logo, V.PLACEHOLDER.logo); assert.equal(med.buildingLabel, "");
+  assert.equal(V.sampleDirectory({ v: 2, type: "exploring", logo: "sample" }).logo, V.SAMPLE_BUILDING.logo, "Just Exploring keeps Stonepoint");
+  assert.equal(V.sampleDirectory({ v: 2, subtitle: "2 Main St" }).buildingLabel, "2 Main St");
+  assert.equal(V.sampleDirectory({ v: 2, logo: "own" }).logo, V.PLACEHOLDER.logo, "a kept visit's own logo: the YOUR LOGO box");
+  for (const t of Object.keys(V.TYPES)) assert.ok(!/^Your |Sample/.test(V.typeSamples(t)?.building || ""), `${t}: a real-sounding name`);
+  // the pictures: there, light enough for a phone, listed
+  const md = readFileSync(new URL("../public/viewer-pics/README.md", import.meta.url), "utf8");
+  for (const k of V.PICS) {
+    const f = new URL(`../public/viewer-pics/${k}.jpg`, import.meta.url);
+    assert.ok(existsSync(f) && statSync(f).size <= 300 * 1024, `${k}.jpg under 300 KB`); assert.ok(md.includes("`" + k + "`"), `${k} in the README`);
+  }
+  assert.ok(existsSync(new URL("../public/viewer-pics/stonepoint-logo.png", import.meta.url)));
 });
 
 test("V5e: background loads and quick exits: the page's first script counts a load off screen (hidden or prerendered) and when it's seen; the console leaves background loads out and counts the steps among visitors who stayed 3 seconds or more", async () => {

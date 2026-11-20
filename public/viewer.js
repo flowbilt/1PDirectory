@@ -148,7 +148,8 @@ function fit() {
   // visitor's own screen does, within 900 px
   const tall = embedded ? Math.min(window.screen?.availHeight || 900, 1100) : window.innerHeight;
   // V5c: on a phone, a strip about a third of the screen (the controls come straight after it)
-  const share = phone() ? (window.innerWidth > window.innerHeight ? 0.5 : 0.36) : window.innerWidth <= 860 ? 0.62 : 0.8;   // (sideways: half)
+  // V5f: a portrait screen on a computer a little shorter, so it shows whole below the page's heading when it opens
+  const share = phone() ? (window.innerWidth > window.innerHeight ? 0.5 : 0.36) : window.innerWidth <= 860 ? 0.62 : land ? 0.8 : 0.7;   // (sideways: half)
   const avail = box.parentElement.clientWidth - 20, maxH = Math.min(900, Math.max(phone() ? 150 : 320, tall * share));
   const s = Math.min(avail / W, maxH / H);
   box.style.width = `${Math.round(W * s)}px`; box.style.height = `${Math.round(H * s)}px`;
@@ -479,13 +480,16 @@ function closeFull({ quiet = false } = {}) {
   placeBar();
   if (!quiet) (phone() ? $("bar-see") : $("see")).focus({ preventScroll: true });
 }
+// V5f: the viewer places the page itself after the full view's step back (the browser's own restore could undo
+// Request a Quote's scroll to the code box)
+try { if ("scrollRestoration" in history) history.scrollRestoration = "manual"; } catch { /* older browsers */ }
 window.addEventListener("popstate", () => { if (F.open) { F.hist = false; closeFull(); } });
 $("see").addEventListener("click", openFull);
 $("bar-see").addEventListener("click", openFull);   // V5c: the phone's bottom bar
 $("pv-tap").addEventListener("click", openFull);    // V5c: a tap on the phone's preview strip
 $("full-x").addEventListener("click", () => closeFull());
 $("full-back").addEventListener("click", () => closeFull());
-$("full-quote").addEventListener("click", () => { closeFull(); requestQuote(); });
+$("full-quote").addEventListener("click", () => { closeFull(); requestAnimationFrame(() => setTimeout(requestQuote, 60)); });   // (V5f: after the step back)
 document.addEventListener("fullscreenchange", () => { if (F.open && F.native && !document.fullscreenElement) closeFull(); });   // Esc in true full screen
 document.addEventListener("keydown", (e) => {
   if (e.key !== "Escape" || !F.open) return;
@@ -585,7 +589,7 @@ $("sheet-share").addEventListener("click", async () => {
 let lastHeight = 0;
 const tellHeight = () => { if (!parentOrigin || F.open) return; const px = Math.ceil(document.documentElement.scrollHeight); if (px !== lastHeight) { lastHeight = px; tell({ type: "height", px }); } };
 if (parentOrigin) new ResizeObserver(tellHeight).observe(document.body);   // (not while the full-screen view is open)
-// Each visit starts from the defaults (a building directory, landscape): browsers otherwise bring back a reload's choices
+// Each visit starts from the defaults (V5f: a complete portrait building directory: Stonepoint Office Park, its logo and photo, news): browsers otherwise bring back a reload's choices
 form.reset();
 renderRows();
 window.addEventListener("pageshow", (e) => { if (e.persisted) { if (F.open) closeFull(); form.reset(); for (const r of typed) { r.name = ""; r.suite = ""; } own.logo = own.photo = null; rowsEl.innerHTML = ""; renderRows(); draw(); } });

@@ -1880,13 +1880,13 @@ try {
     let [row] = (await sb("viewer_visits?select=*")).data;
     assert(row && row.config.kind === "touch" && row.config.name === "Landmark Business Center" && row.config.tenants === 20 && row.config.shape === "portrait" && row.config.qr === true, JSON.stringify(row?.config));
     assert(JSON.stringify(row.source) === JSON.stringify({ page: "/waytugo-viewer", utm_source: "google", utm_medium: "cpc", utm_campaign: "directory-fall" }), JSON.stringify(row.source));
-    assert(row.changes >= 5 && row.quote === null, `${row.changes} changes, quote ${row.quote}`);
+    assert(row.changes >= 4 && row.quote === null, `${row.changes} changes, quote ${row.quote}`);   // (V5f: portrait was already chosen)
     assert(!JSON.stringify(row).match(/127\.0\.0\.1|::1|HeadlessChrome|Mozilla/), "nothing about the visitor's device or address");
     // Request a Quote: the configuration to the page; the page says its form was sent
     await v.locator("#quote").click(); await p.waitForTimeout(2000);
     const quote = (await msgs()).find((m) => m.type === "quote");
     assert(quote && quote.visit === row.id && quote.code === row.id.slice(0, 8).toUpperCase(), JSON.stringify(quote));
-    assert(quote.summary === "Touch directory · Landmark Business Center · 20 tenants · portrait · Dark · weather, QR, contacts", quote.summary);
+    assert(quote.summary === "Touch directory · Landmark Business Center · 20 tenants · portrait · Dark · logo, photo · weather, news, QR, contacts", quote.summary);
     assert((await msgs()).some((m) => m.name === "viewer_quote_started"), "viewer_quote_started told");
     [row] = (await sb(`viewer_visits?id=eq.${quote.visit}&select=quote`)).data;
     assert(row.quote === "sent", `the page's form sent: ${row.quote}`);
@@ -1895,24 +1895,25 @@ try {
     await p.close();
   });
 
-  await check("V1b: the viewer starts as a landscape building directory with 10 tenants, even after a reload; News headlines (samples) and places take turns in the screen's information box, which shows at 10 tenants", async () => {
+  await check("V1b (V5f): the viewer starts as a complete portrait building directory with 10 tenants and news, even after a reload; News headlines (samples) and places take turns in the screen's information box, which shows at 10 tenants", async () => {
     const p = await browser.newPage({ viewport: { width: 1360, height: 900 } });
     await p.goto(`${B}/viewer.html`); await p.waitForTimeout(1500);
-    await p.check('input[name="shape"][value="portrait"]'); await p.fill('input[name="tenants"]', "20"); await p.waitForTimeout(500);
+    await p.check('input[name="shape"][value="landscape"]'); await p.uncheck('input[name="news"]'); await p.fill('input[name="tenants"]', "20"); await p.waitForTimeout(500);
     await p.reload(); await p.waitForTimeout(1800);
-    assert(await p.isChecked('input[name="shape"][value="landscape"]') && await p.isChecked('input[name="kind"][value="directory"]'), "landscape building directory after a reload");
+    assert(await p.isChecked('input[name="shape"][value="portrait"]') && await p.isChecked('input[name="kind"][value="directory"]') && await p.isChecked('input[name="news"]'), "portrait building directory with news after a reload");
     assert(await p.inputValue('input[name="tenants"]') === "10" && (await p.textContent("#tenants-out")).trim() === "10", "10 tenants");
     const scr = p.frameLocator("#pv");
-    assert(await scr.locator("#news").isHidden(), "no box until news or places is ticked");
+    await p.uncheck('input[name="news"]'); await p.waitForTimeout(2000);
+    assert(await scr.locator("#news").isHidden(), "no box without news or places");
     await p.check('input[name="news"]'); await p.waitForTimeout(3000);
     assert(await scr.locator("#news").isVisible(), "the box at 10 tenants");
     const seen = new Set();
     for (let i = 0; i < 8; i++) { seen.add((await scr.locator("#news-slides .slide.on").textContent().catch(() => "")).trim()); await p.waitForTimeout(1200); }
-    assert([...seen].some((t) => t.includes("Sample news")), `sample headlines: ${[...seen].join(" | ")}`);
+    assert([...seen].some((t) => t.includes("Local news · sample")), `sample headlines: ${[...seen].join(" | ")}`);
     await p.check('input[name="places"]'); await p.waitForTimeout(2000);
     const both = new Set();
     for (let i = 0; i < 26; i++) { both.add((await scr.locator("#news-slides .slide.on").textContent().catch(() => "")).trim()); await p.waitForTimeout(1000); }
-    assert([...both].some((t) => t.includes("Crambone Arena")) && [...both].some((t) => t.includes("Sample news")), `news and events take turns: ${[...both].join(" | ").slice(0, 400)}`);
+    assert([...both].some((t) => t.includes("Holiday Market") || t.includes("Nearby")) && [...both].some((t) => t.includes("Local news · sample")), `news and events take turns: ${[...both].join(" | ").slice(0, 400)}`);
     await shot(p, "viewer-news-places");
     await p.close();
   });
@@ -1937,8 +1938,8 @@ try {
     await p.check('input[name="look"][value="light"]', { force: true }); await p.waitForTimeout(600);
     assert(await scr.locator("html").evaluate((h) => h.classList.contains("light")), "Light on the screen");
     await p.check('input[name="logo"]'); await p.check('input[name="photo"]'); await p.waitForTimeout(800);
-    assert((await scr.locator("#logo").getAttribute("src")) === "/viewer-pics/your-logo.png", "the logo placeholder");
-    assert((await scr.locator(".bg-photo").getAttribute("src")) === "/viewer-pics/building.jpg", "the building placeholder");
+    assert((await scr.locator("#logo").getAttribute("src")) === "/viewer-pics/stonepoint-logo.png", "V5f: the sample building's logo (no name typed)");
+    assert((await scr.locator(".bg-photo").getAttribute("src")) === "/viewer-pics/office-occupancy.jpg", "the building photo");
     const png = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAIAAAACCAYAAABytg0kAAAAFklEQVR4nGP8z8DwnwEJMDGgAaAPAC2QAgSVQ6rFAAAAAElFTkSuQmCC", "base64");
     const [chooser] = await Promise.all([p.waitForEvent("filechooser"), p.click('.vw-pic[data-pic="logo"] [data-own]')]);
     await chooser.setFiles({ name: "my-logo.png", mimeType: "image/png", buffer: png }); await p.waitForTimeout(1000);
@@ -1994,7 +1995,7 @@ try {
     await p.selectOption("#type", "medical"); await p.waitForTimeout(800);
     assert(await p.inputValue('#rows .vw-row[data-i="1"] input[data-row="name"]') === "Acme Dental", "what was typed stays");
     assert(await p.getAttribute('#rows .vw-row[data-i="0"] input[data-row="name"]', "placeholder") === "Northgate Family Medicine", "the placeholders follow the type");
-    assert((await scr.locator("#property").textContent()).trim() === "Your Medical Plaza", "the name shown while none is typed");
+    assert((await scr.locator("#property").textContent()).trim() === "Northgate Medical Plaza", "the name shown while none is typed");
     const med = await scr.locator(".tenant-name").allTextContents();
     assert(med.some((n) => n.startsWith("Acme Dental")) && med.some((n) => n.startsWith("Northgate Family Medicine")) && JSON.stringify(med) !== JSON.stringify(before), med.join(", "));
     await p.fill('input[name="name"]', "Location Type Test"); await p.selectOption("#type", "government"); await p.waitForTimeout(800);
@@ -2127,7 +2128,7 @@ try {
     const fr = await p.locator("#wv").boundingBox();
     assert(fr.x === 0 && fr.y === 0 && fr.width === 1280 && fr.height === 800, `the frame fills the window: ${JSON.stringify(fr)}`);
     const sc = await v.locator("#screen").boundingBox();
-    assert(sc.width > 1000 && sc.y >= 0 && sc.y + sc.height <= 800 && Math.abs(sc.width / sc.height - 16 / 9) < 0.02, `the screen whole, 16:9: ${JSON.stringify(sc)}`);
+    assert(sc.height > 600 && sc.y >= 0 && sc.y + sc.height <= 800 && Math.abs(sc.width / sc.height - 9 / 16) < 0.02, `the screen whole, portrait 9:16 (V5f): ${JSON.stringify(sc)}`);
     assert(await v.locator("#controls").evaluate((f) => f.inert) && await v.locator("#full-back").isVisible() && await v.locator("#full-quote").isVisible() && await v.locator("#full-save").isVisible(), "the controls hidden away; the three actions");
     assert((await v.frameLocator("#pv").locator("#property").textContent()).includes("Perimeter Park Two"), "the configuration as it was");
     await shot(p, "v5-full-embedded");
@@ -2199,7 +2200,7 @@ try {
     await p.click("#bar-see"); await p.waitForTimeout(1200);
     const sc = await p.locator("#screen").boundingBox();
     assert(sc.x >= 0 && sc.x + sc.width <= 390 && sc.width > 340, `the screen across the phone: ${JSON.stringify(sc)}`);
-    assert(await p.isVisible("#full-turn"), "turn sideways for a bigger view");
+    assert(await p.isHidden("#full-turn"), "V5f: a portrait screen fits an upright phone (no turn-sideways note)");
     const scroll = await p.evaluate(() => document.documentElement.scrollWidth); assert(scroll <= 390, `no sideways scrolling: ${scroll}`);
     await p.click("#full-save");
     await p.waitForFunction(() => !document.getElementById("sheet-download").disabled || document.getElementById("sheet-msg").classList.contains("bad"), null, { timeout: 30000 });
@@ -2209,7 +2210,7 @@ try {
     const [dl] = await Promise.all([p.waitForEvent("download"), p.click("#sheet-download")]);
     assert(dl.suggestedFilename() === "waytugo-cafe-o-henry-plaza.png", dl.suggestedFilename());
     const file = readFileSync(await dl.path());
-    assert(file.subarray(1, 4).toString() === "PNG" && file.readUInt32BE(16) === 2048 && file.readUInt32BE(20) === 1362, `a PNG, 2048 × 1362: ${file.readUInt32BE(16)} × ${file.readUInt32BE(20)}`);
+    assert(file.subarray(1, 4).toString() === "PNG" && file.readUInt32BE(16) === 1208 && file.readUInt32BE(20) === 2280, `a PNG, portrait 1208 × 2280 (V5f): ${file.readUInt32BE(16)} × ${file.readUInt32BE(20)}`);
     // the picture is the real screen: its own logo (from the page) is in the picture's markup, and nothing was sent with it
     assert(!sent.some((b) => b.includes("data:image")), "their logo never sent");
     await p.click("#sheet-share"); await p.waitForTimeout(500);
@@ -2336,7 +2337,7 @@ try {
     await p.goto(`${B}/viewer.html?utm_source=racetest`);
     await p.waitForTimeout(2600);
     await p.waitForFunction(() => window.Viewer?.state?.ev?.viewer_initialized, null, { timeout: 15000 });
-    assert((await p.frameLocator("#pv").locator("#property").textContent()).includes("Your Building Name"), "the sample drawn");
+    assert((await p.frameLocator("#pv").locator("#property").textContent()).includes("Stonepoint Office Park"), "the sample drawn");
     assert(await p.locator("#pv-loading").isHidden() && await p.locator("#pv-error").isHidden(), "Loading… gone");
     await p.close();
     // the preview page never answers: Loading…, then (15 s) "didn't load" with Try again; it draws once it can
@@ -2349,7 +2350,7 @@ try {
     assert(await q.evaluate(() => window.Viewer.state.ev.viewer_error === 1 && !window.Viewer.state.ev.viewer_initialized), JSON.stringify(await q.evaluate(() => window.Viewer.state.ev)));
     await shot(q, "v5c-preview-failed");
     hold = false; await q.click("#pv-retry"); await q.waitForTimeout(2500);
-    assert(await q.locator("#pv-error").isHidden() && (await q.frameLocator("#pv").locator("#property").textContent()).includes("Your Building Name") && await q.evaluate(() => window.Viewer.state.ev.viewer_initialized === 1), "Try again draws it");
+    assert(await q.locator("#pv-error").isHidden() && (await q.frameLocator("#pv").locator("#property").textContent()).includes("Stonepoint Office Park") && await q.evaluate(() => window.Viewer.state.ev.viewer_initialized === 1), "Try again draws it");
     await q.waitForTimeout(800);
     const row = (await sb("viewer_visits?select=*")).data.find((r) => r.source?.utm_source === "failtest");
     assert(row && row.events.viewer_error === 1 && row.events.viewer_initialized === 1, JSON.stringify(row?.events));
@@ -2364,7 +2365,9 @@ try {
     await p.goto(`${B}/viewer.html`); await p.waitForTimeout(2500);
     const cdp = await p.context().newCDPSession(p);
     const sc = await p.locator("#screen").boundingBox(), name = await p.locator('input[name="name"]').boundingBox();
-    assert(sc.height <= 844 * 0.38 && name.y + name.height < 844, `a strip (${sc.height}px), the name box on the first screen (${name.y}; embedded, higher: the next check)`);
+    // V5f: the portrait board makes the strip taller, so on the viewer's own address the name box sits a short swipe down
+    // (embedded on waytugo.com the page's heading replaces the viewer's, and it's higher: the next check)
+    assert(sc.height <= 844 * 0.38 && name.y + name.height < 844 + 120, `a strip (${sc.height}px), the name box a short swipe down at most (${name.y})`);
     assert(await p.isVisible("#bar-see") && (await p.textContent("#bar-label")).trim() === "See My Directory" && await p.isHidden(".vw-see"), "the bottom bar");
     const bar = await p.locator("#bar").boundingBox(); assert(Math.abs(bar.y + bar.height - 844) < 2, `at the bottom: ${JSON.stringify(bar)}`);
     // the preview takes no touches; the page under it is the frame's own, not locked down

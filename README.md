@@ -997,6 +997,18 @@ through waytugo.com's own inquiry form.
   send, or an edit, full screen or quote; visits before V5 count as stayed), then every step counted among the
   stayers, with percentages of them; the same columns in the three tables; "Background load" and "Left under 3 s" in
   the list (with Show page loads too); CSV `seen`, `background_load`, `stayed_3s`.
+- **V5f** (DP-15, 2026-11-20; Scot: "The first shot needs to be a complete board ... as true to life as if they're
+  walking into a lobby"): the viewer opens on a **complete portrait building directory** (viewer.html's defaults:
+  portrait, logo, building photo and news ticked; weather and contacts as before; QR and places off). With no name
+  typed and no location type with its own samples, the sample building is **Stonepoint Office Park**
+  (`SAMPLE_BUILDING` in viewer-sample.mjs: "100 Stonepoint Parkway", `viewer-pics/stonepoint-logo.png`, Stonepoint
+  contacts); a typed name or such a type replaces it, with the "YOUR LOGO" box (`PLACEHOLDER.logo`) for their logo.
+  The location types' names are real-sounding. The news and events are **real-life samples** (invented, local, not
+  political) with Scot's pictures (`viewer-pics/README.md`), source "Local news · sample"; `office-occupancy.jpg` is
+  also the building photo (`PLACEHOLDER.photo`). A menu board keeps its template's logo unless the visitor adds their
+  own. "Tap for full screen" is smaller; a portrait preview on a computer takes 70% of the window's height. The full
+  view's Request a Quote scrolls to the code box after the history's step back (`history.scrollRestoration` manual).
+  Kept visits redraw with the new samples.
 
 ### Light and Dark directories (DP-14, D2)
 
