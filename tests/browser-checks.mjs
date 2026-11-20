@@ -1895,13 +1895,13 @@ try {
     await p.close();
   });
 
-  await check("V1b (V5f): the viewer starts as a complete portrait building directory with 10 tenants and news, even after a reload; News headlines (samples) and places take turns in the screen's information box, which shows at 10 tenants", async () => {
+  await check("V1b (V5f, V5g): the viewer starts as a complete portrait building directory with 8 tenants and news, even after a reload; News headlines (samples) and places take turns in the screen's information box, which shows at 10 tenants", async () => {
     const p = await browser.newPage({ viewport: { width: 1360, height: 900 } });
     await p.goto(`${B}/viewer.html`); await p.waitForTimeout(1500);
     await p.check('input[name="shape"][value="landscape"]'); await p.uncheck('input[name="news"]'); await p.fill('input[name="tenants"]', "20"); await p.waitForTimeout(500);
     await p.reload(); await p.waitForTimeout(1800);
     assert(await p.isChecked('input[name="shape"][value="portrait"]') && await p.isChecked('input[name="kind"][value="directory"]') && await p.isChecked('input[name="news"]'), "portrait building directory with news after a reload");
-    assert(await p.inputValue('input[name="tenants"]') === "10" && (await p.textContent("#tenants-out")).trim() === "10", "10 tenants");
+    assert(await p.inputValue('input[name="tenants"]') === "8" && (await p.textContent("#tenants-out")).trim() === "8", "V5g: 8 tenants, so the news fits beside them");
     const scr = p.frameLocator("#pv");
     await p.uncheck('input[name="news"]'); await p.waitForTimeout(2000);
     assert(await scr.locator("#news").isHidden(), "no box without news or places");
@@ -1923,7 +1923,7 @@ try {
     const sent = []; p.on("request", (r) => { if (r.url().endsWith("/api/viewer")) sent.push(r.postData() || ""); });
     await p.goto(`${B}/viewer.html`); await p.waitForTimeout(1500);
     assert(await p.getAttribute('input[name="tenants"]', "max") === "20", "20 at most");
-    assert(await p.locator("#rows .vw-row").count() === 10, "a row for each of 10");
+    assert(await p.locator("#rows .vw-row").count() === 8, "a row for each of 8 (V5g)");
     await p.fill('input[name="tenants"]', "14"); await p.waitForTimeout(400);
     assert(await p.locator("#rows .vw-row").count() === 14, "a row for each of 14");
     const first = await p.getAttribute('#rows .vw-row[data-i="0"] input[data-row="name"]', "placeholder");

@@ -4032,8 +4032,9 @@ test("V5f: the viewer opens on a complete board: portrait, Stonepoint Office Par
   for (const n of ["logo", "photo", "news", "weather", "contacts"]) assert.ok(new RegExp(`name="${n}" checked`).test(html), `${n} ticked`);
   for (const n of ["qr", "places"]) assert.ok(!new RegExp(`name="${n}" checked`).test(html), `${n} not ticked`);
   assert.ok(html.includes("Tap for full screen") && html.includes("Back to the sample"));
+  assert.ok(/name="tenants" type="range" min="4" max="20" step="1" value="8"/.test(html) && html.includes('<output id="tenants-out">8</output>'), "V5g: 8 tenants to start, so the news shows whole beside them");
   // the first view, as the viewer sends it
-  const first = V.sampleDirectory({ v: 2, kind: "directory", name: "", subtitle: "", tenants: 10, shape: "portrait", weather: true, qr: false, places: false, contacts: true, news: true, look: "dark", logo: "sample", photo: "sample", rows: [], type: "" });
+  const first = V.sampleDirectory({ v: 2, kind: "directory", name: "", subtitle: "", tenants: 8, shape: "portrait", weather: true, qr: false, places: false, contacts: true, news: true, look: "dark", logo: "sample", photo: "sample", rows: [], type: "" });
   assert.equal(first.propertyName, "Stonepoint Office Park"); assert.equal(first.buildingLabel, "100 Stonepoint Parkway"); assert.equal(first.orientation, "portrait");
   assert.equal(first.logo, V.SAMPLE_BUILDING.logo); assert.equal(first.background.image, "/viewer-pics/office-occupancy.jpg");
   assert.equal(first.managedBy.company, "Stonepoint Property Group"); assert.equal(first.leasedBy.company, "Stonepoint Realty Partners");

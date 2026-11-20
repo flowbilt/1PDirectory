@@ -589,7 +589,7 @@ $("sheet-share").addEventListener("click", async () => {
 let lastHeight = 0;
 const tellHeight = () => { if (!parentOrigin || F.open) return; const px = Math.ceil(document.documentElement.scrollHeight); if (px !== lastHeight) { lastHeight = px; tell({ type: "height", px }); } };
 if (parentOrigin) new ResizeObserver(tellHeight).observe(document.body);   // (not while the full-screen view is open)
-// Each visit starts from the defaults (V5f: a complete portrait building directory: Stonepoint Office Park, its logo and photo, news): browsers otherwise bring back a reload's choices
+// Each visit starts from the defaults (V5f, V5g: a complete portrait building directory, 8 tenants: Stonepoint Office Park, its logo and photo, news): browsers otherwise bring back a reload's choices
 form.reset();
 renderRows();
 window.addEventListener("pageshow", (e) => { if (e.persisted) { if (F.open) closeFull(); form.reset(); for (const r of typed) { r.name = ""; r.suite = ""; } own.logo = own.photo = null; rowsEl.innerHTML = ""; renderRows(); draw(); } });

@@ -1009,6 +1009,8 @@ through waytugo.com's own inquiry form.
   own. "Tap for full screen" is smaller; a portrait preview on a computer takes 70% of the window's height. The full
   view's Request a Quote scrolls to the code box after the history's step back (`history.scrollRestoration` manual).
   Kept visits redraw with the new samples.
+- **V5g** (DP-15, 2026-11-20; Scot: "at 10 tenants, the news drops off the board or the tenants hide behind the
+  news"): the viewer starts at **8 tenants** (the slider still goes to 20), so the portrait board shows the news whole.
 
 ### Light and Dark directories (DP-14, D2)
 
